@@ -19,6 +19,8 @@ A second browser flow starts with clean storage, establishes generated Workbox w
 
 A multi-client diagnostic uses two isolated Playwright browser contexts for the same fake account. With both contexts offline, one title update and one completion update to different fields later coexist after ordered reconnection. Two conflicting title updates converge to the title sent by the context reconnected second in this emulator run; that is an observed ordered case, not a general last-write-wins guarantee or product conflict policy. Competing same-field edits can overwrite each other, so this evidence makes no no-data-loss claim.
 
+A deletion-versus-queued-rename diagnostic uses an independently authenticated, memory-only SDK actor to delete the known task document. When that deletion reaches the emulator before the offline rename reconnects, the queued `updateDoc` rejects with the emulator error `NOT_FOUND: no entity to update`; the target remains absent and the browser reports that write error. When the queued rename is server-confirmed before deletion, the remote document first has the renamed title without a browser error; the later deletion converges in both browsers without an update rejection. Each ordered case independently verifies the known document is absent while the one control task and one block retain their expected fields. These are local emulator observations only, not a deletion-wins policy, no-data-loss guarantee, or physical-device result.
+
 ## Lab boundary
 
 The client refuses any origin other than `localhost` or `127.0.0.1` before Firebase initializes. It always uses project `demo-calendar-offline` with Auth `127.0.0.1:9099` and Firestore `127.0.0.1:8080`; it has no cloud fallback or configuration path. The app uses Firestore's persistent local cache and multi-tab manager, with emulator-only fake accounts. Metadata-inclusive snapshots label cached, pending-write, and server-confirmed records; browser online status alone is not backend proof.
@@ -36,3 +38,5 @@ The Vite production build currently includes Firebase in an approximately 843 kB
 With user permission, remove `experiments/offline-planner` relative to this calendar repository root.
 
 Unit 4 rollback boundary: restore `tests/browser.spec.ts` and this README to `c863311` and remove `tests/browser-helpers.ts` plus `tests/multi-client.spec.ts` together. The shared helper must not be removed by itself because the existing browser tests import it.
+
+Unit 5 rollback boundary: remove the two deletion-versus-queued-rename cases and their focused remote helper additions, then remove the preceding ordered-result paragraph. Retain the original three browser flows and every pre-existing helper export.
