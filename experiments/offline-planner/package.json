@@ -1,0 +1,23 @@
+{
+  "name": "offline-planner-experiment",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/model.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:emulator": "firebase emulators:exec --project demo-calendar-offline --only auth,firestore \"node --experimental-strip-types --test tests/emulator.test.ts\"",
+    "emulators": "firebase emulators:start --project demo-calendar-offline --only auth,firestore"
+  },
+  "dependencies": {
+    "firebase": "12.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "firebase-tools": "15.30.0",
+    "typescript": "5.9.3"
+  }
+}
