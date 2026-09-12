@@ -31,6 +31,8 @@ Do not sign out or clear browser storage while pending writes are present. Brows
 
 This proves page close/reopen in one prepared browser profile only. It does not prove a full browser-process restart, fresh offline installation, data eviction, physical-device sync, background sync, service-worker update safety, conflict policy, recurrence UI, calendar grids, drag/drop, block deletion behavior, or real Firebase resources. The worker uses prompt registration and does not force an update or reload while pending writes exist; full upgrade policy remains deferred.
 
+The update characterization's test-only old/new build identities are restored to the ordinary production build in its `finally` block. In its local Chromium run, an old activated worker remains controlling while a distinct new version reaches `installing` and `installed`; after confirmed writes, closing the only app client lets that exact new version reach `activated` before an offline reopen serves the new shell and cached records. This is Chromium CDP lifecycle observation in one prepared browser profile, not a universal update-safety or product-policy claim. Its rollback boundary is only the test-mode Vite branch, the isolated browser test, and this note; it is not a product update policy.
+
 The Vite production build currently includes Firebase in an approximately 843 kB uncompressed JavaScript chunk; this feasibility fixture makes no bundle-size claim.
 
 ## Rollback
