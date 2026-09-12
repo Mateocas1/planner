@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { registerServiceWorker } from "./service-worker-registration.ts";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { connectFirestoreEmulator, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
@@ -8,6 +9,8 @@ const allowedOrigins = new Set(["localhost", "127.0.0.1"]);
 if (!allowedOrigins.has(window.location.hostname)) {
   throw new Error("Planner lab only runs from localhost or 127.0.0.1");
 }
+
+registerServiceWorker();
 
 const app = initializeApp({ projectId, apiKey: "local-only" });
 export const auth = getAuth(app);

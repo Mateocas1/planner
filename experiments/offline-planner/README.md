@@ -1,6 +1,6 @@
 # Offline planner feasibility experiment
 
-This local diagnostic includes a minimal browser `Planner lab` for testing Firestore browser persistence. It is not the product UI, a PWA, or a cloud deployment.
+This local diagnostic includes a minimal browser `Planner lab` for testing Firestore browser persistence and a generated Workbox app shell. It is not the product UI, a complete installable PWA, or a cloud deployment.
 
 ## Quick path
 
@@ -13,9 +13,9 @@ npm run test:browser
 npm run build
 ```
 
-`test:browser` starts the fixed `demo-calendar-offline` Auth and Firestore emulators, runs Vite on `127.0.0.1:4173`, and creates a disposable `@example.invalid` account. It proves that an already-loaded browser can create a task and block, receive server-confirmed snapshot metadata, edit and create tasks while the Playwright context is offline, then receive server-confirmed records after reconnecting.
+`test:browser` builds the production output, serves it with `vite preview` on `127.0.0.1:4173`, and starts the fixed `demo-calendar-offline` Auth and Firestore emulators. It proves initial server-confirmed records, offline edits, and server confirmation after reconnecting.
 
-The test also signs the same fake user into a separate Firebase Web SDK client in the Node Playwright runner. That client uses its default memory-only cache and `getDocsFromServer`/`getDocFromServer`, so it independently verifies the two expected tasks, their title and completion fields, and the work block before the browser reload check. Desktop and mobile screenshots are written under ignored `test-results/` during the same passing run.
+A second browser flow starts with clean storage, establishes generated Workbox worker readiness and control, then closes the page while offline. A new page in the same browser storage profile loads the cached app shell, restores the fake Auth session and pending cached data, accepts another offline task, and later synchronizes every expected record. A separate Firebase Web SDK client in the Node Playwright runner uses its default memory-only cache with `getDocsFromServer`/`getDocFromServer` to independently verify exact task fields/counts and the block before the online reload check. Desktop and mobile screenshots are written under ignored `test-results/` during the passing batch.
 
 ## Lab boundary
 
@@ -25,7 +25,7 @@ Do not sign out or clear browser storage while pending writes are present. Brows
 
 ## Deferred
 
-This does not prove offline app-shell reopening, PWA/service-worker behavior, physical-device sync, conflict policy, recurrence UI, calendar grids, drag/drop, block deletion behavior, or real Firebase resources.
+This proves page close/reopen in one prepared browser profile only. It does not prove a full browser-process restart, fresh offline installation, data eviction, physical-device sync, background sync, service-worker update safety, conflict policy, recurrence UI, calendar grids, drag/drop, block deletion behavior, or real Firebase resources. The worker uses prompt registration and does not force an update or reload while pending writes exist; full upgrade policy remains deferred.
 
 The Vite production build currently includes Firebase in an approximately 843 kB uncompressed JavaScript chunk; this feasibility fixture makes no bundle-size claim.
 
