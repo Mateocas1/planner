@@ -13,8 +13,9 @@ persistent local cache. Decisions and increments are tracked in `odd/tasks/perso
 
 Current state (increment I6b — profile timezone): authentication gate, Home / Tasks / Calendar shell
 navigation, a Home surface with real task and work-block counts, a full Tasks surface (create with an
-optional date-only deadline validated by the domain module, rename, complete/uncomplete, delete), and
-a Calendar surface: a week time grid rendering work blocks in the stored **profile timezone** (a
+optional date-only deadline validated by the domain module; compact rows grouped into counted Open and
+Completed sections; a details panel, opened by selecting a row, holding rename, the deadline, the
+completion state and delete), and a Calendar surface: a week time grid rendering work blocks in the stored **profile timezone** (a
 per-user profile document at `users/{uid}/profile/main`, initialized on first use from the browser's
 resolved zone), with previous/next week and today navigation, a create form taking a start, an end
 and an optional task, per-block delete, an explicit empty state, and visible error reporting for

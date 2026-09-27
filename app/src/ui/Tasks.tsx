@@ -1,20 +1,21 @@
 import { useState, type FormEvent } from "react";
 import type { TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted } from "../data/tasks.ts";
+import { TaskDetails } from "./TaskDetails.tsx";
 
 /**
- * The Tasks surface. Input is validated by the domain module (via the data
- * helpers), so rejected input never reaches Firestore; thrown errors are
- * displayed. No offline claim: writes go to Firestore and the store reflects
- * what it reports.
+ * The Tasks surface. Rows are compact — completion checkbox, title, deadline —
+ * and every mutating action lives in the details panel for the selected row.
+ * Input is validated by the domain module (via the data helpers), so rejected
+ * input never reaches Firestore; thrown errors are displayed. No offline
+ * claim: writes go to Firestore and the store reflects what it reports.
  */
 export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[]; loading: boolean }) {
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [rename, setRename] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -37,14 +38,42 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
     });
   };
 
-  const onSaveRename = () => {
-    if (editingId === null) return;
-    void run(async () => {
-      await renameTask(uid, editingId, rename);
-      setEditingId(null);
-      setRename("");
-    });
-  };
+  const selected = tasks.find(task => task.id === selectedId);
+  const open = tasks.filter(task => !task.completed);
+  const completed = tasks.filter(task => task.completed);
+
+  const group = (label: string, items: TaskView[]) => (
+    <section className="task-group">
+      <h3>
+        {label} ({items.length})
+      </h3>
+      <ul className="task-list">
+        {items.map(task => (
+          <li key={task.id} className={task.completed ? "task completed" : "task"}>
+            <input
+              type="checkbox"
+              className="task-check"
+              checked={task.completed}
+              disabled={busy}
+              aria-label={`${task.completed ? "Reopen" : "Complete"}: ${task.title}`}
+              onChange={() => void run(() => setTaskCompleted(uid, task.id, !task.completed))}
+            />
+            <button
+              type="button"
+              className="task-open"
+              onClick={() => {
+                setSelectedId(task.id);
+                setError(null);
+              }}
+            >
+              <span className="task-title">{task.title}</span>
+            </button>
+            {task.deadline && <span className="task-deadline">due {task.deadline}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 
   return (
     <section aria-labelledby="tasks-heading">
@@ -72,47 +101,29 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
       {!loading && tasks.length === 0 ? (
         <p role="status">No tasks yet. Add your first one above.</p>
       ) : (
-        <ul className="task-list">
-          {tasks.map(task => (
-            <li key={task.id} className={task.completed ? "task completed" : "task"}>
-              <span className="task-title">{task.title}</span>
-              {task.deadline && <span className="task-deadline">due {task.deadline}</span>}
-              <span className="task-actions">
-                <button type="button" disabled={busy} onClick={() => void run(() => setTaskCompleted(uid, task.id, !task.completed))}>
-                  {task.completed ? `Uncomplete ${task.title}` : `Complete ${task.title}`}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setEditingId(task.id);
-                    setRename(task.title);
-                    setError(null);
-                  }}
-                >
-                  Rename {task.title}
-                </button>
-                <button type="button" disabled={busy} onClick={() => void run(() => deleteTask(uid, task.id))}>
-                  Delete {task.title}
-                </button>
-              </span>
-              {editingId === task.id && (
-                <span className="rename-form">
-                  <label htmlFor={`rename-${task.id}`}>Rename task</label>
-                  <input
-                    id={`rename-${task.id}`}
-                    type="text"
-                    value={rename}
-                    onChange={event => setRename(event.target.value)}
-                  />
-                  <button type="button" disabled={busy} onClick={onSaveRename}>
-                    Save rename
-                  </button>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          {open.length > 0 && group("Open", open)}
+          {completed.length > 0 && group("Completed", completed)}
+        </>
+      )}
+      {selected && (
+        <TaskDetails
+          key={selected.id}
+          task={selected}
+          busy={busy}
+          onClose={() => setSelectedId(null)}
+          onRename={next => {
+            void run(async () => {
+              await renameTask(uid, selected.id, next);
+            });
+          }}
+          onToggleCompleted={() => {
+            void run(() => setTaskCompleted(uid, selected.id, !selected.completed));
+          }}
+          onDelete={() => {
+            void run(() => deleteTask(uid, selected.id));
+          }}
+        />
       )}
     </section>
   );

@@ -89,7 +89,8 @@ test("renaming a task persists the new title to the server", async ({ page }) =>
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Rename Draft plan" }).click();
+  // the row's title button opens the details panel; rename lives there now
+  await page.getByRole("button", { name: "Draft plan" }).click();
   await page.getByLabel("Rename task").fill("Final plan");
   await page.getByRole("button", { name: "Save rename" }).click();
 
@@ -108,14 +109,16 @@ test("completing and uncompleting a task sets completed on the server", async ({
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Solo task" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Complete Solo task", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Uncomplete Solo task", exact: true })).toBeVisible();
+  // completion lives on the row checkbox; click + assert because the store
+  // update lands a beat after the click
+  await page.getByRole("checkbox", { name: "Complete: Solo task" }).click();
   // the completed task stays listed and is visually distinguished
   await expect(page.locator("li.task.completed", { hasText: "Solo task" })).toHaveCount(1);
+  await expect(page.getByRole("checkbox", { name: "Reopen: Solo task" })).toBeChecked();
   await expectRemoteTasks(email, [{ title: "Solo task", completed: true }]);
 
-  await page.getByRole("button", { name: "Uncomplete Solo task", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Complete Solo task", exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Reopen: Solo task" }).click();
+  await expect(page.getByRole("checkbox", { name: "Complete: Solo task" })).toBeVisible();
   await expectRemoteTasks(email, [{ title: "Solo task", completed: false }]);
 });
 
@@ -128,10 +131,59 @@ test("deleting a task removes the row and the server document", async ({ page })
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Doomed task" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete Doomed task" }).click();
+  // delete lives in the details panel
+  await page.getByRole("button", { name: "Doomed task" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
 
   await expect(page.locator(".task-title", { hasText: "Doomed task" })).toHaveCount(0);
   await expectRemoteTasks(email, []);
+});
+
+async function addTaskThroughForm(page: Page, title: string) {
+  await page.getByLabel("Task title").fill(title);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
+  // the write may still be in flight (busy disables the form); wait for it to
+  // settle so a following fill is not wiped by the previous add's reset
+  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+}
+
+test("selecting a row opens the details panel, and it closes via Close and Escape", async ({ page }) => {
+  const email = newEmail("panel");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Panel task");
+  await expect(page.locator(".task-details")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Panel task" }).click();
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Rename task")).toHaveValue("Panel task");
+
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Panel task" }).click();
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+});
+
+test("the list groups open and completed tasks under counted headings", async ({ page }) => {
+  const email = newEmail("groups");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Open task");
+  await addTaskThroughForm(page, "Done task");
+  await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
+  await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
+
+  await expect(page.getByRole("heading", { name: "Open (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Completed (1)" })).toBeVisible();
+  await expect(page.locator("li.task:not(.completed)", { hasText: "Open task" })).toHaveCount(1);
+  await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
 });
 
 test("an empty title is refused with a visible error and writes nothing", async ({ page }) => {
