@@ -18,7 +18,23 @@ a Calendar surface: a week time grid rendering work blocks in the stored **profi
 per-user profile document at `users/{uid}/profile/main`, initialized on first use from the browser's
 resolved zone), with previous/next week and today navigation, a create form taking a start, an end
 and an optional task, per-block delete, an explicit empty state, and visible error reporting for
-rejected input — all wired to Firestore. The visual design pass is still ahead. No offline claim.
+rejected input — all wired to Firestore. No offline claim.
+
+## Design foundation (DP1)
+
+The design pass has started. `src/app.css` now defines the visual foundation as custom properties
+in one place — surfaces, borders, a four-step type ramp, semantic and status colours, radii, the
+4 pt spacing scale, elevation via the ring-as-border trick, component heights — ported from
+`odd/design/reference-design-language.md`. Every colour, radius, space and type size in the file
+comes from a token. The shell is a left sidebar (application name, icon navigation with a raised
+pill on the active item, identity and sign-out) that becomes a top bar under 720 px. Motion is
+deliberately absent: curves, durations and the reduced-motion block land in the next unit, measured
+by its evidence harness.
+
+The typeface is **Geist Sans**, self-hosted via `@fontsource-variable/geist` (variable weight,
+latin subset, ~29 KB woff2 shipped as a build asset) with `font-display: swap` and a system
+fallback stack. Self-hosting is deliberate: the product must work offline, and a font CDN would
+break that promise.
 
 ## Install
 

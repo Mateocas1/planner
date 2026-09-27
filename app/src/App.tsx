@@ -5,8 +5,8 @@ import { useProfileTimeZone } from "./data/profile.ts";
 import { useStore } from "./data/store.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
-import { Header } from "./ui/Header.tsx";
 import { Home } from "./ui/Home.tsx";
+import { Sidebar } from "./ui/Sidebar.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 
 export type View = "home" | "tasks" | "calendar";
@@ -32,7 +32,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
 
   return (
     <div className="shell">
-      <Header
+      <Sidebar
         email={user.email ?? ""}
         view={view}
         onNavigate={onNavigate}
