@@ -6,3 +6,7 @@
 
 # Local tooling output
 *.log
+
+# Never commit credentials
+*-adminsdk-*.json
+*serviceAccount*.json

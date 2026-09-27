@@ -60,12 +60,14 @@ transitions it guarded.
 npm install
 ```
 
-Requires Node 22.x. Everything runs locally; no cloud project, account, or billing is involved.
+Requires Node 22.x. Development and the whole test suite run locally against the emulators, with
+no cloud project, account or billing involved. The published build talks to the real Firebase
+project instead; see the section below.
 
 ## Verification
 
 ```
-npm test             # domain tests (node:test, 7 passing expected)
+npm test             # domain tests (node:test, 9 passing expected)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators
@@ -85,12 +87,12 @@ be installed. To keep emulators running for development instead:
 npm run emulators    # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187
 ```
 
-## Local-only boundary
+## Where the app runs
 
-- The app refuses to run from any origin other than `localhost` / `127.0.0.1`. There is no
-  cloud fallback in this increment.
+- The app is origin-driven: `localhost` / `127.0.0.1` uses the `demo-calendar-app` emulators,
+  while any other origin connects to the real Firebase project and no emulator. That keeps the
+  local suite structurally unable to reach production.
 - Data lives in the Firestore persistent local cache in browser storage. **Browser storage is
   not a backup**; clearing site data loses it.
-- Offline behaviour was proven in the frozen lab but is **not yet re-proven in this app**;
-  that regression coverage arrives in increment I7. Until then, this app makes no offline
-  claim the lab has not re-established here.
+- Offline reads and writes are exercised by the browser suite, which drives the app offline and
+  back. The app claims only what those tests show.
