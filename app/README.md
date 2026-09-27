@@ -122,3 +122,12 @@ cached data. Firestore data itself is not precached; it comes from the persisten
 task, it reloads the page with the network off and asserts both halves separately — the app chrome
 (`Personal Planner`, the `Main` navigation and the signed-in identity) from the worker's precache,
 and the created task's title from the persistent cache.
+
+## Installable
+
+`vite-plugin-pwa` also emits a web app manifest, so the published app installs to a device home
+screen and opens standalone (`display: standalone`, `start_url: /`). Its colours are the app's own
+tokens: `--bg` is the `background_color` and `--accent` the `theme_color`. Three icons ship from
+`public/` to the site root — 192 px and 512 px, plus a 512 px maskable variant whose mark stays
+inside the platform safe zone. The service worker precache is unchanged; installing the app needs
+no network beyond the initial load.
