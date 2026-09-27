@@ -2,7 +2,7 @@
 
 <!-- impeccable:product-schema 1 -->
 
-Planning only: this document records product requirements and proposals; it does not authorize application implementation.
+Status: implementation is authorized. `experiments/offline-planner/` is a bounded feasibility experiment that de-risks the offline planning hypotheses; it is not the product itself.
 
 ## Platform
 
@@ -10,7 +10,7 @@ web
 
 ## Stack
 
-Research and recommendation delegated; final stack and hosting selection pending user approval. Compare fully local development against a private cloud-backed test environment before choosing.
+The open question was which backend option suits the first demo and local development without spending money. That free-local path is resolved: local development and testing use the Firebase Emulator Suite against a `demo-*` project, which creates no cloud resources and requires no billing. Production backend and hosting remain open, and a paid managed sync service is not the free-first path.
 
 ## Users
 
@@ -98,6 +98,7 @@ The following are recommended exclusions, not separately user-confirmed decision
 
 ## Evidence on Hand
 
+- **UI target:** The `references/*.mp4` recordings are the intended UI target — the visual direction to reproduce — not generic evidence.
 - **Observed reference:** `references/brave_9aG7UlfC4Y.mp4` shows Home summary/cards and promotional perspective.
 - **Observed reference:** `references/brave_agommCZfLm.mp4` shows a Calendar time grid plus task list.
 - **Observed reference:** `references/brave_L1xfTRXpX0.mp4` shows a Tasks grouped list and right details panel.
