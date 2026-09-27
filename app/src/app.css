@@ -63,10 +63,13 @@
   --space-10: 40px;
   --space-12: 48px;
 
-  /* type ramp (four steps) */
+  /* type ramp (five steps) — --text-lg is the numeral step the reference
+     ramp records (odd/design/reference-design-language.md: 19px), used for
+     stat-card values so they stay prominent but calm */
   --text-xs: 11px;
   --text-sm: 12.5px;
   --text-md: 14.5px;
+  --text-lg: 19px;
   --text-page: 30px;
 
   /* component heights */
@@ -204,12 +207,32 @@ body {
   padding: var(--space-8) var(--space-6);
 }
 
+/* D1: on Home the content column is inset — centred inside the shell so it
+   has breathing room on both sides instead of a void on the right. Tasks and
+   Calendar keep their existing flush-left column, so this loop stays scoped
+   to Home. */
+.surface-inset {
+  margin-inline: auto;
+}
+
 /* the large light page title the reference shows in the main area */
 .surface h2 {
   margin: 0 0 var(--space-6);
   font-size: var(--text-page);
   font-weight: 300;
   letter-spacing: -0.01em;
+}
+
+/* D3: a hairline rule under the title row is what makes the cards below read
+   as a section of the page rather than a strip floating in the middle. */
+.page-head {
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--divider);
+}
+
+.page-head h2 {
+  margin: 0;
 }
 
 /* ---------- controls ---------- */
@@ -285,14 +308,29 @@ select {
 
 /* ---------- home ---------- */
 
+/* D3: one card material for the whole Home surface. The stat cards, the
+   Today card and the week card share the same surface, hairline ring, radius
+   and padding rhythm, so the page reads as one family rather than a strip of
+   tight boxes above one loose panel. */
+.stat-card,
+.card {
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+
 /* A row of stat cards, each a real fact the store holds (no invented deltas).
-   The row is omitted entirely when every fact is zero. */
+   The row is omitted entirely when every fact is zero. A grid makes every card
+   exactly as wide as its neighbours and lets the row span the content column
+   as one band. */
 .stat-cards {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
   gap: var(--space-3);
   list-style: none;
-  margin: var(--space-4) 0 0;
+  margin: var(--space-5) 0 0;
   padding: 0;
 }
 
@@ -300,13 +338,6 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  box-sizing: border-box;
-  flex: 1 1 8rem;
-  min-width: 8rem;
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
 }
 
 .stat-card-label {
@@ -317,7 +348,7 @@ select {
 }
 
 .stat-card-value {
-  font-size: var(--text-page);
+  font-size: var(--text-lg);
   font-weight: 600;
   line-height: 1.1;
   color: var(--text);
@@ -325,6 +356,88 @@ select {
 
 .stat-card-note {
   font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+/* D3: one honest "Today" section and one week digest under the cards. Tasks
+   due today and work blocks starting today are real store state resolved in
+   the profile timezone; when a side is empty it says so instead of vanishing. */
+.home-empty {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--text-3);
+}
+
+.home-section {
+  margin-top: var(--space-8);
+}
+
+/* D2: one shared heading treatment for every Home section, so Today and the
+   week digest read as siblings. */
+.section-heading {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* A section card is a plain list of rows — no inner columns or rules, which
+   would make it read like a form instead of a list. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.card-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card-group-heading {
+  margin: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.card-row-time {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.card-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-empty {
+  margin: 0;
+  font-size: var(--text-md);
   color: var(--text-3);
 }
 
@@ -774,6 +887,12 @@ select {
 
   .surface {
     padding: var(--space-6) var(--space-4);
+  }
+
+  /* the inset/centred column is a desktop treatment; on a narrow viewport
+     the surface takes the full width again */
+  .surface-inset {
+    margin-inline: 0;
   }
 
   /* the details panel becomes a full overlay on narrow viewports */
