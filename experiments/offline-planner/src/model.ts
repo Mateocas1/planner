@@ -73,6 +73,9 @@ export function expandOccurrences(recurrence: Recurrence, from: string, to: stri
   const lower = Date.parse(`${from}T00:00:00.000Z`);
   const upper = Date.parse(`${to}T00:00:00.000Z`);
   if ((upper - lower) / day + 1 > MAX_OCCURRENCE_WINDOW_DAYS) throw new Error("expansion window exceeds prototype limit");
+  if (recurrence.frequency !== "daily" && recurrence.frequency !== "weekly") {
+    throw new Error(`expected a daily or weekly recurrence frequency, got ${JSON.stringify(recurrence.frequency)}`);
+  }
   const step = recurrence.frequency === "daily" ? 1 : 7;
   const offset = Math.max(0, Math.ceil((lower - anchor) / (step * day))) * step * day;
   const result: Occurrence[] = [];
