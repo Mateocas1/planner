@@ -1,8 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Only the owner of a subtree may touch it, and only these accounts may
+    // use the app at all. The allowlist is by uid rather than email: a uid is
+    // immutable and cannot be claimed by someone who registers the address
+    // first, which an email-based rule could not prevent.
+    //
+    // The second uid belongs to the offline smoke test. Without it that test
+    // is denied and the only end-to-end proof that the published app works
+    // offline stops running. It can only reach its own subtree, so it can
+    // never read or write the owner's data.
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.uid in [
+          "su4ORriDm0ObgIHyXVytVnqs5qC2",  // castiglionemateo1@gmail.com
+          "X0tUhIM1T0YEg2EfNFaHQvIBUfM2"   // offline-smoke@example.com (smoke test)
+        ];
     }
   }
 }
