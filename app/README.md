@@ -27,14 +27,28 @@ in one place — surfaces, borders, a four-step type ramp, semantic and status c
 4 pt spacing scale, elevation via the ring-as-border trick, component heights — ported from
 `odd/design/reference-design-language.md`. Every colour, radius, space and type size in the file
 comes from a token. The shell is a left sidebar (application name, icon navigation with a raised
-pill on the active item, identity and sign-out) that becomes a top bar under 720 px. Motion is
-deliberately absent: curves, durations and the reduced-motion block land in the next unit, measured
-by its evidence harness.
+pill on the active item, identity and sign-out) that becomes a top bar under 720 px.
 
 The typeface is **Geist Sans**, self-hosted via `@fontsource-variable/geist` (variable weight,
 latin subset, ~29 KB woff2 shipped as a build asset) with `font-display: swap` and a system
 fallback stack. Self-hosting is deliberate: the product must work offline, and a font CDN would
 break that promise.
+
+## Motion (DP1b)
+
+`src/app.css` also carries the motion system from `odd/design/motion-system.md`: the canonical curves
+(`--ease-out`, `--ease-in-out`, `--ease-drawer`, `--spring`, with `--ease` defaulting to the strong
+ease-out) and intent-named durations (`--dur-press` 120 ms, `--dur-hover` 140 ms, `--dur-enter`
+200 ms, `--dur-panel` 280 ms, `--dur-signature` 400 ms). View switches fade-and-rise (4 px) on every
+navigation — the keyed view surface remounts, so the animation replays. Hover and press are gated to
+cursor devices (`hover: hover` and `pointer: fine`). `prefers-reduced-motion` and the in-app
+`data-motion="reduce"` attribute both degrade transform motion to an opacity-only ~120 ms fade —
+gentler, not zero. Only `transform` and `opacity` animate; `transition: all` is forbidden.
+
+The motion is asserted by number, not by feel: `tests/motion.ts` samples computed styles per
+animation frame inside the page, and the browser tests measure each animated interaction against its
+token within one frame at 60 Hz, fit the easing curve by RMS error against candidate curves, and
+check that nothing outside `transform` and `opacity` changed.
 
 ## Install
 

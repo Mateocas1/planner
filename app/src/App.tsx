@@ -42,10 +42,13 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         }}
       />
       <main className="surface">
-        {view === "home" && <Home loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
-        {view === "tasks" && <Tasks loading={loading} tasks={tasks} uid={user.uid} />}
+        {/* the view-tied key remounts the surface on every switch, so the
+            view-enter / view-fade animation replays (motion, DP1b) */}
+        {view === "home" && <Home key={view} loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
+        {view === "tasks" && <Tasks key={view} loading={loading} tasks={tasks} uid={user.uid} />}
         {view === "calendar" && (
           <Calendar
+            key={view}
             uid={user.uid}
             loading={loading}
             blocks={blocks}

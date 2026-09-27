@@ -1,9 +1,9 @@
-/* Design foundation (DP1). Tokens are ported from
+/* Design foundation (DP1 + DP1b). Tokens are ported from
    odd/design/reference-design-language.md — the values read from the source
    stylesheet. Every colour, radius, space and type size in this file comes
-   from a token defined in :root. No motion lives here: curves, durations and
-   the reduced-motion block land with the motion unit, measured by the
-   evidence harness. */
+   from a token defined in :root. Motion (DP1b) lives at the bottom: curves,
+   durations, the reduced-motion pair and the hover/press pointer gate,
+   measured by the evidence harness in tests/motion.ts. */
 
 :root {
   /* surfaces */
@@ -160,11 +160,6 @@ body {
   cursor: pointer;
 }
 
-.nav-item:hover {
-  background: var(--surface-3);
-  color: var(--text);
-}
-
 /* the active item is a raised white pill */
 .nav-item.active {
   background: var(--surface);
@@ -175,6 +170,9 @@ body {
 .nav-item svg {
   flex: 0 0 auto;
 }
+
+/* the nav hover colour swap is cursor-device motion; it lives in the
+   pointer gate below with the press and the button hover */
 
 .side-foot {
   display: flex;
@@ -227,14 +225,13 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-  background: var(--surface-2);
-}
-
 button:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+/* the hover colour swap is cursor-device motion; it lives in the pointer
+   gate below (see motion) */
 
 input,
 select {
@@ -532,5 +529,99 @@ select {
 
   .surface {
     padding: var(--space-6) var(--space-4);
+  }
+}
+
+/* ---------- motion (DP1b) ----------
+   Curves and durations from odd/design/motion-system.md. Transform and
+   opacity only, named properties only, never `transition: all`. Hover and
+   press are gated to cursor devices, which the source omits. Reduced motion
+   (the OS preference, or the in-app [data-motion="reduce"] attribute) keeps
+   feedback but gentler: opacity-only, ~120 ms — not zero. Every duration
+   here is asserted numerically by tests/motion.ts. */
+
+:root {
+  /* curves — canonical, from the animate skill's table */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: var(--ease-out);
+
+  /* durations — named by intent, not by size */
+  --dur-press: 120ms;
+  --dur-hover: 140ms;
+  --dur-enter: 200ms;
+  --dur-panel: 280ms;
+  --dur-signature: 400ms;
+  --dur-reduce: 120ms;
+
+  /* the two reduce triggers swap these assignments, so the rules below are
+     written once and stay correct in both modes */
+  --motion-view: view-enter var(--dur-hover) var(--ease-out);
+  --motion-press: transform var(--dur-press) var(--ease-out);
+  --press-transform: scale(0.98);
+  --motion-hover: background-color var(--dur-hover) ease, border-color var(--dur-hover) ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-view: view-fade var(--dur-reduce) ease-out;
+    --motion-press: opacity var(--dur-reduce) ease-out;
+    --press-transform: none;
+  }
+
+  button:not(:disabled):active {
+    opacity: 0.6;
+  }
+}
+
+/* the in-app setting mirrors the OS preference (no UI exposes it yet) */
+:root[data-motion="reduce"] {
+  --motion-view: view-fade var(--dur-reduce) ease-out;
+  --motion-press: opacity var(--dur-reduce) ease-out;
+  --press-transform: none;
+}
+
+:root[data-motion="reduce"] button:not(:disabled):active {
+  opacity: 0.6;
+}
+
+/* view switch: opacity plus a 4 px rise. App.tsx ties the React key of the
+   view surface to the view, so every switch remounts and replays this. */
+.surface > section {
+  animation: var(--motion-view);
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* hover and press exist only where a cursor can produce them */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled) {
+    transition: var(--motion-press), var(--motion-hover);
+  }
+
+  button:not(:disabled):active {
+    transform: var(--press-transform);
+  }
+
+  .nav-item:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+
+  button:hover:not(:disabled) {
+    background: var(--surface-2);
   }
 }
