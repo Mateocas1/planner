@@ -4,59 +4,138 @@ import type { TaskView } from "../data/store.ts";
 import type { WorkBlock } from "../domain/model.ts";
 
 /**
- * The Calendar surface: a week time grid rendered in the browser's local
- * timezone (the profile timezone is increment I6), with block creation,
- * per-block delete and visible error reporting. Input is validated by the
- * domain module (via the data helpers), so rejected input never reaches
- * Firestore. No offline claim: writes go to Firestore and the store reflects
- * what it reports.
+ * The Calendar surface: a week time grid rendered in the stored profile
+ * timezone (D3), with block creation, per-block delete and visible error
+ * reporting. Every wall-clock part (day keys, columns, highlights, hour
+ * ruler alignment, block positions and HH:MM labels) is derived from the
+ * profile zone through Intl.DateTimeFormat — never from the browser's
+ * getHours/getTimezoneOffset. Input is validated by the domain module (via
+ * the data helpers), so rejected input never reaches Firestore. No offline
+ * claim: writes go to Firestore and the store reflects what it reports.
  */
 
 const minutesPerDay = 1440;
+const dayMs = 86_400_000;
 const hourHeight = 40; // px per hour; kept in sync with .calendar-hour in app.css
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-/** Local date key (YYYY-MM-DD) in the browser's timezone. */
-function dateKey(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+type WallParts = { year: number; month: number; day: number; hour: number; minute: number };
+
+const wallFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Wall-clock parts of an instant in a named IANA zone. */
+function wallParts(date: Date, timeZone: string): WallParts {
+  let formatter = wallFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    wallFormatters.set(timeZone, formatter);
+  }
+  const parts = Object.fromEntries(formatter.formatToParts(date).map(part => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+  };
 }
 
-function mondayOf(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7));
+/** Date key (YYYY-MM-DD) of an instant in the given zone. */
+function dateKey(date: Date, timeZone: string): string {
+  const parts = wallParts(date, timeZone);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
 }
 
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+/** Date key of a wall-UTC day value (the zone's own calendar day it
+ * represents); reading it back through the zone would shift it by the
+ * offset, so day columns key off the wall date directly. */
+function wallDayKey(wallUtc: number): string {
+  const date = new Date(wallUtc);
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 }
 
-/** Converts a datetime-local value into a zoned ISO instant at the browser's offset. */
-function toZonedInstant(value: string): string {
-  const offset = -new Date(value).getTimezoneOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const abs = Math.abs(offset);
-  return `${value}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+/** Epoch ms of an instant's wall clock in the zone, read as if UTC. Day
+ * arithmetic on these values yields the zone's own calendar days. */
+function wallAsUtc(date: Date, timeZone: string): number {
+  const parts = wallParts(date, timeZone);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
 }
 
-function timeLabel(date: Date): string {
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+/** Minutes since the zone's midnight for an instant. */
+function wallMinutes(date: Date, timeZone: string): number {
+  const parts = wallParts(date, timeZone);
+  return parts.hour * 60 + parts.minute;
 }
 
-const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+/** Wall-clock HH:MM of an instant in the given zone. */
+function timeLabel(date: Date, timeZone: string): string {
+  const parts = wallParts(date, timeZone);
+  return `${pad(parts.hour)}:${pad(parts.minute)}`;
+}
 
-export function Calendar({ uid, blocks, tasks, loading }: { uid: string; blocks: WorkBlock[]; tasks: TaskView[]; loading: boolean }) {
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+/** Monday of the zone's week containing a wall-UTC day value. */
+function mondayOf(wallUtc: number): number {
+  return wallUtc - ((new Date(wallUtc).getUTCDay() + 6) % 7) * dayMs;
+}
+
+/** The zone's offset at an instant, formatted +HH:MM / -HH:MM. Derived from
+ * Intl, never from getTimezoneOffset(), which would be the browser's zone. */
+function zoneOffset(stamp: number, timeZone: string): string {
+  const minutes = Math.round((stamp - wallAsUtc(new Date(stamp), timeZone)) / 60_000);
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
+/** Converts a datetime-local value into a zoned ISO instant interpreted in
+ * the given zone. Two correction passes land the instant whose wall clock in
+ * the zone equals the input, which also handles DST-transition walls. */
+function toZonedInstant(value: string, timeZone: string): string {
+  const guess = Date.parse(`${value}:00Z`);
+  let stamp = guess;
+  for (let pass = 0; pass < 2; pass += 1) {
+    stamp = guess - (guess - wallAsUtc(new Date(stamp), timeZone));
+  }
+  return `${value}:00${zoneOffset(stamp, timeZone)}`;
+}
+
+export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }: { uid: string; blocks: WorkBlock[]; tasks: TaskView[]; loading: boolean; timeZone: string | null; profileError: string | null }) {
+  if (timeZone === null) {
+    return (
+      <section aria-labelledby="calendar-heading">
+        <h2 id="calendar-heading">Calendar</h2>
+        {profileError ? <p role="alert">{profileError}</p> : <p role="status">Loading your planner timezone…</p>}
+      </section>
+    );
+  }
+  return <CalendarGrid uid={uid} blocks={blocks} tasks={tasks} loading={loading} timeZone={timeZone} />;
+}
+
+function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: WorkBlock[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
+  const [weekStart, setWeekStart] = useState<number | null>(null);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [taskId, setTaskId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const visibleKeys = useMemo(() => new Set(days.map(dateKey)), [days]);
-  const weekBlocks = blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start))));
+  // Week navigation works on the profile zone's own calendar days, represented
+  // as UTC midnights of wall dates; "today" is the zone's today.
+  const weekStartWall = weekStart ?? mondayOf(wallAsUtc(new Date(), timeZone));
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
+  const visibleKeys = useMemo(() => new Set(days.map(day => wallDayKey(day))), [days]);
+  const weekBlocks = blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone)));
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -73,23 +152,24 @@ export function Calendar({ uid, blocks, tasks, loading }: { uid: string; blocks:
   const onAdd = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await addBlock(uid, toZonedInstant(start), toZonedInstant(end), taskId === "" ? undefined : taskId);
+      await addBlock(uid, toZonedInstant(start, timeZone), toZonedInstant(end, timeZone), taskId === "" ? undefined : taskId);
       setStart("");
       setEnd("");
       setTaskId("");
     });
   };
 
-  const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const utc = { timeZone: "UTC" } as const;
+  const weekLabel = `${new Date(weekStartWall).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric" })} – ${new Date(weekStartWall + 6 * dayMs).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric", year: "numeric" })}`;
 
   return (
     <section aria-labelledby="calendar-heading">
       <h2 id="calendar-heading">Calendar</h2>
-      <p className="calendar-tz">Times are shown in your local timezone ({timeZone}).</p>
+      <p className="calendar-tz">Times are shown in the planner timezone ({timeZone}).</p>
       <div className="calendar-toolbar">
-        <button type="button" onClick={() => setWeekStart(previous => addDays(previous, -7))}>Previous week</button>
-        <button type="button" onClick={() => setWeekStart(mondayOf(new Date()))}>Today</button>
-        <button type="button" onClick={() => setWeekStart(previous => addDays(previous, 7))}>Next week</button>
+        <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
+        <button type="button" onClick={() => setWeekStart(mondayOf(wallAsUtc(new Date(), timeZone)))}>Today</button>
+        <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
         <span className="calendar-week-label">{weekLabel}</span>
       </div>
       <form className="block-form" onSubmit={onAdd}>
@@ -116,19 +196,20 @@ export function Calendar({ uid, blocks, tasks, loading }: { uid: string; blocks:
           ))}
         </div>
         {days.map(day => {
-          const key = dateKey(day);
+          const key = wallDayKey(day);
           return (
             <div key={key} className="calendar-day" data-date={key}>
               <div className="calendar-day-head">
-                {day.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                {new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short", month: "short", day: "numeric" })}
               </div>
               <div className="calendar-day-body" style={{ height: hourHeight * 24 }}>
-                {blocks.filter(block => dateKey(new Date(block.start)) === key).map(block => {
+                {blocks.filter(block => dateKey(new Date(block.start), timeZone) === key).map(block => {
                   const startDate = new Date(block.start);
                   const endDate = new Date(block.end);
-                  const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-                  const nextMidnight = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 1);
-                  const endMinutes = endDate >= nextMidnight ? minutesPerDay : endDate.getHours() * 60 + endDate.getMinutes();
+                  const startMinutes = wallMinutes(startDate, timeZone);
+                  // A block ending on a later profile-zone day is clipped at
+                  // the column's midnight (the D3-known limitation).
+                  const endMinutes = dateKey(endDate, timeZone) > key ? minutesPerDay : wallMinutes(endDate, timeZone);
                   const task = tasks.find(candidate => candidate.id === block.taskId);
                   return (
                     <div
@@ -141,12 +222,12 @@ export function Calendar({ uid, blocks, tasks, loading }: { uid: string; blocks:
                         height: `${((endMinutes - startMinutes) / minutesPerDay) * 100}%`,
                       }}
                     >
-                      <span className="block-time">{timeLabel(startDate)}–{timeLabel(endDate)}</span>
+                      <span className="block-time">{timeLabel(startDate, timeZone)}–{timeLabel(endDate, timeZone)}</span>
                       {task && <span className="block-task">{task.title}</span>}
                       <button
                         type="button"
                         disabled={busy}
-                        aria-label={`Delete block ${key} ${timeLabel(startDate)}`}
+                        aria-label={`Delete block ${key} ${timeLabel(startDate, timeZone)}`}
                         onClick={() => void run(() => deleteBlock(uid, block.id))}
                       >
                         Delete

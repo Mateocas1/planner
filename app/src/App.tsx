@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
+import { useProfileTimeZone } from "./data/profile.ts";
 import { useStore } from "./data/store.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
@@ -27,6 +28,7 @@ export default function App() {
 
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
   const { loading, tasks, blocks } = useStore(user.uid);
+  const profile = useProfileTimeZone(user.uid);
 
   return (
     <div className="shell">
@@ -42,7 +44,16 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       <main className="surface">
         {view === "home" && <Home loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
         {view === "tasks" && <Tasks loading={loading} tasks={tasks} uid={user.uid} />}
-        {view === "calendar" && <Calendar uid={user.uid} loading={loading} blocks={blocks} tasks={tasks} />}
+        {view === "calendar" && (
+          <Calendar
+            uid={user.uid}
+            loading={loading}
+            blocks={blocks}
+            tasks={tasks}
+            timeZone={profile.timeZone}
+            profileError={profile.error}
+          />
+        )}
       </main>
     </div>
   );

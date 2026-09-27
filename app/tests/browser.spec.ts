@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password, readRemoteBlocks, readRemoteState, readRemoteTasks, seedTaskAndBlock } from "./browser-helpers.ts";
+import { password, readRemoteBlocks, readRemoteProfile, readRemoteState, readRemoteTasks, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -13,6 +13,16 @@ async function signUp(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+}
+
+/** Signs an existing (remotely seeded) account in through the browser form. */
+async function signInAs(page: Page, email: string) {
+  await page.goto("/");
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
 }
 
@@ -45,7 +55,7 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
   await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
   await nav.getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
-  await expect(page.getByText("local timezone")).toBeVisible();
+  await expect(page.getByText("planner timezone")).toBeVisible();
 
   await page.reload();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
@@ -275,4 +285,117 @@ test("week navigation changes the visible week", async ({ page }) => {
   await page.getByRole("button", { name: "Today" }).click();
   await expect(page.locator(`[data-date="${key}"]`)).toHaveCount(0);
   await expect(page.getByText("No work blocks this week.")).toBeVisible();
+});
+
+/** Wall-clock date and HH:MM parts of an instant in a named IANA zone (Node side). */
+function wallClockIn(date: Date, timeZone: string): { date: string; time: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find(part => part.type === type)!.value);
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const hour = get("hour") % 24;
+  const minute = get("minute");
+  return { date: `${year}-${pad(month)}-${pad(day)}`, time: `${pad(hour)}:${pad(minute)}` };
+}
+
+test.describe("profile timezone (I6b)", () => {
+  // The decisive precondition: the browser zone differs from the profile zone,
+  // so any browser-local rendering fails these tests.
+  test.use({ timezoneId: "Asia/Tokyo" });
+
+  test("the grid renders a block in the profile timezone, not the browser timezone", async ({ page }) => {
+    const email = newEmail("tz-profile");
+    const profileZone = "America/Sao_Paulo";
+    expect("Asia/Tokyo").not.toEqual(profileZone);
+
+    // 23:30-03:00 is 11:30 the *next* day in Asia/Tokyo, so the two zones
+    // disagree on both the day column and the wall time.
+    const day = wallClockIn(new Date(), profileZone).date;
+    const start = `${day}T23:30:00-03:00`;
+    const end = `${day}T23:45:00-03:00`;
+    await seedProfileAndBlock(email, profileZone, start, end);
+
+    await signInAs(page, email);
+    await openCalendar(page);
+
+    await expect(page.getByText(`Times are shown in the planner timezone (${profileZone}).`)).toBeVisible();
+    const block = page.locator(`[data-date="${day}"] .calendar-block`);
+    await expect(block).toHaveCount(1);
+    await expect(block).toContainText(wallClockIn(new Date(start), profileZone).time);
+    await expect(block).toHaveAttribute("data-start", start);
+    // the browser zone would place this instant on a different day column
+    const browserDay = wallClockIn(new Date(start), "Asia/Tokyo").date;
+    expect(browserDay).not.toEqual(day);
+    await expect(page.locator(`[data-date="${browserDay}"] .calendar-block`)).toHaveCount(0);
+  });
+
+  test("changing the stored profile zone changes the rendered wall time of the same instant", async ({ page }) => {
+    const email = newEmail("tz-change");
+    const firstZone = "America/Sao_Paulo";
+    const day = wallClockIn(new Date(), firstZone).date;
+    const start = `${day}T10:00:00-03:00`;
+    const end = `${day}T10:45:00-03:00`;
+    await seedProfileAndBlock(email, firstZone, start, end);
+
+    await signInAs(page, email);
+    await openCalendar(page);
+
+    const block = page.locator(`[data-date="${day}"] .calendar-block`);
+    await expect(block).toHaveCount(1);
+    await expect(block).toContainText(wallClockIn(new Date(start), firstZone).time);
+    await expect(block).toHaveAttribute("data-start", start);
+
+    const nextZone = "Europe/Madrid";
+    await updateRemoteProfile(email, nextZone);
+
+    // Same stored instant, same day column, but the wall label follows the
+    // newly stored zone, without any browser reload.
+    await expect(block).toContainText(wallClockIn(new Date(start), nextZone).time);
+    await expect(block).toHaveAttribute("data-start", start);
+    await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+  });
+});
+
+test("a clean account creates the profile on first use and renders the planner in it", async ({ page }) => {
+  const email = newEmail("tz-init");
+  await signUp(page, email);
+
+  // The profile document must appear on the server, holding a valid IANA zone.
+  let profile: { timeZone?: string } = {};
+  await expect
+    .poll(async () => {
+      profile = await readRemoteProfile(email);
+      return profile.timeZone ?? "";
+    }, { timeout: 15_000, intervals: [250, 500, 1_000] })
+    .not.toBe("");
+  const zone = profile.timeZone!;
+  // The same validity rule the profile layer enforces: Intl must be able to
+  // format with the zone. (The host zone can legitimately be "UTC", which
+  // Intl.supportedValuesOf does not list.)
+  expect(() => new Intl.DateTimeFormat("en-US", { timeZone: zone })).not.toThrow();
+
+  await openCalendar(page);
+  await expect(page.getByText(`Times are shown in the planner timezone (${zone}).`)).toBeVisible();
+
+  // A form-created block renders in the profile (= browser) zone.
+  const day = wallClockIn(new Date(), zone).date;
+  await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
+  await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  const block = page.locator(`[data-date="${day}"] .calendar-block`);
+  await expect(block).toHaveCount(1);
+  await expect(block).toContainText("09:30");
+  const stored = await expectSingleRemoteBlock(email);
+  expect(new Date(stored.start).getTime()).toBe(new Date(`${day}T09:30:00`).getTime());
 });
