@@ -41,8 +41,8 @@ test("a completion is an independent record for only one occurrence", () => {
   assert.throws(() => createOccurrenceCompletion("bad-id", "2026-02-01T12:00:00Z"));
 });
 
-test("expansion rejects a recurrence frequency that is not daily or weekly", () => {
-  const invalid = { seriesId: "x", frequency: "monthly", anchorDate: "2026-02-01" } as unknown as Recurrence;
+test("expansion rejects a recurrence frequency that is not daily, weekly or monthly", () => {
+  const invalid = { seriesId: "x", frequency: "yearly", anchorDate: "2026-02-01" } as unknown as Recurrence;
   assert.throws(() => expandOccurrences(invalid, "2026-02-01", "2026-02-08"), /frequency/);
 });
 
@@ -56,4 +56,33 @@ test("weekly expansion aligns to its anchor, not the lower bound", () => {
   assert.throws(() => expandOccurrences({ seriesId: "w", frequency: "weekly", anchorDate: "2026-02-01" }, "2026-02-02", "2026-02-01"));
   assert.equal(expandOccurrences({ seriesId: "d", frequency: "daily", anchorDate: "2026-01-01" }, "2026-01-01", "2027-01-01").length, 366);
   assert.throws(() => expandOccurrences({ seriesId: "d", frequency: "daily", anchorDate: "2026-01-01" }, "2026-01-01", "2027-01-02"));
+});
+
+test("monthly expansion keeps the anchor day and skips months that lack it", () => {
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-15" }, "2026-01-01", "2026-06-30").map(({ date }) => date), [
+    "2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15", "2026-06-15"
+  ]);
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-31" }, "2026-01-01", "2026-12-31").map(({ date }) => date), [
+    "2026-01-31", "2026-03-31", "2026-05-31", "2026-07-31", "2026-08-31", "2026-10-31", "2026-12-31"
+  ]);
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2024-02-29" }, "2024-02-01", "2024-12-31").map(({ date }) => date), [
+    "2024-02-29", "2024-03-29", "2024-04-29", "2024-05-29", "2024-06-29", "2024-07-29", "2024-08-29", "2024-09-29", "2024-10-29", "2024-11-29", "2024-12-29"
+  ]);
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2024-02-29" }, "2026-01-01", "2026-12-31").map(({ date }) => date), [
+    "2026-01-29", "2026-03-29", "2026-04-29", "2026-05-29", "2026-06-29", "2026-07-29", "2026-08-29", "2026-09-29", "2026-10-29", "2026-11-29", "2026-12-29"
+  ]);
+  assert.equal(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2024-02-29" }, "2025-02-01", "2025-02-28").length, 0);
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2024-02-29" }, "2028-01-01", "2028-12-31").map(({ date }) => date)[1], "2028-02-29");
+});
+
+test("monthly expansion respects the anchor, the range bounds and the window limit", () => {
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-03-31" }, "2026-04-01", "2026-09-30").map(({ date }) => date), [
+    "2026-05-31", "2026-07-31", "2026-08-31"
+  ]);
+  assert.deepEqual(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-06-15" }, "2026-01-01", "2026-12-31").map(({ date }) => date), [
+    "2026-06-15", "2026-07-15", "2026-08-15", "2026-09-15", "2026-10-15", "2026-11-15", "2026-12-15"
+  ]);
+  assert.equal(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-31" }, "2026-01-01", "2027-01-01").length, 7);
+  assert.throws(() => expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-01" }, "2026-01-01", "2027-01-02"), /window/);
+  assert.throws(() => expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-01" }, "2026-02-01", "2026-01-01"));
 });
