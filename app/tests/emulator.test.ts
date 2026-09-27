@@ -3,26 +3,26 @@ import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc, terminate, type Firestore } from "firebase/firestore";
-import { createOccurrenceCompletion, occurrenceId } from "../src/model.ts";
+import { createOccurrenceCompletion, occurrenceId } from "../src/domain/model.ts";
 
-const authHost = "127.0.0.1:9099";
-const firestoreHost = "127.0.0.1:8087";
+const authHost = "127.0.0.1:9199";
+const firestoreHost = "127.0.0.1:8187";
 
 function requireEmulators(): void {
   if (process.env.FIREBASE_AUTH_EMULATOR_HOST !== authHost ||
       process.env.FIRESTORE_EMULATOR_HOST !== firestoreHost ||
-      process.env.GCLOUD_PROJECT !== "demo-calendar-offline") {
-    throw new Error("test:emulator requires the demo-calendar-offline Auth and Firestore emulators");
+      process.env.GCLOUD_PROJECT !== "demo-calendar-app") {
+    throw new Error("test:emulator requires the demo-calendar-app Auth and Firestore emulators");
   }
 }
 
 function client(name: string): { app: FirebaseApp; db: Firestore; auth: ReturnType<typeof getAuth> } {
   requireEmulators();
-  const app = initializeApp({ projectId: "demo-calendar-offline", apiKey: "local-only" }, name);
+  const app = initializeApp({ projectId: "demo-calendar-app", apiKey: "local-only" }, name);
   const auth = getAuth(app);
   connectAuthEmulator(auth, `http://${authHost}`, { disableWarnings: true });
   const db = getFirestore(app);
-  connectFirestoreEmulator(db, "127.0.0.1", 8087);
+  connectFirestoreEmulator(db, "127.0.0.1", 8187);
   return { app, db, auth };
 }
 

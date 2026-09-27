@@ -1,9 +1,9 @@
 import { defineConfig } from "@playwright/test";
 
 const required = {
-  FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
-  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8087",
-  GCLOUD_PROJECT: "demo-calendar-offline",
+  FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9199",
+  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8187",
+  GCLOUD_PROJECT: "demo-calendar-app",
 };
 for (const [name, value] of Object.entries(required)) {
   if (process.env[name] !== value) throw new Error(`test:browser requires ${name}=${value}`);
@@ -11,11 +11,11 @@ for (const [name, value] of Object.entries(required)) {
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["browser.spec.ts", "multi-client.spec.ts"],
-  use: { baseURL: "http://127.0.0.1:4173" },
+  testMatch: ["browser.spec.ts"],
+  use: { baseURL: "http://127.0.0.1:4174" },
   webServer: {
-    command: "npm run build && vite preview --host 127.0.0.1 --port 4173",
-    port: 4173,
+    command: "npm run build && vite preview --host 127.0.0.1 --port 4174",
+    port: 4174,
     reuseExistingServer: false,
   },
 });

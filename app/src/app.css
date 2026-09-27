@@ -1,0 +1,923 @@
+/* Design foundation (DP1 + DP1b). Tokens are ported from
+   odd/design/reference-design-language.md — the values read from the source
+   stylesheet. Every colour, radius, space and type size in this file comes
+   from a token defined in :root. Motion (DP1b) lives at the bottom: curves,
+   durations, the reduced-motion pair and the hover/press pointer gate. */
+
+:root {
+  /* surfaces */
+  --bg: #FBFAF8;
+  --bg-sidebar: #F4F3F0;
+  --surface: #FFFFFF;
+  --surface-2: #F6F5F2;
+  --surface-3: #EEEDE9;
+
+  /* borders */
+  --border: #E9E7E2;
+  --border-strong: #DAD7D0;
+  --divider: #F0EEEA;
+
+  /* text ramp */
+  --text: #1D1C1A;
+  --text-2: #57544E;
+  --text-3: #6B6760;
+  --text-4: #8C8880;
+
+  /* accent + semantic colours */
+  --accent: #4B5BD6;
+  --green: #25754B;
+  --amber: #8F5E0E;
+  --red: #B23C30;
+  --blue: #3570C4;
+  --violet: #7652C2;
+  --teal: #1E8580;
+  --rose: #BC4270;
+  --orange: #C0612B;
+
+  /* status colours */
+  --status-backlog: #A29E96;
+  --status-todo: #7C7870;
+  --status-progress: #C88A14;
+  --status-review: #7652C2;
+  --status-done: #2E8456;
+
+  /* elevation — the ring-as-border trick: cards rest on the page, no float */
+  --shadow-card: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
+  --shadow-pill: 0 1px 2px rgba(28, 25, 20, 0.06), 0 0 0 1px var(--border);
+
+  /* radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r: 8px;
+  --r-lg: 10px;
+  --r-full: 999px;
+
+  /* 4 pt spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* type ramp (four steps) */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-md: 14.5px;
+  --text-page: 30px;
+
+  /* component heights */
+  --h-xs: 22px;
+  --h-sm: 26px;
+  --h-md: 30px;
+  --h-lg: 36px;
+
+  /* layout */
+  --sidebar-w: 252px;
+  --content-w: 52rem;
+  --row-h: 40px;
+
+  /* typeface — self-hosted Geist Sans, system fallbacks for offline safety */
+  --font: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Self-hosted Geist Sans (variable weight, latin subset) from
+   @fontsource-variable/geist. Self-hosting keeps the product working
+   offline; a CDN font would break that core promise. */
+@font-face {
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ---------- shell: sidebar + main ---------- */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 0 var(--sidebar-w);
+  box-sizing: border-box;
+  padding: var(--space-5) var(--space-3);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+}
+
+.app-name {
+  font-weight: 600;
+  font-size: var(--text-md);
+}
+
+.side-label {
+  margin: 0;
+  padding: 0 var(--space-4);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: var(--h-md);
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--r-full);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* the active item is a raised white pill */
+.nav-item.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-pill);
+}
+
+.nav-item svg {
+  flex: 0 0 auto;
+}
+
+/* the nav hover colour swap is cursor-device motion; it lives in the
+   pointer gate below with the press and the button hover */
+
+.side-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--divider);
+}
+
+.who {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  /* one line, cut with an ellipsis rather than wrapping to three lines */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signout {
+  align-self: flex-start;
+  height: var(--h-sm);
+}
+
+.surface {
+  flex: 1;
+  box-sizing: border-box;
+  max-width: var(--content-w);
+  padding: var(--space-8) var(--space-6);
+}
+
+/* the large light page title the reference shows in the main area */
+.surface h2 {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-page);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- controls ---------- */
+
+button {
+  height: var(--h-md);
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* the hover colour swap is cursor-device motion; it lives in the pointer
+   gate below (see motion) */
+
+input,
+select {
+  height: var(--h-md);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+/* ---------- auth gate ---------- */
+
+.gate {
+  max-width: 22rem;
+  margin: var(--space-12) auto;
+  padding: 0 var(--space-6);
+}
+
+.gate h1 {
+  font-size: var(--text-page);
+  font-weight: 300;
+}
+
+.gate form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.gate label {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.gate input {
+  padding: 0 var(--space-3);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* ---------- home ---------- */
+
+/* A row of stat cards, each a real fact the store holds (no invented deltas).
+   The row is omitted entirely when every fact is zero. */
+.stat-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.stat-card-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.stat-card-value {
+  font-size: var(--text-page);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.stat-card-note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+/* ---------- tasks ---------- */
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 22rem;
+}
+
+.task-form label {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.task-form button {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+.task-group {
+  margin: 0 0 var(--space-6);
+}
+
+.task-group h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.task-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.task {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-h);
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+
+/* the completion wash: a brief green veil that fades out once the completed
+   state lands. The UI applies the task-wash class only when the user performs
+   the completion, so the animation never plays on mount for rows that were
+   already completed. */
+.task::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.task.completed {
+  background: var(--surface-2);
+}
+
+.task.completed.task-wash::before {
+  animation: var(--motion-wash);
+}
+
+@keyframes task-wash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* the completion mark pops on check with the spring curve; both the mark and
+   the strikethrough draw are transitions on state the UI already controls */
+.task-check {
+  appearance: none;
+  flex: 0 0 auto;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background-color var(--dur-hover) ease, border-color var(--dur-hover) ease;
+}
+
+.task-check::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid var(--surface);
+  border-bottom: 2px solid var(--surface);
+  opacity: 0;
+  transform: rotate(-45deg) translateY(-1px) scale(0.3);
+  transition: var(--motion-pop);
+}
+
+.task-check:checked {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.task-check:checked::after {
+  opacity: 1;
+  transform: rotate(-45deg) translateY(-1px) scale(1);
+}
+
+.task-check:disabled {
+  cursor: default;
+}
+
+.task-open {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  white-space: normal;
+}
+
+.task-title {
+  position: relative;
+  /* shrink-to-fit so the drawn line spans only the text, not the row */
+  display: inline-block;
+  max-width: 100%;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* the strikethrough draws in from the left (transform only); currentColor
+   keeps it in step with the title's completed colour */
+.task-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 62%;
+  width: 100%;
+  height: 1.5px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-signature) var(--ease);
+}
+
+.task.completed .task-title {
+  color: var(--text-4);
+}
+
+.task.completed .task-title::after {
+  transform: scaleX(1);
+}
+
+.task-deadline {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+/* the frequency chip on a repeating row */
+.series-frequency {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  text-transform: capitalize;
+}
+
+/* ---------- task details panel ---------- */
+
+.task-details {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 20rem;
+  padding: var(--space-5);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  animation: var(--motion-panel);
+}
+
+.task-details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.task-details-head h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.task-details input[type="text"],
+.task-details input[type="date"] {
+  width: 100%;
+}
+
+.task-details-completed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.task-details-delete {
+  margin-top: var(--space-4);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 32%, var(--border));
+}
+
+/* series details panel: the definition is read-only (the data layer has no
+   writer for title, frequency or anchor), only occurrences and delete act */
+.series-details-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.series-details-meta {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.series-details-meta div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.series-details-meta dt {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.series-details-meta dd {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.task-details h4 {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.series-occurrences {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.series-occurrences li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[role="alert"] {
+  color: var(--red);
+  margin: var(--space-3) 0;
+}
+
+/* ---------- calendar ---------- */
+
+.calendar-tz {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.calendar-week-label {
+  color: var(--text-3);
+  font-size: var(--text-md);
+  margin-left: auto;
+}
+
+.block-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 22rem;
+  margin-bottom: var(--space-4);
+}
+
+.block-form label {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.block-form button {
+  align-self: flex-start;
+}
+
+.calendar-grid {
+  display: flex;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  overflow-x: auto;
+}
+
+.calendar-ruler {
+  flex: 0 0 3.5rem;
+}
+
+.calendar-ruler-head,
+.calendar-day-head {
+  height: var(--h-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.calendar-hour {
+  font-size: var(--text-xs);
+  line-height: 1;
+  color: var(--text-4);
+  text-align: right;
+  padding-right: var(--space-1);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--divider);
+}
+
+.calendar-day {
+  flex: 1 1 0;
+  min-width: 5rem;
+  border-left: 1px solid var(--border);
+}
+
+/* The profile zone's current day: a quiet tint, no motion. */
+.calendar-day-today {
+  background: var(--surface-2);
+}
+
+.calendar-day-today .calendar-day-head {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calendar-day-body {
+  position: relative;
+}
+
+.calendar-block {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--blue) 32%, var(--border));
+  border-radius: var(--r-sm);
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  overflow: hidden;
+}
+
+/* A block whose write is not yet acknowledged: a static state, faded and
+   outlined. No pulse or looping animation — it must read as unconfirmed, not
+   as activity. */
+.calendar-block-pending {
+  background: var(--surface-2);
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-3);
+}
+
+.block-time {
+  display: block;
+}
+
+.block-task {
+  display: block;
+  font-weight: 500;
+}
+
+.calendar-block button {
+  height: auto;
+  padding: 0 var(--space-1);
+  font-size: var(--text-xs);
+}
+
+/* ---------- narrow viewports: the sidebar becomes a top bar ---------- */
+
+@media (max-width: 720px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    flex-basis: auto;
+    gap: var(--space-2) var(--space-4);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .side-label {
+    display: none;
+  }
+
+  .side-nav {
+    flex-direction: row;
+  }
+
+  .nav-item {
+    width: auto;
+  }
+
+  .side-foot {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0;
+    margin-left: auto;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .surface {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  /* the details panel becomes a full overlay on narrow viewports */
+  .task-details {
+    inset: 0;
+    width: auto;
+    border-left: none;
+  }
+}
+
+/* ---------- motion (DP1b) ----------
+   Curves and durations from odd/design/motion-system.md. Transform and
+   opacity only, named properties only, never `transition: all`. Hover and
+   press are gated to cursor devices, which the source omits. Reduced motion
+   (the OS preference, or the in-app [data-motion="reduce"] attribute) keeps
+   feedback but gentler: opacity-only, ~120 ms — not zero. Durations are
+   validated by eye, not asserted. */
+
+:root {
+  /* curves — canonical, from the animate skill's table */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: var(--ease-out);
+
+  /* durations — named by intent, not by size */
+  --dur-press: 120ms;
+  --dur-hover: 140ms;
+  --dur-enter: 200ms;
+  --dur-panel: 280ms;
+  --dur-signature: 400ms;
+  --dur-reduce: 120ms;
+
+  /* the two reduce triggers swap these assignments, so the rules below are
+     written once and stay correct in both modes */
+  --motion-view: view-enter var(--dur-hover) var(--ease-out);
+  --motion-press: transform var(--dur-press) var(--ease-out);
+  --press-transform: scale(0.98);
+  --motion-hover: background-color var(--dur-hover) ease, border-color var(--dur-hover) ease;
+  --motion-panel: panel-in var(--dur-panel) var(--ease-drawer);
+  --motion-pop: transform var(--dur-signature) var(--spring), opacity var(--dur-press) ease-out;
+  --motion-wash: task-wash var(--dur-signature) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-view: view-fade var(--dur-reduce) ease-out;
+    --motion-press: opacity var(--dur-reduce) ease-out;
+    --press-transform: none;
+    --motion-panel: view-fade var(--dur-reduce) ease-out;
+    --motion-pop: opacity var(--dur-reduce) ease-out;
+    --motion-wash: none;
+  }
+
+  button:not(:disabled):active {
+    opacity: 0.6;
+  }
+}
+
+/* the in-app setting mirrors the OS preference (no UI exposes it yet) */
+:root[data-motion="reduce"] {
+  --motion-view: view-fade var(--dur-reduce) ease-out;
+  --motion-press: opacity var(--dur-reduce) ease-out;
+  --press-transform: none;
+  --motion-panel: view-fade var(--dur-reduce) ease-out;
+  --motion-pop: opacity var(--dur-reduce) ease-out;
+  --motion-wash: none;
+}
+
+:root[data-motion="reduce"] button:not(:disabled):active {
+  opacity: 0.6;
+}
+
+/* view switch: opacity plus a 4 px rise. App.tsx ties the React key of the
+   view surface to the view, so every switch remounts and replays this. */
+.surface > section {
+  animation: var(--motion-view);
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* the details panel slides in a step from the right (drawer curve); reduce
+   modes swap it for the plain fade through --motion-panel */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* hover and press exist only where a cursor can produce them */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled) {
+    transition: var(--motion-press), var(--motion-hover);
+  }
+
+  button:not(:disabled):active {
+    transform: var(--press-transform);
+  }
+
+  .nav-item:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+
+  button:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+
+  /* the row opener stays transparent through hover; the row card itself is
+     the hover affordance */
+  .task-open:hover:not(:disabled) {
+    background: none;
+  }
+}

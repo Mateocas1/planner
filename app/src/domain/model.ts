@@ -2,7 +2,7 @@ export type Task = { id: string; title: string; deadline?: string };
 export type WorkBlock = { id: string; start: string; end: string; taskId?: string };
 export type Recurrence = {
   seriesId: string;
-  frequency: "daily" | "weekly";
+  frequency: "daily" | "weekly" | "monthly";
   anchorDate: string;
 };
 export type Occurrence = { id: string; date: string };
@@ -73,8 +73,24 @@ export function expandOccurrences(recurrence: Recurrence, from: string, to: stri
   const lower = Date.parse(`${from}T00:00:00.000Z`);
   const upper = Date.parse(`${to}T00:00:00.000Z`);
   if ((upper - lower) / day + 1 > MAX_OCCURRENCE_WINDOW_DAYS) throw new Error("expansion window exceeds prototype limit");
-  if (recurrence.frequency !== "daily" && recurrence.frequency !== "weekly") {
-    throw new Error(`expected a daily or weekly recurrence frequency, got ${JSON.stringify(recurrence.frequency)}`);
+  if (recurrence.frequency !== "daily" && recurrence.frequency !== "weekly" && recurrence.frequency !== "monthly") {
+    throw new Error(`expected a daily, weekly or monthly recurrence frequency, got ${JSON.stringify(recurrence.frequency)}`);
+  }
+  if (recurrence.frequency === "monthly") {
+    const dayOfMonth = Number(recurrence.anchorDate.slice(8, 10));
+    const anchorMonths = Number(recurrence.anchorDate.slice(0, 4)) * 12 + Number(recurrence.anchorDate.slice(5, 7)) - 1;
+    const lowerMonths = Number(from.slice(0, 4)) * 12 + Number(from.slice(5, 7)) - 1;
+    const result: Occurrence[] = [];
+    for (let months = Math.max(anchorMonths, lowerMonths);; months++) {
+      const year = Math.floor(months / 12);
+      const month = months % 12;
+      if (Date.UTC(year, month, 1) > upper) break;
+      const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      if (dayOfMonth > daysInMonth) continue;
+      const date = `${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
+      if (date >= from && date <= to) result.push({ id: occurrenceId(recurrence.seriesId, date), date });
+    }
+    return result;
   }
   const step = recurrence.frequency === "daily" ? 1 : 7;
   const offset = Math.max(0, Math.ceil((lower - anchor) / (step * day))) * step * day;
