@@ -190,33 +190,39 @@ export function Tasks({
     <section aria-labelledby="tasks-heading">
       <h2 id="tasks-heading">Tasks</h2>
       <form className="task-form" onSubmit={onAdd}>
-        <label htmlFor="task-title">Task title</label>
-        <input
-          id="task-title"
-          type="text"
-          value={title}
-          onChange={event => setTitle(event.target.value)}
-        />
-        <label htmlFor="task-deadline">Deadline</label>
-        <input
-          id="task-deadline"
-          type="date"
-          value={deadline}
-          onChange={event => setDeadline(event.target.value)}
-        />
-        <label htmlFor="task-repeat">Repeat</label>
-        <select
-          id="task-repeat"
-          value={repeat}
-          onChange={event => setRepeat(event.target.value as Frequency | "off")}
-        >
-          <option value="off">Off</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
+        <div className="task-field task-field-grow">
+          <label htmlFor="task-title">Task title</label>
+          <input
+            id="task-title"
+            type="text"
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+          />
+        </div>
+        <div className="task-field">
+          <label htmlFor="task-deadline">Deadline</label>
+          <input
+            id="task-deadline"
+            type="date"
+            value={deadline}
+            onChange={event => setDeadline(event.target.value)}
+          />
+        </div>
+        <div className="task-field">
+          <label htmlFor="task-repeat">Repeat</label>
+          <select
+            id="task-repeat"
+            value={repeat}
+            onChange={event => setRepeat(event.target.value as Frequency | "off")}
+          >
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
         {repeat !== "off" && (
-          <>
+          <div className="task-field">
             <label htmlFor="task-start">Start date</label>
             <input
               id="task-start"
@@ -224,7 +230,7 @@ export function Tasks({
               value={start}
               onChange={event => setStart(event.target.value)}
             />
-          </>
+          </div>
         )}
         <button type="submit" disabled={busy}>
           Add task
