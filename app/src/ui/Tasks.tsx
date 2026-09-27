@@ -1,7 +1,36 @@
 import { useState, type FormEvent } from "react";
-import type { TaskView } from "../data/store.ts";
+import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
+import { useProfileTimeZone } from "../data/profile.ts";
+import { addSeries, completeOccurrence, type Frequency } from "../data/series.ts";
+import { useStore, type SeriesView, type TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { TaskDetails } from "./TaskDetails.tsx";
+
+/** Local YYYY-MM-DD key for an instant in a named IANA zone. */
+function dateKeyIn(zone: string, at: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+}
+
+function addDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The next uncompleted occurrence of a series, derived per D1: occurrences
+ * are never persisted, so the row expands the series from the planner's
+ * today (the profile timezone) and skips completed occurrence IDs. The
+ * horizon keeps the expansion inside the domain's bounded window.
+ */
+function nextOccurrence(series: SeriesView, completions: Record<string, string>, today: string): Occurrence | null {
+  try {
+    const from = series.anchorDate > today ? series.anchorDate : today;
+    const recurrence: Recurrence = { seriesId: series.id, frequency: series.frequency, anchorDate: series.anchorDate };
+    const occurrences = expandOccurrences(recurrence, from, addDays(from, MAX_OCCURRENCE_WINDOW_DAYS - 1));
+    return occurrences.find(occurrence => !(occurrence.id in completions)) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The Tasks surface. Rows are compact — completion checkbox, title, deadline —
@@ -11,8 +40,15 @@ import { TaskDetails } from "./TaskDetails.tsx";
  * claim: writes go to Firestore and the store reflects what it reports.
  */
 export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[]; loading: boolean }) {
+  // Series and completion records come from the store; the shell already
+  // subscribes for tasks and blocks, and this surface subscribes for the
+  // recurring half (the shell cannot pass them within this unit's surfaces).
+  const { series, completions, loading: seriesLoading } = useStore(uid);
+  const profile = useProfileTimeZone(uid);
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [repeat, setRepeat] = useState<Frequency | "off">("off");
+  const [start, setStart] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -60,15 +96,22 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
   const onAdd = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await addTask(uid, title, deadline === "" ? undefined : deadline);
+      if (repeat === "off") {
+        await addTask(uid, title, deadline === "" ? undefined : deadline);
+      } else {
+        await addSeries(uid, title, repeat, start, deadline === "" ? undefined : deadline);
+      }
       setTitle("");
       setDeadline("");
+      setRepeat("off");
+      setStart("");
     });
   };
 
   const selected = tasks.find(task => task.id === selectedId);
   const open = tasks.filter(task => !task.completed);
   const completed = tasks.filter(task => task.completed);
+  const today = dateKeyIn(profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
 
   const group = (label: string, items: TaskView[]) => (
     <section className="task-group">
@@ -125,15 +168,64 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
           value={deadline}
           onChange={event => setDeadline(event.target.value)}
         />
+        <label htmlFor="task-repeat">Repeat</label>
+        <select
+          id="task-repeat"
+          value={repeat}
+          onChange={event => setRepeat(event.target.value as Frequency | "off")}
+        >
+          <option value="off">Off</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        {repeat !== "off" && (
+          <>
+            <label htmlFor="task-start">Start date</label>
+            <input
+              id="task-start"
+              type="date"
+              value={start}
+              onChange={event => setStart(event.target.value)}
+            />
+          </>
+        )}
         <button type="submit" disabled={busy}>
           Add task
         </button>
       </form>
       {error && <p role="alert">{error}</p>}
-      {!loading && tasks.length === 0 ? (
+      {!loading && !seriesLoading && tasks.length === 0 && series.length === 0 ? (
         <p role="status">No tasks yet. Add your first one above.</p>
       ) : (
         <>
+          {series.length > 0 && (
+            <section className="task-group">
+              <h3>Repeating ({series.length})</h3>
+              <ul className="task-list">
+                {series.map(seriesRow => {
+                  const next = nextOccurrence(seriesRow, completions, today);
+                  return (
+                    <li key={seriesRow.id} className="task series-row" data-next-occurrence={next?.date ?? ""}>
+                      <input
+                        type="checkbox"
+                        className="task-check"
+                        checked={false}
+                        disabled={busy || next === null}
+                        aria-label={next === null ? `Complete: ${seriesRow.title}` : `Complete: ${seriesRow.title} on ${next.date}`}
+                        onChange={() => {
+                          if (next) void run(() => completeOccurrence(uid, seriesRow.id, next.date));
+                        }}
+                      />
+                      <span className="task-title">{seriesRow.title}</span>
+                      <span className="series-frequency">{seriesRow.frequency}</span>
+                      {next && <span className="task-deadline">next {next.date}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
           {open.length > 0 && group("Open", open)}
           {completed.length > 0 && group("Completed", completed)}
         </>

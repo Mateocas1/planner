@@ -463,6 +463,17 @@ select {
   font-size: var(--text-sm);
 }
 
+/* the frequency chip on a repeating row */
+.series-frequency {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  text-transform: capitalize;
+}
+
 /* ---------- task details panel ---------- */
 
 .task-details {

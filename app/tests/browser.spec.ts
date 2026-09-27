@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password, readRemoteBlocks, readRemoteProfile, readRemoteState, readRemoteTasks, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
+import { password, readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -250,6 +250,109 @@ function localDateKey(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** A local date N days from now, used as a series anchor in the future. */
+function futureDateKey(daysFromNow: number) {
+  return localDateKey(new Date(Date.now() + daysFromNow * 86_400_000));
+}
+
+/** Creates a recurring series through the form and waits for its row. */
+async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily" | "Weekly" | "Monthly", start: string) {
+  await page.getByLabel("Task title").fill(title);
+  await page.getByLabel("Repeat").selectOption({ label: frequency });
+  await page.getByLabel("Start date").fill(start);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".series-row", { hasText: title })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+}
+
+let createdSeries: Array<{ id: string; data: Record<string, string> }> = [];
+
+/** Polls the forced-server read until exactly one series exists, then returns it. */
+async function expectSingleRemoteSeries(email: string) {
+  await expect
+    .poll(
+      async () => {
+        createdSeries = await readRemoteSeries(email);
+        return createdSeries.length;
+      },
+      { timeout: 15_000, intervals: [250, 500, 1_000] },
+    )
+    .toBe(1);
+  return createdSeries[0]!;
+}
+
+async function expectRemoteCompletions(email: string, expected: unknown[]) {
+  await expect
+    .poll(() => readRemoteCompletions(email), { timeout: 15_000, intervals: [250, 500, 1_000] })
+    .toEqual(expected);
+}
+
+test("a series created from the UI persists with its frequency and anchor and shows its next occurrence", async ({ page }) => {
+  const email = newEmail("series-create");
+  await signUp(page, email);
+  await openTasks(page);
+
+  // an anchor in the future makes the next occurrence the anchor itself
+  const start = futureDateKey(1);
+  await addSeriesThroughForm(page, "Stretch", "Weekly", start);
+
+  const row = page.locator(".series-row", { hasText: "Stretch" });
+  await expect(row).toHaveAttribute("data-next-occurrence", start);
+  await expect(row.getByText("Weekly")).toBeVisible();
+  await expect(row.getByText(`next ${start}`)).toBeVisible();
+
+  const series = await expectSingleRemoteSeries(email);
+  expect(series.id).not.toBe("");
+  expect(series.data).toEqual({ title: "Stretch", frequency: "weekly", anchorDate: start });
+});
+
+test("completing the next occurrence records exactly that occurrence and the row advances", async ({ page }) => {
+  const email = newEmail("series-complete");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const first = futureDateKey(1);
+  const second = futureDateKey(2);
+  await addSeriesThroughForm(page, "Meditate", "Daily", first);
+  await page.getByRole("checkbox", { name: `Complete: Meditate on ${first}` }).click();
+
+  const series = await expectSingleRemoteSeries(email);
+  await expectRemoteCompletions(email, [
+    { occurrenceId: `${series.id}:${first}`, completedAt: expect.any(String) },
+  ]);
+
+  // the row visibly advances to the following occurrence
+  const row = page.locator(".series-row", { hasText: "Meditate" });
+  await expect(row).toHaveAttribute("data-next-occurrence", second, { timeout: 15_000 });
+  await expect(page.getByRole("checkbox", { name: `Complete: Meditate on ${second}` })).toBeVisible();
+});
+
+test("completing one occurrence never marks the following one", async ({ page }) => {
+  const email = newEmail("series-isolation");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const first = futureDateKey(1);
+  const second = futureDateKey(2);
+  await addSeriesThroughForm(page, "Water plants", "Daily", first);
+  await page.getByRole("checkbox", { name: `Complete: Water plants on ${first}` }).click();
+
+  // exactly one completion exists, and it is the first occurrence, not the next
+  const series = await expectSingleRemoteSeries(email);
+  await expectRemoteCompletions(email, [
+    { occurrenceId: `${series.id}:${first}`, completedAt: expect.any(String) },
+  ]);
+  const completions = await readRemoteCompletions(email);
+  expect(completions.some(completion => completion.occurrenceId === `${series.id}:${second}`)).toBe(false);
+
+  // and the following occurrence is still offered, unchecked
+  const row = page.locator(".series-row", { hasText: "Water plants" });
+  await expect(row).toHaveAttribute("data-next-occurrence", second, { timeout: 15_000 });
+  const following = page.getByRole("checkbox", { name: `Complete: Water plants on ${second}` });
+  await expect(following).toBeVisible();
+  await expect(following).not.toBeChecked();
+});
 
 /** Polls the forced-server read until one block exists, then returns it. */
 async function expectSingleRemoteBlock(email: string) {

@@ -111,7 +111,7 @@ async function firestoreFetch(path: string, init?: RequestInit): Promise<Respons
   });
 }
 
-async function listRemoteDocs(uid: string, kind: "tasks" | "blocks") {
+async function listRemoteDocs(uid: string, kind: "tasks" | "blocks" | "series" | "completions") {
   const response = await firestoreFetch(`users/${uid}/${kind}`);
   if (!response.ok) {
     throw new Error(`emulator list failed: ${response.status} ${await response.text()}`);
@@ -201,4 +201,18 @@ export async function readRemoteProfile(email: string): Promise<{ timeZone?: str
   const uid = await resolveRemoteUid(email);
   const data = await getRemoteDoc(uid, "profile/main");
   return (data as { timeZone?: string } | undefined) ?? {};
+}
+
+/** Reads every series definition, keeping the generated id next to its fields. */
+export async function readRemoteSeries(email: string): Promise<Array<{ id: string; data: Record<string, string> }>> {
+  const uid = await resolveRemoteUid(email);
+  const series = await listRemoteDocs(uid, "series");
+  return series.map(doc => ({ id: doc.id, data: doc.data as Record<string, string> }));
+}
+
+/** Reads every completion record exactly as the domain builds it. */
+export async function readRemoteCompletions(email: string): Promise<Array<{ occurrenceId: string; completedAt: string }>> {
+  const uid = await resolveRemoteUid(email);
+  const completions = await listRemoteDocs(uid, "completions");
+  return completions.map(doc => doc.data as { occurrenceId: string; completedAt: string });
 }
