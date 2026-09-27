@@ -10,13 +10,13 @@ web
 
 ## Stack
 
-The open question was which backend option suits the first demo and local development without spending money. That free-local path is resolved: local development and testing use the Firebase Emulator Suite against a `demo-*` project, which creates no cloud resources and requires no billing. Production backend and hosting remain open, and a paid managed sync service is not the free-first path.
+**Decided** (D7 in `odd/tasks/personal-planner-mvp.md`): React + TypeScript + Vite on Cloud Firestore with persistent local cache and the multi-tab manager. Local development and testing run on the Firebase Emulator Suite against a `demo-*` project — zero cost, no cloud resources, no billing. Firebase Auth provides authentication. Production hosting, and the production sign-in provider, are deferred until there is something to deploy; Firebase Hosting's free tier is the leading candidate. A paid managed sync service such as Dexie Cloud is rejected as the primary option because it fails the free-first requirement.
 
 ## Users
 
 - **Confirmed:** Personal use by one individual managing tasks and calendar time.
 - **Confirmed:** The first experience is an in-app home, not a marketing landing page.
-- **Open choice:** Authentication, hosting, and budget are not decided.
+- **Decided:** Authentication uses Firebase Auth; local development uses emulator accounts. Hosting, the production sign-in provider, and budget are deferred. No paid resource is required to build or test the MVP.
 
 ## Product Purpose
 
@@ -34,10 +34,10 @@ The open question was which backend option suits the first demo and local develo
 
 - **Confirmed:** Web is desktop- and mobile-first.
 - **Confirmed:** Prioritize private development and local testing that can continue beyond the MVP, without requiring a public launch to external users.
-- **Open choice:** Fully local backend versus private cloud test services; compare both before choosing.
+- **Decided:** Local development and testing use the Firebase Emulator Suite with a `demo-*` project; no private cloud service is required to build the MVP.
 - **Deferred:** A potential native desktop application may be considered later.
 - **Confirmed:** An existing Google calendar is likely relevant.
-- **Open choice:** Google provider connection and read scope are not finally approved.
+- **Decided:** Google is out of the MVP; no OAuth scope is requested and no Google API is called, while the design keeps a later read-only overlay possible.
 - **Confirmed:** Publishing work blocks to Google is not required initially; a later option should remain possible.
 
 ## Capabilities and Constraints
@@ -51,29 +51,33 @@ The open question was which backend option suits the first demo and local develo
 - Work offline for task and block creation, editing, and planning.
 - Sync the resulting personal data across devices.
 
-### Proposed MVP surfaces
+### MVP surfaces
 
-- **Proposal:** Home, Tasks, and Calendar.
-- **Proposal:** Creation, editing, completion, deadlines, and time blocks across those surfaces.
+- **Decided:** Home, Tasks, and Calendar, behind a real authentication gate.
+- **Decided:** Creation, editing, completion, deadlines, and time blocks across those surfaces.
 
-### Proposed scope exclusions
+### MVP scope exclusions
 
-The following are recommended exclusions, not separately user-confirmed decisions:
+Decided for the MVP in `odd/tasks/personal-planner-mvp.md`:
 
 - Teams, comments, attachments, reports, and automation.
 - Multiple external calendar providers.
 - Native desktop delivery.
 - Full external calendar editing.
+- Background sync while the app is closed.
 
-### Open product choices
+### Resolved product decisions
 
-- **Open:** What recurrence means for a task, including whether it creates independent occurrences.
-- **Open:** Exact recurrence limits; simple daily, weekly, and monthly patterns are a proposal.
-- **Open:** Behavior for invalid monthly dates, daylight-saving changes, and travel/time-zone changes.
-- **Open:** Whether edits apply to one occurrence or an entire series.
-- **Open:** Conflict policy; explicit user resolution is proposed but not approved.
-- **Open:** Google connection and read scope.
-- **Open:** Authentication, hosting, budget, and final stack.
+Closed in `odd/tasks/personal-planner-mvp.md`; each entry names its decision id there.
+
+- **Recurrence of a task (D1):** a series definition whose occurrences are derived and never stored; completion is per occurrence.
+- **Recurrence limits (D2):** daily, weekly and monthly; an anchor day that does not exist in a month skips that month (RFC 5545).
+- **Dates, DST and travel (D3):** deadlines are date-only; work blocks are absolute zoned instants; recurrence expands over calendar dates in the profile timezone.
+- **Edit scope (D4):** edits apply to the whole series; per-occurrence overrides are out of MVP.
+- **Conflict policy (D5):** per-document last write wins, disclosed as such; no loss-free claim and no conflict UI in MVP.
+- **Google (D6):** out of MVP, path preserved.
+- **Auth, hosting, budget and stack (D7):** Firebase Auth; zero-cost local development; hosting deferred; a paid managed sync service is rejected as the primary.
+- **Repository layout (D8):** the product is a new application at `app/`; the feasibility lab stays frozen as the offline evidence harness.
 
 ### Technical constraints
 
@@ -83,7 +87,7 @@ The following are recommended exclusions, not separately user-confirmed decision
 - **Constraint:** Baseline sync is while the app is open or reopened; background sync for a closed app is not guaranteed.
 - **Non-promise:** The product must not claim loss-proof browser storage or fully solved conflicts.
 
-### Proposed acceptance examples
+### Acceptance examples
 
 - **Proposal:** Offline create, edit, and reopen retains unsynced changes.
 - **Proposal:** Reconnecting does not create duplicate records.
