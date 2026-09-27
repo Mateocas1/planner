@@ -185,7 +185,11 @@ body {
 .who {
   color: var(--text-3);
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
+  /* one line, cut with an ellipsis rather than wrapping to three lines */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .signout {
@@ -526,6 +530,55 @@ select {
   margin-top: var(--space-4);
   color: var(--red);
   border-color: color-mix(in srgb, var(--red) 32%, var(--border));
+}
+
+/* series details panel: the definition is read-only (the data layer has no
+   writer for title, frequency or anchor), only occurrences and delete act */
+.series-details-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.series-details-meta {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.series-details-meta div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.series-details-meta dt {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.series-details-meta dd {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.task-details h4 {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.series-occurrences {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.series-occurrences li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 [role="alert"] {

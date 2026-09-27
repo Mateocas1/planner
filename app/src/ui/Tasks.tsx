@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
-import { addSeries, completeOccurrence, type Frequency } from "../data/series.ts";
-import { useStore, type SeriesView, type TaskView } from "../data/store.ts";
+import { addSeries, completeOccurrence, deleteSeries, type Frequency } from "../data/series.ts";
+import type { SeriesView, TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
-import { TaskDetails } from "./TaskDetails.tsx";
+import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
 
 /** Local YYYY-MM-DD key for an instant in a named IANA zone. */
 function dateKeyIn(zone: string, at: Date = new Date()): string {
@@ -32,18 +32,51 @@ function nextOccurrence(series: SeriesView, completions: Record<string, string>,
   }
 }
 
+/** How many upcoming occurrences the series details panel offers. */
+const PANEL_OCCURRENCE_COUNT = 3;
+
+/**
+ * The next few occurrences of a series, derived per D1: occurrences are
+ * never persisted, so the panel expands the series from the planner's today
+ * (the profile timezone) and marks each one with its completion state.
+ */
+function upcomingOccurrences(series: SeriesView, completions: Record<string, string>, today: string): SeriesOccurrenceView[] {
+  try {
+    const from = series.anchorDate > today ? series.anchorDate : today;
+    const recurrence: Recurrence = { seriesId: series.id, frequency: series.frequency, anchorDate: series.anchorDate };
+    const occurrences = expandOccurrences(recurrence, from, addDays(from, MAX_OCCURRENCE_WINDOW_DAYS - 1));
+    return occurrences.slice(0, PANEL_OCCURRENCE_COUNT).map(occurrence => ({
+      id: occurrence.id,
+      date: occurrence.date,
+      completed: occurrence.id in completions,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The Tasks surface. Rows are compact — completion checkbox, title, deadline —
- * and every mutating action lives in the details panel for the selected row.
- * Input is validated by the domain module (via the data helpers), so rejected
- * input never reaches Firestore; thrown errors are displayed. No offline
- * claim: writes go to Firestore and the store reflects what it reports.
+ * and every mutating action lives in the details panel for the selected row
+ * (task or series). Series and completion records are threaded in by the
+ * shell's single store subscription, like tasks and blocks. Input is
+ * validated by the domain module (via the data helpers), so rejected input
+ * never reaches Firestore; thrown errors are displayed. No offline claim:
+ * writes go to Firestore and the store reflects what it reports.
  */
-export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[]; loading: boolean }) {
-  // Series and completion records come from the store; the shell already
-  // subscribes for tasks and blocks, and this surface subscribes for the
-  // recurring half (the shell cannot pass them within this unit's surfaces).
-  const { series, completions, loading: seriesLoading } = useStore(uid);
+export function Tasks({
+  uid,
+  tasks,
+  series,
+  completions,
+  loading,
+}: {
+  uid: string;
+  tasks: TaskView[];
+  series: SeriesView[];
+  completions: Record<string, string>;
+  loading: boolean;
+}) {
   const profile = useProfileTimeZone(uid);
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState("");
@@ -52,6 +85,7 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   // Rows whose completion the user just performed in this session: the wash
   // class is applied only to these, so it never plays on mount for rows that
   // were already completed. The class is removed on animationend.
@@ -109,6 +143,7 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
   };
 
   const selected = tasks.find(task => task.id === selectedId);
+  const selectedSeries = series.find(entry => entry.id === selectedSeriesId);
   const open = tasks.filter(task => !task.completed);
   const completed = tasks.filter(task => task.completed);
   const today = dateKeyIn(profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -138,6 +173,7 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
               className="task-open"
               onClick={() => {
                 setSelectedId(task.id);
+                setSelectedSeriesId(null);
                 setError(null);
               }}
             >
@@ -195,7 +231,7 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
         </button>
       </form>
       {error && <p role="alert">{error}</p>}
-      {!loading && !seriesLoading && tasks.length === 0 && series.length === 0 ? (
+      {!loading && tasks.length === 0 && series.length === 0 ? (
         <p role="status">No tasks yet. Add your first one above.</p>
       ) : (
         <>
@@ -217,7 +253,17 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
                           if (next) void run(() => completeOccurrence(uid, seriesRow.id, next.date));
                         }}
                       />
-                      <span className="task-title">{seriesRow.title}</span>
+                      <button
+                        type="button"
+                        className="task-open"
+                        onClick={() => {
+                          setSelectedSeriesId(seriesRow.id);
+                          setSelectedId(null);
+                          setError(null);
+                        }}
+                      >
+                        <span className="task-title">{seriesRow.title}</span>
+                      </button>
                       <span className="series-frequency">{seriesRow.frequency}</span>
                       {next && <span className="task-deadline">next {next.date}</span>}
                     </li>
@@ -229,6 +275,21 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
           {open.length > 0 && group("Open", open)}
           {completed.length > 0 && group("Completed", completed)}
         </>
+      )}
+      {selectedSeries && (
+        <SeriesDetails
+          key={selectedSeries.id}
+          series={selectedSeries}
+          occurrences={upcomingOccurrences(selectedSeries, completions, today)}
+          busy={busy}
+          onClose={() => setSelectedSeriesId(null)}
+          onCompleteOccurrence={date => {
+            void run(() => completeOccurrence(uid, selectedSeries.id, date));
+          }}
+          onDelete={() => {
+            void run(() => deleteSeries(uid, selectedSeries.id));
+          }}
+        />
       )}
       {selected && (
         <TaskDetails

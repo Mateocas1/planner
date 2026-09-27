@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TaskView } from "../data/store.ts";
+import type { SeriesView, TaskView } from "../data/store.ts";
 
 /**
  * The details panel for the selected task. Every mutating action lives here
@@ -70,6 +70,87 @@ export function TaskDetails({
       </label>
       <button type="button" className="task-details-delete" disabled={busy} onClick={onDelete}>
         Delete task
+      </button>
+    </aside>
+  );
+}
+
+/** One upcoming occurrence of a series as the panel shows it. */
+export type SeriesOccurrenceView = { id: string; date: string; completed: boolean };
+
+/**
+ * The details panel for the selected recurring series. It reuses the task
+ * panel's shell (class and behaviour: right-anchored wide, overlay narrow,
+ * Close and Escape). Occurrence completion keeps the list's per-occurrence
+ * semantics: each checkbox writes exactly that occurrence's completion
+ * record; a completed occurrence is immutable history, so it stays checked.
+ * The data layer has no writer for a series' title, frequency or anchor, so
+ * those are shown read-only.
+ */
+export function SeriesDetails({
+  series,
+  occurrences,
+  busy,
+  onClose,
+  onCompleteOccurrence,
+  onDelete,
+}: {
+  series: SeriesView;
+  occurrences: SeriesOccurrenceView[];
+  busy: boolean;
+  onClose: () => void;
+  onCompleteOccurrence: (date: string) => void;
+  onDelete: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <aside className="task-details" aria-label="Series details">
+      <header className="task-details-head">
+        <h3>Series details</h3>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </header>
+      <p className="series-details-title">{series.title}</p>
+      <dl className="series-details-meta">
+        <div>
+          <dt>Frequency</dt>
+          <dd className="series-details-frequency">{series.frequency}</dd>
+        </div>
+        <div>
+          <dt>Anchor</dt>
+          <dd className="series-details-anchor">{series.anchorDate}</dd>
+        </div>
+      </dl>
+      <h4>Upcoming occurrences</h4>
+      <ul className="series-occurrences">
+        {occurrences.map(occurrence => (
+          <li key={occurrence.id}>
+            <input
+              type="checkbox"
+              checked={occurrence.completed}
+              disabled={busy || occurrence.completed}
+              aria-label={
+                occurrence.completed
+                  ? `Completed: ${series.title} on ${occurrence.date}`
+                  : `Complete: ${series.title} on ${occurrence.date}`
+              }
+              onChange={() => onCompleteOccurrence(occurrence.date)}
+            />
+            <span>{occurrence.date}</span>
+          </li>
+        ))}
+        {occurrences.length === 0 && <li>No upcoming occurrences in the current window.</li>}
+      </ul>
+      <button type="button" className="task-details-delete" disabled={busy} onClick={onDelete}>
+        Delete series
       </button>
     </aside>
   );

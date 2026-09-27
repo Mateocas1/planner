@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, setDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { createOccurrenceCompletion, createTask, expandOccurrences, occurrenceId, type Recurrence } from "../domain/model.ts";
 import { db } from "./client.ts";
 
@@ -28,6 +28,17 @@ export async function addSeries(uid: string, title: string, frequency: Frequency
     anchorDate: recurrence.anchorDate,
     ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
   });
+}
+
+/**
+ * Deletes the series definition. Occurrences are derived, so removing the
+ * definition removes every future occurrence from the UI. Per-occurrence
+ * completion records are immutable history and are intentionally left in
+ * place: nothing renders without the definition.
+ */
+export async function deleteSeries(uid: string, seriesId: string) {
+  if (!seriesId || seriesId.includes("/")) throw new Error("series ID is invalid");
+  await deleteDoc(doc(db, `users/${uid}/series/${seriesId}`));
 }
 
 /**

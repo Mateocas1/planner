@@ -27,7 +27,7 @@ export default function App() {
 }
 
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
-  const { loading, tasks, blocks } = useStore(user.uid);
+  const { loading, tasks, blocks, series, completions } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
 
   return (
@@ -45,7 +45,16 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         {/* the view-tied key remounts the surface on every switch, so the
             view-enter / view-fade animation replays (motion, DP1b) */}
         {view === "home" && <Home key={view} loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
-        {view === "tasks" && <Tasks key={view} loading={loading} tasks={tasks} uid={user.uid} />}
+        {view === "tasks" && (
+          <Tasks
+            key={view}
+            loading={loading}
+            tasks={tasks}
+            series={series}
+            completions={completions}
+            uid={user.uid}
+          />
+        )}
         {view === "calendar" && (
           <Calendar
             key={view}

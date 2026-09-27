@@ -354,6 +354,101 @@ test("completing one occurrence never marks the following one", async ({ page })
   await expect(following).not.toBeChecked();
 });
 
+test("opening a series shows its frequency, anchor and upcoming occurrences in the panel", async ({ page }) => {
+  const email = newEmail("series-panel");
+  await signUp(page, email);
+  await openTasks(page);
+
+  // a future weekly anchor: the first upcoming occurrence is the anchor itself
+  const start = futureDateKey(1);
+  const second = futureDateKey(8);
+  const third = futureDateKey(15);
+  await addSeriesThroughForm(page, "Stretch", "Weekly", start);
+
+  // the series row's title button opens the panel
+  await page.getByRole("button", { name: "Stretch" }).click();
+  const panel = page.getByRole("complementary", { name: "Series details" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("Stretch")).toBeVisible();
+  await expect(panel.locator(".series-details-frequency")).toHaveText("weekly");
+  await expect(panel.locator(".series-details-anchor")).toHaveText(start);
+  await expect(panel.locator(".series-occurrences")).toContainText(start);
+  await expect(panel.locator(".series-occurrences")).toContainText(second);
+  await expect(panel.locator(".series-occurrences")).toContainText(third);
+  await expect(panel.getByRole("checkbox", { name: `Complete: Stretch on ${start}` })).toBeVisible();
+
+  // the panel keeps the shared panel behaviour: Close dismisses it
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toHaveCount(0);
+});
+
+async function openSeriesPanel(page: Page, title: string) {
+  await page.getByRole("button", { name: title }).click();
+  const panel = page.getByRole("complementary", { name: "Series details" });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+let panelSeries: Array<{ id: string; data: Record<string, string> }> = [];
+
+/** Polls the forced-server read until exactly one series exists, then returns it. */
+async function expectOneRemoteSeries(email: string) {
+  await expect
+    .poll(
+      async () => {
+        panelSeries = await readRemoteSeries(email);
+        return panelSeries.length;
+      },
+      { timeout: 15_000, intervals: [250, 500, 1_000] },
+    )
+    .toBe(1);
+  return panelSeries[0]!;
+}
+
+test("completing an occurrence from the series panel records exactly that occurrence", async ({ page }) => {
+  const email = newEmail("series-panel-complete");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const first = futureDateKey(1);
+  const second = futureDateKey(2);
+  await addSeriesThroughForm(page, "Meditate", "Daily", first);
+
+  const panel = await openSeriesPanel(page, "Meditate");
+  await panel.getByRole("checkbox", { name: `Complete: Meditate on ${first}` }).click();
+
+  // exactly one completion exists on the server, and it is the occurrence the
+  // panel offered, not any other
+  const series = await expectOneRemoteSeries(email);
+  await expectRemoteCompletions(email, [
+    { occurrenceId: `${series.id}:${first}`, completedAt: expect.any(String) },
+  ]);
+
+  // the panel reflects the completion and advances to the next occurrence
+  await expect(panel.getByRole("checkbox", { name: `Completed: Meditate on ${first}` })).toBeChecked();
+  await expect(panel.getByRole("checkbox", { name: `Complete: Meditate on ${second}` })).toBeVisible();
+});
+
+test("deleting a series removes it from the list and from the server", async ({ page }) => {
+  const email = newEmail("series-delete");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const start = futureDateKey(1);
+  await addSeriesThroughForm(page, "Doomed habit", "Daily", start);
+  await expectOneRemoteSeries(email);
+
+  const panel = await openSeriesPanel(page, "Doomed habit");
+  await panel.getByRole("button", { name: "Delete series" }).click();
+
+  // the row and the panel both disappear, and the server no longer holds the series
+  await expect(page.locator(".series-row", { hasText: "Doomed habit" })).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
+  await expect
+    .poll(() => readRemoteSeries(email), { timeout: 15_000, intervals: [250, 500, 1_000] })
+    .toEqual([]);
+});
+
 /** Polls the forced-server read until one block exists, then returns it. */
 async function expectSingleRemoteBlock(email: string) {
   let remote: Array<{ start: string; end: string; taskId?: string }> = [];
