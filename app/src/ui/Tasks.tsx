@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
-import { addSeries, completeOccurrence, deleteSeries, type Frequency } from "../data/series.ts";
+import { addSeries, completeOccurrence, deleteSeries, renameSeries, setSeriesAnchor, setSeriesFrequency, type Frequency } from "../data/series.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
@@ -150,8 +150,8 @@ export function Tasks({
 
   const group = (label: string, items: TaskView[]) => (
     <section className="task-group">
-      <h3>
-        {label} ({items.length})
+      <h3 className="section-heading task-group-heading">
+        {label} <span className="heading-count">({items.length})</span>
       </h3>
       <ul className="task-list">
         {items.map(task => (
@@ -188,35 +188,43 @@ export function Tasks({
 
   return (
     <section aria-labelledby="tasks-heading">
-      <h2 id="tasks-heading">Tasks</h2>
+      <header className="page-head">
+        <h2 id="tasks-heading">Tasks</h2>
+      </header>
       <form className="task-form" onSubmit={onAdd}>
-        <label htmlFor="task-title">Task title</label>
-        <input
-          id="task-title"
-          type="text"
-          value={title}
-          onChange={event => setTitle(event.target.value)}
-        />
-        <label htmlFor="task-deadline">Deadline</label>
-        <input
-          id="task-deadline"
-          type="date"
-          value={deadline}
-          onChange={event => setDeadline(event.target.value)}
-        />
-        <label htmlFor="task-repeat">Repeat</label>
-        <select
-          id="task-repeat"
-          value={repeat}
-          onChange={event => setRepeat(event.target.value as Frequency | "off")}
-        >
-          <option value="off">Off</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
+        <div className="task-field task-field-grow">
+          <label htmlFor="task-title">Task title</label>
+          <input
+            id="task-title"
+            type="text"
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+          />
+        </div>
+        <div className="task-field">
+          <label htmlFor="task-deadline">Deadline</label>
+          <input
+            id="task-deadline"
+            type="date"
+            value={deadline}
+            onChange={event => setDeadline(event.target.value)}
+          />
+        </div>
+        <div className="task-field">
+          <label htmlFor="task-repeat">Repeat</label>
+          <select
+            id="task-repeat"
+            value={repeat}
+            onChange={event => setRepeat(event.target.value as Frequency | "off")}
+          >
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
         {repeat !== "off" && (
-          <>
+          <div className="task-field">
             <label htmlFor="task-start">Start date</label>
             <input
               id="task-start"
@@ -224,7 +232,7 @@ export function Tasks({
               value={start}
               onChange={event => setStart(event.target.value)}
             />
-          </>
+          </div>
         )}
         <button type="submit" disabled={busy}>
           Add task
@@ -232,12 +240,14 @@ export function Tasks({
       </form>
       {error && <p role="alert">{error}</p>}
       {!loading && tasks.length === 0 && series.length === 0 ? (
-        <p role="status">No tasks yet. Add your first one above.</p>
+        <p className="empty-note" role="status">No tasks yet. Add your first one above.</p>
       ) : (
         <>
           {series.length > 0 && (
             <section className="task-group">
-              <h3>Repeating ({series.length})</h3>
+              <h3 className="section-heading task-group-heading">
+                Repeating <span className="heading-count">({series.length})</span>
+              </h3>
               <ul className="task-list">
                 {series.map(seriesRow => {
                   const next = nextOccurrence(seriesRow, completions, today);
@@ -282,7 +292,17 @@ export function Tasks({
           series={selectedSeries}
           occurrences={upcomingOccurrences(selectedSeries, completions, today)}
           busy={busy}
+          hasHistory={Object.keys(completions).some(id => id.startsWith(`${selectedSeries.id}:`))}
           onClose={() => setSelectedSeriesId(null)}
+          onRename={next => {
+            void run(() => renameSeries(uid, selectedSeries.id, next));
+          }}
+          onFrequencyChange={frequency => {
+            void run(() => setSeriesFrequency(uid, selectedSeries.id, frequency, selectedSeries.anchorDate));
+          }}
+          onAnchorChange={anchorDate => {
+            void run(() => setSeriesAnchor(uid, selectedSeries.id, selectedSeries.frequency, anchorDate));
+          }}
           onCompleteOccurrence={date => {
             void run(() => completeOccurrence(uid, selectedSeries.id, date));
           }}

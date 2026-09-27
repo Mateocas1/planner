@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
@@ -25,6 +26,47 @@ function client(name: string): { app: FirebaseApp; db: Firestore; auth: ReturnTy
   connectFirestoreEmulator(db, "127.0.0.1", 8187);
   return { app, db, auth };
 }
+
+/**
+ * Drift guard. The emulators load firestore.emulator.rules while production
+ * deploys firestore.rules, so the two can silently diverge: an edit to the
+ * deployed rules that nobody copies over, or a stray loosening of the emulator
+ * copy, would otherwise only be noticed in production.
+ *
+ * Normalisation: `//` comments are stripped (they carry no rule meaning and
+ * the two files document themselves differently), the uid allowlist segment is
+ * removed from both sides, and all whitespace is collapsed to single spaces.
+ * What must remain identical is everything that actually decides access: the
+ * rules version, the service, the match, the owner condition and every other
+ * clause. The two allowlist presence checks stop the comparison above from
+ * passing vacuously on a pair of files that both lost the allowlist.
+ */
+function readRules(name: "firestore.rules" | "firestore.emulator.rules"): string {
+  return readFileSync(new URL(`../${name}`, import.meta.url), "utf8");
+}
+
+function withoutComments(source: string): string {
+  return source.split("\n").map(line => line.replace(/\/\/.*$/, "")).join("\n");
+}
+
+const allowlistSegment = /\s*&&\s*request\.auth\.uid\s+in\s*\[[^\]]*\]/g;
+const allowlistPresent = /&&\s*request\.auth\.uid\s+in\s*\[/;
+
+function normalise(source: string): string {
+  return withoutComments(source).replace(allowlistSegment, "").replace(/\s+/g, " ").trim();
+}
+
+test("Emulator Firestore rules mirror production except the uid allowlist", () => {
+  const production = readRules("firestore.rules");
+  const emulator = readRules("firestore.emulator.rules");
+  assert.match(withoutComments(production), allowlistPresent, "production rules must carry a uid allowlist");
+  assert.doesNotMatch(withoutComments(emulator), allowlistPresent, "emulator rules must not carry a uid allowlist");
+  assert.equal(
+    normalise(emulator),
+    normalise(production),
+    "firestore.emulator.rules drifted from firestore.rules beyond the allowlist",
+  );
+});
 
 async function close({ app, db }: { app: FirebaseApp; db: Firestore }): Promise<void> {
   await terminate(db);

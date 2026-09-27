@@ -294,6 +294,13 @@ function futureDateKey(daysFromNow: number) {
   return localDateKey(new Date(Date.now() + daysFromNow * 86_400_000));
 }
 
+/** A local date N days from now (negative for the past), used as a series anchor. */
+function dayKey(daysFromNow: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  return localDateKey(date);
+}
+
 /** Creates a recurring series through the form and waits for its row. */
 async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily" | "Weekly" | "Monthly", start: string) {
   await page.getByLabel("Task title").fill(title);
@@ -407,9 +414,9 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   await page.getByRole("button", { name: "Stretch" }).click();
   const panel = page.getByRole("complementary", { name: "Series details" });
   await expect(panel).toBeVisible();
-  await expect(panel.getByText("Stretch")).toBeVisible();
-  await expect(panel.locator(".series-details-frequency")).toHaveText("weekly");
-  await expect(panel.locator(".series-details-anchor")).toHaveText(start);
+  await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
+  await expect(panel.getByLabel("Frequency")).toHaveValue("weekly");
+  await expect(panel.getByLabel("Anchor")).toHaveValue(start);
   await expect(panel.locator(".series-occurrences")).toContainText(start);
   await expect(panel.locator(".series-occurrences")).toContainText(second);
   await expect(panel.locator(".series-occurrences")).toContainText(third);
@@ -442,6 +449,91 @@ async function expectOneRemoteSeries(email: string) {
     .toBe(1);
   return panelSeries[0]!;
 }
+
+test("renaming a series persists the new title to the server", async ({ page }) => {
+  const email = newEmail("series-rename");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addSeriesThroughForm(page, "Morning walk", "Daily", futureDateKey(1));
+  const panel = await openSeriesPanel(page, "Morning walk");
+  await panel.getByLabel("Rename series").fill("Evening walk");
+  await panel.getByRole("button", { name: "Save rename" }).click();
+
+  await expect(page.locator(".series-row", { hasText: "Evening walk" })).toBeVisible();
+  await expect(page.locator(".series-row", { hasText: "Morning walk" })).toHaveCount(0);
+
+  const series = await expectOneRemoteSeries(email);
+  expect(series.data.title).toBe("Evening walk");
+});
+
+test("changing a series' frequency persists and the row's next occurrence updates", async ({ page }) => {
+  const email = newEmail("series-frequency");
+  await signUp(page, email);
+  await openTasks(page);
+
+  // A past anchor makes the frequency visible in the next occurrence: weekly
+  // from three days ago lands in four days, daily lands today.
+  const anchor = dayKey(-3);
+  await addSeriesThroughForm(page, "Stretch", "Weekly", anchor);
+
+  const row = page.locator(".series-row", { hasText: "Stretch" });
+  await expect(row).toHaveAttribute("data-next-occurrence", dayKey(4));
+
+  const panel = await openSeriesPanel(page, "Stretch");
+  await panel.getByLabel("Frequency").selectOption({ label: "Daily" });
+
+  await expect(row).toHaveAttribute("data-next-occurrence", dayKey(0));
+  await expect(panel.getByLabel("Frequency")).toHaveValue("daily");
+
+  const series = await expectOneRemoteSeries(email);
+  expect(series.data.frequency).toBe("daily");
+  expect(series.data.anchorDate).toBe(anchor);
+});
+
+test("changing a series' anchor persists the new date", async ({ page }) => {
+  const email = newEmail("series-anchor");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addSeriesThroughForm(page, "Review", "Monthly", futureDateKey(1));
+  const moved = futureDateKey(10);
+
+  const panel = await openSeriesPanel(page, "Review");
+  await panel.getByLabel("Anchor").fill(moved);
+
+  await expect(panel.getByLabel("Anchor")).toHaveValue(moved);
+  await expect(page.locator(".series-row", { hasText: "Review" })).toHaveAttribute("data-next-occurrence", moved);
+
+  const series = await expectOneRemoteSeries(email);
+  expect(series.data.anchorDate).toBe(moved);
+  expect(series.data.frequency).toBe("monthly");
+});
+
+test("an invalid series edit is refused with a visible error and writes nothing", async ({ page }) => {
+  const email = newEmail("series-invalid");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const start = futureDateKey(1);
+  await addSeriesThroughForm(page, "Keep me", "Daily", start);
+  const panel = await openSeriesPanel(page, "Keep me");
+
+  // an empty title fails domain validation before any write
+  await panel.getByLabel("Rename series").fill("");
+  await panel.getByRole("button", { name: "Save rename" }).click();
+  await expect(page.getByRole("alert")).toContainText("task title is required");
+
+  // an empty anchor is not a valid date-only value and is refused too
+  await panel.getByLabel("Anchor").fill("");
+  await expect(page.getByRole("alert")).toContainText("expected a valid ISO date-only value");
+  await expect(panel.getByLabel("Anchor")).toHaveValue(start);
+
+  // nothing was written: the stored series still holds its original values
+  const series = await expectOneRemoteSeries(email);
+  expect(series.data.title).toBe("Keep me");
+  expect(series.data.anchorDate).toBe(start);
+});
 
 test("completing an occurrence from the series panel records exactly that occurrence", async ({ page }) => {
   const email = newEmail("series-panel-complete");

@@ -41,7 +41,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           void signOutUser();
         }}
       />
-      <main className="surface">
+      <main className="surface surface-inset">
         {/* the view-tied key remounts the surface on every switch, so the
             view-enter / view-fade animation replays (motion, DP1b) */}
         {view === "home" && (

@@ -1,0 +1,17 @@
+// Local-only rules for the emulator suites (firebase.emulator.json).
+//
+// This file is identical to firestore.rules except that the production uid
+// allowlist is gone, so the suites can create accounts with random uids
+// instead of being denied on `create`. firestore.rules is what gets deployed;
+// this file must never be deployed. tests/emulator.test.ts fails if the two
+// files drift apart beyond that allowlist.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only the owner of a subtree may touch it.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+  }
+}
