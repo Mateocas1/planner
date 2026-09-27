@@ -81,27 +81,40 @@ export type SeriesOccurrenceView = { id: string; date: string; completed: boolea
 /**
  * The details panel for the selected recurring series. It reuses the task
  * panel's shell (class and behaviour: right-anchored wide, overlay narrow,
- * Close and Escape). Occurrence completion keeps the list's per-occurrence
- * semantics: each checkbox writes exactly that occurrence's completion
- * record; a completed occurrence is immutable history, so it stays checked.
- * The data layer has no writer for a series' title, frequency or anchor, so
- * those are shown read-only.
+ * Close and Escape). Its title, frequency and anchor are editable; each edit
+ * goes through the data layer's series writers, so the write carries the same
+ * domain validation as creation and errors are surfaced by the parent surface.
+ * Occurrence completion keeps the list's per-occurrence semantics: each
+ * checkbox writes exactly that occurrence's completion record; a completed
+ * occurrence is immutable history, so it stays checked. Changing the schedule
+ * only changes future occurrences; recorded completions are never touched, and
+ * the panel says so once the series has history.
  */
 export function SeriesDetails({
   series,
   occurrences,
   busy,
+  hasHistory,
   onClose,
+  onRename,
+  onFrequencyChange,
+  onAnchorChange,
   onCompleteOccurrence,
   onDelete,
 }: {
   series: SeriesView;
   occurrences: SeriesOccurrenceView[];
   busy: boolean;
+  hasHistory: boolean;
   onClose: () => void;
+  onRename: (title: string) => void;
+  onFrequencyChange: (frequency: SeriesView["frequency"]) => void;
+  onAnchorChange: (anchorDate: string) => void;
   onCompleteOccurrence: (date: string) => void;
   onDelete: () => void;
 }) {
+  const [title, setTitle] = useState(series.title);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -118,17 +131,46 @@ export function SeriesDetails({
           Close
         </button>
       </header>
-      <p className="series-details-title">{series.title}</p>
-      <dl className="series-details-meta">
-        <div>
-          <dt>Frequency</dt>
-          <dd className="series-details-frequency">{series.frequency}</dd>
-        </div>
-        <div>
-          <dt>Anchor</dt>
-          <dd className="series-details-anchor">{series.anchorDate}</dd>
-        </div>
-      </dl>
+      <label htmlFor="series-details-title">Rename series</label>
+      <input
+        id="series-details-title"
+        type="text"
+        value={title}
+        autoFocus
+        onChange={event => setTitle(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === "Enter") onRename(title);
+        }}
+      />
+      <button type="button" disabled={busy} onClick={() => onRename(title)}>
+        Save rename
+      </button>
+      <label htmlFor="series-details-frequency">Frequency</label>
+      <select
+        id="series-details-frequency"
+        className="series-details-frequency"
+        value={series.frequency}
+        disabled={busy}
+        onChange={event => onFrequencyChange(event.target.value as SeriesView["frequency"])}
+      >
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+      <label htmlFor="series-details-anchor">Anchor</label>
+      <input
+        id="series-details-anchor"
+        className="series-details-anchor"
+        type="date"
+        value={series.anchorDate}
+        disabled={busy}
+        onChange={event => onAnchorChange(event.target.value)}
+      />
+      {hasHistory && (
+        <p className="series-details-history-note">
+          Changing the schedule changes future occurrences. Completed occurrences stay as history.
+        </p>
+      )}
       <h4>Upcoming occurrences</h4>
       <ul className="series-occurrences">
         {occurrences.map(occurrence => (

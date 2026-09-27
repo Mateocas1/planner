@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
-import { addSeries, completeOccurrence, deleteSeries, type Frequency } from "../data/series.ts";
+import { addSeries, completeOccurrence, deleteSeries, renameSeries, setSeriesAnchor, setSeriesFrequency, type Frequency } from "../data/series.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
@@ -282,7 +282,17 @@ export function Tasks({
           series={selectedSeries}
           occurrences={upcomingOccurrences(selectedSeries, completions, today)}
           busy={busy}
+          hasHistory={Object.keys(completions).some(id => id.startsWith(`${selectedSeries.id}:`))}
           onClose={() => setSelectedSeriesId(null)}
+          onRename={next => {
+            void run(() => renameSeries(uid, selectedSeries.id, next));
+          }}
+          onFrequencyChange={frequency => {
+            void run(() => setSeriesFrequency(uid, selectedSeries.id, frequency, selectedSeries.anchorDate));
+          }}
+          onAnchorChange={anchorDate => {
+            void run(() => setSeriesAnchor(uid, selectedSeries.id, selectedSeries.frequency, anchorDate));
+          }}
           onCompleteOccurrence={date => {
             void run(() => completeOccurrence(uid, selectedSeries.id, date));
           }}

@@ -550,7 +550,8 @@ select {
 }
 
 .task-details input[type="text"],
-.task-details input[type="date"] {
+.task-details input[type="date"],
+.task-details select {
   width: 100%;
 }
 
@@ -570,32 +571,11 @@ select {
   border-color: color-mix(in srgb, var(--red) 32%, var(--border));
 }
 
-/* series details panel: the definition is read-only (the data layer has no
-   writer for title, frequency or anchor), only occurrences and delete act */
-.series-details-title {
+/* series details panel: the definition (title, frequency, anchor) is edited
+   here; occurrence completion and delete act below it */
+.series-details-history-note {
   margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
-}
-
-.series-details-meta {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-}
-
-.series-details-meta div {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.series-details-meta dt {
   color: var(--text-3);
-  font-size: var(--text-sm);
-}
-
-.series-details-meta dd {
-  margin: 0;
   font-size: var(--text-sm);
 }
 
