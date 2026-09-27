@@ -3,6 +3,7 @@ import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
 import { useStore } from "./data/store.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
+import { Calendar } from "./ui/Calendar.tsx";
 import { Header } from "./ui/Header.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
@@ -41,12 +42,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       <main className="surface">
         {view === "home" && <Home loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
         {view === "tasks" && <Tasks loading={loading} tasks={tasks} uid={user.uid} />}
-        {view === "calendar" && (
-          <section aria-labelledby="calendar-heading">
-            <h2 id="calendar-heading">Calendar</h2>
-            <p>The Calendar surface arrives in increment I3.</p>
-          </section>
-        )}
+        {view === "calendar" && <Calendar uid={user.uid} loading={loading} blocks={blocks} tasks={tasks} />}
       </main>
     </div>
   );

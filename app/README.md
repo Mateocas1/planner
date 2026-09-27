@@ -11,11 +11,14 @@ A local-first personal planner (tasks, date-only deadlines, work blocks, recurri
 with per-occurrence completion) built with React + TypeScript + Vite on Cloud Firestore's
 persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
 
-Current state (increment I2 — Tasks surface): authentication gate, Home / Tasks / Calendar shell
-navigation, a Home surface with real task and work-block counts, and a full Tasks surface:
-create tasks with an optional date-only deadline (validated by the domain module), rename,
-complete/uncomplete, and delete, wired to Firestore with visible error reporting for rejected
-input. Calendar is a named placeholder (I3). No offline claim.
+Current state (increment I3 — Calendar surface): authentication gate, Home / Tasks / Calendar shell
+navigation, a Home surface with real task and work-block counts, a full Tasks surface (create with an
+optional date-only deadline validated by the domain module, rename, complete/uncomplete, delete), and
+a Calendar surface: a week time grid rendering work blocks in the browser's local timezone (the
+profile timezone is I6), with previous/next week and today navigation, a create form taking a start,
+an end and an optional task, per-block delete, an explicit empty state, and visible error reporting
+for rejected input — all wired to Firestore. Recurrence and the visual design pass are still ahead.
+No offline claim.
 
 ## Install
 
@@ -32,7 +35,7 @@ npm test             # domain tests (node:test, 7 passing expected)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators
-npm run test:browser   # Playwright UI tests (walking skeleton + Tasks surface) against the emulators
+npm run test:browser   # Playwright UI tests (walking skeleton + Tasks + Calendar surfaces) against the emulators
 ```
 
 `npm run test:browser` starts the emulators, builds the app and serves it on port **4174**

@@ -41,6 +41,13 @@ export async function readRemoteState(email: string) {
   });
 }
 
+export async function readRemoteBlocks(email: string): Promise<Array<{ start: string; end: string; taskId?: string }>> {
+  return withRemoteUser(email, async (db, uid) => {
+    const blocks = await getDocsFromServer(collection(db, `users/${uid}/blocks`));
+    return blocks.docs.map(doc => doc.data() as { start: string; end: string; taskId?: string });
+  });
+}
+
 export async function readRemoteTasks(email: string) {
   return withRemoteUser(email, async (db, uid) => {
     const tasks = await getDocsFromServer(collection(db, `users/${uid}/tasks`));
