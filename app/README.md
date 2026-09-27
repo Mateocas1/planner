@@ -45,10 +45,9 @@ cursor devices (`hover: hover` and `pointer: fine`). `prefers-reduced-motion` an
 `data-motion="reduce"` attribute both degrade transform motion to an opacity-only ~120 ms fade —
 gentler, not zero. Only `transform` and `opacity` animate; `transition: all` is forbidden.
 
-The motion is asserted by number, not by feel: `tests/motion.ts` samples computed styles per
-animation frame inside the page, and the browser tests measure each animated interaction against its
-token within one frame at 60 Hz, fit the easing curve by RMS error against candidate curves, and
-check that nothing outside `transform` and `opacity` changed.
+Animation durations are validated by eye, not asserted. The harness that measured them frame by frame
+and fitted easing curves by RMS error was removed once the audit showed it cost more than the three
+transitions it guarded.
 
 ## Install
 

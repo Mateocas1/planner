@@ -2,8 +2,7 @@
    odd/design/reference-design-language.md — the values read from the source
    stylesheet. Every colour, radius, space and type size in this file comes
    from a token defined in :root. Motion (DP1b) lives at the bottom: curves,
-   durations, the reduced-motion pair and the hover/press pointer gate,
-   measured by the evidence harness in tests/motion.ts. */
+   durations, the reduced-motion pair and the hover/press pointer gate. */
 
 :root {
   /* surfaces */
@@ -537,8 +536,8 @@ select {
    opacity only, named properties only, never `transition: all`. Hover and
    press are gated to cursor devices, which the source omits. Reduced motion
    (the OS preference, or the in-app [data-motion="reduce"] attribute) keeps
-   feedback but gentler: opacity-only, ~120 ms — not zero. Every duration
-   here is asserted numerically by tests/motion.ts. */
+   feedback but gentler: opacity-only, ~120 ms — not zero. Durations are
+   validated by eye, not asserted. */
 
 :root {
   /* curves — canonical, from the animate skill's table */

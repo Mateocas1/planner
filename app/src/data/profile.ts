@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { doc, onSnapshot, runTransaction, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./client.ts";
 
 /**
@@ -39,35 +39,35 @@ export function isValidTimeZone(zone: unknown): zone is string {
 
 /**
  * Returns the stored profile timezone, initializing it from the browser zone
- * when absent. Initialization runs inside a transaction: the write commits
- * only against the state it read, so two tabs initializing concurrently
- * cannot clobber each other — if another client wrote a value between our
- * read and our write, the transaction is retried, the retry reads the
- * winner's value, and it is kept instead of overwritten. A plain
- * read-then-set (or an unconditional set) could silently lose the other
- * client's zone.
+ * when absent. The write is a plain merged set, not a transaction:
+ * transactions fail offline, so a first-ever load with no profile and no
+ * connectivity would otherwise leave the surface stuck on an error. Two tabs
+ * initializing concurrently may both write the browser zone, but with
+ * `{ merge: true }` both outcomes are equivalent and no field is lost.
  */
 export async function ensureProfileTimeZone(uid: string): Promise<string> {
   const reference = profileRef(uid);
-  return runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(reference);
-    const stored = snapshot.data()?.timeZone;
-    if (isValidTimeZone(stored)) return stored;
-    transaction.set(reference, { timeZone: browserTimeZone }, { merge: true });
-    return browserTimeZone;
-  });
+  const snapshot = await getDoc(reference);
+  const stored = snapshot.data()?.timeZone;
+  if (isValidTimeZone(stored)) return stored;
+  await setDoc(reference, { timeZone: browserTimeZone }, { merge: true });
+  return browserTimeZone;
 }
 
 /** Sets the profile timezone explicitly after validating it. */
 export async function setProfileTimeZone(uid: string, timeZone: string): Promise<void> {
   if (!isValidTimeZone(timeZone)) throw new Error(`not a valid IANA time zone: ${timeZone}`);
-  await setDoc(profileRef(uid), { timeZone });
+  await setDoc(profileRef(uid), { timeZone }, { merge: true });
 }
 
 /**
  * Subscribes to the profile document and exposes its timezone, initializing
- * it on first use when absent. The subscription picks up the initialization
- * write and any later change from another client.
+ * it on first use when absent. There is no permanent single-shot guard: a
+ * later snapshot can retry a failed initialization (for example once
+ * connectivity returns). Consecutive snapshots do not stack attempts — at
+ * most one initialization is in flight, and a new one starts only when none
+ * is running. The subscription picks up the initialization write and any
+ * later change from another client.
  */
 export function useProfileTimeZone(uid: string | null): ProfileState {
   const [state, setState] = useState<ProfileState>({ loading: true, timeZone: null, error: null });
@@ -77,21 +77,27 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
       return;
     }
     setState({ loading: true, timeZone: null, error: null });
-    let initializing = false;
+    let attempt: Promise<void> | null = null;
+    const initialize = () => {
+      if (attempt) return;
+      attempt = ensureProfileTimeZone(uid)
+        .then(timeZone => setState({ loading: false, timeZone, error: null }))
+        .catch((error: unknown) => {
+          console.error("profile initialization failed", error);
+          setState({ loading: false, timeZone: null, error: "Could not load your planner timezone." });
+        })
+        .finally(() => {
+          attempt = null;
+        });
+    };
     const unsubscribe = onSnapshot(
       profileRef(uid),
       snapshot => {
         const stored = snapshot.data()?.timeZone;
         if (isValidTimeZone(stored)) {
           setState({ loading: false, timeZone: stored, error: null });
-        } else if (!initializing) {
-          initializing = true;
-          void ensureProfileTimeZone(uid)
-            .then(timeZone => setState({ loading: false, timeZone, error: null }))
-            .catch((error: unknown) => {
-              console.error("profile initialization failed", error);
-              setState({ loading: false, timeZone: null, error: "Could not load your planner timezone." });
-            });
+        } else {
+          initialize();
         }
       },
       error => {

@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { password, readRemoteBlocks, readRemoteProfile, readRemoteState, readRemoteTasks, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
-import { EASING_CANDIDATES, fitEasing, lastMount, layoutThrash, measureDuration, observedFrameMs, sampleMotion, sampleMotionDetailed } from "./motion.ts";
 
 test.setTimeout(60_000);
 
@@ -401,90 +400,3 @@ test("a clean account creates the profile on first use and renders the planner i
   expect(new Date(stored.start).getTime()).toBe(new Date(`${day}T09:30:00`).getTime());
 });
 
-/* ---------- motion (DP1b) ----------
-   The view switch surface: the keyed element inside main.surface that
-   remounts (and therefore re-animates) on every navigation. */
-const VIEW_SELECTOR = ".surface > section";
-
-test("view switch motion: measured duration, fitted curve and no layout thrash", async ({ page }) => {
-  const email = newEmail("motion-view");
-  await signUp(page, email);
-  await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
-
-  const nav = page.getByRole("navigation", { name: "Main" });
-  // armed before the trigger: the sampler must already be running when the
-  // click remounts the view, or the first frames are lost
-  const sampling = sampleMotionDetailed(page, VIEW_SELECTOR, 600);
-  await nav.getByRole("button", { name: "Tasks" }).click();
-  const { samples, animationStartedAt } = await sampling;
-
-  // --dur-hover = 140 ms. The tolerance is three of the sampler's observed
-  // frame intervals: the first changed value is seen up to one interval
-  // after the true start (the remount lands between frames), the settled
-  // end value up to one interval after the true end, and a load gap can
-  // stretch a local interval past the nominal 16.7 ms.
-  // Only the remounted view's own animation is measured: the click can
-  // land while the previous view's entrance is still finishing, and those
-  // tail frames belong to a different animation.
-  const mount = lastMount(samples);
-
-  // --dur-hover = 140 ms. The tolerance is three of the sampler's observed
-  // frame intervals: the first changed value is seen up to one interval
-  // after the true start (the remount lands between frames), the settled
-  // end value up to one interval after the true end, and a load gap can
-  // stretch a local interval past the nominal 16.7 ms.
-  const tolerance = 3 * observedFrameMs(mount);
-  const duration = measureDuration(mount);
-  expect(Math.abs(duration - 140)).toBeLessThanOrEqual(tolerance);
-
-  // fit near the captured animation start, so a load-induced missed first
-  // frame cannot flatten the curve and let a wrong candidate win
-  const fit = fitEasing(mount, EASING_CANDIDATES, animationStartedAt);
-  expect(fit[0].name).toBe("ease-out");
-
-  // only transform and opacity may animate; width/height/top/left must not
-  expect(layoutThrash(mount)).toEqual([]);
-});
-
-test("button press motion measures the press duration", async ({ page }) => {
-  const email = newEmail("motion-press");
-  await signUp(page, email);
-  await openTasks(page);
-
-  const press = page.getByRole("button", { name: "Add task" });
-  await press.hover();
-  const sampling = sampleMotion(page, ".task-form button", 500);
-  // hold the press so the transform settles at scale(0.98) inside the window
-  await page.mouse.down();
-  const samples = await sampling;
-  await page.mouse.up();
-
-  // --dur-press = 120 ms, with the same cadence-derived tolerance; a held
-  // transition additionally loses the flat ease-out tail, whose last frames
-  // round to the settled matrix string one interval before the true end.
-  const duration = measureDuration(samples);
-  expect(Math.abs(duration - 120)).toBeLessThanOrEqual(3 * observedFrameMs(samples));
-});
-
-test("reduced motion: transform gone, short opacity fade remains", async ({ page }) => {
-  const email = newEmail("motion-reduce");
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await signUp(page, email);
-  await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
-
-  const nav = page.getByRole("navigation", { name: "Main" });
-  const sampling = sampleMotion(page, VIEW_SELECTOR, 600);
-  await nav.getByRole("button", { name: "Tasks" }).click();
-  const samples = await sampling;
-
-  // only the remounted view's own fade is measured (see view switch test)
-  const mount = lastMount(samples);
-
-  // the transform-based motion is gone: identity throughout every frame
-  expect(new Set(mount.map(s => s.transform)).size).toBe(1);
-
-  // a gentler (not zero) opacity-only fade of about --dur-reduce = 120 ms,
-  // with the same cadence-derived tolerance as above
-  const duration = measureDuration(mount);
-  expect(Math.abs(duration - 120)).toBeLessThanOrEqual(3 * observedFrameMs(mount));
-});

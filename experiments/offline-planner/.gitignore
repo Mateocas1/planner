@@ -1,7 +1,0 @@
-node_modules/
-.firebase/
-*.log
-firebase-debug.log
-dist/
-test-results/
-playwright-report/
