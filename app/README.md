@@ -73,6 +73,7 @@ npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators
 npm run test:browser   # Playwright UI tests (walking skeleton + Tasks + Calendar surfaces) against the emulators
+npm run test:smoke     # one offline smoke test against the deployed site (see below)
 ```
 
 `npm run test:browser` starts the emulators, builds the app and serves it on port **4174**
@@ -83,6 +84,16 @@ npm run test:browser   # Playwright UI tests (walking skeleton + Tasks + Calenda
 
 `npm run test:emulator` starts the emulators itself via `firebase emulators:exec`; Java must
 be installed. To keep emulators running for development instead:
+
+`npm run test:smoke` is the one exception to "local only": it runs a single Playwright test
+against the **deployed site** (`https://cumbia-4ca6e.web.app`, configured in
+`playwright.smoke.config.ts`) with no local server and no emulator. It signs in to one fixed,
+clearly-marked smoke account (`offline-smoke@example.com`, created on the first ever run and
+signed in afterwards), creates a task through the UI, reloads online to confirm the task
+survives a fresh load, then takes the browser offline and reloads again to prove both offline
+claims: the service worker serves the shell, and Firestore's persistent cache renders the task.
+It starts no emulator and is matched only by `smoke.spec.ts`, so neither the local suite nor the
+smoke run picks up the other's tests.
 
 ```
 npm run emulators    # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187
@@ -106,3 +117,8 @@ The registration uses `registerType: "prompt"`: a waiting update is never activa
 never force-reloaded, so a new build cannot interrupt unsent writes queued in the Firestore
 persistent local cache. Reloading with no network serves the precached shell, which then renders the
 cached data. Firestore data itself is not precached; it comes from the persistent local cache.
+
+`npm run test:smoke` is the deployed-site proof of that promise: after signing in and creating a
+task, it reloads the page with the network off and asserts both halves separately — the app chrome
+(`Personal Planner`, the `Main` navigation and the signed-in identity) from the worker's precache,
+and the created task's title from the persistent cache.

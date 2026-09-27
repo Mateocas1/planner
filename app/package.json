@@ -13,6 +13,7 @@
     "dev": "vite",
     "test:emulator": "firebase emulators:exec --project demo-calendar-app --only auth,firestore \"node --experimental-strip-types --test tests/emulator.test.ts\"",
     "test:browser": "firebase emulators:exec --project demo-calendar-app --only auth,firestore \"playwright test\"",
+    "test:smoke": "playwright test --config=playwright.smoke.config.ts",
     "emulators": "firebase emulators:start --project demo-calendar-app --only auth,firestore"
   },
   "dependencies": {
