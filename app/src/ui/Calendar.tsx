@@ -15,7 +15,17 @@ import type { BlockView, TaskView } from "../data/store.ts";
 
 const minutesPerDay = 1440;
 const dayMs = 86_400_000;
-const hourHeight = 40; // px per hour; kept in sync with .calendar-hour in app.css
+const hourHeight = 56; // px per hour; kept in sync with .calendar-hour in
+// app.css. A block's height is always a percentage of the day, never a fixed
+// pixel minimum, so its drawn height stays proportional to its duration.
+
+/* D1: the grid frames the working day instead of all 24 hours, so the hours
+   that carry content sit on screen instead of below the fold. The default
+   window is 08:00-18:00 and only ever widens to take in a block that falls
+   outside it, so no block becomes unreachable. This is a layout decision, not
+   a control: there is nothing to scroll or toggle to see the rest of the day. */
+const defaultStartHour = 8;
+const defaultEndHour = 18;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -134,7 +144,43 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
   const weekStartWall = weekStart ?? mondayOf(wallAsUtc(new Date(), timeZone));
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
   const visibleKeys = useMemo(() => new Set(days.map(day => wallDayKey(day))), [days]);
-  const weekBlocks = blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone)));
+  const weekBlocks = useMemo(
+    () => blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone))),
+    [blocks, visibleKeys, timeZone],
+  );
+
+  // D1/D2: every visible block resolved to the minutes it occupies inside its
+  // own profile-zone day. A block ending on a later profile-zone day is
+  // clipped at the column's midnight (the D3-known limitation).
+  const laidOutBlocks = useMemo(
+    () =>
+      weekBlocks.map(block => {
+        const startDate = new Date(block.start);
+        const endDate = new Date(block.end);
+        const key = dateKey(startDate, timeZone);
+        const startMinutes = wallMinutes(startDate, timeZone);
+        const endMinutes = dateKey(endDate, timeZone) > key ? minutesPerDay : wallMinutes(endDate, timeZone);
+        return { block, key, startDate, endDate, startMinutes, endMinutes: Math.max(endMinutes, startMinutes) };
+      }),
+    [weekBlocks, timeZone],
+  );
+
+  // D1: the drawn window is the working day, widened -- never narrowed -- to
+  // include every block the grid renders, so nothing drawn is off the range.
+  const [rangeStart, rangeEnd] = useMemo(() => {
+    let start = defaultStartHour * 60;
+    let end = defaultEndHour * 60;
+    for (const item of laidOutBlocks) {
+      start = Math.min(start, Math.floor(item.startMinutes / 60) * 60);
+      end = Math.max(end, Math.ceil(item.endMinutes / 60) * 60);
+    }
+    return [Math.max(0, start), Math.min(minutesPerDay, Math.max(end, start + 60))];
+  }, [laidOutBlocks]);
+  const rangeMinutes = rangeEnd - rangeStart;
+  const hours = useMemo(
+    () => Array.from({ length: rangeMinutes / 60 }, (_, index) => rangeStart / 60 + index),
+    [rangeMinutes, rangeStart],
+  );
   // The current day is the profile zone's own today, so the highlighted
   // column follows the planner timezone, not the browser's zone.
   const todayKey = dateKey(new Date(), timeZone);
@@ -175,17 +221,23 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
         <span className="calendar-week-label">{weekLabel}</span>
       </div>
       <form className="block-form" onSubmit={onAdd}>
-        <label htmlFor="block-start">Start</label>
-        <input id="block-start" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
-        <label htmlFor="block-end">End</label>
-        <input id="block-end" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
-        <label htmlFor="block-task">Task</label>
-        <select id="block-task" value={taskId} onChange={event => setTaskId(event.target.value)}>
-          <option value="">No task</option>
-          {tasks.map(task => (
-            <option key={task.id} value={task.id}>{task.title}</option>
-          ))}
-        </select>
+        <div className="block-field">
+          <label htmlFor="block-start">Start</label>
+          <input id="block-start" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
+        </div>
+        <div className="block-field">
+          <label htmlFor="block-end">End</label>
+          <input id="block-end" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
+        </div>
+        <div className="block-field">
+          <label htmlFor="block-task">Task</label>
+          <select id="block-task" value={taskId} onChange={event => setTaskId(event.target.value)}>
+            <option value="">No task</option>
+            {tasks.map(task => (
+              <option key={task.id} value={task.id}>{task.title}</option>
+            ))}
+          </select>
+        </div>
         <button type="submit" disabled={busy}>Add block</button>
       </form>
       {error && <p role="alert">{error}</p>}
@@ -193,7 +245,7 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
       <div className="calendar-grid">
         <div className="calendar-ruler" aria-hidden="true">
           <div className="calendar-ruler-head" />
-          {Array.from({ length: 24 }, (_, hour) => (
+          {hours.map(hour => (
             <div key={hour} className="calendar-hour" style={{ height: hourHeight }}>{pad(hour)}:00</div>
           ))}
         </div>
@@ -207,16 +259,15 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
               {...(key === todayKey ? { "data-today": "true" } : {})}
             >
               <div className="calendar-day-head">
-                {new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short", month: "short", day: "numeric" })}
+                <span className="calendar-day-number">{new Date(day).toLocaleDateString("en-US", { ...utc, day: "numeric" })}</span>
+                <span className="calendar-day-weekday">{new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short" })}</span>
               </div>
-              <div className="calendar-day-body" style={{ height: hourHeight * 24 }}>
-                {blocks.filter(block => dateKey(new Date(block.start), timeZone) === key).map(block => {
-                  const startDate = new Date(block.start);
-                  const endDate = new Date(block.end);
-                  const startMinutes = wallMinutes(startDate, timeZone);
-                  // A block ending on a later profile-zone day is clipped at
-                  // the column's midnight (the D3-known limitation).
-                  const endMinutes = dateKey(endDate, timeZone) > key ? minutesPerDay : wallMinutes(endDate, timeZone);
+              <div className="calendar-day-body" style={{ height: (rangeMinutes / 60) * hourHeight }}>
+                {laidOutBlocks.filter(item => item.key === key).map(({ block, startDate, endDate, startMinutes, endMinutes }) => {
+                  // Clamped into the drawn window, which by construction
+                  // already contains every block (D1).
+                  const from = Math.max(rangeStart, Math.min(startMinutes, rangeEnd));
+                  const to = Math.max(from, Math.min(endMinutes, rangeEnd));
                   const task = tasks.find(candidate => candidate.id === block.taskId);
                   return (
                     <div
@@ -225,19 +276,20 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
                       data-start={block.start}
                       data-end={block.end}
                       style={{
-                        top: `${(startMinutes / minutesPerDay) * 100}%`,
-                        height: `${((endMinutes - startMinutes) / minutesPerDay) * 100}%`,
+                        top: `${((from - rangeStart) / rangeMinutes) * 100}%`,
+                        height: `${((to - from) / rangeMinutes) * 100}%`,
                       }}
                     >
                       <span className="block-time">{timeLabel(startDate, timeZone)}–{timeLabel(endDate, timeZone)}</span>
                       {task && <span className="block-task">{task.title}</span>}
                       <button
                         type="button"
+                        className="block-delete"
                         disabled={busy}
                         aria-label={`Delete block ${key} ${timeLabel(startDate, timeZone)}`}
                         onClick={() => void run(() => deleteBlock(uid, block.id))}
                       >
-                        Delete
+                        <span aria-hidden="true">×</span>
                       </button>
                     </div>
                   );

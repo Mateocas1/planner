@@ -864,21 +864,43 @@ select {
   margin-left: auto;
 }
 
+/* D3: the creation controls sit side by side in one compact row on a wide
+   viewport and wrap on a narrow one. Each field keeps its label directly
+   above its control -- the accessible names the tests address -- so the
+   labels, the control order and the operation are unchanged; only the layout
+   is. Nothing sits behind a click. */
 .block-form {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  max-width: 22rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
 
-.block-form label {
+.block-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* each field takes an equal share of the row and no more than the width a
+     datetime control needs, so the row stays compact on a wide viewport and
+     still fits two fields per line on a narrow one */
+  flex: 1 1 10rem;
+  max-width: 13rem;
+  min-width: 0;
+}
+
+.block-field input,
+.block-field select {
+  width: 100%;
+}
+
+.block-field label {
   font-size: var(--text-sm);
   color: var(--text-2);
 }
 
 .block-form button {
-  align-self: flex-start;
+  align-self: flex-end;
 }
 
 .calendar-grid {
@@ -893,18 +915,40 @@ select {
   flex: 0 0 3.5rem;
 }
 
+/* D3: the day header stacks the day number over the weekday abbreviation, so
+   each column stays narrow and the header reads as a column label instead of a
+   wide inline date. Both header cells grow together, so the ruler and the days
+   stay aligned. */
 .calendar-ruler-head,
 .calendar-day-head {
-  height: var(--h-lg);
+  height: calc(var(--h-lg) + 0.5rem);
   border-bottom: 1px solid var(--border);
 }
 
 .calendar-day-head {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  line-height: 1.05;
   font-size: var(--text-sm);
   color: var(--text-3);
+}
+
+.calendar-day-number {
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.calendar-day-today .calendar-day-number {
+  color: var(--accent);
+}
+
+.calendar-day-weekday {
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
 }
 
 .calendar-hour {
@@ -937,14 +981,28 @@ select {
   position: relative;
 }
 
+/* D2: the delete control is a compact corner affordance, out of the content
+   flow, so the card leads with content instead of a destructive action. It
+   stays a real, always-visible labelled button -- never hover-gated -- so a
+   touch device can still reach it. D1: with the control out of the flow the
+   card no longer needs a one-hour minimum height, so its drawn height stays
+   proportional to its duration and two short blocks in the same hour no
+   longer overlap. */
 .calendar-block {
+  --block-control: 1.25rem;
   position: absolute;
   left: 2px;
   right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  /* a tight horizontal inset gives the time label room to sit beside the
+     corner control without truncating */
+  padding: var(--space-1);
   background: color-mix(in srgb, var(--blue) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--blue) 32%, var(--border));
   border-radius: var(--r-sm);
-  padding: 0 var(--space-1);
   font-size: var(--text-sm);
   overflow: hidden;
 }
@@ -960,18 +1018,52 @@ select {
 }
 
 .block-time {
-  display: block;
-}
-
-.block-task {
-  display: block;
-  font-weight: 500;
-}
-
-.calendar-block button {
-  height: auto;
-  padding: 0 var(--space-1);
+  flex: 0 0 auto;
+  min-width: 0;
+  /* the corner control owns the top-right; the short HH:MM-HH:MM label keeps
+     clear of it inside this gutter, so it never truncates */
+  padding-right: var(--block-control);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-xs);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+/* the title is the flexible row: in a block too short for its lines it gives
+   up the last line rather than overflowing the card */
+.block-task {
+  flex: 0 1 auto;
+  min-height: 0;
+  padding-right: calc(var(--block-control) + var(--space-1));
+  font-weight: 500;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* a real labelled button pinned to the card's top-right corner: compact, out
+   of the content flow, and always visible so a touch device can reach it */
+.calendar-block button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: var(--block-control);
+  height: var(--block-control);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs);
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-4);
+  background: transparent;
+  border-color: transparent;
 }
 
 /* ---------- narrow viewports: the sidebar becomes a top bar ---------- */
@@ -1020,6 +1112,13 @@ select {
      the surface takes the full width again */
   .surface-inset {
     margin-inline: 0;
+  }
+
+  /* D1/D2: the blocks are stacked cards, so the day columns keep enough width
+     for a comfortable card instead of squeezing the time label and its
+     control; the grid scrolls sideways as it already did */
+  .calendar-day {
+    min-width: 8rem;
   }
 
   /* the details panel becomes a full overlay on narrow viewports */
