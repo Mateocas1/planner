@@ -18,4 +18,4 @@ connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
-connectFirestoreEmulator(db, "127.0.0.1", 8080);
+connectFirestoreEmulator(db, "127.0.0.1", 8087);

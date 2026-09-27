@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 const required = {
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
-  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8087",
   GCLOUD_PROJECT: "demo-calendar-offline",
 };
 for (const [name, value] of Object.entries(required)) {
@@ -11,7 +11,7 @@ for (const [name, value] of Object.entries(required)) {
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "browser.spec.ts",
+  testMatch: ["browser.spec.ts", "multi-client.spec.ts"],
   use: { baseURL: "http://127.0.0.1:4173" },
   webServer: {
     command: "npm run build && vite preview --host 127.0.0.1 --port 4173",

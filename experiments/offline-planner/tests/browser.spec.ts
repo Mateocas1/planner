@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
-import "./multi-client.spec.ts";
 import {
   blockText,
   createAccount,
   createConfirmedBlock,
   createConfirmedTask,
+  findRemoteBlockId,
   item,
+  verifyRemoteBlockDeletion,
   verifyRemoteState,
 } from "./browser-helpers.ts";
 
@@ -137,6 +138,29 @@ test("reopens the built app shell offline and later syncs cached edits", async (
   await expect(item(reopened, afterReopen)).toContainText("server-confirmed", { timeout: 30_000 });
 });
 
+test("deletes a block through the UI and proves its server absence across a reload", async ({ page }) => {
+  const marker = `delete-block-${Date.now()}`;
+  const email = `${marker}@example.invalid`;
+  const control = `${marker} control`;
+
+  await page.goto("/");
+  await createAccount(page, email);
+  await createConfirmedTask(page, control);
+  await createConfirmedBlock(page);
+  await verifyRemoteState(email, [{ title: control, completed: false }]);
+  const blockId = await findRemoteBlockId(email);
+
+  await page.getByRole("button", { name: "Delete block" }).click();
+  await expect(item(page, blockText)).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Delete block" })).toHaveCount(0);
+  await verifyRemoteBlockDeletion(email, blockId, [{ title: control, completed: false }]);
+
+  await page.reload();
+  await expect(item(page, blockText)).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Delete block" })).toHaveCount(0);
+  await expect(item(page, control)).toContainText("server-confirmed", { timeout: 30_000 });
+});
+
 test("observes a waiting Workbox update while Firestore writes are backend-blocked", async ({ page, context }) => {
   const marker = `sw-update-${Date.now()}`;
   const email = `${marker}@example.invalid`;
@@ -199,7 +223,7 @@ test("observes a waiting Workbox update while Firestore writes are backend-block
     await createConfirmedBlock(page);
     await verifyRemoteState(email, [{ title: original, completed: false }, { title: control, completed: false }]);
 
-    await context.route("http://127.0.0.1:8080/**", async route => {
+    await context.route("http://127.0.0.1:8087/**", async route => {
       firestoreRequests += 1;
       await route.abort("failed");
     });
@@ -257,7 +281,7 @@ test("observes a waiting Workbox update while Firestore writes are backend-block
         && performance.getEntriesByType("navigation").length === state.navigationCount;
     }, initial)).toBe(true);
 
-    await context.unroute("http://127.0.0.1:8080/**");
+    await context.unroute("http://127.0.0.1:8087/**");
     await expect(item(page, renamed)).toContainText("server-confirmed", { timeout: 30_000 });
     await expect(item(page, renamed)).toContainText("completed");
     await expect(item(page, created)).toContainText("server-confirmed", { timeout: 30_000 });
@@ -300,7 +324,7 @@ test("observes a waiting Workbox update while Firestore writes are backend-block
     await expect(reopened.getByRole("alert")).toHaveCount(0);
   } finally {
     try {
-      await context.unroute("http://127.0.0.1:8080/**");
+      await context.unroute("http://127.0.0.1:8087/**");
     } finally {
       try {
         await session?.detach();

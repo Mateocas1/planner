@@ -30,7 +30,7 @@ export async function verifyRemoteState(email: string, expectedTasks: ExpectedTa
   const auth = getAuth(app);
   const db = getFirestore(app);
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFirestoreEmulator(db, "127.0.0.1", 8087);
 
   try {
     const account = await signInWithEmailAndPassword(auth, email, password);
@@ -63,7 +63,7 @@ async function withRemoteUser<T>(email: string, work: (db: ReturnType<typeof get
   const auth = getAuth(app);
   const db = getFirestore(app);
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFirestoreEmulator(db, "127.0.0.1", 8087);
 
   try {
     const account = await signInWithEmailAndPassword(auth, email, password);
@@ -87,6 +87,32 @@ export async function findRemoteTaskId(email: string, title: string) {
 
 export async function remoteTask(email: string, taskId: string) {
   return withRemoteUser(email, (db, uid) => getDocFromServer(doc(db, `users/${uid}/tasks/${taskId}`)));
+}
+
+export async function findRemoteBlockId(email: string) {
+  return withRemoteUser(email, async (db, uid) => {
+    const blocks = await getDocsFromServer(collection(db, `users/${uid}/blocks`));
+    expect(blocks.size).toBe(1);
+    expect(blocks.docs[0].data()).toMatchObject({
+      start: "2026-02-03T09:00:00-03:00",
+      end: "2026-02-03T10:00:00-03:00",
+    });
+    return blocks.docs[0].id;
+  });
+}
+
+export async function verifyRemoteBlockDeletion(email: string, deletedBlockId: string, expectedTasks: ExpectedTask[]) {
+  await withRemoteUser(email, async (db, uid) => {
+    expect((await getDocFromServer(doc(db, `users/${uid}/blocks/${deletedBlockId}`))).exists()).toBe(false);
+    const blocks = await getDocsFromServer(collection(db, `users/${uid}/blocks`));
+    expect(blocks.size).toBe(0);
+    const tasks = await getDocsFromServer(collection(db, `users/${uid}/tasks`));
+    expect(tasks.size).toBe(expectedTasks.length);
+    for (const expected of expectedTasks) {
+      const task = tasks.docs.find(entry => entry.data().title === expected.title);
+      expect(task?.data()).toMatchObject(expected);
+    }
+  });
 }
 
 export async function deleteRemoteTask(email: string, taskId: string) {
