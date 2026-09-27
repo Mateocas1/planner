@@ -4,15 +4,16 @@ import type { TaskView } from "../data/store.ts";
 /**
  * The details panel for the selected task. Every mutating action lives here
  * and nowhere else. It closes through the explicit Close control and with
- * Escape. The deadline renders as a read-only date control: the data layer
- * exposes no deadline write yet, and a local write here would bypass the
- * domain validation every other write goes through.
+ * Escape. The deadline control writes through the data layer's
+ * setTaskDeadline, so the write goes through the same domain validation as
+ * every other write; errors are surfaced by the parent surface.
  */
 export function TaskDetails({
   task,
   busy,
   onClose,
   onRename,
+  onDeadlineChange,
   onToggleCompleted,
   onDelete,
 }: {
@@ -20,6 +21,7 @@ export function TaskDetails({
   busy: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
+  onDeadlineChange: (deadline: string) => void;
   onToggleCompleted: () => void;
   onDelete: () => void;
 }) {
@@ -56,7 +58,12 @@ export function TaskDetails({
         Save rename
       </button>
       <label htmlFor="task-details-deadline">Deadline</label>
-      <input id="task-details-deadline" type="date" value={task.deadline ?? ""} readOnly />
+      <input
+        id="task-details-deadline"
+        type="date"
+        value={task.deadline ?? ""}
+        onChange={event => onDeadlineChange(event.target.value)}
+      />
       <label className="task-details-completed">
         <input type="checkbox" checked={task.completed} disabled={busy} onChange={onToggleCompleted} />
         Completed

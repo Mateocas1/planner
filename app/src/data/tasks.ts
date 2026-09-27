@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, deleteField, doc, updateDoc } from "firebase/firestore";
 import { createTask } from "../domain/model.ts";
 import { db } from "./client.ts";
 
@@ -25,6 +25,21 @@ export async function renameTask(uid: string, taskId: string, title: string) {
 
 export async function setTaskCompleted(uid: string, taskId: string, completed: boolean) {
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { completed });
+}
+
+/**
+ * Sets or clears the deadline on a task. A present deadline is validated as a
+ * date-only value through the domain module (createTask) before any write; a
+ * missing deadline removes the field from the document. Only the deadline
+ * field is written; the current title is passed in solely for validation.
+ */
+export async function setTaskDeadline(uid: string, taskId: string, title: string, deadline?: string) {
+  if (deadline === undefined) {
+    await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { deadline: deleteField() });
+    return;
+  }
+  createTask(taskId, title, deadline);
+  await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { deadline });
 }
 
 export async function deleteTask(uid: string, taskId: string) {

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { TaskView } from "../data/store.ts";
-import { addTask, deleteTask, renameTask, setTaskCompleted } from "../data/tasks.ts";
+import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { TaskDetails } from "./TaskDetails.tsx";
 
 /**
@@ -16,6 +16,10 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Rows whose completion the user just performed in this session: the wash
+  // class is applied only to these, so it never plays on mount for rows that
+  // were already completed. The class is removed on animationend.
+  const [washIds, setWashIds] = useState<ReadonlySet<string>>(() => new Set<string>());
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -28,6 +32,30 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
       setBusy(false);
     }
   }
+
+  /** Completes or reopens a task; completing it queues the one-shot wash. */
+  function completeTask(taskId: string, completed: boolean) {
+    void run(async () => {
+      await setTaskCompleted(uid, taskId, completed);
+      setWashIds(previous => {
+        const next = new Set(previous);
+        if (completed) next.add(taskId);
+        else next.delete(taskId);
+        return next;
+      });
+    });
+  }
+
+  /** Retires the wash class once its animation has actually run. */
+  const endTaskWash = (taskId: string, event: React.AnimationEvent) => {
+    if (event.animationName !== "task-wash") return;
+    setWashIds(previous => {
+      if (!previous.has(taskId)) return previous;
+      const next = new Set(previous);
+      next.delete(taskId);
+      return next;
+    });
+  };
 
   const onAdd = (event: FormEvent) => {
     event.preventDefault();
@@ -49,14 +77,18 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
       </h3>
       <ul className="task-list">
         {items.map(task => (
-          <li key={task.id} className={task.completed ? "task completed" : "task"}>
+          <li
+            key={task.id}
+            className={`task${task.completed ? " completed" : ""}${washIds.has(task.id) ? " task-wash" : ""}`}
+            onAnimationEnd={event => endTaskWash(task.id, event)}
+          >
             <input
               type="checkbox"
               className="task-check"
               checked={task.completed}
               disabled={busy}
               aria-label={`${task.completed ? "Reopen" : "Complete"}: ${task.title}`}
-              onChange={() => void run(() => setTaskCompleted(uid, task.id, !task.completed))}
+              onChange={() => completeTask(task.id, !task.completed)}
             />
             <button
               type="button"
@@ -117,8 +149,13 @@ export function Tasks({ uid, tasks, loading }: { uid: string; tasks: TaskView[];
               await renameTask(uid, selected.id, next);
             });
           }}
+          onDeadlineChange={next => {
+            void run(async () => {
+              await setTaskDeadline(uid, selected.id, selected.title, next === "" ? undefined : next);
+            });
+          }}
           onToggleCompleted={() => {
-            void run(() => setTaskCompleted(uid, selected.id, !selected.completed));
+            completeTask(selected.id, !selected.completed);
           }}
           onDelete={() => {
             void run(() => deleteTask(uid, selected.id));

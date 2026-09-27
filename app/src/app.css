@@ -340,8 +340,9 @@ select {
 }
 
 /* the completion wash: a brief green veil that fades out once the completed
-   state lands. It replays whenever the completed class is applied (including
-   on first render of already-completed rows), so it is kept subtle. */
+   state lands. The UI applies the task-wash class only when the user performs
+   the completion, so the animation never plays on mount for rows that were
+   already completed. */
 .task::before {
   content: "";
   position: absolute;
@@ -356,7 +357,7 @@ select {
   background: var(--surface-2);
 }
 
-.task.completed::before {
+.task.completed.task-wash::before {
   animation: var(--motion-wash);
 }
 

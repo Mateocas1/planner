@@ -139,6 +139,25 @@ test("deleting a task removes the row and the server document", async ({ page })
   await expectRemoteTasks(email, []);
 });
 
+test("editing the deadline in the details panel persists the change and clearing removes the field", async ({ page }) => {
+  const email = newEmail("deadline");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Scheduled task");
+  await page.getByRole("button", { name: "Scheduled task" }).click();
+  const panel = page.getByRole("complementary", { name: "Task details" });
+
+  await panel.getByLabel("Deadline").fill("2026-05-10");
+  await expect(page.locator(".task-deadline", { hasText: "2026-05-10" })).toBeVisible();
+  await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false, deadline: "2026-05-10" }]);
+
+  // clearing the control removes the field on the server entirely
+  await panel.getByLabel("Deadline").fill("");
+  await expect(page.locator(".task-deadline")).toHaveCount(0);
+  await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false }]);
+});
+
 async function addTaskThroughForm(page: Page, title: string) {
   await page.getByLabel("Task title").fill(title);
   await page.getByRole("button", { name: "Add task" }).click();
@@ -194,6 +213,25 @@ test("an empty title is refused with a visible error and writes nothing", async 
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.getByRole("alert")).toContainText("task title is required");
   await expectRemoteTasks(email, []);
+});
+
+test("the completion wash plays on a user completion and never for already-completed rows", async ({ page }) => {
+  const email = newEmail("wash");
+  await signUp(page, email);
+  await openTasks(page);
+
+  // the wash class appears only when the user performs the completion
+  await addTaskThroughForm(page, "Fresh task");
+  await page.getByRole("checkbox", { name: "Complete: Fresh task" }).click();
+  await expect(page.locator("li.task.completed", { hasText: "Fresh task" })).toHaveCount(1);
+  await expect(page.locator("li.task.task-wash")).toHaveCount(1);
+
+  // rows that mount already completed must not replay the wash
+  await page.reload();
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await openTasks(page);
+  await expect(page.locator("li.task.completed", { hasText: "Fresh task" })).toHaveCount(1);
+  await expect(page.locator("li.task.task-wash")).toHaveCount(0);
 });
 
 async function openCalendar(page: Page) {
