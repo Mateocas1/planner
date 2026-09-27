@@ -5,18 +5,102 @@ body {
   background: #f5f5f7;
 }
 
-.placeholder {
-  max-width: 40rem;
-  margin: 4rem auto;
+.gate {
+  max-width: 22rem;
+  margin: 5rem auto;
   padding: 0 1.5rem;
 }
 
-.placeholder h1 {
-  font-size: 1.75rem;
+.gate h1 {
+  font-size: 1.5rem;
   font-weight: 600;
 }
 
-.placeholder p {
-  line-height: 1.5;
+.gate form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gate label {
+  font-size: 0.85rem;
   color: #515154;
+}
+
+.gate input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #f0f0f2;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.5rem;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e5ea;
+}
+
+.app-name {
+  font-weight: 600;
+}
+
+.who {
+  color: #515154;
+  font-size: 0.9rem;
+}
+
+.header nav {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.header [aria-current="page"] {
+  background: #1d1d1f;
+  color: #ffffff;
+  border-color: #1d1d1f;
+}
+
+.surface {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+.surface h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.counts {
+  padding-left: 1.25rem;
+  line-height: 1.8;
 }

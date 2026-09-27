@@ -11,8 +11,10 @@ A local-first personal planner (tasks, date-only deadlines, work blocks, recurri
 with per-occurrence completion) built with React + TypeScript + Vite on Cloud Firestore's
 persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
 
-Current state (increment I1a — Foundation): toolchain, domain module, Firebase client,
-emulator configuration, security rules, and a placeholder entry point. There is no real UI yet.
+Current state (increment I1b — Walking skeleton UI): authentication gate with email/password
+sign-in and account creation, Home / Tasks / Calendar shell navigation, and a Home surface
+showing the signed-in user's real task and work-block counts from Firestore, including the
+truthful empty state. Tasks and Calendar are named placeholders (I2 and I3). No offline claim.
 
 ## Install
 
@@ -29,7 +31,14 @@ npm test             # domain tests (node:test, 7 passing expected)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators
+npm run test:browser   # Playwright UI test (walking skeleton) against the emulators
 ```
+
+`npm run test:browser` starts the emulators, builds the app and serves it on port **4174**
+(`127.0.0.1`). It requires ports 4174 (preview), 9199 (Auth), 8187 (Firestore) and 4400
+(emulator hub) to be free, and runs only with the emulator environment
+(`FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9199`, `FIRESTORE_EMULATOR_HOST=127.0.0.1:8187`,
+`GCLOUD_PROJECT=demo-calendar-app`) that `firebase emulators:exec` provides.
 
 `npm run test:emulator` starts the emulators itself via `firebase emulators:exec`; Java must
 be installed. To keep emulators running for development instead:
