@@ -23,7 +23,8 @@ resolved zone), with previous/next week and today navigation, each block drawn a
 linked task title), the profile timezone's current day highlighted, a static pending state for a block
 whose write is not yet acknowledged, a create form taking a start, an end
 and an optional task, per-block delete, an explicit empty state, and visible error reporting for
-rejected input — all wired to Firestore. No offline claim.
+rejected input — all wired to Firestore, with the built app shell cached by a service worker so the
+app opens and renders its cached data offline (see "Offline app shell" below).
 
 ## Design foundation (DP1)
 
@@ -96,3 +97,12 @@ npm run emulators    # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187
   not a backup**; clearing site data loses it.
 - Offline reads and writes are exercised by the browser suite, which drives the app offline and
   back. The app claims only what those tests show.
+
+## Offline app shell
+
+`vite-plugin-pwa` generates a Workbox service worker that precaches the built shell — the HTML, JS,
+CSS and the self-hosted Geist font — and `src/main.tsx` registers it where the browser supports one.
+The registration uses `registerType: "prompt"`: a waiting update is never activated and the page is
+never force-reloaded, so a new build cannot interrupt unsent writes queued in the Firestore
+persistent local cache. Reloading with no network serves the precached shell, which then renders the
+cached data. Firestore data itself is not precached; it comes from the persistent local cache.
