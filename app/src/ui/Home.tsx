@@ -142,7 +142,7 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
       </header>
 
       {empty ? (
-        <p className="home-empty" role="status">No tasks and no work blocks yet. Your planner is empty.</p>
+        <p className="empty-note" role="status">No tasks and no work blocks yet. Your planner is empty.</p>
       ) : (
         <ul className="stat-cards">
           {cards.map(card => (
@@ -199,22 +199,26 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
           {weekDays.length === 0 ? (
             <p className="card-empty">No work blocks this week.</p>
           ) : (
-            weekDays.map(day => (
-              <div key={day.key} className="card-group">
-                <h4 className="card-group-heading">{day.label}</h4>
-                <ul className="card-rows">
-                  {day.blocks.map(block => {
-                    const title = titleOf(block.taskId);
-                    return (
-                      <li key={block.id} className="card-row">
-                        <span className="card-row-time">{blockTime(block)}</span>
-                        {title !== null && <span className="card-row-title">{title}</span>}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))
+            /* the day groups flow into two balanced columns on a wide
+               viewport; the reading order stays Monday to Sunday */
+            <div className="week-digest">
+              {weekDays.map(day => (
+                <div key={day.key} className="card-group">
+                  <h4 className="card-group-heading">{day.label}</h4>
+                  <ul className="card-rows">
+                    {day.blocks.map(block => {
+                      const title = titleOf(block.taskId);
+                      return (
+                        <li key={block.id} className="card-row">
+                          <span className="card-row-time">{blockTime(block)}</span>
+                          {title !== null && <span className="card-row-title">{title}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </section>

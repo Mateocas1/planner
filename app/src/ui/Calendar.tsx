@@ -123,7 +123,9 @@ export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }
   if (timeZone === null) {
     return (
       <section aria-labelledby="calendar-heading">
-        <h2 id="calendar-heading">Calendar</h2>
+        <header className="page-head">
+          <h2 id="calendar-heading">Calendar</h2>
+        </header>
         {profileError ? <p role="alert">{profileError}</p> : <p role="status">Loading your planner timezone…</p>}
       </section>
     );
@@ -212,7 +214,9 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
 
   return (
     <section aria-labelledby="calendar-heading">
-      <h2 id="calendar-heading">Calendar</h2>
+      <header className="page-head">
+        <h2 id="calendar-heading">Calendar</h2>
+      </header>
       <p className="calendar-tz">Times are shown in the planner timezone ({timeZone}).</p>
       <div className="calendar-toolbar">
         <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
@@ -241,7 +245,7 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
         <button type="submit" disabled={busy}>Add block</button>
       </form>
       {error && <p role="alert">{error}</p>}
-      {!loading && weekBlocks.length === 0 && <p role="status">No work blocks this week.</p>}
+      {!loading && weekBlocks.length === 0 && <p className="empty-note" role="status">No work blocks this week.</p>}
       <div className="calendar-grid">
         <div className="calendar-ruler" aria-hidden="true">
           <div className="calendar-ruler-head" />

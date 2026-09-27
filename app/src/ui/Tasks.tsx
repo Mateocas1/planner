@@ -150,8 +150,8 @@ export function Tasks({
 
   const group = (label: string, items: TaskView[]) => (
     <section className="task-group">
-      <h3>
-        {label} ({items.length})
+      <h3 className="section-heading task-group-heading">
+        {label} <span className="heading-count">({items.length})</span>
       </h3>
       <ul className="task-list">
         {items.map(task => (
@@ -188,7 +188,9 @@ export function Tasks({
 
   return (
     <section aria-labelledby="tasks-heading">
-      <h2 id="tasks-heading">Tasks</h2>
+      <header className="page-head">
+        <h2 id="tasks-heading">Tasks</h2>
+      </header>
       <form className="task-form" onSubmit={onAdd}>
         <div className="task-field task-field-grow">
           <label htmlFor="task-title">Task title</label>
@@ -238,12 +240,14 @@ export function Tasks({
       </form>
       {error && <p role="alert">{error}</p>}
       {!loading && tasks.length === 0 && series.length === 0 ? (
-        <p role="status">No tasks yet. Add your first one above.</p>
+        <p className="empty-note" role="status">No tasks yet. Add your first one above.</p>
       ) : (
         <>
           {series.length > 0 && (
             <section className="task-group">
-              <h3>Repeating ({series.length})</h3>
+              <h3 className="section-heading task-group-heading">
+                Repeating <span className="heading-count">({series.length})</span>
+              </h3>
               <ul className="task-list">
                 {series.map(seriesRow => {
                   const next = nextOccurrence(seriesRow, completions, today);

@@ -122,6 +122,12 @@ body {
   flex-direction: column;
   gap: var(--space-2);
   flex: 0 0 var(--sidebar-w);
+  /* The identity line is one nowrap string, so without this the flex item's
+     automatic minimum size is that string's full width: the sidebar grew to
+     ~408 px instead of its 252 px design width, pushed the whole content
+     column right, and defeated .who's own ellipsis. min-width:0 lets the
+     basis win and the identity truncate where it is. */
+  min-width: 0;
   box-sizing: border-box;
   padding: var(--space-5) var(--space-3);
   background: var(--bg-sidebar);
@@ -379,18 +385,26 @@ select {
 /* D3: one honest "Today" section and one week digest under the cards. Tasks
    due today and work blocks starting today are real store state resolved in
    the profile timezone; when a side is empty it says so instead of vanishing. */
-.home-empty {
-  margin: 0;
-  font-size: var(--text-md);
-  color: var(--text-3);
-}
-
 .home-section {
   margin-top: var(--space-8);
 }
 
-/* D2: one shared heading treatment for every Home section, so Today and the
-   week digest read as siblings. */
+/* The surface-level empty sentence, shared by all three surfaces: the same
+   size, colour and token margin, so a calm empty Home, Tasks and Calendar
+   read as the same app. The bottom margin collapses into whatever follows
+   (a section heading, or nothing). */
+.empty-note {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-md);
+  color: var(--text-3);
+}
+
+/* D2 (cross-surface): one voice for every section heading — sentence case at
+   full strength, the reference's "Ongoing Works" treatment. Home's sections,
+   the Tasks list groups and every future surface-level section share this
+   class, so the heading level reads the same everywhere. The counts a list
+   heading carries stay: they are information, not decoration (see
+   .heading-count). */
 .section-heading {
   margin: 0 0 var(--space-4);
   font-size: var(--text-md);
@@ -419,6 +433,22 @@ select {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-4);
+}
+
+/* Home's week digest is the longest block on the surface: day groups for up to
+   seven days, each a heading plus rows. On a wide viewport it flows into two
+   balanced columns (as many as fit at a readable 18rem minimum, never more
+   than two), which keeps the digest a digest instead of a column that runs
+   past the viewport; a column never splits a day group. */
+.week-digest {
+  column-count: 2;
+  column-width: 18rem;
+  column-gap: var(--space-8);
+}
+
+.week-digest > .card-group {
+  break-inside: avoid;
+  margin-bottom: var(--space-3);
 }
 
 .card-rows {
@@ -500,15 +530,18 @@ select {
   margin: 0 0 var(--space-5);
 }
 
-.task-group h3 {
-  margin: 0 0 var(--space-3);
+/* D2 (cross-surface): the group heading keeps the section-heading voice and
+   adds only the rule that separates it from the rows below — the rule is
+   material doing a job, not a second voice. */
+.task-group-heading {
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--divider);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+}
+
+/* the count a list heading carries: still there, read second */
+.heading-count {
   color: var(--text-4);
+  font-weight: 500;
 }
 
 /* D3: the rows sit closer together; the width comes from the bounded group. */
@@ -847,15 +880,21 @@ select {
 /* ---------- calendar ---------- */
 
 .calendar-tz {
+  margin: 0 0 var(--space-3);
   color: var(--text-3);
   font-size: var(--text-sm);
 }
 
+/* D3 (mobile): the toolbar wraps instead of squeezing. Without this the week
+   label — a nowrap-preferring meta string — was the only row item that could
+   shrink, and it collapsed into a four-line column at 390 px; wrapped, it
+   takes the line below the buttons and stays one line. */
 .calendar-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin: var(--space-3) 0;
+  margin: 0 0 var(--space-3);
 }
 
 .calendar-week-label {
@@ -1102,10 +1141,29 @@ select {
     margin-left: auto;
     padding-top: 0;
     border-top: none;
+    /* the identity line is one nowrap string wider than the bar, and as a
+       flex item .side-foot would otherwise hold its min-content width: the
+       line then ran past the viewport edge and carried the Sign out control
+       off screen with it. With this it shrinks, .who ellipsizes and Sign out
+       stays reachable. */
+    min-width: 0;
+  }
+
+  /* the sidebar becomes the top bar, so its items and the surface content
+     share one left edge: 16 px, the same as .surface below it */
+  .sidebar {
+    padding-inline: var(--space-4);
   }
 
   .surface {
     padding: var(--space-6) var(--space-4);
+  }
+
+  /* D3 (mobile): Home's 32 px section gap is a desktop value; at 390 px the
+     family rhythm is 20-24 px (Tasks groups, form and toolbar gaps), so the
+     sections step down to match instead of doubling the scroll. */
+  .home-section {
+    margin-top: var(--space-6);
   }
 
   /* the inset/centred column is a desktop treatment; on a narrow viewport
@@ -1121,10 +1179,12 @@ select {
     min-width: 8rem;
   }
 
-  /* the details panel becomes a full overlay on narrow viewports */
+  /* the details panel becomes a full overlay on narrow viewports, so it is a
+     surface of its own and its content column matches the others (16 px) */
   .task-details {
     inset: 0;
     width: auto;
+    padding-inline: var(--space-4);
     border-left: none;
   }
 }
