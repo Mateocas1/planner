@@ -6,7 +6,7 @@ import { connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc, terminate,
 import { createOccurrenceCompletion, occurrenceId } from "../src/model.ts";
 
 const authHost = "127.0.0.1:9099";
-const firestoreHost = "127.0.0.1:8080";
+const firestoreHost = "127.0.0.1:8087";
 
 function requireEmulators(): void {
   if (process.env.FIREBASE_AUTH_EMULATOR_HOST !== authHost ||
@@ -22,7 +22,7 @@ function client(name: string): { app: FirebaseApp; db: Firestore; auth: ReturnTy
   const auth = getAuth(app);
   connectAuthEmulator(auth, `http://${authHost}`, { disableWarnings: true });
   const db = getFirestore(app);
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFirestoreEmulator(db, "127.0.0.1", 8087);
   return { app, db, auth };
 }
 

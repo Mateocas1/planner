@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOccurrenceCompletion, createTask, createWorkBlock, expandOccurrences, occurrenceId } from "./model.ts";
+import { createOccurrenceCompletion, createTask, createWorkBlock, expandOccurrences, occurrenceId, type Recurrence } from "./model.ts";
 
 test("occurrence identity is stable for a series and UTC date", () => {
   assert.equal(occurrenceId("series-a", "2026-02-03"), "series-a:2026-02-03");
@@ -39,6 +39,11 @@ test("a completion is an independent record for only one occurrence", () => {
   assert.notEqual(completion.occurrenceId, occurrences[1].id);
   assert.deepEqual(recurrence, { seriesId: "d", frequency: "daily", anchorDate: "2026-02-01" });
   assert.throws(() => createOccurrenceCompletion("bad-id", "2026-02-01T12:00:00Z"));
+});
+
+test("expansion rejects a recurrence frequency that is not daily or weekly", () => {
+  const invalid = { seriesId: "x", frequency: "monthly", anchorDate: "2026-02-01" } as unknown as Recurrence;
+  assert.throws(() => expandOccurrences(invalid, "2026-02-01", "2026-02-08"), /frequency/);
 });
 
 test("weekly expansion aligns to its anchor, not the lower bound", () => {
