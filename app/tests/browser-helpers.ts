@@ -40,3 +40,10 @@ export async function readRemoteState(email: string) {
     };
   });
 }
+
+export async function readRemoteTasks(email: string) {
+  return withRemoteUser(email, async (db, uid) => {
+    const tasks = await getDocsFromServer(collection(db, `users/${uid}/tasks`));
+    return tasks.docs.map(doc => doc.data());
+  });
+}

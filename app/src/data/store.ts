@@ -3,13 +3,17 @@ import { collection, onSnapshot, type QueryDocumentSnapshot } from "firebase/fir
 import type { Task, WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 
-export type Store = { loading: boolean; tasks: Task[]; blocks: WorkBlock[] };
+/** View type for a stored task: the domain Task plus its completion state. */
+export type TaskView = Task & { completed: boolean };
 
-function toTask(doc: QueryDocumentSnapshot): Task {
+export type Store = { loading: boolean; tasks: TaskView[]; blocks: WorkBlock[] };
+
+function toTask(doc: QueryDocumentSnapshot): TaskView {
   const data = doc.data();
   return {
     id: doc.id,
     title: String(data.title),
+    completed: data.completed === true,
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
   };
 }

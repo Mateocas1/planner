@@ -11,10 +11,11 @@ A local-first personal planner (tasks, date-only deadlines, work blocks, recurri
 with per-occurrence completion) built with React + TypeScript + Vite on Cloud Firestore's
 persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
 
-Current state (increment I1b — Walking skeleton UI): authentication gate with email/password
-sign-in and account creation, Home / Tasks / Calendar shell navigation, and a Home surface
-showing the signed-in user's real task and work-block counts from Firestore, including the
-truthful empty state. Tasks and Calendar are named placeholders (I2 and I3). No offline claim.
+Current state (increment I2 — Tasks surface): authentication gate, Home / Tasks / Calendar shell
+navigation, a Home surface with real task and work-block counts, and a full Tasks surface:
+create tasks with an optional date-only deadline (validated by the domain module), rename,
+complete/uncomplete, and delete, wired to Firestore with visible error reporting for rejected
+input. Calendar is a named placeholder (I3). No offline claim.
 
 ## Install
 
@@ -31,7 +32,7 @@ npm test             # domain tests (node:test, 7 passing expected)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators
-npm run test:browser   # Playwright UI test (walking skeleton) against the emulators
+npm run test:browser   # Playwright UI tests (walking skeleton + Tasks surface) against the emulators
 ```
 
 `npm run test:browser` starts the emulators, builds the app and serves it on port **4174**

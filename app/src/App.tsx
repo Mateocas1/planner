@@ -5,6 +5,7 @@ import { useStore } from "./data/store.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Header } from "./ui/Header.tsx";
 import { Home } from "./ui/Home.tsx";
+import { Tasks } from "./ui/Tasks.tsx";
 
 export type View = "home" | "tasks" | "calendar";
 
@@ -39,12 +40,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       />
       <main className="surface">
         {view === "home" && <Home loading={loading} taskCount={tasks.length} blockCount={blocks.length} />}
-        {view === "tasks" && (
-          <section aria-labelledby="tasks-heading">
-            <h2 id="tasks-heading">Tasks</h2>
-            <p>The Tasks surface arrives in increment I2.</p>
-          </section>
-        )}
+        {view === "tasks" && <Tasks loading={loading} tasks={tasks} uid={user.uid} />}
         {view === "calendar" && (
           <section aria-labelledby="calendar-heading">
             <h2 id="calendar-heading">Calendar</h2>
