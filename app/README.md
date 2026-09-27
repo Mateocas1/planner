@@ -12,12 +12,16 @@ with per-occurrence completion) built with React + TypeScript + Vite on Cloud Fi
 persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
 
 Current state (increment I6b — profile timezone): authentication gate, Home / Tasks / Calendar shell
-navigation, a Home surface with real task and work-block counts, a full Tasks surface (create with an
+navigation, a Home surface of stat cards, each one a fact the store holds (open tasks, completed
+tasks, tasks due today in the planner timezone, work blocks in the current week, repeating series)
+with a calm single-sentence empty state instead of a row of zeroes, a full Tasks surface (create with an
 optional date-only deadline validated by the domain module; compact rows grouped into counted Open and
 Completed sections; a details panel, opened by selecting a row, holding rename, the deadline, the
 completion state and delete), and a Calendar surface: a week time grid rendering work blocks in the stored **profile timezone** (a
 per-user profile document at `users/{uid}/profile/main`, initialized on first use from the browser's
-resolved zone), with previous/next week and today navigation, a create form taking a start, an end
+resolved zone), with previous/next week and today navigation, each block drawn as a card (time range and
+linked task title), the profile timezone's current day highlighted, a static pending state for a block
+whose write is not yet acknowledged, a create form taking a start, an end
 and an optional task, per-block delete, an explicit empty state, and visible error reporting for
 rejected input — all wired to Firestore. No offline claim.
 

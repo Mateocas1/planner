@@ -3,3 +3,6 @@
 
 # Local code graph index
 .codegraph/
+
+# Local tooling output
+*.log

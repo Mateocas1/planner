@@ -6,6 +6,14 @@ import { db } from "./client.ts";
 /** View type for a stored task: the domain Task plus its completion state. */
 export type TaskView = Task & { completed: boolean };
 
+/**
+ * View type for a stored work block: the domain WorkBlock plus whether the
+ * write that produced it is still unacknowledged by the server. The local
+ * cache reports a queued write through snapshot metadata, so the flag clears
+ * on its own once the write is acknowledged.
+ */
+export type BlockView = WorkBlock & { pending: boolean };
+
 /** View type for a stored recurring series (a definition, not occurrences). */
 export type SeriesView = {
   id: string;
@@ -18,7 +26,7 @@ export type SeriesView = {
 export type Store = {
   loading: boolean;
   tasks: TaskView[];
-  blocks: WorkBlock[];
+  blocks: BlockView[];
   series: SeriesView[];
   /** Completion records keyed by occurrenceId, valued by completedAt. */
   completions: Record<string, string>;
@@ -34,13 +42,14 @@ function toTask(doc: QueryDocumentSnapshot): TaskView {
   };
 }
 
-function toBlock(doc: QueryDocumentSnapshot): WorkBlock {
+function toBlock(doc: QueryDocumentSnapshot): BlockView {
   const data = doc.data();
   return {
     id: doc.id,
     start: String(data.start),
     end: String(data.end),
     ...(data.taskId === undefined ? {} : { taskId: String(data.taskId) }),
+    pending: doc.metadata.hasPendingWrites,
   };
 }
 

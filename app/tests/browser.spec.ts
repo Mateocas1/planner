@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password, readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
+import { password, readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -47,8 +47,7 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
   await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
 
   await seedTaskAndBlock(email, "Skeleton task", start, "2026-03-02T10:00:00-03:00");
-  await expect(page.getByText("Tasks: 1")).toBeVisible();
-  await expect(page.getByText("Work blocks: 1")).toBeVisible();
+  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("1");
 
   const nav = page.getByRole("navigation", { name: "Main" });
   await nav.getByRole("button", { name: "Tasks" }).click();
@@ -59,10 +58,49 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
 
   await page.reload();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-  await expect(page.getByText("Tasks: 1")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Work blocks: 1")).toBeVisible();
+  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("1", { timeout: 30_000 });
   const remote = await readRemoteState(email);
   expect(remote).toEqual({ taskTitles: ["Skeleton task"], blockStarts: [start] });
+});
+
+test("Home cards show counts that match the seeded planner state", async ({ page }) => {
+  const email = newEmail("home-cards");
+  await signUp(page, email);
+
+  // An empty planner stays calm: one sentence, no dashboard of zeroes.
+  await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
+  await expect(page.locator(".stat-cards")).toHaveCount(0);
+
+  const today = localDateKey(new Date());
+
+  await openTasks(page);
+  await addTaskThroughForm(page, "Open task");
+  await page.getByLabel("Task title").fill("Due today");
+  await page.getByLabel("Deadline").fill(today);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".task-title", { hasText: "Due today" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  await addTaskThroughForm(page, "Done task");
+  await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
+  await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
+
+  await addSeriesThroughForm(page, "Weekly habit", "Weekly", futureDateKey(1));
+
+  await openCalendar(page);
+  await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
+  await page.getByRole("button", { name: "Add block" }).click();
+  await expect(page.locator(`[data-date="${today}"] .calendar-block`)).toHaveCount(1);
+
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Home" }).click();
+  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("2");
+  await expect(page.locator('[data-stat="completed"] .stat-card-value')).toHaveText("1");
+  await expect(page.locator('[data-stat="due"] .stat-card-value')).toHaveText("1");
+  await expect(page.locator('[data-stat="week"] .stat-card-value')).toHaveText("1");
+  await expect(page.locator('[data-stat="series"] .stat-card-value')).toHaveText("1");
+
+  // Every number is a held fact; the planner keeps no history to derive a delta.
+  await expect(page.locator(".stat-cards")).not.toContainText("%");
 });
 
 test("creating a task with a deadline shows the row and persists it to the server", async ({ page }) => {
@@ -575,6 +613,31 @@ test("week navigation changes the visible week", async ({ page }) => {
   await expect(page.getByText("No work blocks this week.")).toBeVisible();
 });
 
+test("a block with an unacknowledged write is marked pending until it is acknowledged", async ({ page, context }) => {
+  const email = newEmail("block-pending");
+  await signUp(page, email);
+  await openCalendar(page);
+  await expect(page.getByText("No work blocks this week.")).toBeVisible();
+
+  // Take the browser offline so the queued write cannot be acknowledged yet.
+  // The pending state is then stable for as long as we hold the line down,
+  // instead of a millisecond race against the emulator's acknowledgement.
+  await context.setOffline(true);
+
+  const day = localDateKey(new Date());
+  await page.getByLabel("Start", { exact: true }).fill(`${day}T09:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${day}T10:00`);
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  const block = page.locator(`[data-date="${day}"] .calendar-block`);
+  await expect(block).toHaveCount(1);
+  await expect(block).toHaveClass(/calendar-block-pending/);
+
+  // Reconnecting lets the server acknowledge the write, which clears the mark.
+  await context.setOffline(false);
+  await expect(block).not.toHaveClass(/calendar-block-pending/, { timeout: 30_000 });
+});
+
 /** Wall-clock date and HH:MM parts of an instant in a named IANA zone (Node side). */
 function wallClockIn(date: Date, timeZone: string): { date: string; time: string } {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -651,6 +714,31 @@ test.describe("profile timezone (I6b)", () => {
     await expect(block).toContainText(wallClockIn(new Date(start), nextZone).time);
     await expect(block).toHaveAttribute("data-start", start);
     await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+  });
+});
+
+test.describe("current day highlight", () => {
+  // Pacific/Midway (UTC-11) and Pacific/Kiritimati (UTC+14) are 25 hours
+  // apart, so their calendar dates can never coincide. A browser-zone
+  // implementation would highlight a different column than the profile-zone
+  // one, which makes the assertion decisive at any hour.
+  test.use({ timezoneId: "Pacific/Midway" });
+
+  test("the highlighted column is the profile-zone today, not the browser today", async ({ page }) => {
+    const email = newEmail("tz-today");
+    const profileZone = "Pacific/Kiritimati";
+    await createRemoteAccount(email);
+    await updateRemoteProfile(email, profileZone);
+
+    await signInAs(page, email);
+    await openCalendar(page);
+
+    const profileToday = wallClockIn(new Date(), profileZone).date;
+    const browserToday = wallClockIn(new Date(), "Pacific/Midway").date;
+    expect(profileToday).not.toEqual(browserToday);
+
+    await expect(page.locator(".calendar-day-today")).toHaveCount(1);
+    await expect(page.locator(`[data-date="${profileToday}"]`)).toHaveClass(/calendar-day-today/);
   });
 });
 

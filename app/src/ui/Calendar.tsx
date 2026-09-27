@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { addBlock, deleteBlock } from "../data/blocks.ts";
-import type { TaskView } from "../data/store.ts";
-import type { WorkBlock } from "../domain/model.ts";
+import type { BlockView, TaskView } from "../data/store.ts";
 
 /**
  * The Calendar surface: a week time grid rendered in the stored profile
@@ -110,7 +109,7 @@ function toZonedInstant(value: string, timeZone: string): string {
   return `${value}:00${zoneOffset(stamp, timeZone)}`;
 }
 
-export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }: { uid: string; blocks: WorkBlock[]; tasks: TaskView[]; loading: boolean; timeZone: string | null; profileError: string | null }) {
+export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string | null; profileError: string | null }) {
   if (timeZone === null) {
     return (
       <section aria-labelledby="calendar-heading">
@@ -122,7 +121,7 @@ export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }
   return <CalendarGrid uid={uid} blocks={blocks} tasks={tasks} loading={loading} timeZone={timeZone} />;
 }
 
-function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: WorkBlock[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
+function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
   const [weekStart, setWeekStart] = useState<number | null>(null);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -136,6 +135,9 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
   const visibleKeys = useMemo(() => new Set(days.map(day => wallDayKey(day))), [days]);
   const weekBlocks = blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone)));
+  // The current day is the profile zone's own today, so the highlighted
+  // column follows the planner timezone, not the browser's zone.
+  const todayKey = dateKey(new Date(), timeZone);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -198,7 +200,12 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
         {days.map(day => {
           const key = wallDayKey(day);
           return (
-            <div key={key} className="calendar-day" data-date={key}>
+            <div
+              key={key}
+              className={`calendar-day${key === todayKey ? " calendar-day-today" : ""}`}
+              data-date={key}
+              {...(key === todayKey ? { "data-today": "true" } : {})}
+            >
               <div className="calendar-day-head">
                 {new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short", month: "short", day: "numeric" })}
               </div>
@@ -214,7 +221,7 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
                   return (
                     <div
                       key={block.id}
-                      className="calendar-block"
+                      className={`calendar-block${block.pending ? " calendar-block-pending" : ""}`}
                       data-start={block.start}
                       data-end={block.end}
                       style={{

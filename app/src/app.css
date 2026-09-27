@@ -285,9 +285,47 @@ select {
 
 /* ---------- home ---------- */
 
-.counts {
-  padding-left: var(--space-5);
-  line-height: 1.8;
+/* A row of stat cards, each a real fact the store holds (no invented deltas).
+   The row is omitted entirely when every fact is zero. */
+.stat-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.stat-card-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.stat-card-value {
+  font-size: var(--text-page);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.stat-card-note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
 }
 
 /* ---------- tasks ---------- */
@@ -665,6 +703,16 @@ select {
   border-left: 1px solid var(--border);
 }
 
+/* The profile zone's current day: a quiet tint, no motion. */
+.calendar-day-today {
+  background: var(--surface-2);
+}
+
+.calendar-day-today .calendar-day-head {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .calendar-day-body {
   position: relative;
 }
@@ -679,6 +727,16 @@ select {
   padding: 0 var(--space-1);
   font-size: var(--text-sm);
   overflow: hidden;
+}
+
+/* A block whose write is not yet acknowledged: a static state, faded and
+   outlined. No pulse or looping animation — it must read as unconfirmed, not
+   as activity. */
+.calendar-block-pending {
+  background: var(--surface-2);
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-3);
 }
 
 .block-time {
