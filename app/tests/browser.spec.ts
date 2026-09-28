@@ -580,6 +580,23 @@ async function expectOneRemoteSeries(email: string) {
   return panelSeries[0]!;
 }
 
+/**
+ * Waits for the single stored series to hold `key === value`, then returns it.
+ * The interface reflects a write from the local cache while a forced server
+ * read can still see the previous value, so reading once immediately after a
+ * mutation is a race — it made the frequency test fail roughly one run in four
+ * depending on timing. Polling the field keeps exactly the same assertion and
+ * removes the race, and a genuine mismatch still fails naming the value it saw.
+ */
+async function expectRemoteSeriesField(email: string, key: string, value: string) {
+  await expect
+    .poll(async () => (await expectOneRemoteSeries(email)).data[key], {
+      timeout: 15_000,
+      intervals: [250, 500, 1_000],
+    })
+    .toBe(value);
+}
+
 test("renaming a series persists the new title to the server", async ({ page }) => {
   const email = newEmail("series-rename");
   await signUp(page, email);
@@ -593,8 +610,7 @@ test("renaming a series persists the new title to the server", async ({ page }) 
   await expect(page.locator(".series-row", { hasText: "Evening walk" })).toBeVisible();
   await expect(page.locator(".series-row", { hasText: "Morning walk" })).toHaveCount(0);
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.title).toBe("Evening walk");
+  await expectRemoteSeriesField(email, "title", "Evening walk");
 });
 
 test("changing a series' frequency persists and the row's next occurrence updates", async ({ page }) => {
@@ -616,9 +632,8 @@ test("changing a series' frequency persists and the row's next occurrence update
   await expect(row).toHaveAttribute("data-next-occurrence", dayKey(0));
   await expect(panel.getByLabel("Frequency")).toHaveValue("daily");
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.frequency).toBe("daily");
-  expect(series.data.anchorDate).toBe(anchor);
+  await expectRemoteSeriesField(email, "frequency", "daily");
+  await expectRemoteSeriesField(email, "anchorDate", anchor);
 });
 
 test("changing a series' anchor persists the new date", async ({ page }) => {
@@ -635,9 +650,8 @@ test("changing a series' anchor persists the new date", async ({ page }) => {
   await expect(panel.getByLabel("Anchor")).toHaveValue(moved);
   await expect(page.locator(".series-row", { hasText: "Review" })).toHaveAttribute("data-next-occurrence", moved);
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.anchorDate).toBe(moved);
-  expect(series.data.frequency).toBe("monthly");
+  await expectRemoteSeriesField(email, "anchorDate", moved);
+  await expectRemoteSeriesField(email, "frequency", "monthly");
 });
 
 test("an invalid series edit is refused with a visible error and writes nothing", async ({ page }) => {
