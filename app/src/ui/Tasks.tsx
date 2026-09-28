@@ -79,6 +79,12 @@ export function Tasks({
   loading: boolean;
 }) {
   const profile = useProfileTimeZone(uid);
+  // C2: creation is revealed on demand. The form is never permanently on the
+  // surface: a quiet "+ New task" row opens it, Enter in the title creates the
+  // task (the form's native submit), and a successful write collapses it
+  // again. The deadline and repeat controls stay inside the revealed row, so
+  // the series capability is not lost with the always-visible form.
+  const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState("");
   const [repeat, setRepeat] = useState<Frequency | "off">("off");
@@ -140,8 +146,19 @@ export function Tasks({
       setDeadline("");
       setRepeat("off");
       setStart("");
+      setCreating(false);
     });
   };
+
+  /** Dismisses the revealed creation row and clears whatever was typed. */
+  function closeCreate() {
+    setCreating(false);
+    setTitle("");
+    setDeadline("");
+    setRepeat("off");
+    setStart("");
+    setError(null);
+  }
 
   const selected = tasks.find(task => task.id === selectedId);
   const selectedSeries = series.find(entry => entry.id === selectedSeriesId);
@@ -200,53 +217,69 @@ export function Tasks({
       <header className="page-head">
         <h2 id="tasks-heading">Tasks</h2>
       </header>
-      <form className="task-form" onSubmit={onAdd}>
-        <div className="task-field task-field-grow">
-          <label htmlFor="task-title">Task title</label>
-          <input
-            id="task-title"
-            type="text"
-            value={title}
-            onChange={event => setTitle(event.target.value)}
-          />
-        </div>
-        <div className="task-field">
-          <label htmlFor="task-deadline">Deadline</label>
-          <input
-            id="task-deadline"
-            type="date"
-            value={deadline}
-            onChange={event => setDeadline(event.target.value)}
-          />
-        </div>
-        <div className="task-field">
-          <label htmlFor="task-repeat">Repeat</label>
-          <select
-            id="task-repeat"
-            value={repeat}
-            onChange={event => setRepeat(event.target.value as Frequency | "off")}
-          >
-            <option value="off">Off</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
-        </div>
-        {repeat !== "off" && (
-          <div className="task-field">
-            <label htmlFor="task-start">Start date</label>
+      {creating ? (
+        <form
+          className="task-form"
+          onSubmit={onAdd}
+          onKeyDown={event => {
+            if (event.key === "Escape") closeCreate();
+          }}
+        >
+          <div className="task-field task-field-grow">
+            <label htmlFor="task-title">Task title</label>
             <input
-              id="task-start"
-              type="date"
-              value={start}
-              onChange={event => setStart(event.target.value)}
+              id="task-title"
+              type="text"
+              autoFocus
+              value={title}
+              onChange={event => setTitle(event.target.value)}
             />
           </div>
-        )}
-        <button type="submit" disabled={busy}>
-          Add task
+          <div className="task-field">
+            <label htmlFor="task-deadline">Deadline</label>
+            <input
+              id="task-deadline"
+              type="date"
+              value={deadline}
+              onChange={event => setDeadline(event.target.value)}
+            />
+          </div>
+          <div className="task-field">
+            <label htmlFor="task-repeat">Repeat</label>
+            <select
+              id="task-repeat"
+              value={repeat}
+              onChange={event => setRepeat(event.target.value as Frequency | "off")}
+            >
+              <option value="off">Off</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          {repeat !== "off" && (
+            <div className="task-field">
+              <label htmlFor="task-start">Start date</label>
+              <input
+                id="task-start"
+                type="date"
+                value={start}
+                onChange={event => setStart(event.target.value)}
+              />
+            </div>
+          )}
+          <button type="submit" disabled={busy}>
+            Add task
+          </button>
+          <button type="button" className="task-cancel" onClick={closeCreate}>
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <button type="button" className="new-task" onClick={() => setCreating(true)}>
+          <span aria-hidden="true">+</span>New task
         </button>
-      </form>
+      )}
       {error && <p role="alert">{error}</p>}
       {!loading && tasks.length === 0 && series.length === 0 ? (
         <p className="empty-note" role="status">No tasks yet. Add your first one above.</p>

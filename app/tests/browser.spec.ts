@@ -35,7 +35,19 @@ async function expectRemoteTasks(email: string, expected: unknown[]) {
 
 async function openTasks(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
+  // C2: creation is collapsed on arrival; openTasks only lands the surface.
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+}
+
+/**
+ * Reveals the collapsed Tasks creation row (C2). Idempotent: if a test already
+ * revealed it, the Add task control is visible and nothing is clicked.
+ */
+async function revealTaskForm(page: Page) {
+  const add = page.getByRole("button", { name: "Add task" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New task" }).click();
+  await expect(add).toBeVisible();
 }
 
 test("walking skeleton: account creation, truthful Home counts, and navigation", async ({ page }) => {
@@ -51,7 +63,8 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
 
   const nav = page.getByRole("navigation", { name: "Main" });
   await nav.getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
+  // C2: creation is collapsed, not permanently on the surface
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await nav.getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
   await expect(page.getByText("planner timezone")).toBeVisible();
@@ -75,11 +88,13 @@ test("Home cards show counts that match the seeded planner state", async ({ page
 
   await openTasks(page);
   await addTaskThroughForm(page, "Open task");
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Due today");
   await page.getByLabel("Deadline").fill(today);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Due today" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // the successful write collapses the revealed row again
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await addTaskThroughForm(page, "Done task");
   await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
@@ -87,6 +102,7 @@ test("Home cards show counts that match the seeded planner state", async ({ page
   await addSeriesThroughForm(page, "Weekly habit", "Weekly", futureDateKey(1));
 
   await openCalendar(page);
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
   await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -108,6 +124,7 @@ test("creating a task with a deadline shows the row and persists it to the serve
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Write review");
   await page.getByLabel("Deadline").fill("2026-04-01");
   await page.getByRole("button", { name: "Add task" }).click();
@@ -120,11 +137,34 @@ test("creating a task with a deadline shows the row and persists it to the serve
   await expectRemoteTasks(email, [{ title: "Write review", completed: false, deadline: "2026-04-01" }]);
 });
 
+test("pressing Enter in the revealed title field creates the task", async ({ page }) => {
+  const email = newEmail("enter");
+  await signUp(page, email);
+
+  // C2: creation is collapsed by default and does not occupy the surface
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task" })).toHaveCount(0);
+
+  // revealing gives a title input; Enter submits the form natively
+  await page.getByRole("button", { name: "New task" }).click();
+  const title = page.getByLabel("Task title");
+  await expect(title).toBeVisible();
+  await title.fill("Quick add");
+  await title.press("Enter");
+
+  await expect(page.locator(".task-title", { hasText: "Quick add" })).toBeVisible();
+  // the successful write collapses the revealed row again
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  await expectRemoteTasks(email, [{ title: "Quick add", completed: false }]);
+});
+
 test("renaming a task persists the new title to the server", async ({ page }) => {
   const email = newEmail("rename");
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Draft plan");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toBeVisible();
@@ -145,6 +185,7 @@ test("completing and uncompleting a task sets completed on the server", async ({
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Solo task");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Solo task" })).toBeVisible();
@@ -167,6 +208,7 @@ test("deleting a task removes the row and the server document", async ({ page })
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Doomed task");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Doomed task" })).toBeVisible();
@@ -208,17 +250,18 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   const yesterday = dayKey(-1);
 
   // C1: today's deadline is a word, not its ISO key
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Water plants");
   await page.getByLabel("Deadline").fill(today);
   await page.getByRole("button", { name: "Add task" }).click();
   const todayRow = page.locator("li.task", { hasText: "Water plants" });
   await expect(todayRow.locator(".task-deadline")).toHaveText("due today");
   await expect(todayRow.locator(".task-deadline")).not.toContainText(today);
-  // the write may still be in flight; wait for the form to settle so the next
-  // fill is not wiped by this add's reset
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // the successful write collapses the row; reveal it again for the next entry
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 
   // C1: a past deadline on an unfinished task carries the overdue state
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Pay bill");
   await page.getByLabel("Deadline").fill(yesterday);
   await page.getByRole("button", { name: "Add task" }).click();
@@ -240,12 +283,13 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
 });
 
 async function addTaskThroughForm(page: Page, title: string) {
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
-  // the write may still be in flight (busy disables the form); wait for it to
-  // settle so a following fill is not wiped by the previous add's reset
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // the write may still be in flight (busy disables the form); the form only
+  // collapses once it settles, so a following fill is never wiped by its reset
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
 test("selecting a row opens the details panel, and it closes via Close and Escape", async ({ page }) => {
@@ -291,6 +335,7 @@ test("an empty title is refused with a visible error and writes nothing", async 
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.getByRole("alert")).toContainText("task title is required");
   await expectRemoteTasks(email, []);
@@ -317,7 +362,19 @@ test("the completion wash plays on a user completion and never for already-compl
 
 async function openCalendar(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
-  await expect(page.getByRole("button", { name: "Add block" })).toBeVisible();
+  // C2: creation is collapsed on arrival; openCalendar only lands the surface.
+  await expect(page.getByRole("button", { name: "New block" })).toBeVisible();
+}
+
+/**
+ * Reveals the collapsed Calendar creation form (C2). Idempotent: if a test
+ * already revealed it, the Add block control is visible and nothing is clicked.
+ */
+async function revealBlockForm(page: Page) {
+  const add = page.getByRole("button", { name: "Add block" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New block" }).click();
+  await expect(add).toBeVisible();
 }
 
 async function expectRemoteBlocks(email: string, expected: unknown[]) {
@@ -346,12 +403,13 @@ function dayKey(daysFromNow: number) {
 
 /** Creates a recurring series through the form and waits for its row. */
 async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily" | "Weekly" | "Monthly", start: string) {
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
   await page.getByLabel("Repeat").selectOption({ label: frequency });
   await page.getByLabel("Start date").fill(start);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: title })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
 let createdSeries: Array<{ id: string; data: Record<string, string> }> = [];
@@ -648,6 +706,7 @@ test("creating a block through the form persists the exact entered instant and r
   await openCalendar(page);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -668,15 +727,31 @@ test("creating a block through the form persists the exact entered instant and r
   expect(stored.start).toBe(renderedStart);
 });
 
+test("clicking an empty calendar cell prefills that slot's start and reveals the form", async ({ page }) => {
+  const email = newEmail("block-prefill");
+  await signUp(page, email);
+  await openCalendar(page);
+
+  // The drawn window starts at 08:00 and an hour is one hourHeight (56 px),
+  // so a click 56 px into the column is 09:00. The block list is empty, so
+  // the click lands on the cell itself.
+  const day = localDateKey(new Date());
+  await page.locator(`[data-date="${day}"] .calendar-day-body`).click({ position: { x: 24, y: 56 } });
+
+  await expect(page.getByLabel("Start", { exact: true })).toHaveValue(`${day}T09:00`);
+});
+
 test("a block linked to a task shows that task's title", async ({ page }) => {
   const email = newEmail("block-task");
   await signUp(page, email);
   await openTasks(page);
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Deep work");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Deep work" })).toBeVisible();
 
   await openCalendar(page);
+  await revealBlockForm(page);
   const day = localDateKey(new Date());
   await page.getByLabel("Start", { exact: true }).fill(`${day}T14:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T15:00`);
@@ -697,6 +772,7 @@ test("an end at or before the start is refused with a visible error and writes n
   await signUp(page, email);
   await openCalendar(page);
 
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill("2026-03-04T10:00");
   await page.getByLabel("End", { exact: true }).fill("2026-03-04T09:00");
   await page.getByRole("button", { name: "Add block" }).click();
@@ -715,6 +791,7 @@ test("deleting a block removes it from the grid and from the server", async ({ p
   await openCalendar(page);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -736,6 +813,7 @@ test("week navigation changes the visible week", async ({ page }) => {
   const nextWeek = new Date();
   nextWeek.setDate(nextWeek.getDate() + 7);
   const key = localDateKey(nextWeek);
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${key}T08:00`);
   await page.getByLabel("End", { exact: true }).fill(`${key}T09:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -765,6 +843,7 @@ test("a block with an unacknowledged write is marked pending until it is acknowl
   await context.setOffline(true);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -849,6 +928,13 @@ test.describe("profile timezone (I6b)", () => {
     const nextZone = "Europe/Madrid";
     await updateRemoteProfile(email, nextZone);
 
+    // Wait until the new zone has actually reached the surface before deciding
+    // whether the visible week moved with it. Snapshotting the week before the
+    // update lands races the propagation: the old week still holds the block,
+    // the step below is skipped, and the update then hides the column. The
+    // final assertions below still require the block with the new wall time.
+    await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+
     // Switching zones can also roll the visible week: Madrid is five hours
     // ahead of São Paulo, so for part of every day it is already on the next
     // calendar date and the week moves with it, hiding the column that holds
@@ -918,6 +1004,7 @@ test("a clean account creates the profile on first use and renders the planner i
 
   // A form-created block renders in the profile (= browser) zone.
   const day = wallClockIn(new Date(), zone).date;
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();

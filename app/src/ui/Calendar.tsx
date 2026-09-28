@@ -135,6 +135,10 @@ export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }
 
 function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
   const [weekStart, setWeekStart] = useState<number | null>(null);
+  // C2: the creation form is revealed on demand behind a New block control,
+  // so the calendar shows content instead of a permanently open form. Start,
+  // End and Task are unchanged inside the revealed popover.
+  const [creating, setCreating] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -206,8 +210,30 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
       setStart("");
       setEnd("");
       setTaskId("");
+      setCreating(false);
     });
   };
+
+  /** Dismisses the revealed creation popover and clears whatever was typed. */
+  function closeCreate() {
+    setCreating(false);
+    setStart("");
+    setEnd("");
+    setTaskId("");
+    setError(null);
+  }
+
+  /** C2: an empty cell is also a creation gesture -- the clicked slot prefills
+   * the new block's start and opens the popover. A click on a block (or its
+   * delete control) is not an empty-cell click, so it never starts a block. */
+  function onCellClick(key: string, event: React.MouseEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest(".calendar-block")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const minutes = rangeStart + ((event.clientY - rect.top) / hourHeight) * 60;
+    const snapped = Math.max(0, Math.min(minutesPerDay - 30, Math.round(minutes / 30) * 30));
+    setStart(`${key}T${pad(Math.floor(snapped / 60))}:${pad(snapped % 60)}`);
+    setCreating(true);
+  }
 
   const utc = { timeZone: "UTC" } as const;
   const weekLabel = `${new Date(weekStartWall).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric" })} – ${new Date(weekStartWall + 6 * dayMs).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric", year: "numeric" })}`;
@@ -224,26 +250,48 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
         <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
         <span className="calendar-week-label">{weekLabel}</span>
       </div>
-      <form className="block-form" onSubmit={onAdd}>
-        <div className="block-field">
-          <label htmlFor="block-start">Start</label>
-          <input id="block-start" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
-        </div>
-        <div className="block-field">
-          <label htmlFor="block-end">End</label>
-          <input id="block-end" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
-        </div>
-        <div className="block-field">
-          <label htmlFor="block-task">Task</label>
-          <select id="block-task" value={taskId} onChange={event => setTaskId(event.target.value)}>
-            <option value="">No task</option>
-            {tasks.map(task => (
-              <option key={task.id} value={task.id}>{task.title}</option>
-            ))}
-          </select>
-        </div>
-        <button type="submit" disabled={busy}>Add block</button>
-      </form>
+      <div className="block-create">
+        <button
+          type="button"
+          className="new-block"
+          aria-expanded={creating}
+          onClick={() => {
+            if (creating) closeCreate();
+            else setCreating(true);
+          }}
+        >
+          New block
+        </button>
+        {creating && (
+          <form
+            className="block-form"
+            onSubmit={onAdd}
+            onKeyDown={event => {
+              if (event.key === "Escape") closeCreate();
+            }}
+          >
+            <div className="block-field">
+              <label htmlFor="block-start">Start</label>
+              <input id="block-start" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
+            </div>
+            <div className="block-field">
+              <label htmlFor="block-end">End</label>
+              <input id="block-end" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
+            </div>
+            <div className="block-field">
+              <label htmlFor="block-task">Task</label>
+              <select id="block-task" value={taskId} onChange={event => setTaskId(event.target.value)}>
+                <option value="">No task</option>
+                {tasks.map(task => (
+                  <option key={task.id} value={task.id}>{task.title}</option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" disabled={busy}>Add block</button>
+            <button type="button" className="block-cancel" onClick={closeCreate}>Cancel</button>
+          </form>
+        )}
+      </div>
       {error && <p role="alert">{error}</p>}
       {!loading && weekBlocks.length === 0 && <p className="empty-note" role="status">No work blocks this week.</p>}
       <div className="calendar-grid">
@@ -266,7 +314,7 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
                 <span className="calendar-day-number">{new Date(day).toLocaleDateString("en-US", { ...utc, day: "numeric" })}</span>
                 <span className="calendar-day-weekday">{new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short" })}</span>
               </div>
-              <div className="calendar-day-body" style={{ height: (rangeMinutes / 60) * hourHeight }}>
+              <div className="calendar-day-body" style={{ height: (rangeMinutes / 60) * hourHeight }} onClick={event => onCellClick(key, event)}>
                 {laidOutBlocks.filter(item => item.key === key).map(({ block, startDate, endDate, startMinutes, endMinutes }) => {
                   // Clamped into the drawn window, which by construction
                   // already contains every block (D1).

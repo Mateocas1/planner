@@ -522,6 +522,34 @@ select {
   color: var(--text-2);
 }
 
+/* C2: creation is revealed on demand, not permanently on the surface. Until
+   it is clicked the row is a quiet, text-like control; the revealed form
+   keeps the same fields and labels. */
+.new-task {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding-inline: var(--space-3);
+  color: var(--text-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+.new-task span {
+  color: var(--text-4);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+/* the dismiss controls for both revealed creation forms stay quiet: the
+   submit remains the only primary action in the row */
+.task-cancel,
+.block-cancel {
+  color: var(--text-2);
+  background: transparent;
+}
+
 /* D3: the counting group heading is a divider, not its own block — a hairline
    rule under it separates the groups the way the reference does. The group is
    bounded to the row width so the rule and the rows align (D2). */
@@ -909,17 +937,36 @@ select {
   margin-left: auto;
 }
 
-/* D3: the creation controls sit side by side in one compact row on a wide
-   viewport and wrap on a narrow one. Each field keeps its label directly
-   above its control -- the accessible names the tests address -- so the
-   labels, the control order and the operation are unchanged; only the layout
-   is. Nothing sits behind a click. */
+/* C2: creation is revealed on demand. The calendar holds one quiet New block
+   control until it is needed, so the grid stops being pushed down by a form.
+   The revealed form is a compact popover over the grid, not a permanent row. */
+.block-create {
+  position: relative;
+  margin: 0 0 var(--space-3);
+}
+
+.new-block {
+  color: var(--text-2);
+  background: transparent;
+}
+
 .block-form {
+  position: absolute;
+  top: calc(var(--h-md) + var(--space-2));
+  left: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  box-sizing: border-box;
+  width: min(100%, 34rem);
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
 }
 
 .block-field {
@@ -1192,6 +1239,14 @@ select {
     width: auto;
     padding-inline: var(--space-4);
     border-left: none;
+  }
+
+  /* C2 (mobile): an absolute popover would clip against the viewport edge, so
+     the revealed creation form becomes an inline sheet under its control */
+  .block-form {
+    position: static;
+    width: auto;
+    margin-top: var(--space-2);
   }
 }
 
