@@ -36,6 +36,15 @@ export function TaskDetails({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /* The rename is inline: the title commits on Enter or blur and reverts on
+     Escape. A pending edit swallows Escape so the panel stays open to show the
+     restored value; with nothing to cancel, Escape falls through to the
+     document handler above and still closes the panel. */
+  const commitRename = () => {
+    if (title === task.title) return;
+    onRename(title);
+  };
+
   return (
     <aside className="task-details" aria-label="Task details">
       <header className="task-details-head">
@@ -44,9 +53,9 @@ export function TaskDetails({
           Close
         </button>
       </header>
-      {/* D1: the rename control is the panel's title. The label stays
-          attached to the input (visually hidden, still in the accessibility
-          tree) so the tests keep addressing it by name. */}
+      {/* D1: the rename control is the panel's title and edits in place. The
+          label stays attached to the input (visually hidden, still in the
+          accessibility tree) so the tests keep addressing it by name. */}
       <div className="task-details-title-row">
         <label className="sr-only" htmlFor="task-details-title">
           Rename task
@@ -58,13 +67,17 @@ export function TaskDetails({
           value={title}
           autoFocus
           onChange={event => setTitle(event.target.value)}
+          onBlur={commitRename}
           onKeyDown={event => {
-            if (event.key === "Enter") onRename(title);
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitRename();
+            } else if (event.key === "Escape" && title !== task.title) {
+              event.stopPropagation();
+              setTitle(task.title);
+            }
           }}
         />
-        <button type="button" className="task-details-save" disabled={busy} onClick={() => onRename(title)}>
-          Save rename
-        </button>
       </div>
       {/* D2: deadline and completion share one metadata row beneath the
           title, so the panel reads as a record; both labels stay attached. */}
@@ -81,7 +94,13 @@ export function TaskDetails({
             />
           </div>
           <label className="task-details-completed">
-            <input type="checkbox" checked={task.completed} disabled={busy} onChange={onToggleCompleted} />
+            <input
+              type="checkbox"
+              className="task-check"
+              checked={task.completed}
+              disabled={busy}
+              onChange={onToggleCompleted}
+            />
             Completed
           </label>
         </div>
@@ -203,6 +222,7 @@ export function SeriesDetails({
           <li key={occurrence.id}>
             <input
               type="checkbox"
+              className="task-check"
               checked={occurrence.completed}
               disabled={busy || occurrence.completed}
               aria-label={

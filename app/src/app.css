@@ -801,11 +801,61 @@ select {
   line-height: 1.3;
 }
 
-.task-details-save {
-  flex: 0 0 auto;
-  height: var(--h-sm);
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
+/* the title edits in place: it stays quiet until it takes focus, then shows a
+   soft token ring instead of the loud platform outline the generic rule would
+   draw, so the panel keeps reading as a record rather than a form */
+.task-details input.task-details-title:focus-visible {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* C3: the panel re-skins its native controls so they read as part of the
+   product instead of as browser defaults. The native elements stay
+   underneath (no custom date picker, no component library), so their
+   keyboard behaviour and accessibility are unchanged; only height, radius,
+   border, focus ring and colour come from the existing tokens. */
+.task-details input[type="date"],
+.task-details select {
+  border-radius: var(--r-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* one focus ring for the panel's controls, drawn from the accent token */
+.task-details input:focus-visible,
+.task-details select:focus-visible,
+.task-details .task-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the select drops the platform caret for a chevron drawn from the quiet end
+   of the text ramp; appearance: none removes the native chrome while the
+   native control keeps the keyboard and screen-reader behaviour */
+.task-details select {
+  appearance: none;
+  padding-right: calc(var(--space-6) + var(--space-1));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6760' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+}
+
+/* the date input hides the platform indicator and shows our own calendar mark
+   in the same corner; the indicator stays clickable underneath, so the native
+   picker still opens and the value can still be typed */
+.task-details input[type="date"] {
+  position: relative;
+  appearance: none;
+  padding-right: calc(var(--space-6) + var(--space-1));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Crect x='1.25' y='2.25' width='11.5' height='10.5' rx='2' stroke='%238C8880' stroke-width='1.3'/%3E%3Cpath d='M1.25 5.5h11.5M4.5 1v2.5M9.5 1v2.5' stroke='%238C8880' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+}
+
+.task-details input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
 }
 
 /* D3: labelled sections divided by a hairline rule give the panel its

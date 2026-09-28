@@ -169,15 +169,39 @@ test("renaming a task persists the new title to the server", async ({ page }) =>
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toBeVisible();
 
-  // the row's title button opens the details panel; rename lives there now
+  // the row's title button opens the details panel; rename edits in place
   await page.getByRole("button", { name: "Draft plan" }).click();
-  await page.getByLabel("Rename task").fill("Final plan");
-  await page.getByRole("button", { name: "Save rename" }).click();
+  const rename = page.getByLabel("Rename task");
+  await rename.fill("Final plan");
+  await rename.press("Enter");
 
   await expect(page.locator(".task-title", { hasText: "Final plan" })).toBeVisible();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toHaveCount(0);
 
   await expectRemoteTasks(email, [{ title: "Final plan", completed: false }]);
+});
+
+test("Escape cancels an inline rename and leaves the stored title unchanged", async ({ page }) => {
+  const email = newEmail("rename-cancel");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Original title");
+  await page.getByRole("button", { name: "Original title" }).click();
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  const rename = panel.getByLabel("Rename task");
+
+  // a pending edit is reverted: the input restores the stored title and the
+  // panel stays open (Escape with nothing to cancel is what closes it)
+  await rename.fill("Changed title");
+  await rename.press("Escape");
+  await expect(panel).toBeVisible();
+  await expect(rename).toHaveValue("Original title");
+
+  // neither the row nor the server saw the cancelled value
+  await expect(page.locator(".task-title", { hasText: "Original title" })).toBeVisible();
+  await expect(page.locator(".task-title", { hasText: "Changed title" })).toHaveCount(0);
+  await expectRemoteTasks(email, [{ title: "Original title", completed: false }]);
 });
 
 test("completing and uncompleting a task sets completed on the server", async ({ page }) => {
