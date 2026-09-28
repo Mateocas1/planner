@@ -285,7 +285,12 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
       </header>
       <p className="calendar-tz">Times are shown in the planner timezone ({timeZone}).</p>
       <div className="calendar-toolbar">
-        <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
+        {/* C4: the two week-step controls are a desktop affordance. On a phone
+            the single-day header already owns day-to-day navigation (and rolls
+            into the adjacent week at the edges), so the redundant week buttons
+            are dropped at that width and the header is the navigation. Today
+            stays: it is the one-tap way back to now. */}
+        <button type="button" className="week-nav-button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
         <button
           type="button"
           onClick={() => {
@@ -295,7 +300,7 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
         >
           Today
         </button>
-        <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
+        <button type="button" className="week-nav-button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
         <span className="calendar-week-label">{weekLabel}</span>
       </div>
       <div className="block-create">

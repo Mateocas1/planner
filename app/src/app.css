@@ -934,7 +934,10 @@ select {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* the sheet is opaque --surface (#FFFFFF): --text-4 measures 3.53:1 there,
+     below AA for 11 px text, so the micro-label steps up one ramp stop to the
+     5.6:1 of --text-3, the same fix the sidebar's micro-label already carries */
+  color: var(--text-3);
 }
 
 /* D2: the task's key facts share one metadata row — deadline and completion
@@ -958,12 +961,34 @@ select {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* see .task-details-section > h4: same 11 px micro-label, same AA step */
+  color: var(--text-3);
 }
 
 .task-details-meta input[type="date"] {
   width: auto;
   height: var(--h-sm);
+}
+
+/* the series panel's definition fields stack under their micro-label, the
+   same label voice the task panel's metadata row uses, so the two sibling
+   panels name their controls the same way */
+.task-details-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.task-details-field + .task-details-field {
+  margin-top: var(--space-3);
+}
+
+.task-details-field > label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
 }
 
 .task-details-completed {
@@ -993,7 +1018,7 @@ select {
 /* series details panel: the definition (title, frequency, anchor) is edited
    here; occurrence completion and delete act below it */
 .series-details-history-note {
-  margin: 0;
+  margin: var(--space-3) 0 0;
   color: var(--text-3);
   font-size: var(--text-sm);
 }
@@ -1371,9 +1396,16 @@ select {
    640 px value, so the week view only ever renders above it. */
 @media (max-width: 640px) {
   /* the toolbar is one compact line: the week label leaves the flow because
-     the day header states which day is shown */
+     the day header states which day is shown, and the two week-step buttons
+     leave it because the day header's own stepper already navigates the
+     single visible day (rolling into the adjacent week at the edges). Today
+     stays as the one-tap return to now. Desktop keeps all four controls. */
   .calendar-toolbar {
     flex-wrap: nowrap;
+  }
+
+  .week-nav-button {
+    display: none;
   }
 
   .calendar-week-label {

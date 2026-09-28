@@ -604,8 +604,10 @@ test("renaming a series persists the new title to the server", async ({ page }) 
 
   await addSeriesThroughForm(page, "Morning walk", "Daily", futureDateKey(1));
   const panel = await openSeriesPanel(page, "Morning walk");
+  // the series panel renames in place, exactly like the task panel: Enter
+  // commits the edit (blur would too) and there is no Save rename control
   await panel.getByLabel("Rename series").fill("Evening walk");
-  await panel.getByRole("button", { name: "Save rename" }).click();
+  await panel.getByLabel("Rename series").press("Enter");
 
   await expect(page.locator(".series-row", { hasText: "Evening walk" })).toBeVisible();
   await expect(page.locator(".series-row", { hasText: "Morning walk" })).toHaveCount(0);
@@ -663,9 +665,10 @@ test("an invalid series edit is refused with a visible error and writes nothing"
   await addSeriesThroughForm(page, "Keep me", "Daily", start);
   const panel = await openSeriesPanel(page, "Keep me");
 
-  // an empty title fails domain validation before any write
+  // an empty title fails domain validation before any write; the in-place
+  // rename commits on Enter just like a blur would
   await panel.getByLabel("Rename series").fill("");
-  await panel.getByRole("button", { name: "Save rename" }).click();
+  await panel.getByLabel("Rename series").press("Enter");
   await expect(page.getByRole("alert")).toContainText("task title is required");
 
   // an empty anchor is not a valid date-only value and is refused too

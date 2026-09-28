@@ -344,11 +344,32 @@ async function captureSeeded(browser, outDir, viewport, suffix) {
     await page.keyboard.press("Escape");
     await page.getByRole("complementary", { name: "Task details" }).waitFor({ state: "hidden", timeout: 15_000 });
 
+    // The series panel is the task panel's sibling and shares its shell, so a
+    // cross-surface round captures it too: the two rename gestures can then be
+    // compared side by side instead of one panel standing in for both.
+    await page.getByRole("button", { name: "Weekly planning" }).click();
+    await page.getByRole("complementary", { name: "Series details" }).waitFor({ state: "visible", timeout: 15_000 });
+    await capture(page, outDir, `series-details-${suffix}.png`, viewport);
+    await page.keyboard.press("Escape");
+    await page.getByRole("complementary", { name: "Series details" }).waitFor({ state: "hidden", timeout: 15_000 });
+
     // Calendar: the current week, then the following week's blocks.
     await gotoView(page, "Calendar");
     await page.locator(".calendar-block").first().waitFor({ state: "visible", timeout: 30_000 });
     await capture(page, outDir, `calendar-${suffix}.png`, viewport);
-    await page.getByRole("button", { name: "Next week" }).click();
+    // The phone grid shows one day and owns its own day stepper; the week-step
+    // buttons are a desktop affordance and are not rendered at that width. So
+    // the phone capture reaches the next week the way a phone user does -- by
+    // stepping the day forward until the target block is on screen -- instead
+    // of the instrument dictating that the week controls must stay.
+    if (viewport.width <= 640) {
+      const target = page.locator(".calendar-block", { hasText: "Pay electricity bill" });
+      for (let step = 0; step < 8 && !(await target.isVisible().catch(() => false)); step += 1) {
+        await page.getByRole("button", { name: "Next day" }).click();
+      }
+    } else {
+      await page.getByRole("button", { name: "Next week" }).click();
+    }
     await page.locator(".calendar-block", { hasText: "Pay electricity bill" }).waitFor({ state: "visible", timeout: 15_000 });
     await capture(page, outDir, `calendar-next-week-${suffix}.png`, viewport);
   } finally {

@@ -173,6 +173,17 @@ export function SeriesDetails({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /* The rename edits in place like the task panel's: it commits on Enter or
+     blur and reverts on Escape. A pending edit swallows Escape so the panel
+     stays open to show the restored value; with nothing to cancel, Escape
+     falls through to the document handler above and still closes the panel.
+     The two sibling panels share one rename gesture, so neither carries a
+     Save control the other lacks. */
+  const commitRename = () => {
+    if (title === series.title) return;
+    onRename(title);
+  };
+
   return (
     <>
       <div className="task-details-scrim" aria-hidden="true" />
@@ -183,72 +194,100 @@ export function SeriesDetails({
           Close
         </button>
       </header>
-      <label htmlFor="series-details-title">Rename series</label>
-      <input
-        id="series-details-title"
-        type="text"
-        value={title}
-        autoFocus
-        onChange={event => setTitle(event.target.value)}
-        onKeyDown={event => {
-          if (event.key === "Enter") onRename(title);
-        }}
-      />
-      <button type="button" disabled={busy} onClick={() => onRename(title)}>
-        Save rename
-      </button>
-      <label htmlFor="series-details-frequency">Frequency</label>
-      <select
-        id="series-details-frequency"
-        className="series-details-frequency"
-        value={series.frequency}
-        disabled={busy}
-        onChange={event => onFrequencyChange(event.target.value as SeriesView["frequency"])}
-      >
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="monthly">Monthly</option>
-      </select>
-      <label htmlFor="series-details-anchor">Anchor</label>
-      <input
-        id="series-details-anchor"
-        className="series-details-anchor"
-        type="date"
-        value={series.anchorDate}
-        disabled={busy}
-        onChange={event => onAnchorChange(event.target.value)}
-      />
-      {hasHistory && (
-        <p className="series-details-history-note">
-          Changing the schedule changes future occurrences. Completed occurrences stay as history.
-        </p>
-      )}
-      <h4>Upcoming occurrences</h4>
-      <ul className="series-occurrences">
-        {occurrences.map(occurrence => (
-          <li key={occurrence.id}>
-            <input
-              type="checkbox"
-              className="task-check"
-              checked={occurrence.completed}
-              disabled={busy || occurrence.completed}
-              aria-label={
-                occurrence.completed
-                  ? `Completed: ${series.title} on ${occurrence.date}`
-                  : `Complete: ${series.title} on ${occurrence.date}`
-              }
-              onChange={() => onCompleteOccurrence(occurrence.date)}
-            />
-            {/* C1: the occurrence date is displayed human; the ISO key stays
-                the record's identity for the checkbox label and the write */}
-            <span>{formatDateKey(occurrence.date, today)}</span>
-          </li>
-        ))}
-        {occurrences.length === 0 && <li>No upcoming occurrences in the current window.</li>}
-      </ul>
-      <button type="button" className="task-details-delete" disabled={busy} onClick={onDelete}>
-        Delete series
-      </button>
+      {/* the series' name is the panel's title and edits in place, exactly as
+          the task panel's does. The label stays attached to the input
+          (visually hidden, still in the accessibility tree) so the tests keep
+          addressing it by name. */}
+      <div className="task-details-title-row">
+        <label className="sr-only" htmlFor="series-details-title">
+          Rename series
+        </label>
+        <input
+          id="series-details-title"
+          className="task-details-title"
+          type="text"
+          value={title}
+          autoFocus
+          onChange={event => setTitle(event.target.value)}
+          onBlur={commitRename}
+          onKeyDown={event => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitRename();
+            } else if (event.key === "Escape" && title !== series.title) {
+              event.stopPropagation();
+              setTitle(series.title);
+            }
+          }}
+        />
+      </div>
+      <section className="task-details-section">
+        <h4>Schedule</h4>
+        <div className="task-details-field">
+          <label htmlFor="series-details-frequency">Frequency</label>
+          <select
+            id="series-details-frequency"
+            className="series-details-frequency"
+            value={series.frequency}
+            disabled={busy}
+            onChange={event => onFrequencyChange(event.target.value as SeriesView["frequency"])}
+          >
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div className="task-details-field">
+          <label htmlFor="series-details-anchor">Anchor</label>
+          <input
+            id="series-details-anchor"
+            className="series-details-anchor"
+            type="date"
+            value={series.anchorDate}
+            disabled={busy}
+            onChange={event => onAnchorChange(event.target.value)}
+          />
+        </div>
+        {hasHistory && (
+          <p className="series-details-history-note">
+            Changing the schedule changes future occurrences. Completed occurrences stay as history.
+          </p>
+        )}
+      </section>
+      {/* D3: the sibling panels share one section rhythm -- heading, hairline
+          rule, content -- so the series panel reads as the task panel's peer
+          instead of a differently-built sheet. */}
+      <section className="task-details-section">
+        <h4>Upcoming occurrences</h4>
+        <ul className="series-occurrences">
+          {occurrences.map(occurrence => (
+            <li key={occurrence.id}>
+              <input
+                type="checkbox"
+                className="task-check"
+                checked={occurrence.completed}
+                disabled={busy || occurrence.completed}
+                aria-label={
+                  occurrence.completed
+                    ? `Completed: ${series.title} on ${occurrence.date}`
+                    : `Complete: ${series.title} on ${occurrence.date}`
+                }
+                onChange={() => onCompleteOccurrence(occurrence.date)}
+              />
+              {/* C1: the occurrence date is displayed human; the ISO key stays
+                  the record's identity for the checkbox label and the write */}
+              <span>{formatDateKey(occurrence.date, today)}</span>
+            </li>
+          ))}
+          {occurrences.length === 0 && <li>No upcoming occurrences in the current window.</li>}
+        </ul>
+      </section>
+      <section className="task-details-section task-details-danger">
+        <h4>Delete</h4>
+        <button type="button" className="task-details-delete" disabled={busy} onClick={onDelete}>
+          Delete series
+        </button>
+      </section>
       </aside>
     </>
   );
