@@ -376,7 +376,9 @@ select {
 /* A row of stat cards, each a real fact the store holds (no invented deltas).
    The row is omitted entirely when every fact is zero. A grid makes every card
    exactly as wide as its neighbours and lets the row span the content column
-   as one band. */
+   as one band. Only some cards carry a note; grid rows stretch every card to
+   the same height, so dropping a redundant note never misaligns the labels and
+   numbers, which stay on the same line across the row. */
 .stat-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
@@ -509,6 +511,18 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A work block that resolves to no task is named as what it is rather than
+   left as a bare time range. It is muted like the time and truncates like a
+   title, so the row reads as a descriptor and never as a task called
+   "Work block". */
+.card-row-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
 }
 
 .card-empty {

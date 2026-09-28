@@ -4,13 +4,18 @@ import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
  * The Home surface: a row of stat cards, each one a real fact the planner
  * holds — no derived deltas or invented percentages, because the store keeps
  * no history. "Today" and "this week" are the profile timezone's calendar
- * days (D3), never the browser's.
+ * days (D3), never the browser's. A card carries a secondary line only when
+ * that line says something its own heading and number do not — here the
+ * counting window for the week's blocks and the unit for the series count;
+ * the other three would only repeat their label.
  *
  * Two sibling sections sit below the cards, both a shared heading over one
  * card of list rows (D2). "Today" lists the open tasks due today and the work
  * blocks starting today. "This week" groups the week's work blocks by their
  * profile-zone day, showing each block's time range and the linked task when
- * one exists (D1). Every row is real store state; a day with no blocks is
+ * one exists (D1). A block with no linked task is named as what it is — a work
+ * block — instead of leaving a bare time range that could read as a meeting or
+ * a rendering fault. Every row is real store state; a day with no blocks is
  * omitted rather than padded with placeholder rows.
  *
  * When every fact is zero the surface stays calm: the card row is replaced by
@@ -113,16 +118,19 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
   }).filter(day => day.blocks.length > 0);
   const weekBlocks = weekDays.reduce((total, day) => total + day.blocks.length, 0);
 
-  const cards = [
-    { key: "open", label: "Open tasks", value: open, note: "not completed" },
-    { key: "completed", label: "Completed", value: completed, note: "marked done" },
-    { key: "due", label: "Due today", value: dueToday.length, note: "deadline today" },
+  // A card's note is kept only when it adds a fact the label and the number do
+  // not carry: the window the block count covers, and the unit the series
+  // count is in (definitions, not occurrences). A note that only restates its
+  // own heading — "not completed", "marked done", "deadline today" — is gone.
+  const cards: { key: string; label: string; value: number; note?: string }[] = [
+    { key: "open", label: "Open tasks", value: open },
+    { key: "completed", label: "Completed", value: completed },
+    { key: "due", label: "Due today", value: dueToday.length },
     { key: "week", label: "Work blocks", value: weekBlocks, note: "this week" },
     { key: "series", label: "Repeating", value: series.length, note: "series defined" },
   ];
 
-  // Today's blocks in the profile zone, earliest first. An unlinked block
-  // carries no title; it shows its time only, never a placeholder.
+  // Today's blocks in the profile zone, earliest first.
   const todayBlocks = blocks
     .filter(block => dateKey(new Date(block.start), timeZone) === today)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
@@ -132,6 +140,21 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
 
   const blockTime = (block: BlockView) =>
     `${wallTime(new Date(block.start), timeZone)}–${wallTime(new Date(block.end), timeZone)}`;
+
+  // One block row, shared by both sections. A block that resolves to a task
+  // shows that task; a block that does not is labelled with what it is, so no
+  // row is ever a bare time range with nothing to explain it.
+  const blockRow = (block: BlockView) => {
+    const title = titleOf(block.taskId);
+    return (
+      <li key={block.id} className="card-row">
+        <span className="card-row-time">{blockTime(block)}</span>
+        {title === null
+          ? <span className="card-row-note">Work block</span>
+          : <span className="card-row-title">{title}</span>}
+      </li>
+    );
+  };
 
   const empty = cards.every(card => card.value === 0);
 
@@ -149,7 +172,7 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
             <li key={card.key} className="stat-card" data-stat={card.key}>
               <span className="stat-card-label">{card.label}</span>
               <span className="stat-card-value">{card.value}</span>
-              <span className="stat-card-note">{card.note}</span>
+              {card.note !== undefined && <span className="stat-card-note">{card.note}</span>}
             </li>
           ))}
         </ul>
@@ -177,17 +200,7 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
             {todayBlocks.length === 0 ? (
               <p className="card-empty">No work blocks today.</p>
             ) : (
-              <ul className="card-rows">
-                {todayBlocks.map(block => {
-                  const title = titleOf(block.taskId);
-                  return (
-                    <li key={block.id} className="card-row">
-                      <span className="card-row-time">{blockTime(block)}</span>
-                      {title !== null && <span className="card-row-title">{title}</span>}
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className="card-rows">{todayBlocks.map(blockRow)}</ul>
             )}
           </div>
         </div>
@@ -205,17 +218,7 @@ export function Home({ loading, tasks, blocks, series, timeZone, profileError }:
               {weekDays.map(day => (
                 <div key={day.key} className="card-group">
                   <h4 className="card-group-heading">{day.label}</h4>
-                  <ul className="card-rows">
-                    {day.blocks.map(block => {
-                      const title = titleOf(block.taskId);
-                      return (
-                        <li key={block.id} className="card-row">
-                          <span className="card-row-time">{blockTime(block)}</span>
-                          {title !== null && <span className="card-row-title">{title}</span>}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <ul className="card-rows">{day.blocks.map(blockRow)}</ul>
                 </div>
               ))}
             </div>
