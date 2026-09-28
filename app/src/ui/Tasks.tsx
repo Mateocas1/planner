@@ -5,6 +5,7 @@ import { addSeries, completeOccurrence, deleteSeries, renameSeries, setSeriesAnc
 import type { SeriesView, TaskView } from "../data/store.ts";
 import { addTask, deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
+import { formatDateKey, isPastDateKey } from "./format.ts";
 
 /** Local YYYY-MM-DD key for an instant in a named IANA zone. */
 function dateKeyIn(zone: string, at: Date = new Date()): string {
@@ -179,7 +180,15 @@ export function Tasks({
             >
               <span className="task-title">{task.title}</span>
             </button>
-            {task.deadline && <span className="task-deadline">due {task.deadline}</span>}
+            {task.deadline && (
+              /* C1: an unfinished deadline before today is the overdue state,
+                 marked with the existing danger token -- never a new colour */
+              <span
+                className={`task-deadline${!task.completed && isPastDateKey(task.deadline, today) ? " task-deadline-overdue" : ""}`}
+              >
+                due {formatDateKey(task.deadline, today)}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -275,7 +284,7 @@ export function Tasks({
                         <span className="task-title">{seriesRow.title}</span>
                       </button>
                       <span className="series-frequency">{seriesRow.frequency}</span>
-                      {next && <span className="task-deadline">next {next.date}</span>}
+                      {next && <span className="task-deadline">next {formatDateKey(next.date, today)}</span>}
                     </li>
                   );
                 })}
@@ -291,6 +300,7 @@ export function Tasks({
           key={selectedSeries.id}
           series={selectedSeries}
           occurrences={upcomingOccurrences(selectedSeries, completions, today)}
+          today={today}
           busy={busy}
           hasHistory={Object.keys(completions).some(id => id.startsWith(`${selectedSeries.id}:`))}
           onClose={() => setSelectedSeriesId(null)}

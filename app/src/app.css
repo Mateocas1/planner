@@ -691,6 +691,12 @@ select {
   font-size: var(--text-sm);
 }
 
+/* C1: an unfinished deadline before today. The overdue state reuses the
+   danger token every other failure state already uses -- no new colour. */
+.task-deadline-overdue {
+  color: var(--red);
+}
+
 /* the frequency chip on a repeating row */
 .series-frequency {
   flex: 0 0 auto;

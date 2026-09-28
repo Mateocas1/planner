@@ -113,8 +113,10 @@ test("creating a task with a deadline shows the row and persists it to the serve
   await page.getByRole("button", { name: "Add task" }).click();
 
   await expect(page.locator(".task-title", { hasText: "Write review" })).toBeVisible();
-  await expect(page.locator(".task-deadline", { hasText: "2026-04-01" })).toBeVisible();
+  // C1: the row shows the human date (locale pinned to en-US), not the ISO key
+  await expect(page.locator(".task-deadline", { hasText: "Wed, Apr 1" })).toBeVisible();
 
+  // the stored value stays ISO: that assertion is about the data, not the display
   await expectRemoteTasks(email, [{ title: "Write review", completed: false, deadline: "2026-04-01" }]);
 });
 
@@ -187,13 +189,54 @@ test("editing the deadline in the details panel persists the change and clearing
   const panel = page.getByRole("complementary", { name: "Task details" });
 
   await panel.getByLabel("Deadline").fill("2026-05-10");
-  await expect(page.locator(".task-deadline", { hasText: "2026-05-10" })).toBeVisible();
+  // C1: the panel writes ISO; the row reads back human (locale pinned to en-US)
+  await expect(page.locator(".task-deadline", { hasText: "Sun, May 10" })).toBeVisible();
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false, deadline: "2026-05-10" }]);
 
   // clearing the control removes the field on the server entirely
   await panel.getByLabel("Deadline").fill("");
   await expect(page.locator(".task-deadline")).toHaveCount(0);
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false }]);
+});
+
+test("a deadline of today reads as a word and an overdue task carries the overdue state", async ({ page }) => {
+  const email = newEmail("human-dates");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const today = localDateKey(new Date());
+  const yesterday = dayKey(-1);
+
+  // C1: today's deadline is a word, not its ISO key
+  await page.getByLabel("Task title").fill("Water plants");
+  await page.getByLabel("Deadline").fill(today);
+  await page.getByRole("button", { name: "Add task" }).click();
+  const todayRow = page.locator("li.task", { hasText: "Water plants" });
+  await expect(todayRow.locator(".task-deadline")).toHaveText("due today");
+  await expect(todayRow.locator(".task-deadline")).not.toContainText(today);
+  // the write may still be in flight; wait for the form to settle so the next
+  // fill is not wiped by this add's reset
+  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+
+  // C1: a past deadline on an unfinished task carries the overdue state
+  await page.getByLabel("Task title").fill("Pay bill");
+  await page.getByLabel("Deadline").fill(yesterday);
+  await page.getByRole("button", { name: "Add task" }).click();
+  const lateRow = page.locator("li.task", { hasText: "Pay bill" });
+  await expect(lateRow.locator(".task-deadline")).toHaveClass(/task-deadline-overdue/);
+  await expect(lateRow.locator(".task-deadline")).not.toContainText(yesterday);
+
+  // completing it clears the state...
+  await page.getByRole("checkbox", { name: "Complete: Pay bill" }).click();
+  await expect(lateRow.locator(".task-deadline")).not.toHaveClass(/task-deadline-overdue/);
+
+  // ...and the keys on the server stay ISO: the display changed, the data did not
+  await expect
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Pay bill"), { timeout: 15_000 })
+    .toEqual({ title: "Pay bill", completed: true, deadline: yesterday });
+  await expect
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Water plants"), { timeout: 15_000 })
+    .toEqual({ title: "Water plants", completed: false, deadline: today });
 });
 
 async function addTaskThroughForm(page: Page, title: string) {
@@ -345,7 +388,9 @@ test("a series created from the UI persists with its frequency and anchor and sh
   const row = page.locator(".series-row", { hasText: "Stretch" });
   await expect(row).toHaveAttribute("data-next-occurrence", start);
   await expect(row.getByText("Weekly")).toBeVisible();
-  await expect(row.getByText(`next ${start}`)).toBeVisible();
+  // C1: futureDateKey(1) is tomorrow, so the row reads the word; the ISO key
+  // stays the row's data attribute above
+  await expect(row.getByText("next tomorrow")).toBeVisible();
 
   const series = await expectSingleRemoteSeries(email);
   expect(series.id).not.toBe("");
@@ -417,9 +462,12 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
   await expect(panel.getByLabel("Frequency")).toHaveValue("weekly");
   await expect(panel.getByLabel("Anchor")).toHaveValue(start);
-  await expect(panel.locator(".series-occurrences")).toContainText(start);
-  await expect(panel.locator(".series-occurrences")).toContainText(second);
-  await expect(panel.locator(".series-occurrences")).toContainText(third);
+  // C1: the panel shows human dates; the ISO keys are gone from the display
+  // (the checkbox below still addresses the occurrence by its ISO key)
+  await expect(panel.locator(".series-occurrences")).not.toContainText(start);
+  await expect(panel.locator(".series-occurrences")).not.toContainText(second);
+  await expect(panel.locator(".series-occurrences")).not.toContainText(third);
+  await expect(panel.locator(".series-occurrences")).toContainText("tomorrow");
   await expect(panel.getByRole("checkbox", { name: `Complete: Stretch on ${start}` })).toBeVisible();
 
   // the panel keeps the shared panel behaviour: Close dismisses it
@@ -801,10 +849,23 @@ test.describe("profile timezone (I6b)", () => {
     const nextZone = "Europe/Madrid";
     await updateRemoteProfile(email, nextZone);
 
-    // Same stored instant, same day column, but the wall label follows the
-    // newly stored zone, without any browser reload.
-    await expect(block).toContainText(wallClockIn(new Date(start), nextZone).time);
-    await expect(block).toHaveAttribute("data-start", start);
+    // Switching zones can also roll the visible week: Madrid is five hours
+    // ahead of São Paulo, so for part of every day it is already on the next
+    // calendar date and the week moves with it, hiding the column that holds
+    // the stored instant. Step back to it before asserting, otherwise this
+    // test fails during a window that shifts with the time of day. The final
+    // assertions still require the block to be there with the new wall time,
+    // so a block that genuinely vanished cannot pass through this step.
+    const dayColumn = page.locator(`[data-date="${day}"] .calendar-block`);
+    if ((await dayColumn.count()) === 0) {
+      await page.getByRole("button", { name: "Previous week" }).click();
+    }
+
+    // Same stored instant, same instant in the data, but the wall label
+    // follows the newly stored zone, without any browser reload.
+    await expect(dayColumn).toHaveCount(1);
+    await expect(dayColumn).toContainText(wallClockIn(new Date(start), nextZone).time);
+    await expect(dayColumn).toHaveAttribute("data-start", start);
     await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
   });
 });

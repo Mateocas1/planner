@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SeriesView, TaskView } from "../data/store.ts";
+import { formatDateKey } from "./format.ts";
 
 /**
  * The details panel for the selected task. Every mutating action lives here
@@ -116,6 +117,7 @@ export type SeriesOccurrenceView = { id: string; date: string; completed: boolea
 export function SeriesDetails({
   series,
   occurrences,
+  today,
   busy,
   hasHistory,
   onClose,
@@ -127,6 +129,7 @@ export function SeriesDetails({
 }: {
   series: SeriesView;
   occurrences: SeriesOccurrenceView[];
+  today: string;
   busy: boolean;
   hasHistory: boolean;
   onClose: () => void;
@@ -209,7 +212,9 @@ export function SeriesDetails({
               }
               onChange={() => onCompleteOccurrence(occurrence.date)}
             />
-            <span>{occurrence.date}</span>
+            {/* C1: the occurrence date is displayed human; the ISO key stays
+                the record's identity for the checkbox label and the write */}
+            <span>{formatDateKey(occurrence.date, today)}</span>
           </li>
         ))}
         {occurrences.length === 0 && <li>No upcoming occurrences in the current window.</li>}
