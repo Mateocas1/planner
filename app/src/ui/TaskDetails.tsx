@@ -46,7 +46,11 @@ export function TaskDetails({
   };
 
   return (
-    <aside className="task-details" aria-label="Task details">
+    <>
+      {/* the scrim the motion system specifies for the panel backdrop;
+          pointer-events stay off, so it never changes panel behaviour */}
+      <div className="task-details-scrim" aria-hidden="true" />
+      <aside className="task-details" aria-label="Task details">
       <header className="task-details-head">
         <h3>Task details</h3>
         <button type="button" onClick={onClose}>
@@ -114,7 +118,8 @@ export function TaskDetails({
           Delete task
         </button>
       </section>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -169,7 +174,9 @@ export function SeriesDetails({
   }, [onClose]);
 
   return (
-    <aside className="task-details" aria-label="Series details">
+    <>
+      <div className="task-details-scrim" aria-hidden="true" />
+      <aside className="task-details" aria-label="Series details">
       <header className="task-details-head">
         <h3>Series details</h3>
         <button type="button" onClick={onClose}>
@@ -242,6 +249,7 @@ export function SeriesDetails({
       <button type="button" className="task-details-delete" disabled={busy} onClick={onDelete}>
         Delete series
       </button>
-    </aside>
+      </aside>
+    </>
   );
 }

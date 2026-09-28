@@ -41,15 +41,28 @@
   --status-review: #7652C2;
   --status-done: #2E8456;
 
-  /* elevation — the ring-as-border trick: cards rest on the page, no float */
-  --shadow-card: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
-  --shadow-pill: 0 1px 2px rgba(28, 25, 20, 0.06), 0 0 0 1px var(--border);
+  /* elevation — a named three-step scale, not ad-hoc shadows: level 1 is
+     the resting card, level 2 a raised control (nav pill, popover), level 3
+     the floating details sheet. Levels 1–3 keep the ring-as-border trick (a
+     0-blur spread) so every surface stays bounded; only the sheet casts a
+     real directional shadow. */
+  --elev-1: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
+  --elev-2: 0 2px 6px rgba(28, 25, 20, 0.07), 0 0 0 1px var(--border);
+  --elev-3: -12px 0 40px rgba(28, 25, 20, 0.12), 0 0 0 1px var(--border);
+
+  /* the page's own ambient depth: a faint top light the translucent sidebar
+     can sample, so the glass reads as glass instead of a solid repaint */
+  --page-gradient: linear-gradient(180deg, #FDFCFB 0%, var(--bg) 42%, #F5F3EF 100%);
+
+  /* scrim behind a floating sheet (motion-system: panel backdrop, opacity) */
+  --scrim: rgba(28, 25, 20, 0.18);
 
   /* radii */
   --r-xs: 4px;
   --r-sm: 6px;
   --r: 8px;
   --r-lg: 10px;
+  --r-xl: 14px;
   --r-full: 999px;
 
   /* 4 pt spacing scale */
@@ -108,6 +121,8 @@ body {
   font-size: var(--text-md);
   color: var(--text);
   background: var(--bg);
+  background-image: var(--page-gradient);
+  background-attachment: fixed;
 }
 
 /* ---------- shell: sidebar + main ---------- */
@@ -130,8 +145,19 @@ body {
   min-width: 0;
   box-sizing: border-box;
   padding: var(--space-5) var(--space-3);
-  background: var(--bg-sidebar);
+  background: color-mix(in srgb, var(--bg-sidebar) 72%, transparent);
   border-right: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+}
+
+/* Without backdrop-filter the translucent fill would sit over nothing and
+   read as a weaker copy of the page, not a panel. Fall back to the solid
+   sidebar surface instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar {
+    background: var(--bg-sidebar);
+  }
 }
 
 .app-name {
@@ -145,7 +171,10 @@ body {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* the label sits over the translucent sidebar: --text-4 measures 3.2:1
+     there, below AA for 11 px text, so it steps up one ramp stop to the
+     5.1:1 of --text-3 (also fixed for the solid fallback) */
+  color: var(--text-3);
 }
 
 .side-nav {
@@ -176,7 +205,7 @@ body {
 .nav-item.active {
   background: var(--surface);
   color: var(--text);
-  box-shadow: var(--shadow-pill);
+  box-shadow: var(--elev-2);
 }
 
 .nav-item svg {
@@ -341,7 +370,7 @@ select {
   padding: var(--space-4) var(--space-5);
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
 }
 
 /* A row of stat cards, each a real fact the store holds (no invented deltas).
@@ -592,7 +621,7 @@ select {
   padding: var(--space-1) var(--space-3);
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
 }
 
 /* the completion wash: a brief green veil that fades out once the completed
@@ -738,6 +767,24 @@ select {
 
 /* ---------- task details panel ---------- */
 
+/* The scrim the motion system specifies for the panel backdrop. It dims the
+   page so the sheet reads as lifted, and never takes pointer events, so the
+   panel's keyboard and pointer behaviour is unchanged. */
+.task-details-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: var(--scrim);
+  pointer-events: none;
+  animation: scrim-in var(--dur-hover) ease;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .task-details {
   position: fixed;
   top: 0;
@@ -750,9 +797,10 @@ select {
   box-sizing: border-box;
   width: 20rem;
   padding: var(--space-5);
+  /* the sheet stays opaque: no glass behind the panel's dense text */
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--r-xl) 0 0 var(--r-xl);
+  box-shadow: var(--elev-3);
   animation: var(--motion-panel);
 }
 
@@ -1016,7 +1064,7 @@ select {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-2);
 }
 
 .block-field {
@@ -1049,7 +1097,7 @@ select {
   display: flex;
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
   overflow-x: auto;
 }
 
@@ -1288,7 +1336,9 @@ select {
     inset: 0;
     width: auto;
     padding-inline: var(--space-4);
-    border-left: none;
+    /* the panel is a full overlay here, so it drops the sheet's rounded
+       left edge and shows square to the viewport */
+    border-radius: 0;
   }
 
   /* C2 (mobile): an absolute popover would clip against the viewport edge, so
@@ -1399,6 +1449,11 @@ select {
   button:not(:disabled):active {
     opacity: 0.6;
   }
+
+  /* reduced motion keeps the scrim, only gentler: a short opacity fade */
+  .task-details-scrim {
+    animation: view-fade var(--dur-reduce) ease-out;
+  }
 }
 
 /* the in-app setting mirrors the OS preference (no UI exposes it yet) */
@@ -1413,6 +1468,10 @@ select {
 
 :root[data-motion="reduce"] button:not(:disabled):active {
   opacity: 0.6;
+}
+
+:root[data-motion="reduce"] .task-details-scrim {
+  animation: view-fade var(--dur-reduce) ease-out;
 }
 
 /* view switch: opacity plus a 4 px rise. App.tsx ties the React key of the
