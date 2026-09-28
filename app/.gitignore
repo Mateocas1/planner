@@ -5,6 +5,3 @@ test-results/
 playwright-report/
 *.log
 firebase-debug.log
-
-# ui-capture: local working instrument (script + screenshots), never committed
-scripts/

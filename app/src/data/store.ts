@@ -4,7 +4,7 @@ import type { Recurrence, Task, WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 
 /** View type for a stored task: the domain Task plus its completion state. */
-export type TaskView = Task & { completed: boolean };
+export type TaskView = Task & { completed: boolean; pending: boolean };
 
 /**
  * View type for a stored work block: the domain WorkBlock plus whether the
@@ -38,6 +38,7 @@ function toTask(doc: QueryDocumentSnapshot): TaskView {
     id: doc.id,
     title: String(data.title),
     completed: data.completed === true,
+    pending: doc.metadata.hasPendingWrites,
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
   };
 }

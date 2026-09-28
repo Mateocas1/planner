@@ -41,15 +41,28 @@
   --status-review: #7652C2;
   --status-done: #2E8456;
 
-  /* elevation — the ring-as-border trick: cards rest on the page, no float */
-  --shadow-card: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
-  --shadow-pill: 0 1px 2px rgba(28, 25, 20, 0.06), 0 0 0 1px var(--border);
+  /* elevation — a named three-step scale, not ad-hoc shadows: level 1 is
+     the resting card, level 2 a raised control (nav pill, popover), level 3
+     the floating details sheet. Levels 1–3 keep the ring-as-border trick (a
+     0-blur spread) so every surface stays bounded; only the sheet casts a
+     real directional shadow. */
+  --elev-1: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
+  --elev-2: 0 2px 6px rgba(28, 25, 20, 0.07), 0 0 0 1px var(--border);
+  --elev-3: -12px 0 40px rgba(28, 25, 20, 0.12), 0 0 0 1px var(--border);
+
+  /* the page's own ambient depth: a faint top light the translucent sidebar
+     can sample, so the glass reads as glass instead of a solid repaint */
+  --page-gradient: linear-gradient(180deg, #FDFCFB 0%, var(--bg) 42%, #F5F3EF 100%);
+
+  /* scrim behind a floating sheet (motion-system: panel backdrop, opacity) */
+  --scrim: rgba(28, 25, 20, 0.18);
 
   /* radii */
   --r-xs: 4px;
   --r-sm: 6px;
   --r: 8px;
   --r-lg: 10px;
+  --r-xl: 14px;
   --r-full: 999px;
 
   /* 4 pt spacing scale */
@@ -108,6 +121,8 @@ body {
   font-size: var(--text-md);
   color: var(--text);
   background: var(--bg);
+  background-image: var(--page-gradient);
+  background-attachment: fixed;
 }
 
 /* ---------- shell: sidebar + main ---------- */
@@ -130,8 +145,19 @@ body {
   min-width: 0;
   box-sizing: border-box;
   padding: var(--space-5) var(--space-3);
-  background: var(--bg-sidebar);
+  background: color-mix(in srgb, var(--bg-sidebar) 72%, transparent);
   border-right: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+}
+
+/* Without backdrop-filter the translucent fill would sit over nothing and
+   read as a weaker copy of the page, not a panel. Fall back to the solid
+   sidebar surface instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar {
+    background: var(--bg-sidebar);
+  }
 }
 
 .app-name {
@@ -145,7 +171,10 @@ body {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* the label sits over the translucent sidebar: --text-4 measures 3.2:1
+     there, below AA for 11 px text, so it steps up one ramp stop to the
+     5.1:1 of --text-3 (also fixed for the solid fallback) */
+  color: var(--text-3);
 }
 
 .side-nav {
@@ -176,7 +205,7 @@ body {
 .nav-item.active {
   background: var(--surface);
   color: var(--text);
-  box-shadow: var(--shadow-pill);
+  box-shadow: var(--elev-2);
 }
 
 .nav-item svg {
@@ -341,13 +370,15 @@ select {
   padding: var(--space-4) var(--space-5);
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
 }
 
 /* A row of stat cards, each a real fact the store holds (no invented deltas).
    The row is omitted entirely when every fact is zero. A grid makes every card
    exactly as wide as its neighbours and lets the row span the content column
-   as one band. */
+   as one band. Only some cards carry a note; grid rows stretch every card to
+   the same height, so dropping a redundant note never misaligns the labels and
+   numbers, which stay on the same line across the row. */
 .stat-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
@@ -482,6 +513,18 @@ select {
   white-space: nowrap;
 }
 
+/* A work block that resolves to no task is named as what it is rather than
+   left as a bare time range. It is muted like the time and truncates like a
+   title, so the row reads as a descriptor and never as a task called
+   "Work block". */
+.card-row-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+
 .card-empty {
   margin: 0;
   font-size: var(--text-md);
@@ -520,6 +563,34 @@ select {
 .task-field label {
   font-size: var(--text-sm);
   color: var(--text-2);
+}
+
+/* C2: creation is revealed on demand, not permanently on the surface. Until
+   it is clicked the row is a quiet, text-like control; the revealed form
+   keeps the same fields and labels. */
+.new-task {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding-inline: var(--space-3);
+  color: var(--text-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+.new-task span {
+  color: var(--text-4);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+/* the dismiss controls for both revealed creation forms stay quiet: the
+   submit remains the only primary action in the row */
+.task-cancel,
+.block-cancel {
+  color: var(--text-2);
+  background: transparent;
 }
 
 /* D3: the counting group heading is a divider, not its own block — a hairline
@@ -564,7 +635,7 @@ select {
   padding: var(--space-1) var(--space-3);
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
 }
 
 /* the completion wash: a brief green veil that fades out once the completed
@@ -691,6 +762,12 @@ select {
   font-size: var(--text-sm);
 }
 
+/* C1: an unfinished deadline before today. The overdue state reuses the
+   danger token every other failure state already uses -- no new colour. */
+.task-deadline-overdue {
+  color: var(--red);
+}
+
 /* the frequency chip on a repeating row */
 .series-frequency {
   flex: 0 0 auto;
@@ -704,6 +781,24 @@ select {
 
 /* ---------- task details panel ---------- */
 
+/* The scrim the motion system specifies for the panel backdrop. It dims the
+   page so the sheet reads as lifted, and never takes pointer events, so the
+   panel's keyboard and pointer behaviour is unchanged. */
+.task-details-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: var(--scrim);
+  pointer-events: none;
+  animation: scrim-in var(--dur-hover) ease;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .task-details {
   position: fixed;
   top: 0;
@@ -716,9 +811,10 @@ select {
   box-sizing: border-box;
   width: 20rem;
   padding: var(--space-5);
+  /* the sheet stays opaque: no glass behind the panel's dense text */
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--r-xl) 0 0 var(--r-xl);
+  box-shadow: var(--elev-3);
   animation: var(--motion-panel);
 }
 
@@ -767,11 +863,61 @@ select {
   line-height: 1.3;
 }
 
-.task-details-save {
-  flex: 0 0 auto;
-  height: var(--h-sm);
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
+/* the title edits in place: it stays quiet until it takes focus, then shows a
+   soft token ring instead of the loud platform outline the generic rule would
+   draw, so the panel keeps reading as a record rather than a form */
+.task-details input.task-details-title:focus-visible {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* C3: the panel re-skins its native controls so they read as part of the
+   product instead of as browser defaults. The native elements stay
+   underneath (no custom date picker, no component library), so their
+   keyboard behaviour and accessibility are unchanged; only height, radius,
+   border, focus ring and colour come from the existing tokens. */
+.task-details input[type="date"],
+.task-details select {
+  border-radius: var(--r-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* one focus ring for the panel's controls, drawn from the accent token */
+.task-details input:focus-visible,
+.task-details select:focus-visible,
+.task-details .task-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the select drops the platform caret for a chevron drawn from the quiet end
+   of the text ramp; appearance: none removes the native chrome while the
+   native control keeps the keyboard and screen-reader behaviour */
+.task-details select {
+  appearance: none;
+  padding-right: calc(var(--space-6) + var(--space-1));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6760' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+}
+
+/* the date input hides the platform indicator and shows our own calendar mark
+   in the same corner; the indicator stays clickable underneath, so the native
+   picker still opens and the value can still be typed */
+.task-details input[type="date"] {
+  position: relative;
+  appearance: none;
+  padding-right: calc(var(--space-6) + var(--space-1));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Crect x='1.25' y='2.25' width='11.5' height='10.5' rx='2' stroke='%238C8880' stroke-width='1.3'/%3E%3Cpath d='M1.25 5.5h11.5M4.5 1v2.5M9.5 1v2.5' stroke='%238C8880' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+}
+
+.task-details input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
 }
 
 /* D3: labelled sections divided by a hairline rule give the panel its
@@ -788,7 +934,10 @@ select {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* the sheet is opaque --surface (#FFFFFF): --text-4 measures 3.53:1 there,
+     below AA for 11 px text, so the micro-label steps up one ramp stop to the
+     5.6:1 of --text-3, the same fix the sidebar's micro-label already carries */
+  color: var(--text-3);
 }
 
 /* D2: the task's key facts share one metadata row — deadline and completion
@@ -812,12 +961,34 @@ select {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-4);
+  /* see .task-details-section > h4: same 11 px micro-label, same AA step */
+  color: var(--text-3);
 }
 
 .task-details-meta input[type="date"] {
   width: auto;
   height: var(--h-sm);
+}
+
+/* the series panel's definition fields stack under their micro-label, the
+   same label voice the task panel's metadata row uses, so the two sibling
+   panels name their controls the same way */
+.task-details-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.task-details-field + .task-details-field {
+  margin-top: var(--space-3);
+}
+
+.task-details-field > label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
 }
 
 .task-details-completed {
@@ -847,7 +1018,7 @@ select {
 /* series details panel: the definition (title, frequency, anchor) is edited
    here; occurrence completion and delete act below it */
 .series-details-history-note {
-  margin: 0;
+  margin: var(--space-3) 0 0;
   color: var(--text-3);
   font-size: var(--text-sm);
 }
@@ -903,17 +1074,36 @@ select {
   margin-left: auto;
 }
 
-/* D3: the creation controls sit side by side in one compact row on a wide
-   viewport and wrap on a narrow one. Each field keeps its label directly
-   above its control -- the accessible names the tests address -- so the
-   labels, the control order and the operation are unchanged; only the layout
-   is. Nothing sits behind a click. */
+/* C2: creation is revealed on demand. The calendar holds one quiet New block
+   control until it is needed, so the grid stops being pushed down by a form.
+   The revealed form is a compact popover over the grid, not a permanent row. */
+.block-create {
+  position: relative;
+  margin: 0 0 var(--space-3);
+}
+
+.new-block {
+  color: var(--text-2);
+  background: transparent;
+}
+
 .block-form {
+  position: absolute;
+  top: calc(var(--h-md) + var(--space-2));
+  left: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  box-sizing: border-box;
+  width: min(100%, 34rem);
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-2);
 }
 
 .block-field {
@@ -946,7 +1136,7 @@ select {
   display: flex;
   background: var(--surface);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elev-1);
   overflow-x: auto;
 }
 
@@ -1185,7 +1375,75 @@ select {
     inset: 0;
     width: auto;
     padding-inline: var(--space-4);
-    border-left: none;
+    /* the panel is a full overlay here, so it drops the sheet's rounded
+       left edge and shows square to the viewport */
+    border-radius: 0;
+  }
+
+  /* C2 (mobile): an absolute popover would clip against the viewport edge, so
+     the revealed creation form becomes an inline sheet under its control */
+  .block-form {
+    position: static;
+    width: auto;
+    margin-top: var(--space-2);
+  }
+}
+
+/* ---------- phone: a single day instead of a week (C4) ----------
+   At 640 px and below the grid renders one day column, so the day's blocks
+   are readable at phone width instead of a clipped third column. The weekend
+   grid is untouched: the JS narrow-viewport gate and this breakpoint share the
+   640 px value, so the week view only ever renders above it. */
+@media (max-width: 640px) {
+  /* the toolbar is one compact line: the week label leaves the flow because
+     the day header states which day is shown, and the two week-step buttons
+     leave it because the day header's own stepper already navigates the
+     single visible day (rolling into the adjacent week at the edges). Today
+     stays as the one-tap return to now. Desktop keeps all four controls. */
+  .calendar-toolbar {
+    flex-wrap: nowrap;
+  }
+
+  .week-nav-button {
+    display: none;
+  }
+
+  .calendar-week-label {
+    display: none;
+  }
+
+  /* the single day's header becomes a row: previous / day label / next */
+  .calendar-day-head {
+    flex-direction: row;
+    gap: var(--space-2);
+    justify-content: center;
+  }
+
+  .calendar-day-label {
+    font-size: var(--text-md);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .calendar-day-today .calendar-day-label {
+    color: var(--accent);
+  }
+
+  .day-nav-button {
+    width: var(--h-sm);
+    height: var(--h-sm);
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    font-size: var(--text-lg);
+    line-height: 1;
+    color: var(--text-2);
+  }
+
+  /* the one rendered day fills the grid instead of the 8 rem week-column
+     minimum that made the week scroll sideways */
+  .calendar-day {
+    min-width: 0;
   }
 }
 
@@ -1237,6 +1495,11 @@ select {
   button:not(:disabled):active {
     opacity: 0.6;
   }
+
+  /* reduced motion keeps the scrim, only gentler: a short opacity fade */
+  .task-details-scrim {
+    animation: view-fade var(--dur-reduce) ease-out;
+  }
 }
 
 /* the in-app setting mirrors the OS preference (no UI exposes it yet) */
@@ -1251,6 +1514,10 @@ select {
 
 :root[data-motion="reduce"] button:not(:disabled):active {
   opacity: 0.6;
+}
+
+:root[data-motion="reduce"] .task-details-scrim {
+  animation: view-fade var(--dur-reduce) ease-out;
 }
 
 /* view switch: opacity plus a 4 px rise. App.tsx ties the React key of the

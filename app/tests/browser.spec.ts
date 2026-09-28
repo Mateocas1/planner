@@ -35,7 +35,19 @@ async function expectRemoteTasks(email: string, expected: unknown[]) {
 
 async function openTasks(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
+  // C2: creation is collapsed on arrival; openTasks only lands the surface.
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+}
+
+/**
+ * Reveals the collapsed Tasks creation row (C2). Idempotent: if a test already
+ * revealed it, the Add task control is visible and nothing is clicked.
+ */
+async function revealTaskForm(page: Page) {
+  const add = page.getByRole("button", { name: "Add task" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New task" }).click();
+  await expect(add).toBeVisible();
 }
 
 test("walking skeleton: account creation, truthful Home counts, and navigation", async ({ page }) => {
@@ -51,7 +63,8 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
 
   const nav = page.getByRole("navigation", { name: "Main" });
   await nav.getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
+  // C2: creation is collapsed, not permanently on the surface
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await nav.getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
   await expect(page.getByText("planner timezone")).toBeVisible();
@@ -75,11 +88,13 @@ test("Home cards show counts that match the seeded planner state", async ({ page
 
   await openTasks(page);
   await addTaskThroughForm(page, "Open task");
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Due today");
   await page.getByLabel("Deadline").fill(today);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Due today" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // the successful write collapses the revealed row again
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await addTaskThroughForm(page, "Done task");
   await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
@@ -87,6 +102,7 @@ test("Home cards show counts that match the seeded planner state", async ({ page
   await addSeriesThroughForm(page, "Weekly habit", "Weekly", futureDateKey(1));
 
   await openCalendar(page);
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
   await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -108,14 +124,39 @@ test("creating a task with a deadline shows the row and persists it to the serve
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Write review");
   await page.getByLabel("Deadline").fill("2026-04-01");
   await page.getByRole("button", { name: "Add task" }).click();
 
   await expect(page.locator(".task-title", { hasText: "Write review" })).toBeVisible();
-  await expect(page.locator(".task-deadline", { hasText: "2026-04-01" })).toBeVisible();
+  // C1: the row shows the human date (locale pinned to en-US), not the ISO key
+  await expect(page.locator(".task-deadline", { hasText: "Wed, Apr 1" })).toBeVisible();
 
+  // the stored value stays ISO: that assertion is about the data, not the display
   await expectRemoteTasks(email, [{ title: "Write review", completed: false, deadline: "2026-04-01" }]);
+});
+
+test("pressing Enter in the revealed title field creates the task", async ({ page }) => {
+  const email = newEmail("enter");
+  await signUp(page, email);
+
+  // C2: creation is collapsed by default and does not occupy the surface
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task" })).toHaveCount(0);
+
+  // revealing gives a title input; Enter submits the form natively
+  await page.getByRole("button", { name: "New task" }).click();
+  const title = page.getByLabel("Task title");
+  await expect(title).toBeVisible();
+  await title.fill("Quick add");
+  await title.press("Enter");
+
+  await expect(page.locator(".task-title", { hasText: "Quick add" })).toBeVisible();
+  // the successful write collapses the revealed row again
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  await expectRemoteTasks(email, [{ title: "Quick add", completed: false }]);
 });
 
 test("renaming a task persists the new title to the server", async ({ page }) => {
@@ -123,14 +164,16 @@ test("renaming a task persists the new title to the server", async ({ page }) =>
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Draft plan");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toBeVisible();
 
-  // the row's title button opens the details panel; rename lives there now
+  // the row's title button opens the details panel; rename edits in place
   await page.getByRole("button", { name: "Draft plan" }).click();
-  await page.getByLabel("Rename task").fill("Final plan");
-  await page.getByRole("button", { name: "Save rename" }).click();
+  const rename = page.getByLabel("Rename task");
+  await rename.fill("Final plan");
+  await rename.press("Enter");
 
   await expect(page.locator(".task-title", { hasText: "Final plan" })).toBeVisible();
   await expect(page.locator(".task-title", { hasText: "Draft plan" })).toHaveCount(0);
@@ -138,11 +181,35 @@ test("renaming a task persists the new title to the server", async ({ page }) =>
   await expectRemoteTasks(email, [{ title: "Final plan", completed: false }]);
 });
 
+test("Escape cancels an inline rename and leaves the stored title unchanged", async ({ page }) => {
+  const email = newEmail("rename-cancel");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Original title");
+  await page.getByRole("button", { name: "Original title" }).click();
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  const rename = panel.getByLabel("Rename task");
+
+  // a pending edit is reverted: the input restores the stored title and the
+  // panel stays open (Escape with nothing to cancel is what closes it)
+  await rename.fill("Changed title");
+  await rename.press("Escape");
+  await expect(panel).toBeVisible();
+  await expect(rename).toHaveValue("Original title");
+
+  // neither the row nor the server saw the cancelled value
+  await expect(page.locator(".task-title", { hasText: "Original title" })).toBeVisible();
+  await expect(page.locator(".task-title", { hasText: "Changed title" })).toHaveCount(0);
+  await expectRemoteTasks(email, [{ title: "Original title", completed: false }]);
+});
+
 test("completing and uncompleting a task sets completed on the server", async ({ page }) => {
   const email = newEmail("complete");
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Solo task");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Solo task" })).toBeVisible();
@@ -165,6 +232,7 @@ test("deleting a task removes the row and the server document", async ({ page })
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Doomed task");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Doomed task" })).toBeVisible();
@@ -187,7 +255,8 @@ test("editing the deadline in the details panel persists the change and clearing
   const panel = page.getByRole("complementary", { name: "Task details" });
 
   await panel.getByLabel("Deadline").fill("2026-05-10");
-  await expect(page.locator(".task-deadline", { hasText: "2026-05-10" })).toBeVisible();
+  // C1: the panel writes ISO; the row reads back human (locale pinned to en-US)
+  await expect(page.locator(".task-deadline", { hasText: "Sun, May 10" })).toBeVisible();
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false, deadline: "2026-05-10" }]);
 
   // clearing the control removes the field on the server entirely
@@ -196,13 +265,55 @@ test("editing the deadline in the details panel persists the change and clearing
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false }]);
 });
 
+test("a deadline of today reads as a word and an overdue task carries the overdue state", async ({ page }) => {
+  const email = newEmail("human-dates");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const today = localDateKey(new Date());
+  const yesterday = dayKey(-1);
+
+  // C1: today's deadline is a word, not its ISO key
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Water plants");
+  await page.getByLabel("Deadline").fill(today);
+  await page.getByRole("button", { name: "Add task" }).click();
+  const todayRow = page.locator("li.task", { hasText: "Water plants" });
+  await expect(todayRow.locator(".task-deadline")).toHaveText("due today");
+  await expect(todayRow.locator(".task-deadline")).not.toContainText(today);
+  // the successful write collapses the row; reveal it again for the next entry
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+
+  // C1: a past deadline on an unfinished task carries the overdue state
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Pay bill");
+  await page.getByLabel("Deadline").fill(yesterday);
+  await page.getByRole("button", { name: "Add task" }).click();
+  const lateRow = page.locator("li.task", { hasText: "Pay bill" });
+  await expect(lateRow.locator(".task-deadline")).toHaveClass(/task-deadline-overdue/);
+  await expect(lateRow.locator(".task-deadline")).not.toContainText(yesterday);
+
+  // completing it clears the state...
+  await page.getByRole("checkbox", { name: "Complete: Pay bill" }).click();
+  await expect(lateRow.locator(".task-deadline")).not.toHaveClass(/task-deadline-overdue/);
+
+  // ...and the keys on the server stay ISO: the display changed, the data did not
+  await expect
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Pay bill"), { timeout: 15_000 })
+    .toEqual({ title: "Pay bill", completed: true, deadline: yesterday });
+  await expect
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Water plants"), { timeout: 15_000 })
+    .toEqual({ title: "Water plants", completed: false, deadline: today });
+});
+
 async function addTaskThroughForm(page: Page, title: string) {
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
-  // the write may still be in flight (busy disables the form); wait for it to
-  // settle so a following fill is not wiped by the previous add's reset
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // the write may still be in flight (busy disables the form); the form only
+  // collapses once it settles, so a following fill is never wiped by its reset
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
 test("selecting a row opens the details panel, and it closes via Close and Escape", async ({ page }) => {
@@ -248,6 +359,7 @@ test("an empty title is refused with a visible error and writes nothing", async 
   await signUp(page, email);
   await openTasks(page);
 
+  await revealTaskForm(page);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.getByRole("alert")).toContainText("task title is required");
   await expectRemoteTasks(email, []);
@@ -274,7 +386,19 @@ test("the completion wash plays on a user completion and never for already-compl
 
 async function openCalendar(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
-  await expect(page.getByRole("button", { name: "Add block" })).toBeVisible();
+  // C2: creation is collapsed on arrival; openCalendar only lands the surface.
+  await expect(page.getByRole("button", { name: "New block" })).toBeVisible();
+}
+
+/**
+ * Reveals the collapsed Calendar creation form (C2). Idempotent: if a test
+ * already revealed it, the Add block control is visible and nothing is clicked.
+ */
+async function revealBlockForm(page: Page) {
+  const add = page.getByRole("button", { name: "Add block" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New block" }).click();
+  await expect(add).toBeVisible();
 }
 
 async function expectRemoteBlocks(email: string, expected: unknown[]) {
@@ -303,12 +427,13 @@ function dayKey(daysFromNow: number) {
 
 /** Creates a recurring series through the form and waits for its row. */
 async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily" | "Weekly" | "Monthly", start: string) {
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
   await page.getByLabel("Repeat").selectOption({ label: frequency });
   await page.getByLabel("Start date").fill(start);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: title })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
 let createdSeries: Array<{ id: string; data: Record<string, string> }> = [];
@@ -345,7 +470,9 @@ test("a series created from the UI persists with its frequency and anchor and sh
   const row = page.locator(".series-row", { hasText: "Stretch" });
   await expect(row).toHaveAttribute("data-next-occurrence", start);
   await expect(row.getByText("Weekly")).toBeVisible();
-  await expect(row.getByText(`next ${start}`)).toBeVisible();
+  // C1: futureDateKey(1) is tomorrow, so the row reads the word; the ISO key
+  // stays the row's data attribute above
+  await expect(row.getByText("next tomorrow")).toBeVisible();
 
   const series = await expectSingleRemoteSeries(email);
   expect(series.id).not.toBe("");
@@ -417,9 +544,12 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
   await expect(panel.getByLabel("Frequency")).toHaveValue("weekly");
   await expect(panel.getByLabel("Anchor")).toHaveValue(start);
-  await expect(panel.locator(".series-occurrences")).toContainText(start);
-  await expect(panel.locator(".series-occurrences")).toContainText(second);
-  await expect(panel.locator(".series-occurrences")).toContainText(third);
+  // C1: the panel shows human dates; the ISO keys are gone from the display
+  // (the checkbox below still addresses the occurrence by its ISO key)
+  await expect(panel.locator(".series-occurrences")).not.toContainText(start);
+  await expect(panel.locator(".series-occurrences")).not.toContainText(second);
+  await expect(panel.locator(".series-occurrences")).not.toContainText(third);
+  await expect(panel.locator(".series-occurrences")).toContainText("tomorrow");
   await expect(panel.getByRole("checkbox", { name: `Complete: Stretch on ${start}` })).toBeVisible();
 
   // the panel keeps the shared panel behaviour: Close dismisses it
@@ -450,6 +580,23 @@ async function expectOneRemoteSeries(email: string) {
   return panelSeries[0]!;
 }
 
+/**
+ * Waits for the single stored series to hold `key === value`, then returns it.
+ * The interface reflects a write from the local cache while a forced server
+ * read can still see the previous value, so reading once immediately after a
+ * mutation is a race — it made the frequency test fail roughly one run in four
+ * depending on timing. Polling the field keeps exactly the same assertion and
+ * removes the race, and a genuine mismatch still fails naming the value it saw.
+ */
+async function expectRemoteSeriesField(email: string, key: string, value: string) {
+  await expect
+    .poll(async () => (await expectOneRemoteSeries(email)).data[key], {
+      timeout: 15_000,
+      intervals: [250, 500, 1_000],
+    })
+    .toBe(value);
+}
+
 test("renaming a series persists the new title to the server", async ({ page }) => {
   const email = newEmail("series-rename");
   await signUp(page, email);
@@ -457,14 +604,15 @@ test("renaming a series persists the new title to the server", async ({ page }) 
 
   await addSeriesThroughForm(page, "Morning walk", "Daily", futureDateKey(1));
   const panel = await openSeriesPanel(page, "Morning walk");
+  // the series panel renames in place, exactly like the task panel: Enter
+  // commits the edit (blur would too) and there is no Save rename control
   await panel.getByLabel("Rename series").fill("Evening walk");
-  await panel.getByRole("button", { name: "Save rename" }).click();
+  await panel.getByLabel("Rename series").press("Enter");
 
   await expect(page.locator(".series-row", { hasText: "Evening walk" })).toBeVisible();
   await expect(page.locator(".series-row", { hasText: "Morning walk" })).toHaveCount(0);
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.title).toBe("Evening walk");
+  await expectRemoteSeriesField(email, "title", "Evening walk");
 });
 
 test("changing a series' frequency persists and the row's next occurrence updates", async ({ page }) => {
@@ -486,9 +634,8 @@ test("changing a series' frequency persists and the row's next occurrence update
   await expect(row).toHaveAttribute("data-next-occurrence", dayKey(0));
   await expect(panel.getByLabel("Frequency")).toHaveValue("daily");
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.frequency).toBe("daily");
-  expect(series.data.anchorDate).toBe(anchor);
+  await expectRemoteSeriesField(email, "frequency", "daily");
+  await expectRemoteSeriesField(email, "anchorDate", anchor);
 });
 
 test("changing a series' anchor persists the new date", async ({ page }) => {
@@ -505,9 +652,8 @@ test("changing a series' anchor persists the new date", async ({ page }) => {
   await expect(panel.getByLabel("Anchor")).toHaveValue(moved);
   await expect(page.locator(".series-row", { hasText: "Review" })).toHaveAttribute("data-next-occurrence", moved);
 
-  const series = await expectOneRemoteSeries(email);
-  expect(series.data.anchorDate).toBe(moved);
-  expect(series.data.frequency).toBe("monthly");
+  await expectRemoteSeriesField(email, "anchorDate", moved);
+  await expectRemoteSeriesField(email, "frequency", "monthly");
 });
 
 test("an invalid series edit is refused with a visible error and writes nothing", async ({ page }) => {
@@ -519,9 +665,10 @@ test("an invalid series edit is refused with a visible error and writes nothing"
   await addSeriesThroughForm(page, "Keep me", "Daily", start);
   const panel = await openSeriesPanel(page, "Keep me");
 
-  // an empty title fails domain validation before any write
+  // an empty title fails domain validation before any write; the in-place
+  // rename commits on Enter just like a blur would
   await panel.getByLabel("Rename series").fill("");
-  await panel.getByRole("button", { name: "Save rename" }).click();
+  await panel.getByLabel("Rename series").press("Enter");
   await expect(page.getByRole("alert")).toContainText("task title is required");
 
   // an empty anchor is not a valid date-only value and is refused too
@@ -600,6 +747,7 @@ test("creating a block through the form persists the exact entered instant and r
   await openCalendar(page);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -620,15 +768,31 @@ test("creating a block through the form persists the exact entered instant and r
   expect(stored.start).toBe(renderedStart);
 });
 
+test("clicking an empty calendar cell prefills that slot's start and reveals the form", async ({ page }) => {
+  const email = newEmail("block-prefill");
+  await signUp(page, email);
+  await openCalendar(page);
+
+  // The drawn window starts at 08:00 and an hour is one hourHeight (56 px),
+  // so a click 56 px into the column is 09:00. The block list is empty, so
+  // the click lands on the cell itself.
+  const day = localDateKey(new Date());
+  await page.locator(`[data-date="${day}"] .calendar-day-body`).click({ position: { x: 24, y: 56 } });
+
+  await expect(page.getByLabel("Start", { exact: true })).toHaveValue(`${day}T09:00`);
+});
+
 test("a block linked to a task shows that task's title", async ({ page }) => {
   const email = newEmail("block-task");
   await signUp(page, email);
   await openTasks(page);
+  await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Deep work");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Deep work" })).toBeVisible();
 
   await openCalendar(page);
+  await revealBlockForm(page);
   const day = localDateKey(new Date());
   await page.getByLabel("Start", { exact: true }).fill(`${day}T14:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T15:00`);
@@ -649,6 +813,7 @@ test("an end at or before the start is refused with a visible error and writes n
   await signUp(page, email);
   await openCalendar(page);
 
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill("2026-03-04T10:00");
   await page.getByLabel("End", { exact: true }).fill("2026-03-04T09:00");
   await page.getByRole("button", { name: "Add block" }).click();
@@ -667,6 +832,7 @@ test("deleting a block removes it from the grid and from the server", async ({ p
   await openCalendar(page);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -688,6 +854,7 @@ test("week navigation changes the visible week", async ({ page }) => {
   const nextWeek = new Date();
   nextWeek.setDate(nextWeek.getDate() + 7);
   const key = localDateKey(nextWeek);
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${key}T08:00`);
   await page.getByLabel("End", { exact: true }).fill(`${key}T09:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -705,6 +872,33 @@ test("week navigation changes the visible week", async ({ page }) => {
   await expect(page.getByText("No work blocks this week.")).toBeVisible();
 });
 
+test("at a phone viewport the calendar shows one day and steps to the next day's blocks", async ({ page }) => {
+  const email = newEmail("calendar-phone");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signUp(page, email);
+  await openCalendar(page);
+
+  const today = localDateKey(new Date());
+  const tomorrow = dayKey(1);
+
+  await revealBlockForm(page);
+  await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  // One day column is rendered, and it is today's.
+  await expect(page.locator(".calendar-day")).toHaveCount(1);
+  await expect(page.locator(`[data-date="${today}"] .calendar-block`)).toHaveCount(1);
+  await expect(page.locator(`[data-date="${tomorrow}"]`)).toHaveCount(0);
+
+  // Stepping to the next day keeps one column and moves the view to tomorrow,
+  // so today's block is out of view rather than sitting beside it as column two.
+  await page.getByRole("button", { name: "Next day" }).click();
+  await expect(page.locator(".calendar-day")).toHaveCount(1);
+  await expect(page.locator(`[data-date="${tomorrow}"]`)).toHaveCount(1);
+  await expect(page.locator(`[data-date="${today}"]`)).toHaveCount(0);
+});
+
 test("a block with an unacknowledged write is marked pending until it is acknowledged", async ({ page, context }) => {
   const email = newEmail("block-pending");
   await signUp(page, email);
@@ -717,6 +911,7 @@ test("a block with an unacknowledged write is marked pending until it is acknowl
   await context.setOffline(true);
 
   const day = localDateKey(new Date());
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
@@ -801,10 +996,30 @@ test.describe("profile timezone (I6b)", () => {
     const nextZone = "Europe/Madrid";
     await updateRemoteProfile(email, nextZone);
 
-    // Same stored instant, same day column, but the wall label follows the
-    // newly stored zone, without any browser reload.
-    await expect(block).toContainText(wallClockIn(new Date(start), nextZone).time);
-    await expect(block).toHaveAttribute("data-start", start);
+    // Wait until the new zone has actually reached the surface before deciding
+    // whether the visible week moved with it. Snapshotting the week before the
+    // update lands races the propagation: the old week still holds the block,
+    // the step below is skipped, and the update then hides the column. The
+    // final assertions below still require the block with the new wall time.
+    await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+
+    // Switching zones can also roll the visible week: Madrid is five hours
+    // ahead of São Paulo, so for part of every day it is already on the next
+    // calendar date and the week moves with it, hiding the column that holds
+    // the stored instant. Step back to it before asserting, otherwise this
+    // test fails during a window that shifts with the time of day. The final
+    // assertions still require the block to be there with the new wall time,
+    // so a block that genuinely vanished cannot pass through this step.
+    const dayColumn = page.locator(`[data-date="${day}"] .calendar-block`);
+    if ((await dayColumn.count()) === 0) {
+      await page.getByRole("button", { name: "Previous week" }).click();
+    }
+
+    // Same stored instant, same instant in the data, but the wall label
+    // follows the newly stored zone, without any browser reload.
+    await expect(dayColumn).toHaveCount(1);
+    await expect(dayColumn).toContainText(wallClockIn(new Date(start), nextZone).time);
+    await expect(dayColumn).toHaveAttribute("data-start", start);
     await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
   });
 });
@@ -857,6 +1072,7 @@ test("a clean account creates the profile on first use and renders the planner i
 
   // A form-created block renders in the profile (= browser) zone.
   const day = wallClockIn(new Date(), zone).date;
+  await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();
