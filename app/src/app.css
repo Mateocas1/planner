@@ -1300,6 +1300,57 @@ select {
   }
 }
 
+/* ---------- phone: a single day instead of a week (C4) ----------
+   At 640 px and below the grid renders one day column, so the day's blocks
+   are readable at phone width instead of a clipped third column. The weekend
+   grid is untouched: the JS narrow-viewport gate and this breakpoint share the
+   640 px value, so the week view only ever renders above it. */
+@media (max-width: 640px) {
+  /* the toolbar is one compact line: the week label leaves the flow because
+     the day header states which day is shown */
+  .calendar-toolbar {
+    flex-wrap: nowrap;
+  }
+
+  .calendar-week-label {
+    display: none;
+  }
+
+  /* the single day's header becomes a row: previous / day label / next */
+  .calendar-day-head {
+    flex-direction: row;
+    gap: var(--space-2);
+    justify-content: center;
+  }
+
+  .calendar-day-label {
+    font-size: var(--text-md);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .calendar-day-today .calendar-day-label {
+    color: var(--accent);
+  }
+
+  .day-nav-button {
+    width: var(--h-sm);
+    height: var(--h-sm);
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    font-size: var(--text-lg);
+    line-height: 1;
+    color: var(--text-2);
+  }
+
+  /* the one rendered day fills the grid instead of the 8 rem week-column
+     minimum that made the week scroll sideways */
+  .calendar-day {
+    min-width: 0;
+  }
+}
+
 /* ---------- motion (DP1b) ----------
    Curves and durations from odd/design/motion-system.md. Transform and
    opacity only, named properties only, never `transition: all`. Hover and

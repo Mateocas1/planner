@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { addBlock, deleteBlock } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 
@@ -87,6 +87,20 @@ function wallMinutes(date: Date, timeZone: string): number {
   return parts.hour * 60 + parts.minute;
 }
 
+/** C4: true on a phone-width viewport, where the grid shows one day instead
+ * of the seven-day week. Kept in sync with the (max-width: 640px) breakpoint
+ * in app.css. */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 640px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const onChange = () => setNarrow(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
+}
+
 /** Wall-clock HH:MM of an instant in the given zone. */
 function timeLabel(date: Date, timeZone: string): string {
   const parts = wallParts(date, timeZone);
@@ -135,6 +149,12 @@ export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }
 
 function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
   const [weekStart, setWeekStart] = useState<number | null>(null);
+  // C4: on a phone-width viewport the grid shows a single day. The shown day
+  // is an offset into the visible week; null means "today when the visible
+  // week contains it, otherwise Monday". Week navigation and the day stepper
+  // both act on this one value, so exactly one day is always in view.
+  const narrow = useNarrowViewport();
+  const [dayOffset, setDayOffset] = useState<number | null>(null);
   // C2: the creation form is revealed on demand behind a New block control,
   // so the calendar shows content instead of a permanently open form. Start,
   // End and Task are unchanged inside the revealed popover.
@@ -148,7 +168,13 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
   // Week navigation works on the profile zone's own calendar days, represented
   // as UTC midnights of wall dates; "today" is the zone's today.
   const weekStartWall = weekStart ?? mondayOf(wallAsUtc(new Date(), timeZone));
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
+  // The current day is the profile zone's own today, so the highlighted day
+  // follows the planner timezone, not the browser's zone.
+  const todayKey = dateKey(new Date(), timeZone);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
+  const todayOffset = weekDays.findIndex(day => wallDayKey(day) === todayKey);
+  const shownIndex = dayOffset ?? (todayOffset >= 0 ? todayOffset : 0);
+  const days = useMemo(() => (narrow ? [weekDays[shownIndex]!] : weekDays), [narrow, weekDays, shownIndex]);
   const visibleKeys = useMemo(() => new Set(days.map(day => wallDayKey(day))), [days]);
   const weekBlocks = useMemo(
     () => blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone))),
@@ -187,10 +213,6 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
     () => Array.from({ length: rangeMinutes / 60 }, (_, index) => rangeStart / 60 + index),
     [rangeMinutes, rangeStart],
   );
-  // The current day is the profile zone's own today, so the highlighted
-  // column follows the planner timezone, not the browser's zone.
-  const todayKey = dateKey(new Date(), timeZone);
-
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -235,6 +257,24 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
     setCreating(true);
   }
 
+  /** C4: step the single-day view by one profile-zone day, rolling into the
+   * next or previous week at the week edges. */
+  function goToPreviousDay() {
+    if (shownIndex > 0) setDayOffset(shownIndex - 1);
+    else {
+      setWeekStart(weekStartWall - 7 * dayMs);
+      setDayOffset(6);
+    }
+  }
+
+  function goToNextDay() {
+    if (shownIndex < 6) setDayOffset(shownIndex + 1);
+    else {
+      setWeekStart(weekStartWall + 7 * dayMs);
+      setDayOffset(0);
+    }
+  }
+
   const utc = { timeZone: "UTC" } as const;
   const weekLabel = `${new Date(weekStartWall).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric" })} – ${new Date(weekStartWall + 6 * dayMs).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric", year: "numeric" })}`;
 
@@ -246,7 +286,15 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
       <p className="calendar-tz">Times are shown in the planner timezone ({timeZone}).</p>
       <div className="calendar-toolbar">
         <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
-        <button type="button" onClick={() => setWeekStart(mondayOf(wallAsUtc(new Date(), timeZone)))}>Today</button>
+        <button
+          type="button"
+          onClick={() => {
+            setWeekStart(mondayOf(wallAsUtc(new Date(), timeZone)));
+            setDayOffset(null);
+          }}
+        >
+          Today
+        </button>
         <button type="button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
         <span className="calendar-week-label">{weekLabel}</span>
       </div>
@@ -311,8 +359,21 @@ function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; 
               {...(key === todayKey ? { "data-today": "true" } : {})}
             >
               <div className="calendar-day-head">
-                <span className="calendar-day-number">{new Date(day).toLocaleDateString("en-US", { ...utc, day: "numeric" })}</span>
-                <span className="calendar-day-weekday">{new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short" })}</span>
+                {narrow ? (
+                  <>
+                    <button type="button" className="day-nav-button" aria-label="Previous day" onClick={goToPreviousDay}>‹</button>
+                    <span className="calendar-day-label">
+                      {key === todayKey ? "Today · " : ""}
+                      {new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short", month: "short", day: "numeric" })}
+                    </span>
+                    <button type="button" className="day-nav-button" aria-label="Next day" onClick={goToNextDay}>›</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="calendar-day-number">{new Date(day).toLocaleDateString("en-US", { ...utc, day: "numeric" })}</span>
+                    <span className="calendar-day-weekday">{new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short" })}</span>
+                  </>
+                )}
               </div>
               <div className="calendar-day-body" style={{ height: (rangeMinutes / 60) * hourHeight }} onClick={event => onCellClick(key, event)}>
                 {laidOutBlocks.filter(item => item.key === key).map(({ block, startDate, endDate, startMinutes, endMinutes }) => {

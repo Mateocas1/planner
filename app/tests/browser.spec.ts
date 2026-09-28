@@ -855,6 +855,33 @@ test("week navigation changes the visible week", async ({ page }) => {
   await expect(page.getByText("No work blocks this week.")).toBeVisible();
 });
 
+test("at a phone viewport the calendar shows one day and steps to the next day's blocks", async ({ page }) => {
+  const email = newEmail("calendar-phone");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signUp(page, email);
+  await openCalendar(page);
+
+  const today = localDateKey(new Date());
+  const tomorrow = dayKey(1);
+
+  await revealBlockForm(page);
+  await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  // One day column is rendered, and it is today's.
+  await expect(page.locator(".calendar-day")).toHaveCount(1);
+  await expect(page.locator(`[data-date="${today}"] .calendar-block`)).toHaveCount(1);
+  await expect(page.locator(`[data-date="${tomorrow}"]`)).toHaveCount(0);
+
+  // Stepping to the next day keeps one column and moves the view to tomorrow,
+  // so today's block is out of view rather than sitting beside it as column two.
+  await page.getByRole("button", { name: "Next day" }).click();
+  await expect(page.locator(".calendar-day")).toHaveCount(1);
+  await expect(page.locator(`[data-date="${tomorrow}"]`)).toHaveCount(1);
+  await expect(page.locator(`[data-date="${today}"]`)).toHaveCount(0);
+});
+
 test("a block with an unacknowledged write is marked pending until it is acknowledged", async ({ page, context }) => {
   const email = newEmail("block-pending");
   await signUp(page, email);
