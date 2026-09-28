@@ -176,6 +176,7 @@ export function Tasks({
           <li
             key={task.id}
             className={`task${task.completed ? " completed" : ""}${washIds.has(task.id) ? " task-wash" : ""}`}
+            data-pending={task.pending ? "true" : "false"}
             onAnimationEnd={event => endTaskWash(task.id, event)}
           >
             <input

@@ -56,14 +56,21 @@ test("the deployed app reloads its shell and cached data with no network", async
   }
   await expect(identity).toBeVisible({ timeout: 30_000 });
 
-  // Create a task through the UI.
+  // Create a task through the UI. Creation is collapsed on arrival, so the
+  // form has to be revealed first — the task form is no longer always open.
   await tasksNav.click();
+  await page.getByRole("button", { name: "New task" }).click();
   await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
   await page.getByLabel("Task title").fill(title);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(taskRow).toBeVisible();
-  // The write settled enough to re-enable the form before we reload it.
-  await expect(page.getByRole("button", { name: "Add task" })).toBeEnabled();
+  // Wait for the write to be acknowledged before reloading. The form used to
+  // re-enable on success, but creation now collapses, so the row's own pending
+  // flag is the signal: it clears when the server acknowledges the write. The
+  // flag lives on the row, not on the title span.
+  await expect(page.locator(".task", { hasText: title })).toHaveAttribute("data-pending", "false", {
+    timeout: 30_000,
+  });
 
   await waitForWorkerActive(page);
 
