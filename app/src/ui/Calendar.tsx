@@ -1,422 +1,658 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { addBlock, deleteBlock } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import { formatDateKey, isPastDateKey } from "./format.ts";
+import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
+import { easeOut, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
+import { Sheet } from "./Sheet.tsx";
+import {
+  dateKey,
+  dayMs,
+  formatDuration,
+  formatWall,
+  keyToWallUtc,
+  localValue,
+  minutesPerDay,
+  mondayOf,
+  pad,
+  timeLabel,
+  toZonedInstant,
+  wallDayKey,
+  wallMinutes,
+} from "./time.ts";
+import { settle } from "./write.ts";
 
 /**
- * The Calendar surface: a week time grid rendered in the stored profile
- * timezone (D3), with block creation, per-block delete and visible error
- * reporting. Every wall-clock part (day keys, columns, highlights, hour
- * ruler alignment, block positions and HH:MM labels) is derived from the
- * profile zone through Intl.DateTimeFormat — never from the browser's
- * getHours/getTimezoneOffset. Input is validated by the domain module (via
- * the data helpers), so rejected input never reaches Firestore. No offline
- * claim: writes go to Firestore and the store reflects what it reports.
+ * The Calendar surface (DESIGN.md §3, Calendar), rendered in the stored
+ * profile timezone (D3): every day key, column, highlight, block position and
+ * HH:MM label comes from the profile zone through Intl, never from the
+ * browser's clock or offset.
+ *
+ * Week (desktop default) or Day; a phone always shows Day under a week strip.
+ * Task deadlines sit in a Due row above the hour grid, apart from work blocks.
+ * The grid covers the whole day and scrolls inside its card, opening near the
+ * current time. Blocks open a details sheet; an empty slot or New block opens
+ * the creation sheet. The Unscheduled panel lists open tasks with no block
+ * ahead and plans one into the next free hour of the day in view.
  */
 
-const minutesPerDay = 1440;
-const dayMs = 86_400_000;
-const hourHeight = 56; // px per hour; kept in sync with .calendar-hour in
-// app.css. A block's height is always a percentage of the day, never a fixed
-// pixel minimum, so its drawn height stays proportional to its duration.
+/** px per hour; kept in sync with --hour in app.css. */
+const hourHeight = 52;
+/** The window Plan looks for free time in, in minutes after midnight. */
+const planFrom = 8 * 60;
+const planUntil = 21 * 60;
+const planLength = 60;
 
-/* D1: the grid frames the working day instead of all 24 hours, so the hours
-   that carry content sit on screen instead of below the fold. The default
-   window is 08:00-18:00 and only ever widens to take in a block that falls
-   outside it, so no block becomes unreachable. This is a layout decision, not
-   a control: there is nothing to scroll or toggle to see the rest of the day. */
-const defaultStartHour = 8;
-const defaultEndHour = 18;
+type Range = "week" | "day";
+type Laid = { block: BlockView; key: string; startMinutes: number; endMinutes: number; column: number; columns: number };
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-type WallParts = { year: number; month: number; day: number; hour: number; minute: number };
-
-const wallFormatters = new Map<string, Intl.DateTimeFormat>();
-
-/** Wall-clock parts of an instant in a named IANA zone. */
-function wallParts(date: Date, timeZone: string): WallParts {
-  let formatter = wallFormatters.get(timeZone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    });
-    wallFormatters.set(timeZone, formatter);
-  }
-  const parts = Object.fromEntries(formatter.formatToParts(date).map(part => [part.type, part.value]));
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour) % 24,
-    minute: Number(parts.minute),
-  };
-}
-
-/** Date key (YYYY-MM-DD) of an instant in the given zone. */
-function dateKey(date: Date, timeZone: string): string {
-  const parts = wallParts(date, timeZone);
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
-}
-
-/** Date key of a wall-UTC day value (the zone's own calendar day it
- * represents); reading it back through the zone would shift it by the
- * offset, so day columns key off the wall date directly. */
-function wallDayKey(wallUtc: number): string {
-  const date = new Date(wallUtc);
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
-}
-
-/** Epoch ms of an instant's wall clock in the zone, read as if UTC. Day
- * arithmetic on these values yields the zone's own calendar days. */
-function wallAsUtc(date: Date, timeZone: string): number {
-  const parts = wallParts(date, timeZone);
-  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
-}
-
-/** Minutes since the zone's midnight for an instant. */
-function wallMinutes(date: Date, timeZone: string): number {
-  const parts = wallParts(date, timeZone);
-  return parts.hour * 60 + parts.minute;
-}
-
-/** C4: true on a phone-width viewport, where the grid shows one day instead
- * of the seven-day week. Kept in sync with the (max-width: 640px) breakpoint
- * in app.css. */
-function useNarrowViewport(): boolean {
-  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 640px)").matches);
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 640px)");
-    const onChange = () => setNarrow(media.matches);
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
-  return narrow;
-}
-
-/** Wall-clock HH:MM of an instant in the given zone. */
-function timeLabel(date: Date, timeZone: string): string {
-  const parts = wallParts(date, timeZone);
-  return `${pad(parts.hour)}:${pad(parts.minute)}`;
-}
-
-/** Monday of the zone's week containing a wall-UTC day value. */
-function mondayOf(wallUtc: number): number {
-  return wallUtc - ((new Date(wallUtc).getUTCDay() + 6) % 7) * dayMs;
-}
-
-/** The zone's offset at an instant, formatted +HH:MM / -HH:MM. Derived from
- * Intl, never from getTimezoneOffset(), which would be the browser's zone. */
-function zoneOffset(stamp: number, timeZone: string): string {
-  const minutes = Math.round((stamp - wallAsUtc(new Date(stamp), timeZone)) / 60_000);
-  const sign = minutes < 0 ? "-" : "+";
-  const abs = Math.abs(minutes);
-  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-}
-
-/** Converts a datetime-local value into a zoned ISO instant interpreted in
- * the given zone. Two correction passes land the instant whose wall clock in
- * the zone equals the input, which also handles DST-transition walls. */
-function toZonedInstant(value: string, timeZone: string): string {
-  const guess = Date.parse(`${value}:00Z`);
-  let stamp = guess;
-  for (let pass = 0; pass < 2; pass += 1) {
-    stamp = guess - (guess - wallAsUtc(new Date(stamp), timeZone));
-  }
-  return `${value}:00${zoneOffset(stamp, timeZone)}`;
-}
-
-export function Calendar({ uid, blocks, tasks, loading, timeZone, profileError }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string | null; profileError: string | null }) {
+export function Calendar({
+  uid,
+  blocks,
+  tasks,
+  loading,
+  timeZone,
+  profileError,
+  day,
+  onDayChange,
+}: {
+  uid: string;
+  blocks: BlockView[];
+  tasks: TaskView[];
+  loading: boolean;
+  timeZone: string | null;
+  profileError: string | null;
+  day: string | null;
+  onDayChange: (key: string | null) => void;
+}) {
   if (timeZone === null) {
     return (
-      <section aria-labelledby="calendar-heading">
+      <section className="view" aria-labelledby="calendar-heading">
         <header className="page-head">
-          <h2 id="calendar-heading">Calendar</h2>
+          <h2 id="calendar-heading" className="large-title">Calendar</h2>
         </header>
-        {profileError ? <p role="alert">{profileError}</p> : <p role="status">Loading your planner timezone…</p>}
+        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner timezone…</p>}
       </section>
     );
   }
-  return <CalendarGrid uid={uid} blocks={blocks} tasks={tasks} loading={loading} timeZone={timeZone} />;
+  return <CalendarView uid={uid} blocks={blocks} tasks={tasks} loading={loading} timeZone={timeZone} day={day} onDayChange={onDayChange} />;
 }
 
-function CalendarGrid({ uid, blocks, tasks, loading, timeZone }: { uid: string; blocks: BlockView[]; tasks: TaskView[]; loading: boolean; timeZone: string }) {
-  const [weekStart, setWeekStart] = useState<number | null>(null);
-  // C4: on a phone-width viewport the grid shows a single day. The shown day
-  // is an offset into the visible week; null means "today when the visible
-  // week contains it, otherwise Monday". Week navigation and the day stepper
-  // both act on this one value, so exactly one day is always in view.
-  const narrow = useNarrowViewport();
-  const [dayOffset, setDayOffset] = useState<number | null>(null);
-  // C2: the creation form is revealed on demand behind a New block control,
-  // so the calendar shows content instead of a permanently open form. Start,
-  // End and Task are unchanged inside the revealed popover.
-  const [creating, setCreating] = useState(false);
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+function CalendarView({
+  uid,
+  blocks,
+  tasks,
+  loading,
+  timeZone,
+  day,
+  onDayChange,
+}: {
+  uid: string;
+  blocks: BlockView[];
+  tasks: TaskView[];
+  loading: boolean;
+  timeZone: string;
+  day: string | null;
+  onDayChange: (key: string | null) => void;
+}) {
+  const now = useNow();
+  const phone = useMediaQuery(phoneQuery);
+  const reduced = useReducedMotion();
+  const [range, setRange] = useState<Range>("week");
+  const [direction, setDirection] = useState(0);
+  const [creating, setCreating] = useState<{ start: string; end: string; origin: HTMLElement | null; draft: { key: string; minutes: number } | null } | null>(null);
+  const [openBlock, setOpenBlock] = useState<{ id: string; origin: HTMLElement } | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const draftRef = useRef<HTMLDivElement>(null);
+  const newBlockRef = useRef<HTMLButtonElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const todayKey = dateKey(now, timeZone);
+  const selectedKey = day ?? todayKey;
+  const selectedUtc = keyToWallUtc(selectedKey);
+  const isDay = phone || range === "day";
+  const weekUtc = useMemo(() => Array.from({ length: 7 }, (_, index) => mondayOf(selectedUtc) + index * dayMs), [selectedUtc]);
+  const days = isDay ? [selectedUtc] : weekUtc;
+  const dayKeys = days.map(wallDayKey);
+  const visibleKeys = new Set(dayKeys);
+  const rangeKey = `${isDay ? "d" : "w"}-${dayKeys[0]}`;
+
+  const laid = useMemo(() => layoutBlocks(blocks, timeZone), [blocks, timeZone]);
+  const visible = laid.filter(item => visibleKeys.has(item.key));
+  const taskOf = (id: string | undefined) => (id === undefined ? undefined : tasks.find(task => task.id === id));
+  const nowMinutes = wallMinutes(now, timeZone);
+  const showsToday = visibleKeys.has(todayKey);
+
+  // Open the grid a third of the way above the current time when today is in
+  // view, otherwise at the start of the working morning.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const target = showsToday ? (nowMinutes / 60) * hourHeight - scroller.clientHeight / 3 : 7.5 * hourHeight;
+    scroller.scrollTop = Math.max(0, target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
+
+  const step = (sign: number) => {
+    setDirection(sign);
+    onDayChange(wallDayKey(selectedUtc + sign * (isDay ? 1 : 7) * dayMs));
+  };
+  const goToday = () => {
+    setDirection(Math.sign(keyToWallUtc(todayKey) - selectedUtc));
+    onDayChange(null);
+  };
+  const pick = (key: string) => {
+    setDirection(Math.sign(keyToWallUtc(key) - selectedUtc));
+    onDayChange(key === todayKey ? null : key);
+  };
+
+  const openCreate = (key: string | null, minutes: number | null, origin: HTMLElement | null) => {
+    const startMinutes = minutes ?? null;
+    setCreating({
+      start: key !== null && startMinutes !== null ? localValue(key, startMinutes) : "",
+      end: key !== null && startMinutes !== null ? localValue(key, Math.min(minutesPerDay - 1, startMinutes + 60)) : "",
+      origin,
+      draft: key !== null && startMinutes !== null ? { key, minutes: startMinutes } : null,
+    });
+  };
+
+  /** An empty slot is a creation gesture: the clicked half hour prefills the
+   * new block, a dashed draft marks where it will land, and the sheet grows
+   * out of that draft. A click on a block is not an empty-slot click. */
+  function onSlotClick(key: string, event: React.MouseEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest(".calendar-block")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const minutes = ((event.clientY - rect.top) / hourHeight) * 60;
+    const snapped = Math.max(0, Math.min(minutesPerDay - 30, Math.round(minutes / 30) * 30));
+    openCreate(key, snapped, null);
+  }
+
+  // The draft is rendered before the sheet measures its origin.
+  useLayoutEffect(() => {
+    if (creating?.draft && creating.origin === null && draftRef.current) {
+      setCreating(previous => (previous ? { ...previous, origin: draftRef.current } : previous));
+    }
+  }, [creating]);
+
+  // Unscheduled: open tasks with no block from now on.
+  const nowMs = now.getTime();
+  const unscheduled = tasks.filter(task => !task.completed && !blocks.some(block => block.taskId === task.id && Date.parse(block.end) > nowMs));
+  const planDayKey = selectedKey < todayKey ? todayKey : selectedKey;
+  const free = freeSlots(laid.filter(item => item.key === planDayKey), planDayKey === todayKey ? nowMinutes : null);
+  const freeMinutes = free.reduce((total, [start, end]) => total + (end - start), 0);
+
+  async function plan(task: TaskView) {
+    setPlanError(null);
+    const slot = free.find(([start, end]) => end - start >= planLength);
+    if (!slot) {
+      setPlanError(`No free hour left on ${formatDateKey(planDayKey, todayKey)}.`);
+      return;
+    }
+    try {
+      await settle(
+        addBlock(
+          uid,
+          toZonedInstant(localValue(planDayKey, slot[0]), timeZone),
+          toZonedInstant(localValue(planDayKey, slot[0] + planLength), timeZone),
+          task.id,
+        ),
+      );
+      if (planDayKey !== selectedKey || isDay) pick(planDayKey);
+      const scroller = scrollRef.current;
+      if (scroller) scroller.scrollTo({ top: Math.max(0, (slot[0] / 60) * hourHeight - scroller.clientHeight / 3), behavior: reduced ? "auto" : "smooth" });
+    } catch (cause) {
+      setPlanError(cause instanceof Error ? cause.message : "The block could not be planned.");
+    }
+  }
+
+  const selectedBlock = openBlock ? blocks.find(block => block.id === openBlock.id) : undefined;
+  const monthUtc = selectedUtc;
+
+  return (
+    <section className="view calendar" aria-labelledby="calendar-heading">
+      <header className="page-head">
+        <div>
+          <h2 id="calendar-heading" className="large-title">
+            <span className="sr-only">Calendar, </span>
+            {isDay && !phone ? (
+              <>
+                {formatWall(selectedUtc, { weekday: "long" })} <span className="soft">{formatWall(selectedUtc, { month: "long", day: "numeric" })}</span>
+              </>
+            ) : (
+              <>
+                {formatWall(monthUtc, { month: "long" })} <span className="soft">{formatWall(monthUtc, { year: "numeric" })}</span>
+              </>
+            )}
+          </h2>
+          <p className="subtitle">
+            <span>Times in {timeZone}</span>
+            {!loading && visible.length === 0 && (
+              <span role="status"> · {isDay ? "No work blocks on this day." : "No work blocks this week."}</span>
+            )}
+          </p>
+        </div>
+        <div className="toolbar" role="group" aria-label="Calendar navigation">
+          {!phone && (
+            <div className="segmented" role="group" aria-label="Range">
+              {(["day", "week"] as const).map(option => (
+                <button key={option} type="button" aria-pressed={range === option} onClick={() => setRange(option)}>
+                  {option === "day" ? "Day" : "Week"}
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" className="button icon" aria-label={isDay ? "Previous day" : "Previous week"} onClick={() => step(-1)}>
+            <ChevronLeft />
+          </button>
+          <button type="button" className="button" onClick={goToday}>Today</button>
+          <button type="button" className="button icon" aria-label={isDay ? "Next day" : "Next week"} onClick={() => step(1)}>
+            <ChevronRight />
+          </button>
+          <button ref={newBlockRef} type="button" className="button button-accent" onClick={() => openCreate(null, null, newBlockRef.current)}>
+            <PlusIcon />New block
+          </button>
+        </div>
+      </header>
+
+      {phone && (
+        <div className="week-strip" role="group" aria-label="Week">
+          {weekUtc.map(utc => {
+            const key = wallDayKey(utc);
+            const count = laid.filter(item => item.key === key).length;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`strip-day${key === todayKey ? " is-today" : ""}${key === selectedKey ? " is-selected" : ""}`}
+                aria-pressed={key === selectedKey}
+                aria-label={formatWall(utc, { weekday: "long", month: "long", day: "numeric" })}
+                onClick={() => pick(key)}
+              >
+                <span className="strip-weekday">{formatWall(utc, { weekday: "narrow" })}</span>
+                <span className="strip-date">{formatWall(utc, { day: "numeric" })}</span>
+                <span className="strip-dots" aria-hidden="true">
+                  {Array.from({ length: Math.min(3, count) }, (_, index) => <i key={index} />)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="calendar-layout">
+        <div className="card cal" style={{ "--n": days.length } as React.CSSProperties}>
+          {!phone && (
+            <div className="cal-head" aria-hidden="true">
+              <div />
+              {days.map(utc => {
+                const key = wallDayKey(utc);
+                const weekday = new Date(utc).getUTCDay();
+                return (
+                  <div key={key} className={`day-head${key === todayKey ? " is-today" : ""}${weekday % 6 === 0 ? " is-weekend" : ""}`}>
+                    <span>{formatWall(utc, { weekday: "short" })}</span>
+                    <span className="day-num">{formatWall(utc, { day: "numeric" })}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="cal-due">
+            <div className="cal-due-label">Due</div>
+            {dayKeys.map(key => {
+              const due = tasks.filter(task => !task.completed && task.deadline === key);
+              return (
+                <div key={key} className="due-cell">
+                  {due.map(task => (
+                    <span key={task.id} className={`due-chip${isPastDateKey(key, todayKey) ? " is-overdue" : ""}`} title={task.title}>
+                      <FlagIcon className="meta-icon" />
+                      <span>{task.title}</span>
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+          <div className="cal-scroll" ref={scrollRef}>
+            <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+              <motion.div
+                key={rangeKey}
+                className="cal-body"
+                custom={direction}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, x: direction * 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                transition={reduced ? { duration: 0.15 } : spring.smooth}
+              >
+                <div className="gutter" aria-hidden="true">
+                  {Array.from({ length: 23 }, (_, index) => index + 1)
+                    .filter(hour => !(showsToday && Math.abs(hour * 60 - nowMinutes) < 14))
+                    .map(hour => (
+                      <span key={hour} style={{ top: hour * hourHeight }}>{pad(hour)}:00</span>
+                    ))}
+                  {showsToday && (
+                    <span className="gutter-now" style={{ top: (nowMinutes / 60) * hourHeight }}>{timeLabel(now, timeZone)}</span>
+                  )}
+                </div>
+                {days.map(utc => {
+                  const key = wallDayKey(utc);
+                  const weekday = new Date(utc).getUTCDay();
+                  return (
+                    <div
+                      key={key}
+                      className={`calendar-day${key === todayKey ? " calendar-day-today" : ""}${weekday % 6 === 0 ? " is-weekend" : ""}`}
+                      data-date={key}
+                      {...(key === todayKey ? { "data-today": "true" } : {})}
+                    >
+                      <div className="calendar-day-body" onClick={event => onSlotClick(key, event)}>
+                        {visible.filter(item => item.key === key).map(item => {
+                          const task = taskOf(item.block.taskId);
+                          const height = Math.max(20, ((item.endMinutes - item.startMinutes) / 60) * hourHeight - 2);
+                          const width = 100 / item.columns;
+                          const past = Date.parse(item.block.end) <= nowMs;
+                          return (
+                            <button
+                              key={item.block.id}
+                              type="button"
+                              className={`calendar-block ${task ? "cat-task" : "cat-focus"}${item.block.pending ? " calendar-block-pending" : ""}${height < 40 ? " is-short" : ""}${past ? " is-past" : ""}`}
+                              data-start={item.block.start}
+                              data-end={item.block.end}
+                              style={{
+                                top: (item.startMinutes / 60) * hourHeight + 1,
+                                height,
+                                left: `calc(${item.column * width}% + 3px)`,
+                                width: `calc(${width}% - 6px)`,
+                              }}
+                              onClick={event => setOpenBlock({ id: item.block.id, origin: event.currentTarget })}
+                            >
+                              <b>{task ? task.title : "Work block"}</b>
+                              <span>{timeLabel(new Date(item.block.start), timeZone)}–{timeLabel(new Date(item.block.end), timeZone)}</span>
+                            </button>
+                          );
+                        })}
+                        {creating?.draft?.key === key && (
+                          <div
+                            ref={draftRef}
+                            className="calendar-draft"
+                            aria-hidden="true"
+                            style={{ top: (creating.draft.minutes / 60) * hourHeight + 1, height: hourHeight - 2 }}
+                          />
+                        )}
+                        {showsToday && (
+                          <div className={`now-line${key === todayKey ? "" : " is-faint"}`} style={{ top: (nowMinutes / 60) * hourHeight }} aria-hidden="true" />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <aside className="card tray" aria-labelledby="tray-heading">
+          <div>
+            <h3 id="tray-heading" className="tray-title">Unscheduled</h3>
+            <p className="tray-note">
+              Open tasks with no work block ahead. Plan sets aside an hour in the next free slot {planDayKey === todayKey ? "today" : `on ${formatDateKey(planDayKey, todayKey)}`}.
+            </p>
+          </div>
+          {unscheduled.length === 0 ? (
+            <p className="tray-note">Every open task has time set aside.</p>
+          ) : (
+            <ul className="tray-list">
+              <AnimatePresence initial={false}>
+                {unscheduled.map(task => (
+                  <motion.li
+                    key={task.id}
+                    layout="position"
+                    className="tray-item"
+                    exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.16, ease: easeOut } }}
+                    transition={spring.smooth}
+                  >
+                    <div>
+                      <b>{task.title}</b>
+                      {task.deadline && (
+                        <span className={isPastDateKey(task.deadline, todayKey) ? "is-overdue" : ""}>due {formatDateKey(task.deadline, todayKey)}</span>
+                      )}
+                    </div>
+                    <button type="button" className="button small" onClick={() => void plan(task)}>Plan</button>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+          )}
+          {planError && <p className="inline-error" role="alert">{planError}</p>}
+          <p className="tray-sum">
+            <span>Free {planDayKey === todayKey ? "for the rest of today" : `on ${formatDateKey(planDayKey, todayKey)}`}</span>
+            <b>{formatDuration(freeMinutes)}</b>
+          </p>
+        </aside>
+      </div>
+
+      <AnimatePresence>
+        {creating && (creating.origin || !creating.draft) && (
+          <BlockForm
+            key="create"
+            uid={uid}
+            tasks={tasks}
+            timeZone={timeZone}
+            initialStart={creating.start}
+            initialEnd={creating.end}
+            origin={creating.origin}
+            onClose={() => setCreating(null)}
+          />
+        )}
+        {selectedBlock && openBlock && (
+          <BlockDetails
+            key={selectedBlock.id}
+            block={selectedBlock}
+            task={taskOf(selectedBlock.taskId)}
+            timeZone={timeZone}
+            todayKey={todayKey}
+            origin={openBlock.origin}
+            onClose={() => setOpenBlock(null)}
+            onDelete={() => {
+              setOpenBlock(null);
+              void settle(deleteBlock(uid, selectedBlock.id)).catch(() => undefined);
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+/** Every block resolved to the minutes it occupies inside its own profile-zone
+ * day, with overlapping blocks sharing the column width. A block ending on a
+ * later day is clipped at the column's midnight (the known D3 limitation). */
+function layoutBlocks(blocks: BlockView[], timeZone: string): Laid[] {
+  const byDay = new Map<string, Laid[]>();
+  for (const block of blocks) {
+    const startDate = new Date(block.start);
+    const endDate = new Date(block.end);
+    const key = dateKey(startDate, timeZone);
+    const startMinutes = wallMinutes(startDate, timeZone);
+    const endMinutes = dateKey(endDate, timeZone) > key ? minutesPerDay : wallMinutes(endDate, timeZone);
+    const item: Laid = { block, key, startMinutes, endMinutes: Math.max(endMinutes, startMinutes + 15), column: 0, columns: 1 };
+    byDay.set(key, [...(byDay.get(key) ?? []), item]);
+  }
+  const out: Laid[] = [];
+  for (const items of byDay.values()) {
+    items.sort((left, right) => left.startMinutes - right.startMinutes);
+    let cluster: Laid[] = [];
+    let clusterEnd = -1;
+    const flush = () => {
+      const columnEnds: number[] = [];
+      for (const item of cluster) {
+        let column = columnEnds.findIndex(end => end <= item.startMinutes);
+        if (column < 0) {
+          column = columnEnds.length;
+          columnEnds.push(0);
+        }
+        columnEnds[column] = item.endMinutes;
+        item.column = column;
+      }
+      for (const item of cluster) item.columns = columnEnds.length;
+      out.push(...cluster);
+      cluster = [];
+    };
+    for (const item of items) {
+      if (cluster.length > 0 && item.startMinutes >= clusterEnd) flush();
+      cluster.push(item);
+      clusterEnd = Math.max(clusterEnd, item.endMinutes);
+    }
+    if (cluster.length > 0) flush();
+  }
+  return out;
+}
+
+/** Free [start, end) minute ranges of a day inside the planning window,
+ * starting no earlier than the next quarter hour after `fromMinutes`. */
+function freeSlots(items: Laid[], fromMinutes: number | null): [number, number][] {
+  let cursor = Math.max(planFrom, fromMinutes === null ? 0 : Math.ceil((fromMinutes + 5) / 15) * 15);
+  const slots: [number, number][] = [];
+  for (const item of [...items].sort((left, right) => left.startMinutes - right.startMinutes)) {
+    if (item.endMinutes <= cursor) continue;
+    if (item.startMinutes > cursor) slots.push([cursor, Math.min(item.startMinutes, planUntil)]);
+    cursor = Math.max(cursor, item.endMinutes);
+    if (cursor >= planUntil) break;
+  }
+  if (cursor < planUntil) slots.push([cursor, planUntil]);
+  return slots.filter(([start, end]) => end > start);
+}
+
+/** The creation sheet: Start, End and an optional task. Rejected input never
+ * reaches Firestore (the data helper validates first) and the reason is shown
+ * in the sheet; accepted input closes it without waiting for the server. */
+function BlockForm({
+  uid,
+  tasks,
+  timeZone,
+  initialStart,
+  initialEnd,
+  origin,
+  onClose,
+}: {
+  uid: string;
+  tasks: TaskView[];
+  timeZone: string;
+  initialStart: string;
+  initialEnd: string;
+  origin: HTMLElement | null;
+  onClose: () => void;
+}) {
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState(initialEnd);
   const [taskId, setTaskId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Week navigation works on the profile zone's own calendar days, represented
-  // as UTC midnights of wall dates; "today" is the zone's today.
-  const weekStartWall = weekStart ?? mondayOf(wallAsUtc(new Date(), timeZone));
-  // The current day is the profile zone's own today, so the highlighted day
-  // follows the planner timezone, not the browser's zone.
-  const todayKey = dateKey(new Date(), timeZone);
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => weekStartWall + index * dayMs), [weekStartWall]);
-  const todayOffset = weekDays.findIndex(day => wallDayKey(day) === todayKey);
-  const shownIndex = dayOffset ?? (todayOffset >= 0 ? todayOffset : 0);
-  const days = useMemo(() => (narrow ? [weekDays[shownIndex]!] : weekDays), [narrow, weekDays, shownIndex]);
-  const visibleKeys = useMemo(() => new Set(days.map(day => wallDayKey(day))), [days]);
-  const weekBlocks = useMemo(
-    () => blocks.filter(block => visibleKeys.has(dateKey(new Date(block.start), timeZone))),
-    [blocks, visibleKeys, timeZone],
-  );
+  useEffect(() => {
+    setStart(initialStart);
+    setEnd(initialEnd);
+  }, [initialStart, initialEnd]);
 
-  // D1/D2: every visible block resolved to the minutes it occupies inside its
-  // own profile-zone day. A block ending on a later profile-zone day is
-  // clipped at the column's midnight (the D3-known limitation).
-  const laidOutBlocks = useMemo(
-    () =>
-      weekBlocks.map(block => {
-        const startDate = new Date(block.start);
-        const endDate = new Date(block.end);
-        const key = dateKey(startDate, timeZone);
-        const startMinutes = wallMinutes(startDate, timeZone);
-        const endMinutes = dateKey(endDate, timeZone) > key ? minutesPerDay : wallMinutes(endDate, timeZone);
-        return { block, key, startDate, endDate, startMinutes, endMinutes: Math.max(endMinutes, startMinutes) };
-      }),
-    [weekBlocks, timeZone],
-  );
-
-  // D1: the drawn window is the working day, widened -- never narrowed -- to
-  // include every block the grid renders, so nothing drawn is off the range.
-  const [rangeStart, rangeEnd] = useMemo(() => {
-    let start = defaultStartHour * 60;
-    let end = defaultEndHour * 60;
-    for (const item of laidOutBlocks) {
-      start = Math.min(start, Math.floor(item.startMinutes / 60) * 60);
-      end = Math.max(end, Math.ceil(item.endMinutes / 60) * 60);
-    }
-    return [Math.max(0, start), Math.min(minutesPerDay, Math.max(end, start + 60))];
-  }, [laidOutBlocks]);
-  const rangeMinutes = rangeEnd - rangeStart;
-  const hours = useMemo(
-    () => Array.from({ length: rangeMinutes / 60 }, (_, index) => rangeStart / 60 + index),
-    [rangeMinutes, rangeStart],
-  );
-  async function run(action: () => Promise<void>) {
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await action();
+      await settle(addBlock(uid, toZonedInstant(start, timeZone), toZonedInstant(end, timeZone), taskId === "" ? undefined : taskId));
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
     } finally {
       setBusy(false);
     }
-  }
-
-  const onAdd = (event: FormEvent) => {
-    event.preventDefault();
-    void run(async () => {
-      await addBlock(uid, toZonedInstant(start, timeZone), toZonedInstant(end, timeZone), taskId === "" ? undefined : taskId);
-      setStart("");
-      setEnd("");
-      setTaskId("");
-      setCreating(false);
-    });
   };
 
-  /** Dismisses the revealed creation popover and clears whatever was typed. */
-  function closeCreate() {
-    setCreating(false);
-    setStart("");
-    setEnd("");
-    setTaskId("");
-    setError(null);
-  }
-
-  /** C2: an empty cell is also a creation gesture -- the clicked slot prefills
-   * the new block's start and opens the popover. A click on a block (or its
-   * delete control) is not an empty-cell click, so it never starts a block. */
-  function onCellClick(key: string, event: React.MouseEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest(".calendar-block")) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const minutes = rangeStart + ((event.clientY - rect.top) / hourHeight) * 60;
-    const snapped = Math.max(0, Math.min(minutesPerDay - 30, Math.round(minutes / 30) * 30));
-    setStart(`${key}T${pad(Math.floor(snapped / 60))}:${pad(snapped % 60)}`);
-    setCreating(true);
-  }
-
-  /** C4: step the single-day view by one profile-zone day, rolling into the
-   * next or previous week at the week edges. */
-  function goToPreviousDay() {
-    if (shownIndex > 0) setDayOffset(shownIndex - 1);
-    else {
-      setWeekStart(weekStartWall - 7 * dayMs);
-      setDayOffset(6);
-    }
-  }
-
-  function goToNextDay() {
-    if (shownIndex < 6) setDayOffset(shownIndex + 1);
-    else {
-      setWeekStart(weekStartWall + 7 * dayMs);
-      setDayOffset(0);
-    }
-  }
-
-  const utc = { timeZone: "UTC" } as const;
-  const weekLabel = `${new Date(weekStartWall).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric" })} – ${new Date(weekStartWall + 6 * dayMs).toLocaleDateString("en-US", { ...utc, month: "short", day: "numeric", year: "numeric" })}`;
-
   return (
-    <section aria-labelledby="calendar-heading">
-      <header className="page-head">
-        <h2 id="calendar-heading">Calendar</h2>
-      </header>
-      <p className="calendar-tz">Times are shown in the planner timezone ({timeZone}).</p>
-      <div className="calendar-toolbar">
-        {/* C4: the two week-step controls are a desktop affordance. On a phone
-            the single-day header already owns day-to-day navigation (and rolls
-            into the adjacent week at the edges), so the redundant week buttons
-            are dropped at that width and the header is the navigation. Today
-            stays: it is the one-tap way back to now. */}
-        <button type="button" className="week-nav-button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) - 7 * dayMs))}>Previous week</button>
-        <button
-          type="button"
-          onClick={() => {
-            setWeekStart(mondayOf(wallAsUtc(new Date(), timeZone)));
-            setDayOffset(null);
-          }}
-        >
-          Today
-        </button>
-        <button type="button" className="week-nav-button" onClick={() => setWeekStart(previous => mondayOf((previous ?? weekStartWall) + 7 * dayMs))}>Next week</button>
-        <span className="calendar-week-label">{weekLabel}</span>
-      </div>
-      <div className="block-create">
-        <button
-          type="button"
-          className="new-block"
-          aria-expanded={creating}
-          onClick={() => {
-            if (creating) closeCreate();
-            else setCreating(true);
-          }}
-        >
-          New block
-        </button>
-        {creating && (
-          <form
-            className="block-form"
-            onSubmit={onAdd}
-            onKeyDown={event => {
-              if (event.key === "Escape") closeCreate();
-            }}
-          >
-            <div className="block-field">
-              <label htmlFor="block-start">Start</label>
-              <input id="block-start" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
-            </div>
-            <div className="block-field">
-              <label htmlFor="block-end">End</label>
-              <input id="block-end" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
-            </div>
-            <div className="block-field">
-              <label htmlFor="block-task">Task</label>
-              <select id="block-task" value={taskId} onChange={event => setTaskId(event.target.value)}>
-                <option value="">No task</option>
-                {tasks.map(task => (
-                  <option key={task.id} value={task.id}>{task.title}</option>
-                ))}
-              </select>
-            </div>
-            <button type="submit" disabled={busy}>Add block</button>
-            <button type="button" className="block-cancel" onClick={closeCreate}>Cancel</button>
-          </form>
-        )}
-      </div>
-      {error && <p role="alert">{error}</p>}
-      {!loading && weekBlocks.length === 0 && <p className="empty-note" role="status">No work blocks this week.</p>}
-      <div className="calendar-grid">
-        <div className="calendar-ruler" aria-hidden="true">
-          <div className="calendar-ruler-head" />
-          {hours.map(hour => (
-            <div key={hour} className="calendar-hour" style={{ height: hourHeight }}>{pad(hour)}:00</div>
-          ))}
+    <Sheet label="New block" className="block-sheet" origin={origin} onClose={onClose}>
+      <form className="sheet-form" onSubmit={event => void onSubmit(event)}>
+        <header className="sheet-head">
+          <span className="sheet-kind">New work block</span>
+          <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="form-group">
+          <div className="form-row">
+            <label htmlFor="block-start">Start</label>
+            <input id="block-start" className="form-control" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
+          </div>
+          <div className="form-row">
+            <label htmlFor="block-end">End</label>
+            <input id="block-end" className="form-control" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
+          </div>
+          <div className="form-row">
+            <label htmlFor="block-task">Task</label>
+            <select id="block-task" className="form-control" value={taskId} onChange={event => setTaskId(event.target.value)}>
+              <option value="">No task</option>
+              {tasks.filter(task => !task.completed).map(task => (
+                <option key={task.id} value={task.id}>{task.title}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        {days.map(day => {
-          const key = wallDayKey(day);
-          return (
-            <div
-              key={key}
-              className={`calendar-day${key === todayKey ? " calendar-day-today" : ""}`}
-              data-date={key}
-              {...(key === todayKey ? { "data-today": "true" } : {})}
-            >
-              <div className="calendar-day-head">
-                {narrow ? (
-                  <>
-                    <button type="button" className="day-nav-button" aria-label="Previous day" onClick={goToPreviousDay}>‹</button>
-                    <span className="calendar-day-label">
-                      {key === todayKey ? "Today · " : ""}
-                      {new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short", month: "short", day: "numeric" })}
-                    </span>
-                    <button type="button" className="day-nav-button" aria-label="Next day" onClick={goToNextDay}>›</button>
-                  </>
-                ) : (
-                  <>
-                    <span className="calendar-day-number">{new Date(day).toLocaleDateString("en-US", { ...utc, day: "numeric" })}</span>
-                    <span className="calendar-day-weekday">{new Date(day).toLocaleDateString("en-US", { ...utc, weekday: "short" })}</span>
-                  </>
-                )}
-              </div>
-              <div className="calendar-day-body" style={{ height: (rangeMinutes / 60) * hourHeight }} onClick={event => onCellClick(key, event)}>
-                {laidOutBlocks.filter(item => item.key === key).map(({ block, startDate, endDate, startMinutes, endMinutes }) => {
-                  // Clamped into the drawn window, which by construction
-                  // already contains every block (D1).
-                  const from = Math.max(rangeStart, Math.min(startMinutes, rangeEnd));
-                  const to = Math.max(from, Math.min(endMinutes, rangeEnd));
-                  const task = tasks.find(candidate => candidate.id === block.taskId);
-                  return (
-                    <div
-                      key={block.id}
-                      className={`calendar-block${block.pending ? " calendar-block-pending" : ""}`}
-                      data-start={block.start}
-                      data-end={block.end}
-                      style={{
-                        top: `${((from - rangeStart) / rangeMinutes) * 100}%`,
-                        height: `${((to - from) / rangeMinutes) * 100}%`,
-                      }}
-                    >
-                      <span className="block-time">{timeLabel(startDate, timeZone)}–{timeLabel(endDate, timeZone)}</span>
-                      {task && <span className="block-task">{task.title}</span>}
-                      <button
-                        type="button"
-                        className="block-delete"
-                        disabled={busy}
-                        aria-label={`Delete block ${key} ${timeLabel(startDate, timeZone)}`}
-                        onClick={() => void run(() => deleteBlock(uid, block.id))}
-                      >
-                        <span aria-hidden="true">×</span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+        {error && <p className="inline-error" role="alert">{error}</p>}
+        <p className="sheet-note">Times are in {timeZone}.</p>
+        <button type="submit" className="button-primary" disabled={busy}>Add block</button>
+      </form>
+    </Sheet>
+  );
+}
+
+function BlockDetails({
+  block,
+  task,
+  timeZone,
+  todayKey,
+  origin,
+  onClose,
+  onDelete,
+}: {
+  block: BlockView;
+  task: TaskView | undefined;
+  timeZone: string;
+  todayKey: string;
+  origin: HTMLElement;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  const start = new Date(block.start);
+  const end = new Date(block.end);
+  const minutes = (end.getTime() - start.getTime()) / 60_000;
+  return (
+    <Sheet label="Block details" className="block-sheet" origin={origin} onClose={onClose}>
+      <header className="sheet-head">
+        <span className="sheet-kind">Work block</span>
+        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+          <CloseIcon />
+        </button>
+      </header>
+      <h3 className="sheet-title as-heading">{task ? task.title : "Work block"}</h3>
+      <dl className="form-group">
+        <div className="form-row">
+          <dt>Day</dt>
+          <dd>{formatDateKey(dateKey(start, timeZone), todayKey)}</dd>
+        </div>
+        <div className="form-row">
+          <dt>Time</dt>
+          <dd className="tnum">{timeLabel(start, timeZone)} – {timeLabel(end, timeZone)} · {formatDuration(minutes)}</dd>
+        </div>
+        <div className="form-row">
+          <dt>For task</dt>
+          <dd>{task ? task.title : "None"}</dd>
+        </div>
+        {block.pending && (
+          <div className="form-row">
+            <dt>Sync</dt>
+            <dd>Saved on this device, waiting to sync</dd>
+          </div>
+        )}
+      </dl>
+      <button type="button" className="button-danger" onClick={onDelete}>Delete block</button>
+    </Sheet>
   );
 }

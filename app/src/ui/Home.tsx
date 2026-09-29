@@ -1,230 +1,305 @@
+import { completeOccurrence } from "../data/series.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
+import { setTaskCompleted } from "../data/tasks.ts";
+import { formatDateKey, isPastDateKey } from "./format.ts";
+import { RepeatIcon } from "./icons.tsx";
+import { useNow } from "./motion.ts";
+import { nextOccurrence } from "./Tasks.tsx";
+import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel } from "./time.ts";
+import { settle } from "./write.ts";
 
 /**
- * The Home surface: a row of stat cards, each one a real fact the planner
- * holds — no derived deltas or invented percentages, because the store keeps
- * no history. "Today" and "this week" are the profile timezone's calendar
- * days (D3), never the browser's. A card carries a secondary line only when
- * that line says something its own heading and number do not — here the
- * counting window for the week's blocks and the unit for the series count;
- * the other three would only repeat their label.
+ * Today: the surface that answers "what do I do now, and what comes next?"
+ * (DESIGN.md §1). Everything is read in the profile timezone (D3).
  *
- * Two sibling sections sit below the cards, both a shared heading over one
- * card of list rows (D2). "Today" lists the open tasks due today and the work
- * blocks starting today. "This week" groups the week's work blocks by their
- * profile-zone day, showing each block's time range and the linked task when
- * one exists (D1). A block with no linked task is named as what it is — a work
- * block — instead of leaving a bare time range that could read as a meeting or
- * a rendering fault. Every row is real store state; a day with no blocks is
- * omitted rather than padded with placeholder rows.
- *
- * When every fact is zero the surface stays calm: the card row is replaced by
- * a single empty sentence and each section says plainly that its day or week
- * is clear.
+ *  - Now: the block running at this minute with its progress, what follows,
+ *    and a way to finish the task it belongs to. When nothing is running it
+ *    says when the next block starts, or that the day is open.
+ *  - Due today: open tasks due today or already overdue, plus repeating
+ *    tasks whose next occurrence is today; each can be completed in place.
+ *  - Coming up: deadlines in the next seven days.
+ *  - Schedule: today's blocks with the free time between them and the now
+ *    marker, so the gaps are visible as time that can still be planned.
  */
-
-const dayMs = 86_400_000;
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-type WallDate = { year: number; month: number; day: number };
-
-/** Wall-clock date parts of an instant in a named IANA zone. */
-function wallDate(date: Date, timeZone: string): WallDate {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const get = (type: string) => Number(parts.find(part => part.type === type)!.value);
-  return { year: get("year"), month: get("month"), day: get("day") };
-}
-
-/** Date key (YYYY-MM-DD) of an instant in the given zone. */
-function dateKey(date: Date, timeZone: string): string {
-  const parts = wallDate(date, timeZone);
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
-}
-
-/** Date key of a zone wall date read as UTC midnight (a day counter). */
-function wallDayKey(wallUtc: number): string {
-  const date = new Date(wallUtc);
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
-}
-
-/** Wall-clock HH:MM of an instant in the given zone. */
-function wallTime(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const get = (type: string) => parts.find(part => part.type === type)!.value;
-  return `${get("hour").padStart(2, "0")}:${get("minute")}`;
-}
-
-/** Weekday name of a wall-UTC day counter (read as UTC, never through a zone). */
-function weekdayName(wallUtc: number): string {
-  return new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(new Date(wallUtc));
-}
-
-type WeekDay = { key: string; label: string; blocks: BlockView[] };
-
-export function Home({ loading, tasks, blocks, series, timeZone, profileError }: {
+export function Home({
+  uid,
+  loading,
+  tasks,
+  blocks,
+  series,
+  completions,
+  timeZone,
+  profileError,
+  onOpenCalendar,
+}: {
+  uid: string;
   loading: boolean;
   tasks: TaskView[];
   blocks: BlockView[];
   series: SeriesView[];
+  completions: Record<string, string>;
   timeZone: string | null;
   profileError: string | null;
+  onOpenCalendar: () => void;
 }) {
+  const now = useNow();
+
   if (timeZone === null || loading) {
     return (
-      <section className="home" aria-labelledby="home-heading">
+      <section className="view" aria-labelledby="home-heading">
         <header className="page-head">
-          <h2 id="home-heading">Home</h2>
+          <h2 id="home-heading" className="large-title">Today</h2>
         </header>
-        {profileError ? <p role="alert">{profileError}</p> : <p role="status">Loading your planner…</p>}
+        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner…</p>}
       </section>
     );
   }
 
-  const now = wallDate(new Date(), timeZone);
-  const today = `${now.year}-${pad(now.month)}-${pad(now.day)}`;
-  const todayUtc = Date.UTC(now.year, now.month - 1, now.day);
-  const mondayUtc = todayUtc - ((new Date(todayUtc).getUTCDay() + 6) % 7) * dayMs;
+  const today = dateKey(now, timeZone);
+  const todayUtc = keyToWallUtc(today);
+  const weekAhead = formatWallKey(todayUtc + 7 * dayMs);
+  const titleOf = (taskId: string | undefined) =>
+    taskId === undefined ? undefined : tasks.find(task => task.id === taskId);
 
-  const open = tasks.filter(task => !task.completed).length;
-  const completed = tasks.length - open;
-  const dueToday = tasks.filter(task => !task.completed && task.deadline === today);
-
-  // The profile week's work blocks, Monday first, each day carrying only the
-  // blocks that fall on it in the profile zone. A day with no blocks is
-  // dropped so the digest never shows a placeholder row.
-  const weekDays: WeekDay[] = Array.from({ length: 7 }, (_, index) => {
-    const utc = mondayUtc + index * dayMs;
-    const key = wallDayKey(utc);
-    return {
-      key,
-      label: weekdayName(utc),
-      blocks: blocks
-        .filter(block => dateKey(new Date(block.start), timeZone) === key)
-        .sort((left, right) => Date.parse(left.start) - Date.parse(right.start)),
-    };
-  }).filter(day => day.blocks.length > 0);
-  const weekBlocks = weekDays.reduce((total, day) => total + day.blocks.length, 0);
-
-  // A card's note is kept only when it adds a fact the label and the number do
-  // not carry: the window the block count covers, and the unit the series
-  // count is in (definitions, not occurrences). A note that only restates its
-  // own heading — "not completed", "marked done", "deadline today" — is gone.
-  const cards: { key: string; label: string; value: number; note?: string }[] = [
-    { key: "open", label: "Open tasks", value: open },
-    { key: "completed", label: "Completed", value: completed },
-    { key: "due", label: "Due today", value: dueToday.length },
-    { key: "week", label: "Work blocks", value: weekBlocks, note: "this week" },
-    { key: "series", label: "Repeating", value: series.length, note: "series defined" },
-  ];
-
-  // Today's blocks in the profile zone, earliest first.
   const todayBlocks = blocks
     .filter(block => dateKey(new Date(block.start), timeZone) === today)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  const nowMs = now.getTime();
+  const current = todayBlocks.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
+  const next = todayBlocks.find(block => Date.parse(block.start) > nowMs);
+  const blocksLeft = todayBlocks.filter(block => Date.parse(block.start) > nowMs).length;
+  const blockName = (block: BlockView) => titleOf(block.taskId)?.title ?? "Work block";
 
-  const titleOf = (taskId: string | undefined) =>
-    taskId === undefined ? null : tasks.find(task => task.id === taskId)?.title ?? null;
+  const dueTasks = tasks
+    .filter(task => !task.completed && task.deadline !== undefined && task.deadline <= today)
+    .sort((left, right) => left.deadline!.localeCompare(right.deadline!));
+  const dueSeries = series
+    .map(entry => ({ entry, next: nextOccurrence(entry, completions, today) }))
+    .filter(item => item.next?.date === today);
+  const upcoming = tasks
+    .filter(task => !task.completed && task.deadline !== undefined && task.deadline > today && task.deadline <= weekAhead)
+    .sort((left, right) => left.deadline!.localeCompare(right.deadline!));
 
-  const blockTime = (block: BlockView) =>
-    `${wallTime(new Date(block.start), timeZone)}–${wallTime(new Date(block.end), timeZone)}`;
-
-  // One block row, shared by both sections. A block that resolves to a task
-  // shows that task; a block that does not is labelled with what it is, so no
-  // row is ever a bare time range with nothing to explain it.
-  const blockRow = (block: BlockView) => {
-    const title = titleOf(block.taskId);
-    return (
-      <li key={block.id} className="card-row">
-        <span className="card-row-time">{blockTime(block)}</span>
-        {title === null
-          ? <span className="card-row-note">Work block</span>
-          : <span className="card-row-title">{title}</span>}
-      </li>
-    );
-  };
-
-  const empty = cards.every(card => card.value === 0);
+  const empty = tasks.length === 0 && blocks.length === 0 && series.length === 0;
+  const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
   return (
-    <section className="home" aria-labelledby="home-heading">
+    <section className="view" aria-labelledby="home-heading">
       <header className="page-head">
-        <h2 id="home-heading">Home</h2>
+        <div>
+          <h2 id="home-heading" className="large-title">Today</h2>
+          <p className="subtitle">
+            {formatWall(todayUtc, { weekday: "long", month: "long", day: "numeric" })}
+            {!empty && ` · ${blocksLeft === 0 ? "no blocks left" : `${blocksLeft} ${blocksLeft === 1 ? "block" : "blocks"} left`}`}
+          </p>
+        </div>
       </header>
 
       {empty ? (
-        <p className="empty-note" role="status">No tasks and no work blocks yet. Your planner is empty.</p>
+        <div className="empty-state" role="status">
+          <p className="empty-title">No tasks and no work blocks yet. Your planner is empty.</p>
+          <p>Add a task with New task, then set time aside for it in the calendar.</p>
+        </div>
       ) : (
-        <ul className="stat-cards">
-          {cards.map(card => (
-            <li key={card.key} className="stat-card" data-stat={card.key}>
-              <span className="stat-card-label">{card.label}</span>
-              <span className="stat-card-value">{card.value}</span>
-              {card.note !== undefined && <span className="stat-card-note">{card.note}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+        <div className="today-grid">
+          <div className="stack">
+            <NowCard
+              current={current}
+              next={next}
+              now={now}
+              timeZone={timeZone}
+              name={blockName}
+              task={current ? titleOf(current.taskId) : undefined}
+              onComplete={complete}
+            />
 
-      <section className="home-section" aria-labelledby="home-today-heading">
-        <h3 id="home-today-heading" className="section-heading">Today</h3>
-        <div className="card">
-          <div className="card-group">
-            <h4 className="card-group-heading">Tasks due</h4>
-            {dueToday.length === 0 ? (
-              <p className="card-empty">Nothing due today.</p>
-            ) : (
-              <ul className="card-rows">
-                {dueToday.map(task => (
-                  <li key={task.id} className="card-row">
-                    <span className="card-row-title">{task.title}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="card-group">
-            <h4 className="card-group-heading">Work blocks</h4>
-            {todayBlocks.length === 0 ? (
-              <p className="card-empty">No work blocks today.</p>
-            ) : (
-              <ul className="card-rows">{todayBlocks.map(blockRow)}</ul>
-            )}
-          </div>
-        </div>
-      </section>
+            <section className="list-section" aria-labelledby="due-heading">
+              <div className="section-head">
+                <h3 id="due-heading" className="section-title">Due today</h3>
+                {dueTasks.length + dueSeries.length > 0 && <span className="section-meta">{dueTasks.length + dueSeries.length} left</span>}
+              </div>
+              {dueTasks.length + dueSeries.length === 0 ? (
+                <p className="group group-empty">Nothing due today.</p>
+              ) : (
+                <ul className="group">
+                  {dueTasks.map(task => (
+                    <li key={task.id} className="row" data-pending={task.pending ? "true" : "false"}>
+                      <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
+                      <span className="row-main">
+                        <span className="row-title">{task.title}</span>
+                        <span className={`row-meta ${isPastDateKey(task.deadline!, today) ? "is-overdue" : "is-today"}`}>
+                          {formatDateKey(task.deadline!, today)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                  {dueSeries.map(({ entry, next: occurrence }) => (
+                    <li key={entry.id} className="row">
+                      <input
+                        type="checkbox"
+                        className="check"
+                        checked={false}
+                        aria-label={`Complete: ${entry.title} on ${occurrence!.date}`}
+                        onChange={() => void settle(completeOccurrence(uid, entry.id, occurrence!.date)).catch(() => undefined)}
+                      />
+                      <span className="row-main">
+                        <span className="row-title">{entry.title}</span>
+                        <span className="row-meta is-today"><RepeatIcon className="meta-icon" />{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-      <section className="home-section" aria-labelledby="home-week-heading">
-        <h3 id="home-week-heading" className="section-heading">This week</h3>
-        <div className="card">
-          {weekDays.length === 0 ? (
-            <p className="card-empty">No work blocks this week.</p>
-          ) : (
-            /* the day groups flow into two balanced columns on a wide
-               viewport; the reading order stays Monday to Sunday */
-            <div className="week-digest">
-              {weekDays.map(day => (
-                <div key={day.key} className="card-group">
-                  <h4 className="card-group-heading">{day.label}</h4>
-                  <ul className="card-rows">{day.blocks.map(blockRow)}</ul>
-                </div>
-              ))}
+            <section className="list-section" aria-labelledby="upcoming-heading">
+              <div className="section-head">
+                <h3 id="upcoming-heading" className="section-title">Coming up</h3>
+                <span className="section-meta">Next 7 days</span>
+              </div>
+              {upcoming.length === 0 ? (
+                <p className="group group-empty">No deadlines this week.</p>
+              ) : (
+                <ul className="group">
+                  {upcoming.map(task => (
+                    <li key={task.id} className="row">
+                      <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
+                      <span className="row-main">
+                        <span className="row-title">{task.title}</span>
+                        <span className="row-meta">{formatDateKey(task.deadline!, today)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          <section className="list-section" aria-labelledby="schedule-heading">
+            <div className="section-head">
+              <h3 id="schedule-heading" className="section-title">Schedule</h3>
+              <button type="button" className="link-button" onClick={onOpenCalendar}>Open calendar</button>
             </div>
-          )}
+            <Agenda blocks={todayBlocks} now={now} timeZone={timeZone} name={blockName} />
+          </section>
         </div>
-      </section>
+      )}
     </section>
   );
+}
+
+function formatWallKey(wallUtc: number): string {
+  return new Date(wallUtc).toISOString().slice(0, 10);
+}
+
+function NowCard({
+  current,
+  next,
+  now,
+  timeZone,
+  name,
+  task,
+  onComplete,
+}: {
+  current: BlockView | undefined;
+  next: BlockView | undefined;
+  now: Date;
+  timeZone: string;
+  name: (block: BlockView) => string;
+  task: TaskView | undefined;
+  onComplete: (task: TaskView) => void;
+}) {
+  const range = (block: BlockView) => `${timeLabel(new Date(block.start), timeZone)} – ${timeLabel(new Date(block.end), timeZone)}`;
+
+  if (current) {
+    const start = Date.parse(current.start);
+    const end = Date.parse(current.end);
+    const elapsed = (now.getTime() - start) / 60_000;
+    const total = (end - start) / 60_000;
+    return (
+      <article className="card now-card" aria-labelledby="now-title">
+        <p className={`now-label${current.taskId ? " for-task" : ""}`}><span className="now-dot" aria-hidden="true" />Now</p>
+        <h3 id="now-title" className="now-title">{name(current)}</h3>
+        <p className="now-when">{range(current)}</p>
+        <div className={`progress${current.taskId ? " for-task" : ""}`} aria-hidden="true">
+          <i style={{ transform: `scaleX(${Math.min(1, Math.max(0, elapsed / total))})` }} />
+        </div>
+        <div className="progress-row">
+          <span>{formatDuration(elapsed)} in</span>
+          <span>{formatDuration(total - elapsed)} left</span>
+        </div>
+        {(next || (task && !task.completed)) && (
+          <div className="now-foot">
+            {next && (
+              <p className="now-next">
+                Next <b>{name(next)}</b> at {timeLabel(new Date(next.start), timeZone)}
+              </p>
+            )}
+            {task && !task.completed && (
+              <button type="button" className="button" onClick={() => onComplete(task)}>
+                Mark task done
+              </button>
+            )}
+          </div>
+        )}
+      </article>
+    );
+  }
+  if (next) {
+    const minutes = (Date.parse(next.start) - now.getTime()) / 60_000;
+    return (
+      <article className="card now-card" aria-labelledby="now-title">
+        <p className="now-label is-free">Free now</p>
+        <h3 id="now-title" className="now-title">{name(next)}</h3>
+        <p className="now-when">Starts at {timeLabel(new Date(next.start), timeZone)}, in {formatDuration(minutes)}</p>
+      </article>
+    );
+  }
+  return (
+    <article className="card now-card" aria-labelledby="now-title">
+      <p className="now-label is-free">Nothing scheduled</p>
+      <h3 id="now-title" className="now-title">The rest of today is open</h3>
+      <p className="now-when">Plan a work block from the calendar when you are ready.</p>
+    </article>
+  );
+}
+
+/** Today's blocks in order, with the free gaps between upcoming ones and the
+ * now marker placed where the current minute falls. */
+function Agenda({ blocks, now, timeZone, name }: { blocks: BlockView[]; now: Date; timeZone: string; name: (block: BlockView) => string }) {
+  if (blocks.length === 0) return <p className="group group-empty">No work blocks today.</p>;
+  const nowMs = now.getTime();
+  const items: React.ReactNode[] = [];
+  let placedNow = false;
+  let cursor: number | null = null;
+  const nowRow = (
+    <li key="now" className="agenda-now" aria-label={`Now, ${timeLabel(now, timeZone)}`}>
+      <time>{timeLabel(now, timeZone)}</time>
+      <span className="agenda-now-line" aria-hidden="true" />
+    </li>
+  );
+  for (const block of blocks) {
+    const start = Date.parse(block.start);
+    const end = Date.parse(block.end);
+    if (!placedNow && start > nowMs) {
+      items.push(nowRow);
+      placedNow = true;
+    }
+    if (cursor !== null && start > nowMs) {
+      const gap = (start - Math.max(cursor, nowMs)) / 60_000;
+      if (gap >= 30) items.push(<li key={`gap-${block.id}`} className="agenda-gap">Free for {formatDuration(gap)}</li>);
+    }
+    items.push(
+      <li key={block.id} className={`agenda-item${end <= nowMs ? " is-past" : ""}`}>
+        <time>{timeLabel(new Date(block.start), timeZone)}</time>
+        <div className={`event ${block.taskId ? "cat-task" : "cat-focus"}${block.pending ? " is-pending" : ""}`}>
+          <b>{name(block)}</b>
+          <span>{timeLabel(new Date(block.start), timeZone)} – {timeLabel(new Date(block.end), timeZone)}</span>
+        </div>
+      </li>,
+    );
+    cursor = Math.max(cursor ?? 0, end);
+  }
+  if (!placedNow) items.push(nowRow);
+  return <ol className="card agenda">{items}</ol>;
 }

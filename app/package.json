@@ -17,8 +17,9 @@
     "emulators": "firebase emulators:start --config firebase.emulator.json --project demo-calendar-app --only auth,firestore"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/onest": "^5.3.1",
     "firebase": "12.19.0",
+    "motion": "^13.4.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

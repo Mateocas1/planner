@@ -11,49 +11,37 @@ A local-first personal planner (tasks, date-only deadlines, work blocks, recurri
 with per-occurrence completion) built with React + TypeScript + Vite on Cloud Firestore's
 persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
 
-Current state (increment I6b — profile timezone): authentication gate, Home / Tasks / Calendar shell
-navigation, a Home surface of stat cards, each one a fact the store holds (open tasks, completed
-tasks, tasks due today in the planner timezone, work blocks in the current week, repeating series)
-with a calm single-sentence empty state instead of a row of zeroes, a full Tasks surface (create with an
-optional date-only deadline validated by the domain module; compact rows grouped into counted Open and
-Completed sections; a details panel, opened by selecting a row, holding rename, the deadline, the
-completion state and delete), and a Calendar surface: a week time grid rendering work blocks in the stored **profile timezone** (a
-per-user profile document at `users/{uid}/profile/main`, initialized on first use from the browser's
-resolved zone), with previous/next week and today navigation, each block drawn as a card (time range and
-linked task title), the profile timezone's current day highlighted, a static pending state for a block
-whose write is not yet acknowledged, a create form taking a start, an end
-and an optional task, per-block delete, an explicit empty state, and visible error reporting for
-rejected input — all wired to Firestore, with the built app shell cached by a service worker so the
-app opens and renders its cached data offline (see "Offline app shell" below).
+Current state (Liquid Glass redesign on top of increment I6b — profile timezone): an authentication
+gate and a shell with three views.
 
-## Design foundation (DP1)
+- **Today** answers "what now, what next": the block running now with its progress and what follows
+  (and "Mark task done" when it belongs to a task), tasks due today or overdue plus repeating tasks
+  due today, deadlines in the next seven days, and today's schedule with its free gaps and a now marker.
+- **Tasks** lists Repeating, Open and Completed in inset grouped lists; a round check completes a row
+  in place, and selecting a row opens a glass details sheet with rename, deadline, completion and
+  delete (series: frequency, anchor, upcoming occurrences, delete).
+- **Calendar** shows a week or a day in the stored **profile timezone** (a per-user profile document
+  at `users/{uid}/profile/main`, initialized on first use from the browser's resolved zone): a Due row
+  of deadlines apart from work blocks, a scrolling 24-hour grid with a now line, overlapping blocks
+  side by side, a pending state for writes not yet acknowledged, block details with delete, creation
+  from New block or an empty slot, and an Unscheduled panel whose Plan sets aside an hour for a task in
+  the next free slot. A phone shows one day under a week strip.
 
-The design pass has started. `src/app.css` now defines the visual foundation as custom properties
-in one place — surfaces, borders, a four-step type ramp, semantic and status colours, radii, the
-4 pt spacing scale, elevation via the ring-as-border trick, component heights — ported from
-`odd/design/reference-design-language.md`. Every colour, radius, space and type size in the file
-comes from a token. The shell is a left sidebar (application name, icon navigation with a raised
-pill on the active item, identity and sign-out) that becomes a top bar under 720 px.
+New task is reachable from every view. Forms close as soon as a write is accepted locally instead of
+waiting for the server, so they keep working offline; a later server rejection is shown as a toast.
 
-The typeface is **Geist Sans**, self-hosted via `@fontsource-variable/geist` (variable weight,
-latin subset, ~29 KB woff2 shipped as a build asset) with `font-display: swap` and a system
-fallback stack. Self-hosting is deliberate: the product must work offline, and a font CDN would
-break that promise.
+## Design
 
-## Motion (DP1b)
+The visual direction, tokens and motion are specified in `odd/design/DESIGN.md` and prototyped in
+`odd/design/prototype/liquid-glass.html`. In code: `src/app.css` holds every token (light and dark),
+the glass material and the components; `src/ui/motion.ts` holds the three springs; `src/ui/Sheet.tsx`
+is the sheet that grows out of the element that opened it. Motion uses the `motion` library for
+springs, layout moves and sheet morphs, and CSS transitions for hover and press; everything respects
+`prefers-reduced-motion`, `prefers-reduced-transparency` and `prefers-contrast`.
 
-`src/app.css` also carries the motion system from `odd/design/motion-system.md`: the canonical curves
-(`--ease-out`, `--ease-in-out`, `--ease-drawer`, `--spring`, with `--ease` defaulting to the strong
-ease-out) and intent-named durations (`--dur-press` 120 ms, `--dur-hover` 140 ms, `--dur-enter`
-200 ms, `--dur-panel` 280 ms, `--dur-signature` 400 ms). View switches fade-and-rise (4 px) on every
-navigation — the keyed view surface remounts, so the animation replays. Hover and press are gated to
-cursor devices (`hover: hover` and `pointer: fine`). `prefers-reduced-motion` and the in-app
-`data-motion="reduce"` attribute both degrade transform motion to an opacity-only ~120 ms fade —
-gentler, not zero. Only `transform` and `opacity` animate; `transition: all` is forbidden.
-
-Animation durations are validated by eye, not asserted. The harness that measured them frame by frame
-and fitted easing curves by RMS error was removed once the audit showed it cost more than the three
-transitions it guarded.
+The typeface is **Onest**, self-hosted via `@fontsource-variable/onest` (variable weight, latin and
+latin-ext subsets shipped as build assets) with `font-display: swap` and a system fallback stack.
+Self-hosting is deliberate: the product must work offline, and a font CDN would break that promise.
 
 ## Install
 
@@ -112,7 +100,7 @@ npm run emulators    # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187
 ## Offline app shell
 
 `vite-plugin-pwa` generates a Workbox service worker that precaches the built shell — the HTML, JS,
-CSS and the self-hosted Geist font — and `src/main.tsx` registers it where the browser supports one.
+CSS and the self-hosted Onest font — and `src/main.tsx` registers it where the browser supports one.
 The registration uses `registerType: "prompt"`: a waiting update is never activated and the page is
 never force-reloaded, so a new build cannot interrupt unsent writes queued in the Firestore
 persistent local cache. Reloading with no network serves the precached shell, which then renders the

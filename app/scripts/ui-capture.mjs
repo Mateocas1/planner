@@ -282,6 +282,8 @@ async function gotoView(page, label) {
 
 async function capture(page, outDir, name, viewport) {
   const file = path.join(outDir, name);
+  // let spring-driven (JS) motion settle; CSS animations are disabled below
+  await page.waitForTimeout(700);
   await page.screenshot({ path: file, animations: "disabled", caret: "hide" });
   captures.push({ name, file, width: viewport.width, height: viewport.height });
 }
@@ -324,13 +326,13 @@ function printPngTable() {
 async function captureSeeded(browser, outDir, viewport, suffix) {
   const email = `ui-loop-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
   await seedPlanner(email);
-  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: "en-US", timezoneId: PROFILE_TZ });
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: "en-US", timezoneId: PROFILE_TZ, colorScheme: process.env.UI_CAPTURE_SCHEME === "dark" ? "dark" : "light" });
   try {
     const page = await context.newPage();
     await signIn(page, email);
 
-    // Home with real counts.
-    await page.locator('[data-stat="open"] .stat-card-value').waitFor({ state: "visible", timeout: 30_000 });
+    // Today with its Now card and schedule.
+    await page.locator(".now-card").waitFor({ state: "visible", timeout: 30_000 });
     await capture(page, outDir, `home-${suffix}.png`, viewport);
 
     // Tasks: list, then the details panel open on a real task.
@@ -357,12 +359,10 @@ async function captureSeeded(browser, outDir, viewport, suffix) {
     await gotoView(page, "Calendar");
     await page.locator(".calendar-block").first().waitFor({ state: "visible", timeout: 30_000 });
     await capture(page, outDir, `calendar-${suffix}.png`, viewport);
-    // The phone grid shows one day and owns its own day stepper; the week-step
-    // buttons are a desktop affordance and are not rendered at that width. So
-    // the phone capture reaches the next week the way a phone user does -- by
-    // stepping the day forward until the target block is on screen -- instead
-    // of the instrument dictating that the week controls must stay.
-    if (viewport.width <= 640) {
+    // The phone grid shows one day, so the phone capture reaches the next
+    // week the way a phone user does: by stepping the day forward until the
+    // target block is on screen.
+    if (viewport.width <= 760) {
       const target = page.locator(".calendar-block", { hasText: "Pay electricity bill" });
       for (let step = 0; step < 8 && !(await target.isVisible().catch(() => false)); step += 1) {
         await page.getByRole("button", { name: "Next day" }).click();
@@ -380,7 +380,7 @@ async function captureSeeded(browser, outDir, viewport, suffix) {
 async function captureEmpty(browser, outDir, viewport, suffix) {
   const email = `ui-loop-empty-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
   await seedEmpty(email);
-  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: "en-US", timezoneId: PROFILE_TZ });
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: "en-US", timezoneId: PROFILE_TZ, colorScheme: process.env.UI_CAPTURE_SCHEME === "dark" ? "dark" : "light" });
   try {
     const page = await context.newPage();
     await signIn(page, email);
@@ -389,11 +389,11 @@ async function captureEmpty(browser, outDir, viewport, suffix) {
     await capture(page, outDir, `home-empty-${suffix}.png`, viewport);
 
     await gotoView(page, "Tasks");
-    await page.getByText("No tasks yet. Add your first one above.").waitFor({ state: "visible", timeout: 15_000 });
+    await page.getByText("No tasks yet.").waitFor({ state: "visible", timeout: 15_000 });
     await capture(page, outDir, `tasks-empty-${suffix}.png`, viewport);
 
     await gotoView(page, "Calendar");
-    await page.getByText("No work blocks this week.").waitFor({ state: "visible", timeout: 15_000 });
+    await page.getByText(/No work blocks (this week|on this day)\./).waitFor({ state: "visible", timeout: 15_000 });
     await capture(page, outDir, `calendar-empty-${suffix}.png`, viewport);
   } finally {
     await context.close();
@@ -415,7 +415,9 @@ async function runInner() {
   let browser;
   try {
     await waitForServer();
-    browser = await chromium.launch();
+    // PLAYWRIGHT_CHROMIUM_EXECUTABLE points at a preinstalled browser when the
+    // pinned Playwright build is not downloaded (e.g. a sandboxed container).
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
     await captureSeeded(browser, outDir, DESKTOP, "1440x900");
     await captureSeeded(browser, outDir, MOBILE, "390x844");
     await captureEmpty(browser, outDir, DESKTOP, "1440x900");

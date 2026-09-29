@@ -1,76 +1,181 @@
-import type { ReactElement } from "react";
+import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import type { View } from "../App.tsx";
+import type { BlockView } from "../data/store.ts";
+import { CalendarIcon, ChevronLeft, ChevronRight, CloudIcon, CloudOffIcon, TasksIcon, TodayIcon } from "./icons.tsx";
+import { spring } from "./motion.ts";
+import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey } from "./time.ts";
 
-type NavEntry = { id: View; label: string; icon: ReactElement };
-
-function HomeIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-      <path d="M2.5 6.75 8 2.25l5.5 4.5v5.75a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function TasksIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-      <rect x="2" y="2" width="12" height="12" rx="3" />
-      <path d="m5.5 8.25 1.75 1.75 3.25-4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="11" rx="2" />
-      <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-const views: NavEntry[] = [
-  { id: "home", label: "Home", icon: <HomeIcon /> },
-  { id: "tasks", label: "Tasks", icon: <TasksIcon /> },
-  { id: "calendar", label: "Calendar", icon: <CalendarIcon /> },
+export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
+  { id: "home", label: "Today", Icon: TodayIcon },
+  { id: "tasks", label: "Tasks", Icon: TasksIcon },
+  { id: "calendar", label: "Calendar", Icon: CalendarIcon },
 ];
 
-/** The left sidebar shell: application name, view navigation with icons and
- * a raised pill on the active item, and the identity plus sign-out control.
- * The accessible names (nav "Main", per-view buttons, identity text) are the
- * contract the browser tests rely on. */
-export function Sidebar({ email, view, onNavigate, onSignOut }: {
+/** Whether the browser reports a network connection; follows changes. */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+  return online;
+}
+
+/** Sync status in the product's own words: what is safe, and where. */
+export function SyncStatus({ pending }: { pending: number }) {
+  const online = useOnline();
+  const offline = !online;
+  const text = offline
+    ? "Offline · changes are kept on this device"
+    : pending > 0
+      ? `Syncing ${pending} ${pending === 1 ? "change" : "changes"}…`
+      : "Synced · works offline";
+  return (
+    <p className={`sync${offline ? " is-offline" : pending > 0 ? " is-pending" : ""}`} role="status">
+      {offline ? <CloudOffIcon /> : <CloudIcon />}
+      <span>{text}</span>
+    </p>
+  );
+}
+
+/**
+ * The desktop sidebar: a quiet glass material holding the month, the view
+ * navigation (nav "Main", the name the browser tests address) with a pill that
+ * slides to the active view, the sync status and the account.
+ */
+export function Sidebar({
+  email,
+  view,
+  openCount,
+  pending,
+  blocks,
+  timeZone,
+  selectedDay,
+  onNavigate,
+  onPickDay,
+  onSignOut,
+}: {
   email: string;
   view: View;
+  openCount: number;
+  pending: number;
+  blocks: BlockView[];
+  timeZone: string | null;
+  selectedDay: string | null;
   onNavigate: (view: View) => void;
+  onPickDay: (key: string) => void;
   onSignOut: () => void;
 }) {
   return (
-    <aside className="sidebar">
-      <div className="side-head">
-        <span className="app-name">Personal Planner</span>
-      </div>
-      <p className="side-label">Planner</p>
+    <aside className="sidebar glass glass-chrome">
+      {timeZone && <MiniMonth blocks={blocks} timeZone={timeZone} selectedDay={selectedDay} onPickDay={onPickDay} />}
       <nav aria-label="Main" className="side-nav">
-        {views.map(entry => (
+        {views.map(({ id, label, Icon }) => (
           <button
-            key={entry.id}
+            key={id}
             type="button"
-            className={view === entry.id ? "nav-item active" : "nav-item"}
-            aria-current={view === entry.id ? "page" : undefined}
-            onClick={() => onNavigate(entry.id)}
+            className="nav-item"
+            aria-current={view === id ? "page" : undefined}
+            onClick={() => onNavigate(id)}
           >
-            {entry.icon}
-            <span>{entry.label}</span>
+            {view === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={spring.snappy} aria-hidden="true" />}
+            <Icon className="nav-icon" />
+            <span className="nav-label">{label}</span>
+            {id === "tasks" && openCount > 0 && (
+              <span className="nav-count">
+                {openCount}
+                <span className="sr-only"> open</span>
+              </span>
+            )}
           </button>
         ))}
       </nav>
       <div className="side-foot">
-        <span className="who">Signed in as {email}</span>
-        <button type="button" className="signout" onClick={onSignOut}>
-          Sign out
-        </button>
+        <SyncStatus pending={pending} />
+        <div className="account">
+          <span className="who" title={email}>Signed in as {email}</span>
+          <button type="button" className="link-button" onClick={onSignOut}>Sign out</button>
+        </div>
       </div>
     </aside>
+  );
+}
+
+/** The month in the sidebar: dots mark days with blocks, today is marked in
+ * the now colour, the calendar's selected day is filled. A day opens in the
+ * calendar. */
+function MiniMonth({
+  blocks,
+  timeZone,
+  selectedDay,
+  onPickDay,
+}: {
+  blocks: BlockView[];
+  timeZone: string;
+  selectedDay: string | null;
+  onPickDay: (key: string) => void;
+}) {
+  const todayKey = dateKey(new Date(), timeZone);
+  const selected = selectedDay ?? todayKey;
+  const [month, setMonth] = useState(() => selected.slice(0, 7));
+
+  // follow the calendar when it moves to another month
+  useEffect(() => setMonth(selected.slice(0, 7)), [selected]);
+
+  const first = keyToWallUtc(`${month}-01`);
+  const start = mondayOf(first);
+  const blockDays = new Set(blocks.map(block => dateKey(new Date(block.start), timeZone)));
+  const shift = (delta: number) => {
+    const date = new Date(first);
+    date.setUTCMonth(date.getUTCMonth() + delta);
+    setMonth(wallDayKey(date.getTime()).slice(0, 7));
+  };
+
+  return (
+    <section className="mini-month" aria-label="Month">
+      <div className="mini-head">
+        <p className="mini-title">
+          {formatWall(first, { month: "long" })} <span>{formatWall(first, { year: "numeric" })}</span>
+        </p>
+        <div className="mini-nav">
+          <button type="button" aria-label="Previous month" onClick={() => shift(-1)}><ChevronLeft /></button>
+          <button type="button" aria-label="Next month" onClick={() => shift(1)}><ChevronRight /></button>
+        </div>
+      </div>
+      <div className="mini-grid">
+        {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
+          <span key={index} className="mini-dow" aria-hidden="true">{letter}</span>
+        ))}
+        {Array.from({ length: 42 }, (_, index) => {
+          const utc = start + index * dayMs;
+          const key = wallDayKey(utc);
+          const classes = [
+            "mini-day",
+            key.slice(0, 7) !== month && "is-out",
+            key === todayKey && "is-today",
+            key === selected && "is-selected",
+            blockDays.has(key) && "has-blocks",
+          ].filter(Boolean).join(" ");
+          return (
+            <button
+              key={key}
+              type="button"
+              className={classes}
+              aria-label={formatWall(utc, { weekday: "long", month: "long", day: "numeric" })}
+              aria-pressed={key === selected}
+              onClick={() => onPickDay(key)}
+            >
+              {formatWall(utc, { day: "numeric" })}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

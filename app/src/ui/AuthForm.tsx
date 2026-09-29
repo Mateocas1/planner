@@ -26,29 +26,40 @@ export function AuthForm() {
 
   return (
     <main className="gate">
-      <h1>Personal Planner</h1>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="email">Email</label>
-        <input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)} required />
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={event => setPassword(event.target.value)}
-          required
-          minLength={6}
-        />
-        <div className="actions">
-          <button type="button" disabled={busy} onClick={() => void submit(() => createAccount(email, password))}>
-            Create account
-          </button>
-          <button type="submit" disabled={busy}>
-            Sign in
-          </button>
-        </div>
-      </form>
-      {error && <p role="alert">{error}</p>}
+      <div className="gate-card card">
+        <h1 className="gate-title">Personal Planner</h1>
+        <p className="subtitle">Tasks, deadlines and the time you set aside for them. Works offline.</p>
+        <form onSubmit={onSubmit} className="gate-form">
+          <div className="form-group">
+            <div className="form-row stacked">
+              <label htmlFor="email">Email</label>
+              <input id="email" className="form-control" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required />
+            </div>
+            <div className="form-row stacked">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                className="form-control"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+          </div>
+          {error && <p className="inline-error" role="alert">{error}</p>}
+          <div className="gate-actions">
+            <button type="submit" className="button-primary" disabled={busy}>
+              Sign in
+            </button>
+            <button type="button" className="button" disabled={busy} onClick={() => void submit(() => createAccount(email, password))}>
+              Create account
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }
