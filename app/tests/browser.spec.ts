@@ -39,11 +39,25 @@ async function openTasks(page: Page) {
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
+/** Waits out a creation sheet that was just submitted: it stays busy for a
+ * beat while the write is accepted, then plays its return animation before
+ * leaving the DOM. Its controls must not be mistaken for an open form. A
+ * sheet that is idle (for example showing a validation error) stays. */
+async function settleSheet(page: Page, label: string) {
+  const sheet = page.getByRole("complementary", { name: label });
+  if ((await sheet.count()) === 0) return;
+  const closing = (await sheet.getAttribute("data-state")) === "closing";
+  const submitting = await sheet.getByRole("button", { name: /^Add (task|block)$/ }).isDisabled().catch(() => false);
+  if (closing || submitting) await expect(sheet).toHaveCount(0);
+}
+
 /**
- * Reveals the collapsed Tasks creation row (C2). Idempotent: if a test already
- * revealed it, the Add task control is visible and nothing is clicked.
+ * Opens the New task sheet (C2: creation is never permanently on the surface).
+ * Idempotent: if a test already opened it, the Add task control is visible
+ * and nothing is clicked.
  */
 async function revealTaskForm(page: Page) {
+  await settleSheet(page, "New task");
   const add = page.getByRole("button", { name: "Add task" });
   if (await add.isVisible().catch(() => false)) return;
   await page.getByRole("button", { name: "New task" }).click();
@@ -59,30 +73,31 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
   await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
 
   await seedTaskAndBlock(email, "Skeleton task", start, "2026-03-02T10:00:00-03:00");
-  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("1");
-
   const nav = page.getByRole("navigation", { name: "Main" });
+  // the open count on the Tasks entry is the truthful count of open tasks
+  await expect(nav.getByRole("button", { name: "Tasks 1 open" })).toBeVisible();
+
   await nav.getByRole("button", { name: "Tasks" }).click();
   // C2: creation is collapsed, not permanently on the surface
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await nav.getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
-  await expect(page.getByText("planner timezone")).toBeVisible();
+  await expect(page.getByText("Times in")).toBeVisible();
 
   await page.reload();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("1", { timeout: 30_000 });
+  await expect(nav.getByRole("button", { name: "Tasks 1 open" })).toBeVisible({ timeout: 30_000 });
   const remote = await readRemoteState(email);
   expect(remote).toEqual({ taskTitles: ["Skeleton task"], blockStarts: [start] });
 });
 
-test("Home cards show counts that match the seeded planner state", async ({ page }) => {
-  const email = newEmail("home-cards");
+test("Today shows what is due, what is coming up and today's schedule from the planner state", async ({ page }) => {
+  const email = newEmail("home-today");
   await signUp(page, email);
 
-  // An empty planner stays calm: one sentence, no dashboard of zeroes.
+  // An empty planner stays calm: one sentence, no dashboard of empty sections.
   await expect(page.getByText("No tasks and no work blocks yet")).toBeVisible();
-  await expect(page.locator(".stat-cards")).toHaveCount(0);
+  await expect(page.locator(".today-grid")).toHaveCount(0);
 
   const today = localDateKey(new Date());
 
@@ -93,13 +108,14 @@ test("Home cards show counts that match the seeded planner state", async ({ page
   await page.getByLabel("Deadline").fill(today);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Due today" })).toBeVisible();
-  // the successful write collapses the revealed row again
-  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Due soon");
+  await page.getByLabel("Deadline").fill(dayKey(3));
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".task-title", { hasText: "Due soon" })).toBeVisible();
   await addTaskThroughForm(page, "Done task");
   await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
-
-  await addSeriesThroughForm(page, "Weekly habit", "Weekly", futureDateKey(1));
 
   await openCalendar(page);
   await revealBlockForm(page);
@@ -108,15 +124,23 @@ test("Home cards show counts that match the seeded planner state", async ({ page
   await page.getByRole("button", { name: "Add block" }).click();
   await expect(page.locator(`[data-date="${today}"] .calendar-block`)).toHaveCount(1);
 
-  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Home" }).click();
-  await expect(page.locator('[data-stat="open"] .stat-card-value')).toHaveText("2");
-  await expect(page.locator('[data-stat="completed"] .stat-card-value')).toHaveText("1");
-  await expect(page.locator('[data-stat="due"] .stat-card-value')).toHaveText("1");
-  await expect(page.locator('[data-stat="week"] .stat-card-value')).toHaveText("1");
-  await expect(page.locator('[data-stat="series"] .stat-card-value')).toHaveText("1");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Today" }).click();
+  const due = page.getByRole("region", { name: "Due today" });
+  await expect(due.getByRole("checkbox", { name: "Complete: Due today" })).toBeVisible();
+  await expect(due.getByText("Open task")).toHaveCount(0);
+  await expect(due.getByText("Done task")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Coming up" }).getByText("Due soon")).toBeVisible();
+  const schedule = page.getByRole("region", { name: "Schedule" });
+  await expect(schedule.getByText("Work block")).toBeVisible();
+  await expect(schedule.getByText("09:00 – 10:00")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks 3 open" })).toBeVisible();
 
-  // Every number is a held fact; the planner keeps no history to derive a delta.
-  await expect(page.locator(".stat-cards")).not.toContainText("%");
+  // Completing from Today writes the same completion the Tasks list does.
+  await due.getByRole("checkbox", { name: "Complete: Due today" }).click();
+  await expect(due.getByText("Nothing due today.")).toBeVisible();
+  await expect
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Due today"), { timeout: 15_000 })
+    .toEqual({ title: "Due today", completed: true, deadline: today });
 });
 
 test("creating a task with a deadline shows the row and persists it to the server", async ({ page }) => {
@@ -348,8 +372,8 @@ test("the list groups open and completed tasks under counted headings", async ({
   await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
 
-  await expect(page.getByRole("heading", { name: "Open (1)" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Completed (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open 1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Completed 1" })).toBeVisible();
   await expect(page.locator("li.task:not(.completed)", { hasText: "Open task" })).toHaveCount(1);
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
 });
@@ -395,6 +419,7 @@ async function openCalendar(page: Page) {
  * already revealed it, the Add block control is visible and nothing is clicked.
  */
 async function revealBlockForm(page: Page) {
+  await settleSheet(page, "New block");
   const add = page.getByRole("button", { name: "Add block" });
   if (await add.isVisible().catch(() => false)) return;
   await page.getByRole("button", { name: "New block" }).click();
@@ -773,11 +798,15 @@ test("clicking an empty calendar cell prefills that slot's start and reveals the
   await signUp(page, email);
   await openCalendar(page);
 
-  // The drawn window starts at 08:00 and an hour is one hourHeight (56 px),
-  // so a click 56 px into the column is 09:00. The block list is empty, so
-  // the click lands on the cell itself.
+  // The grid covers the whole day and an hour is one hourHeight (52 px), so a
+  // click 468 px into the column is 09:00. The grid scrolls inside its card,
+  // so bring that hour into view first. The block list is empty, so the click
+  // lands on the cell itself.
   const day = localDateKey(new Date());
-  await page.locator(`[data-date="${day}"] .calendar-day-body`).click({ position: { x: 24, y: 56 } });
+  await page.locator(".cal-scroll").evaluate(element => {
+    element.scrollTop = 8 * 52;
+  });
+  await page.locator(`[data-date="${day}"] .calendar-day-body`).click({ position: { x: 24, y: 468 } });
 
   await expect(page.getByLabel("Start", { exact: true })).toHaveValue(`${day}T09:00`);
 });
@@ -840,7 +869,9 @@ test("deleting a block removes it from the grid and from the server", async ({ p
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);
   await expect(block).toHaveCount(1);
-  await block.getByRole("button", { name: "Delete" }).click();
+  // delete lives in the block's details sheet
+  await block.click();
+  await page.getByRole("button", { name: "Delete block" }).click();
 
   await expect(block).toHaveCount(0);
   await expectRemoteBlocks(email, []);
@@ -867,7 +898,7 @@ test("week navigation changes the visible week", async ({ page }) => {
   await page.getByRole("button", { name: "Next week" }).click();
   await expect(page.locator(`[data-date="${key}"] .calendar-block`)).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Today" }).click();
+  await page.getByRole("group", { name: "Calendar navigation" }).getByRole("button", { name: "Today" }).click();
   await expect(page.locator(`[data-date="${key}"]`)).toHaveCount(0);
   await expect(page.getByText("No work blocks this week.")).toBeVisible();
 });
@@ -966,7 +997,7 @@ test.describe("profile timezone (I6b)", () => {
     await signInAs(page, email);
     await openCalendar(page);
 
-    await expect(page.getByText(`Times are shown in the planner timezone (${profileZone}).`)).toBeVisible();
+    await expect(page.getByText(`Times in ${profileZone}`)).toBeVisible();
     const block = page.locator(`[data-date="${day}"] .calendar-block`);
     await expect(block).toHaveCount(1);
     await expect(block).toContainText(wallClockIn(new Date(start), profileZone).time);
@@ -1001,7 +1032,7 @@ test.describe("profile timezone (I6b)", () => {
     // update lands races the propagation: the old week still holds the block,
     // the step below is skipped, and the update then hides the column. The
     // final assertions below still require the block with the new wall time.
-    await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+    await expect(page.getByText(`Times in ${nextZone}`)).toBeVisible();
 
     // Switching zones can also roll the visible week: Madrid is five hours
     // ahead of São Paulo, so for part of every day it is already on the next
@@ -1020,7 +1051,7 @@ test.describe("profile timezone (I6b)", () => {
     await expect(dayColumn).toHaveCount(1);
     await expect(dayColumn).toContainText(wallClockIn(new Date(start), nextZone).time);
     await expect(dayColumn).toHaveAttribute("data-start", start);
-    await expect(page.getByText(`Times are shown in the planner timezone (${nextZone}).`)).toBeVisible();
+    await expect(page.getByText(`Times in ${nextZone}`)).toBeVisible();
   });
 });
 
@@ -1068,7 +1099,7 @@ test("a clean account creates the profile on first use and renders the planner i
   expect(() => new Intl.DateTimeFormat("en-US", { timeZone: zone })).not.toThrow();
 
   await openCalendar(page);
-  await expect(page.getByText(`Times are shown in the planner timezone (${zone}).`)).toBeVisible();
+  await expect(page.getByText(`Times in ${zone}`)).toBeVisible();
 
   // A form-created block renders in the profile (= browser) zone.
   const day = wallClockIn(new Date(), zone).date;

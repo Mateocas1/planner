@@ -31,8 +31,8 @@ export default defineConfig({
         short_name: "Planner",
         start_url: "/",
         display: "standalone",
-        background_color: "#FBFAF8",
-        theme_color: "#4B5BD6",
+        background_color: "#F2F2F5",
+        theme_color: "#F2F2F5",
         icons: [
           { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icon-512.png", sizes: "512x512", type: "image/png" },

@@ -1,317 +1,212 @@
-/* Design foundation (DP1 + DP1b). Tokens are ported from
-   odd/design/reference-design-language.md — the values read from the source
-   stylesheet. Every colour, radius, space and type size in this file comes
-   from a token defined in :root. Motion (DP1b) lives at the bottom: curves,
-   durations, the reduced-motion pair and the hover/press pointer gate. */
+/* Personal Planner — Liquid Glass design system.
+   The source of truth is odd/design/DESIGN.md: every colour, size and curve
+   here is a token from it. Glass is used only on chrome (sidebar, top bar,
+   tab bar, floating button) and on sheets; content stays solid. */
 
-:root {
-  /* surfaces */
-  --bg: #FBFAF8;
-  --bg-sidebar: #F4F3F0;
-  --surface: #FFFFFF;
-  --surface-2: #F6F5F2;
-  --surface-3: #EEEDE9;
-
-  /* borders */
-  --border: #E9E7E2;
-  --border-strong: #DAD7D0;
-  --divider: #F0EEEA;
-
-  /* text ramp */
-  --text: #1D1C1A;
-  --text-2: #57544E;
-  --text-3: #6B6760;
-  --text-4: #8C8880;
-
-  /* accent + semantic colours */
-  --accent: #4B5BD6;
-  --green: #25754B;
-  --amber: #8F5E0E;
-  --red: #B23C30;
-  --blue: #3570C4;
-  --violet: #7652C2;
-  --teal: #1E8580;
-  --rose: #BC4270;
-  --orange: #C0612B;
-
-  /* status colours */
-  --status-backlog: #A29E96;
-  --status-todo: #7C7870;
-  --status-progress: #C88A14;
-  --status-review: #7652C2;
-  --status-done: #2E8456;
-
-  /* elevation — a named three-step scale, not ad-hoc shadows: level 1 is
-     the resting card, level 2 a raised control (nav pill, popover), level 3
-     the floating details sheet. Levels 1–3 keep the ring-as-border trick (a
-     0-blur spread) so every surface stays bounded; only the sheet casts a
-     real directional shadow. */
-  --elev-1: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
-  --elev-2: 0 2px 6px rgba(28, 25, 20, 0.07), 0 0 0 1px var(--border);
-  --elev-3: -12px 0 40px rgba(28, 25, 20, 0.12), 0 0 0 1px var(--border);
-
-  /* the page's own ambient depth: a faint top light the translucent sidebar
-     can sample, so the glass reads as glass instead of a solid repaint */
-  --page-gradient: linear-gradient(180deg, #FDFCFB 0%, var(--bg) 42%, #F5F3EF 100%);
-
-  /* scrim behind a floating sheet (motion-system: panel backdrop, opacity) */
-  --scrim: rgba(28, 25, 20, 0.18);
-
-  /* radii */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r: 8px;
-  --r-lg: 10px;
-  --r-xl: 14px;
-  --r-full: 999px;
-
-  /* 4 pt spacing scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-
-  /* type ramp (five steps) — --text-lg is the numeral step the reference
-     ramp records (odd/design/reference-design-language.md: 19px), used for
-     stat-card values so they stay prominent but calm */
-  --text-xs: 11px;
-  --text-sm: 12.5px;
-  --text-md: 14.5px;
-  --text-lg: 19px;
-  --text-page: 30px;
-
-  /* component heights */
-  --h-xs: 22px;
-  --h-sm: 26px;
-  --h-md: 30px;
-  --h-lg: 36px;
-
-  /* layout */
-  --sidebar-w: 252px;
-  --content-w: 52rem;
-  /* the bounded list column: rows stop short of the content column so a
-     row's title and its trailing deadline stay related, and the column never
-     runs under the fixed details panel (D2) */
-  --task-w: 36rem;
-  --row-h: 34px;
-
-  /* typeface — self-hosted Geist Sans, system fallbacks for offline safety */
-  --font: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-/* Self-hosted Geist Sans (variable weight, latin subset) from
-   @fontsource-variable/geist. Self-hosting keeps the product working
-   offline; a CDN font would break that core promise. */
 @font-face {
-  font-family: "Geist Variable";
+  font-family: "Onest";
   font-style: normal;
   font-display: swap;
   font-weight: 100 900;
-  src: url("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+  /* self-hosted: a CDN font would break the offline promise */
+  src: url("@fontsource-variable/onest/files/onest-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/onest/files/onest-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  /* neutrals: one ramp with a trace of the accent blue */
+  --bg: #F2F2F5;
+  --bg-top: #F8F8FA;
+  --surface: #FFFFFF;
+  --surface-2: #EEEEF1;
+  --fill-hover: rgb(20 20 40 / 0.045);
+  --fill-press: rgb(20 20 40 / 0.08);
+  --label: #1B1B1F;
+  --label-2: #47474E;
+  --label-3: #6A6A73;
+  --separator: rgb(20 20 40 / 0.09);
+  --check-ring: rgb(20 20 40 / 0.32);
+
+  /* one accent, and state colours for state only */
+  --accent: #0066CC;
+  --accent-hover: #0059B3;
+  --accent-soft: rgb(0 102 204 / 0.10);
+  --on-accent: #FFFFFF;
+  --now: #D92D20;
+  --on-now: #FFFFFF;
+  --red: #C8102E;
+  --orange: #A34A00;
+  --green: #1F7A3A;
+  --green-fill: #2E9B4F;
+  --wash: rgb(46 155 79 / 0.10);
+
+  /* calendar categories: a tinted fill plus an ink of the same hue */
+  --cat-focus-bg: rgb(0 102 204 / 0.10);
+  --cat-focus-ink: #0B4A8F;
+  --cat-task-bg: rgb(104 76 196 / 0.11);
+  --cat-task-ink: #4E3597;
+
+  /* glass */
+  --tint-chrome: rgb(248 248 250 / 0.72);
+  --tint-sheet: rgb(250 250 252 / 0.80);
+  --tint-control: rgb(255 255 255 / 0.58);
+  --rim-hi: rgb(255 255 255 / 0.9);
+  --rim-lo: rgb(255 255 255 / 0.3);
+  --ring: rgb(20 20 40 / 0.08);
+  --sheen: rgb(255 255 255 / 0.45);
+  --glass-shadow: 0 8px 28px rgb(20 20 40 / 0.08), 0 1px 3px rgb(20 20 40 / 0.05);
+  --pill: rgb(255 255 255 / 0.95);
+  --pill-shadow: 0 1px 2px rgb(20 20 40 / 0.10), 0 0 0 0.5px rgb(20 20 40 / 0.06);
+  --card-shadow: 0 0 0 1px rgb(20 20 40 / 0.045), 0 1px 2px -1px rgb(20 20 40 / 0.06), 0 3px 10px rgb(20 20 40 / 0.035);
+  --scrim: rgb(20 20 30 / 0.16);
+
+  /* type */
+  --font: "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --text-large: 2.125rem;
+  --text-title: 1.375rem;
+  --text-headline: 1.0625rem;
+  --text-body: 0.9375rem;
+  --text-sub: 0.8125rem;
+  --text-caption: 0.75rem;
+  --text-tiny: 0.6875rem;
+
+  /* shape */
+  --r-control: 10px;
+  --r-group: 14px;
+  --r-card: 18px;
+  --r-sheet: 26px;
+  --hour: 52px;
+
+  /* motion (DESIGN.md §4; the springs live in src/ui/motion.ts) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-press: 120ms;
+  --dur-hover: 140ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111114;
+    --bg-top: #16161A;
+    --surface: #1B1B1F;
+    --surface-2: #26262B;
+    --fill-hover: rgb(255 255 255 / 0.045);
+    --fill-press: rgb(255 255 255 / 0.08);
+    --label: #EDEDF1;
+    --label-2: #BCBCC4;
+    --label-3: #8C8C96;
+    --separator: rgb(255 255 255 / 0.08);
+    --check-ring: rgb(255 255 255 / 0.3);
+    --accent: #5B9BE6;
+    --accent-hover: #6FA8EA;
+    --accent-soft: rgb(91 155 230 / 0.16);
+    --on-accent: #0B1522;
+    --now: #D33A2F;
+    --red: #F07A70;
+    --orange: #E7A45C;
+    --green: #6CC488;
+    --green-fill: #3E9E5C;
+    --wash: rgb(108 196 136 / 0.10);
+    --cat-focus-bg: rgb(91 155 230 / 0.15);
+    --cat-focus-ink: #B4D1F4;
+    --cat-task-bg: rgb(150 130 230 / 0.15);
+    --cat-task-ink: #CEC3F4;
+    --tint-chrome: rgb(30 30 34 / 0.76);
+    --tint-sheet: rgb(34 34 38 / 0.84);
+    --tint-control: rgb(44 44 48 / 0.64);
+    --rim-hi: rgb(255 255 255 / 0.07);
+    --rim-lo: rgb(255 255 255 / 0.02);
+    --ring: rgb(255 255 255 / 0.07);
+    --sheen: rgb(255 255 255 / 0.03);
+    --glass-shadow: 0 8px 28px rgb(0 0 0 / 0.36), 0 1px 3px rgb(0 0 0 / 0.3);
+    --pill: rgb(255 255 255 / 0.09);
+    --pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.06);
+    --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.055);
+    --scrim: rgb(0 0 0 / 0.42);
+    color-scheme: dark;
+  }
+}
+
+/* ---------- base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  font-family: var(--font);
-  font-size: var(--text-md);
-  color: var(--text);
-  background: var(--bg);
-  background-image: var(--page-gradient);
-  background-attachment: fixed;
-}
-
-/* ---------- shell: sidebar + main ---------- */
-
-.shell {
-  display: flex;
   min-height: 100vh;
+  color: var(--label);
+  background: linear-gradient(var(--bg-top), var(--bg) 360px) var(--bg);
+  font: 400 var(--text-body) / 1.4 var(--font);
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  caret-color: var(--accent);
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex: 0 0 var(--sidebar-w);
-  /* The identity line is one nowrap string, so without this the flex item's
-     automatic minimum size is that string's full width: the sidebar grew to
-     ~408 px instead of its 252 px design width, pushed the whole content
-     column right, and defeated .who's own ellipsis. min-width:0 lets the
-     basis win and the identity truncate where it is. */
-  min-width: 0;
-  box-sizing: border-box;
-  padding: var(--space-5) var(--space-3);
-  background: color-mix(in srgb, var(--bg-sidebar) 72%, transparent);
-  border-right: 1px solid var(--border);
-  -webkit-backdrop-filter: blur(22px) saturate(1.4);
-  backdrop-filter: blur(22px) saturate(1.4);
+::selection {
+  background: var(--accent-soft);
+  color: var(--label);
 }
 
-/* Without backdrop-filter the translucent fill would sit over nothing and
-   read as a weaker copy of the page, not a panel. Fall back to the solid
-   sidebar surface instead. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sidebar {
-    background: var(--bg-sidebar);
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--separator) transparent;
 }
 
-.app-name {
-  font-weight: 600;
-  font-size: var(--text-md);
-}
-
-.side-label {
-  margin: 0;
-  padding: 0 var(--space-4);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  /* the label sits over the translucent sidebar: --text-4 measures 3.2:1
-     there, below AA for 11 px text, so it steps up one ramp stop to the
-     5.1:1 of --text-3 (also fixed for the solid fallback) */
-  color: var(--text-3);
-}
-
-.side-nav {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  height: var(--h-md);
-  box-sizing: border-box;
-  padding: 0 var(--space-4);
-  border: none;
-  border-radius: var(--r-full);
-  background: transparent;
+button,
+input,
+select {
   font: inherit;
-  font-size: var(--text-md);
-  color: var(--text-2);
-  text-align: left;
-  cursor: pointer;
+  color: inherit;
+  letter-spacing: inherit;
 }
-
-/* the active item is a raised white pill */
-.nav-item.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--elev-2);
-}
-
-.nav-item svg {
-  flex: 0 0 auto;
-}
-
-/* the nav hover colour swap is cursor-device motion; it lives in the
-   pointer gate below with the press and the button hover */
-
-.side-foot {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: auto;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--divider);
-}
-
-.who {
-  color: var(--text-3);
-  font-size: var(--text-sm);
-  /* one line, cut with an ellipsis rather than wrapping to three lines */
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.signout {
-  align-self: flex-start;
-  height: var(--h-sm);
-}
-
-.surface {
-  flex: 1;
-  box-sizing: border-box;
-  max-width: var(--content-w);
-  padding: var(--space-8) var(--space-6);
-}
-
-/* The content column is inset — centred inside the shell so it has breathing
-   room on both sides instead of a void on the right. All three surfaces
-   (Home, Tasks, Calendar) share it, so they align and read as one app. */
-.surface-inset {
-  margin-inline: auto;
-}
-
-/* the large light page title the reference shows in the main area */
-.surface h2 {
-  margin: 0 0 var(--space-6);
-  font-size: var(--text-page);
-  font-weight: 300;
-  letter-spacing: -0.01em;
-}
-
-/* D3: a hairline rule under the title row is what makes the cards below read
-   as a section of the page rather than a strip floating in the middle. */
-.page-head {
-  padding-bottom: var(--space-5);
-  margin-bottom: var(--space-6);
-  border-bottom: 1px solid var(--divider);
-}
-
-.page-head h2 {
-  margin: 0;
-}
-
-/* ---------- controls ---------- */
 
 button {
-  height: var(--h-md);
-  box-sizing: border-box;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface);
-  font: inherit;
-  font-size: var(--text-md);
-  color: var(--text);
-  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 0;
   cursor: pointer;
 }
 
 button:disabled {
-  opacity: 0.5;
   cursor: default;
+  opacity: 0.5;
 }
 
-/* the hover colour swap is cursor-device motion; it lives in the pointer
-   gate below (see motion) */
-
-input,
-select {
-  height: var(--h-md);
-  box-sizing: border-box;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r);
-  background: var(--surface);
-  font: inherit;
-  font-size: var(--text-md);
-  color: var(--text);
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
-/* keeps a control's text in the accessibility tree — and addressable by its
-   label — while removing it from the visual layout */
+h1, h2, h3, h4, p, ul, ol, dl, dd {
+  margin: 0;
+}
+
+ul, ol {
+  padding: 0;
+  list-style: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -319,1257 +214,1370 @@ select {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
 }
 
-/* ---------- auth gate ---------- */
-
-.gate {
-  max-width: 22rem;
-  margin: var(--space-12) auto;
-  padding: 0 var(--space-6);
-}
-
-.gate h1 {
-  font-size: var(--text-page);
-  font-weight: 300;
-}
-
-.gate form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.gate label {
-  font-size: var(--text-sm);
-  color: var(--text-2);
-}
-
-.gate input {
-  padding: 0 var(--space-3);
-}
-
-.actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-/* ---------- home ---------- */
-
-/* D3: one card material for the whole Home surface. The stat cards, the
-   Today card and the week card share the same surface, hairline ring, radius
-   and padding rhythm, so the page reads as one family rather than a strip of
-   tight boxes above one loose panel. */
-.stat-card,
-.card {
-  box-sizing: border-box;
-  padding: var(--space-4) var(--space-5);
-  background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--elev-1);
-}
-
-/* A row of stat cards, each a real fact the store holds (no invented deltas).
-   The row is omitted entirely when every fact is zero. A grid makes every card
-   exactly as wide as its neighbours and lets the row span the content column
-   as one band. Only some cards carry a note; grid rows stretch every card to
-   the same height, so dropping a redundant note never misaligns the labels and
-   numbers, which stay on the same line across the row. */
-.stat-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: var(--space-3);
-  list-style: none;
-  margin: var(--space-5) 0 0;
-  padding: 0;
-}
-
-.stat-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.stat-card-label {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-4);
-}
-
-.stat-card-value {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  line-height: 1.1;
-  color: var(--text);
-}
-
-.stat-card-note {
-  font-size: var(--text-sm);
-  color: var(--text-3);
-}
-
-/* D3: one honest "Today" section and one week digest under the cards. Tasks
-   due today and work blocks starting today are real store state resolved in
-   the profile timezone; when a side is empty it says so instead of vanishing. */
-.home-section {
-  margin-top: var(--space-8);
-}
-
-/* The surface-level empty sentence, shared by all three surfaces: the same
-   size, colour and token margin, so a calm empty Home, Tasks and Calendar
-   read as the same app. The bottom margin collapses into whatever follows
-   (a section heading, or nothing). */
-.empty-note {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-md);
-  color: var(--text-3);
-}
-
-/* D2 (cross-surface): one voice for every section heading — sentence case at
-   full strength, the reference's "Ongoing Works" treatment. Home's sections,
-   the Tasks list groups and every future surface-level section share this
-   class, so the heading level reads the same everywhere. The counts a list
-   heading carries stay: they are information, not decoration (see
-   .heading-count). */
-.section-heading {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* A section card is a plain list of rows — no inner columns or rules, which
-   would make it read like a form instead of a list. */
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.card-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.card-group-heading {
-  margin: 0;
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-4);
-}
-
-/* Home's week digest is the longest block on the surface: day groups for up to
-   seven days, each a heading plus rows. On a wide viewport it flows into two
-   balanced columns (as many as fit at a readable 18rem minimum, never more
-   than two), which keeps the digest a digest instead of a column that runs
-   past the viewport; a column never splits a day group. */
-.week-digest {
-  column-count: 2;
-  column-width: 18rem;
-  column-gap: var(--space-8);
-}
-
-.week-digest > .card-group {
-  break-inside: avoid;
-  margin-bottom: var(--space-3);
-}
-
-.card-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.card-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  font-size: var(--text-md);
-  color: var(--text);
-}
-
-.card-row-time {
-  flex: 0 0 auto;
-  font-size: var(--text-sm);
+.tnum,
+time,
+.row-meta,
+.calendar-block span,
+.gutter,
+.subtitle,
+.progress-row,
+.now-when {
   font-variant-numeric: tabular-nums;
-  color: var(--text-3);
 }
 
-.card-row-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* ---------- material ---------- */
+
+.glass {
+  position: relative;
+  isolation: isolate;
+  background: var(--tint, var(--tint-chrome));
+  -webkit-backdrop-filter: blur(var(--blur, 28px)) saturate(var(--sat, 170%));
+  backdrop-filter: blur(var(--blur, 28px)) saturate(var(--sat, 170%));
+  box-shadow: inset 0 1px 0 var(--rim-hi), inset 0 -1px 0 var(--rim-lo), 0 0 0 0.5px var(--ring), var(--glass-shadow);
 }
 
-/* A work block that resolves to no task is named as what it is rather than
-   left as a bare time range. It is muted like the time and truncates like a
-   title, so the row reads as a descriptor and never as a task called
-   "Work block". */
-.card-row-note {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-3);
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(160deg, var(--sheen), transparent 38%);
 }
 
-.card-empty {
-  margin: 0;
-  font-size: var(--text-md);
-  color: var(--text-3);
+.glass-chrome { --tint: var(--tint-chrome); }
+.glass-sheet { --tint: var(--tint-sheet); --blur: 36px; }
+.glass-control { --tint: var(--tint-control); --blur: 16px; --sat: 160%; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .topbar::before {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    --tint: var(--surface) !important;
+  }
 }
 
-/* ---------- tasks ---------- */
-
-/* D1: the creation controls sit side by side in one compact row on a wide
-   viewport and wrap on a narrow one. Each field keeps its label directly
-   above its control — the accessible names the tests address — so the labels,
-   the control order and the operations are unchanged; only the layout is. */
-.task-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3);
-  max-width: var(--task-w);
-  margin-bottom: var(--space-6);
+@media (prefers-contrast: more) {
+  .glass {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    --tint: var(--surface) !important;
+    box-shadow: 0 0 0 1px var(--label-3);
+  }
+  .card, .group { box-shadow: 0 0 0 1px var(--label-3); }
 }
 
-.task-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
+/* ---------- controls ---------- */
 
-/* the title absorbs the slack so the row stays compact and the other controls
-   keep their natural width; the small basis lets every control fit on one
-   line inside the bounded row */
-.task-field-grow {
-  flex: 1 1 10rem;
-}
-
-.task-field label {
-  font-size: var(--text-sm);
-  color: var(--text-2);
-}
-
-/* C2: creation is revealed on demand, not permanently on the surface. Until
-   it is clicked the row is a quiet, text-like control; the revealed form
-   keeps the same fields and labels. */
-.new-task {
+.button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-6);
-  padding-inline: var(--space-3);
-  color: var(--text-2);
-  background: transparent;
-  border-color: transparent;
-}
-
-.new-task span {
-  color: var(--text-4);
-  font-size: var(--text-lg);
-  line-height: 1;
-}
-
-/* the dismiss controls for both revealed creation forms stay quiet: the
-   submit remains the only primary action in the row */
-.task-cancel,
-.block-cancel {
-  color: var(--text-2);
-  background: transparent;
-}
-
-/* D3: the counting group heading is a divider, not its own block — a hairline
-   rule under it separates the groups the way the reference does. The group is
-   bounded to the row width so the rule and the rows align (D2). */
-.task-group {
-  max-width: var(--task-w);
-  margin: 0 0 var(--space-5);
-}
-
-/* D2 (cross-surface): the group heading keeps the section-heading voice and
-   adds only the rule that separates it from the rows below — the rule is
-   material doing a job, not a second voice. */
-.task-group-heading {
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--divider);
-}
-
-/* the count a list heading carries: still there, read second */
-.heading-count {
-  color: var(--text-4);
-  font-weight: 500;
-}
-
-/* D3: the rows sit closer together; the width comes from the bounded group. */
-.task-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.task {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--row-h);
-  box-sizing: border-box;
-  padding: var(--space-1) var(--space-3);
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
   background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--elev-1);
-}
-
-/* the completion wash: a brief green veil that fades out once the completed
-   state lands. The UI applies the task-wash class only when the user performs
-   the completion, so the animation never plays on mount for rows that were
-   already completed. */
-.task::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--green) 18%, transparent);
-  opacity: 0;
-  pointer-events: none;
-}
-
-.task.completed {
-  background: var(--surface-2);
-}
-
-.task.completed.task-wash::before {
-  animation: var(--motion-wash);
-}
-
-@keyframes task-wash {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-/* the completion mark pops on check with the spring curve; both the mark and
-   the strikethrough draw are transitions on state the UI already controls */
-.task-check {
-  appearance: none;
-  flex: 0 0 auto;
-  display: grid;
-  place-content: center;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-xs);
-  background: var(--surface);
-  cursor: pointer;
-  transition: background-color var(--dur-hover) ease, border-color var(--dur-hover) ease;
-}
-
-.task-check::after {
-  content: "";
-  width: 9px;
-  height: 5px;
-  border-left: 2px solid var(--surface);
-  border-bottom: 2px solid var(--surface);
-  opacity: 0;
-  transform: rotate(-45deg) translateY(-1px) scale(0.3);
-  transition: var(--motion-pop);
-}
-
-.task-check:checked {
-  background: var(--green);
-  border-color: var(--green);
-}
-
-.task-check:checked::after {
-  opacity: 1;
-  transform: rotate(-45deg) translateY(-1px) scale(1);
-}
-
-.task-check:disabled {
-  cursor: default;
-}
-
-.task-open {
-  flex: 1;
-  min-width: 0;
-  height: auto;
-  padding: 0;
-  border: none;
-  background: none;
-  text-align: left;
-  white-space: normal;
-}
-
-.task-title {
-  position: relative;
-  /* shrink-to-fit so the drawn line spans only the text, not the row */
-  display: inline-block;
-  max-width: 100%;
+  box-shadow: var(--card-shadow);
+  font-size: var(--text-sub);
   font-weight: 500;
-  overflow-wrap: anywhere;
+  color: var(--label);
+  white-space: nowrap;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
 }
 
-/* the strikethrough draws in from the left (transform only); currentColor
-   keeps it in step with the title's completed colour */
-.task-title::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 62%;
+.button svg { width: 15px; height: 15px; flex: none; }
+.button.icon { width: 32px; padding: 0; }
+.button.small { height: 28px; padding: 0 11px; font-size: var(--text-caption); }
+
+.button-accent {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+  font-weight: 600;
+  padding-left: 11px;
+}
+
+.button-primary,
+.button-danger {
+  height: 44px;
   width: 100%;
-  height: 1.5px;
-  background: currentColor;
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform var(--dur-signature) var(--ease);
+  border-radius: var(--r-group);
+  font-weight: 600;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
 }
 
-.task.completed .task-title {
-  color: var(--text-4);
+.button-primary { background: var(--accent); color: var(--on-accent); }
+.button-danger { background: var(--surface); color: var(--red); box-shadow: var(--card-shadow); font-weight: 500; }
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--fill-hover);
+  color: var(--label-2);
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
 }
 
-.task.completed .task-title::after {
-  transform: scaleX(1);
+.icon-button svg { width: 14px; height: 14px; }
+.icon-button.large { width: 36px; height: 36px; }
+.icon-button.large svg { width: 19px; height: 19px; }
+
+.link-button {
+  color: var(--accent);
+  font-size: var(--text-sub);
+  font-weight: 500;
 }
 
-.task-deadline {
-  flex: 0 0 auto;
-  color: var(--text-3);
-  font-size: var(--text-sm);
+.button:active:not(:disabled),
+.button-primary:active:not(:disabled),
+.button-danger:active:not(:disabled),
+.icon-button:active,
+.fab:active {
+  transform: scale(0.96);
 }
 
-/* C1: an unfinished deadline before today. The overdue state reuses the
-   danger token every other failure state already uses -- no new colour. */
-.task-deadline-overdue {
-  color: var(--red);
+@media (hover: hover) and (pointer: fine) {
+  .button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 93%, var(--label)); }
+  .button-accent:hover:not(:disabled),
+  .button-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .icon-button:hover { background: var(--fill-press); }
+  .link-button:hover { text-decoration: underline; text-underline-offset: 3px; }
 }
 
-/* the frequency chip on a repeating row */
-.series-frequency {
-  flex: 0 0 auto;
-  padding: 2px 8px;
-  border-radius: var(--r-xs);
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
   background: var(--surface-2);
-  color: var(--text-3);
-  font-size: var(--text-xs);
-  text-transform: capitalize;
 }
 
-/* ---------- task details panel ---------- */
+.segmented button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: var(--text-sub);
+  font-weight: 500;
+  color: var(--label-2);
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
 
-/* The scrim the motion system specifies for the panel backdrop. It dims the
-   page so the sheet reads as lifted, and never takes pointer events, so the
-   panel's keyboard and pointer behaviour is unchanged. */
-.task-details-scrim {
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--label);
+  box-shadow: var(--pill-shadow);
+}
+
+/* the round check: the product's signature control */
+.check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--check-ring);
+  cursor: pointer;
+  transition: background-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+}
+
+.check::before {
+  /* 44px hit area */
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.check::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
+  transform: scale(0);
+  transition: transform 160ms var(--ease-out);
+}
+
+.check:checked {
+  background: var(--green-fill);
+  box-shadow: none;
+}
+
+.check:checked::after {
+  transform: scale(1);
+}
+
+.check:disabled { cursor: default; opacity: 0.55; }
+.check:checked:disabled { opacity: 1; }
+
+@media (hover: hover) and (pointer: fine) {
+  .check:not(:checked):not(:disabled):hover { box-shadow: inset 0 0 0 1.5px var(--green-fill); }
+}
+
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: 13px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  cursor: pointer;
+  transition: background-color 200ms var(--ease-out);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  transition: transform 260ms var(--ease-spring);
+}
+
+.switch:checked { background: var(--green-fill); }
+.switch:checked::after { transform: translateX(18px); }
+
+/* ---------- shell ---------- */
+
+.shell {
+  min-height: 100vh;
+}
+
+.sidebar {
   position: fixed;
-  inset: 0;
-  z-index: 15;
-  background: var(--scrim);
-  pointer-events: none;
-  animation: scrim-in var(--dur-hover) ease;
-}
-
-@keyframes scrim-in {
-  from {
-    opacity: 0;
-  }
-}
-
-.task-details {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
   z-index: 20;
+  top: 10px;
+  left: 10px;
+  bottom: 10px;
+  width: 244px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  box-sizing: border-box;
-  width: 20rem;
-  padding: var(--space-5);
-  /* the sheet stays opaque: no glass behind the panel's dense text */
-  background: var(--surface);
-  border-radius: var(--r-xl) 0 0 var(--r-xl);
-  box-shadow: var(--elev-3);
-  animation: var(--motion-panel);
+  gap: 14px;
+  padding: 14px 10px 10px;
+  border-radius: var(--r-card);
+  overflow-y: auto;
 }
 
-.task-details-head {
+.mini-month { padding: 0 6px; }
+
+.mini-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-3);
+  height: 28px;
+  padding-left: 4px;
 }
 
-.task-details-head h3 {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
-}
+.mini-title { font-weight: 600; font-size: 0.875rem; }
+.mini-title span { color: var(--label-3); font-weight: 400; }
+.mini-nav { display: flex; }
 
-.task-details input[type="text"],
-.task-details input[type="date"],
-.task-details select {
-  width: 100%;
-}
-
-/* D1: the rename control is the panel's title and the largest thing in it.
-   It is the same always-editable input; only the material changes — large,
-   borderless until it takes focus. Its label lives in .sr-only, so the
-   htmlFor association is untouched. */
-.task-details-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.task-details-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  height: auto;
-  /* the input's own padding is cancelled so the title text lines up with
-     the header and the metadata row below it */
-  margin-left: calc(var(--space-2) * -1);
-  padding: var(--space-1) var(--space-2);
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-/* the title edits in place: it stays quiet until it takes focus, then shows a
-   soft token ring instead of the loud platform outline the generic rule would
-   draw, so the panel keeps reading as a record rather than a form */
-.task-details input.task-details-title:focus-visible {
-  outline: none;
-  background: var(--surface);
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-/* C3: the panel re-skins its native controls so they read as part of the
-   product instead of as browser defaults. The native elements stay
-   underneath (no custom date picker, no component library), so their
-   keyboard behaviour and accessibility are unchanged; only height, radius,
-   border, focus ring and colour come from the existing tokens. */
-.task-details input[type="date"],
-.task-details select {
-  border-radius: var(--r-sm);
-  color: var(--text);
-  cursor: pointer;
-}
-
-/* one focus ring for the panel's controls, drawn from the accent token */
-.task-details input:focus-visible,
-.task-details select:focus-visible,
-.task-details .task-check:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* the select drops the platform caret for a chevron drawn from the quiet end
-   of the text ramp; appearance: none removes the native chrome while the
-   native control keeps the keyboard and screen-reader behaviour */
-.task-details select {
-  appearance: none;
-  padding-right: calc(var(--space-6) + var(--space-1));
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6760' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-3) center;
-}
-
-/* the date input hides the platform indicator and shows our own calendar mark
-   in the same corner; the indicator stays clickable underneath, so the native
-   picker still opens and the value can still be typed */
-.task-details input[type="date"] {
-  position: relative;
-  appearance: none;
-  padding-right: calc(var(--space-6) + var(--space-1));
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Crect x='1.25' y='2.25' width='11.5' height='10.5' rx='2' stroke='%238C8880' stroke-width='1.3'/%3E%3Cpath d='M1.25 5.5h11.5M4.5 1v2.5M9.5 1v2.5' stroke='%238C8880' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-3) center;
-}
-
-.task-details input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0;
-}
-
-/* D3: labelled sections divided by a hairline rule give the panel its
-   rhythm — a details group and a destructive group. */
-.task-details-section {
-  margin-top: var(--space-1);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--divider);
-}
-
-.task-details-section > h4 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  /* the sheet is opaque --surface (#FFFFFF): --text-4 measures 3.53:1 there,
-     below AA for 11 px text, so the micro-label steps up one ramp stop to the
-     5.6:1 of --text-3, the same fix the sidebar's micro-label already carries */
-  color: var(--text-3);
-}
-
-/* D2: the task's key facts share one metadata row — deadline and completion
-   state read as a record, not as two stacked form fields. */
-.task-details-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-}
-
-.task-details-meta-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.task-details-meta-item > label,
-.task-details-meta .task-details-completed {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  /* see .task-details-section > h4: same 11 px micro-label, same AA step */
-  color: var(--text-3);
-}
-
-.task-details-meta input[type="date"] {
-  width: auto;
-  height: var(--h-sm);
-}
-
-/* the series panel's definition fields stack under their micro-label, the
-   same label voice the task panel's metadata row uses, so the two sibling
-   panels name their controls the same way */
-.task-details-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.task-details-field + .task-details-field {
-  margin-top: var(--space-3);
-}
-
-.task-details-field > label {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-}
-
-.task-details-completed {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.task-details-meta .task-details-completed {
-  margin-top: 0;
-}
-
-.task-details-danger .task-details-delete {
-  margin-top: 0;
-}
-
-.task-details-delete {
-  margin-top: var(--space-4);
-  color: var(--red);
-  border-color: color-mix(in srgb, var(--red) 32%, var(--border));
-}
-
-/* series details panel: the definition (title, frequency, anchor) is edited
-   here; occurrence completion and delete act below it */
-.series-details-history-note {
-  margin: var(--space-3) 0 0;
-  color: var(--text-3);
-  font-size: var(--text-sm);
-}
-
-.task-details h4 {
-  margin: var(--space-3) 0 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.series-occurrences {
+.mini-nav button {
   display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--label-2);
 }
 
-.series-occurrences li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+.mini-nav svg { width: 14px; height: 14px; }
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 2px;
+  margin-top: 4px;
+  text-align: center;
 }
 
-[role="alert"] {
-  color: var(--red);
-  margin: var(--space-3) 0;
+.mini-dow {
+  height: 22px;
+  line-height: 22px;
+  font-size: var(--text-tiny);
+  font-weight: 500;
+  color: var(--label-3);
 }
 
-/* ---------- calendar ---------- */
-
-.calendar-tz {
-  margin: 0 0 var(--space-3);
-  color: var(--text-3);
-  font-size: var(--text-sm);
-}
-
-/* D3 (mobile): the toolbar wraps instead of squeezing. Without this the week
-   label — a nowrap-preferring meta string — was the only row item that could
-   shrink, and it collapsed into a four-line column at 390 px; wrapped, it
-   takes the line below the buttons and stays one line. */
-.calendar-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-}
-
-.calendar-week-label {
-  color: var(--text-3);
-  font-size: var(--text-md);
-  margin-left: auto;
-}
-
-/* C2: creation is revealed on demand. The calendar holds one quiet New block
-   control until it is needed, so the grid stops being pushed down by a form.
-   The revealed form is a compact popover over the grid, not a permanent row. */
-.block-create {
+.mini-day {
   position: relative;
-  margin: 0 0 var(--space-3);
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  border-radius: 50%;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-hover) ease;
 }
 
-.new-block {
-  color: var(--text-2);
-  background: transparent;
-}
+.mini-day.is-out { color: var(--label-3); opacity: 0.6; }
 
-.block-form {
+.mini-day.has-blocks::after {
+  content: "";
   position: absolute;
-  top: calc(var(--h-md) + var(--space-2));
-  left: 0;
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3);
-  box-sizing: border-box;
-  width: min(100%, 34rem);
-  margin: 0;
-  padding: var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--elev-2);
+  left: 50%;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--label-3);
 }
 
-.block-field {
+.mini-day.is-today { color: var(--now); font-weight: 700; }
+.mini-day.is-selected { background: var(--label); color: var(--surface); }
+.mini-day.is-selected.is-today { background: var(--now); color: var(--on-now); }
+.mini-day.is-selected::after { background: currentColor; }
+
+@media (hover: hover) and (pointer: fine) {
+  .mini-day:not(.is-selected):hover,
+  .mini-nav button:hover { background: var(--fill-hover); }
+}
+
+.side-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  /* each field takes an equal share of the row and no more than the width a
-     datetime control needs, so the row stays compact on a wide viewport and
-     still fits two fields per line on a narrow one */
-  flex: 1 1 10rem;
-  max-width: 13rem;
+  gap: 2px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-weight: 500;
+  transition: color var(--dur-hover) ease;
+}
+
+.nav-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--pill);
+  box-shadow: var(--pill-shadow);
+}
+
+.nav-icon,
+.nav-label,
+.nav-count { position: relative; }
+.nav-icon { width: 18px; height: 18px; flex: none; }
+.nav-item[aria-current="page"] { color: var(--label); }
+.nav-item[aria-current="page"] .nav-icon { color: var(--accent); }
+.nav-count { margin-left: auto; font-size: var(--text-caption); color: var(--label-3); font-variant-numeric: tabular-nums; }
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-item:not([aria-current="page"]):hover { color: var(--label); background: var(--fill-hover); }
+}
+
+.side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.sync svg { width: 16px; height: 16px; flex: none; color: var(--green); }
+.sync.is-pending svg { color: var(--accent); }
+.sync.is-offline svg { color: var(--orange); }
+
+.account {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-caption);
+  color: var(--label-3);
   min-width: 0;
 }
 
-.block-field input,
-.block-field select {
-  width: 100%;
+.account .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.block-field label {
-  font-size: var(--text-sm);
-  color: var(--text-2);
+.account .link-button { font-size: var(--text-caption); flex: none; }
+
+.main {
+  margin-left: 264px;
+  min-height: 100vh;
+  padding-bottom: 72px;
 }
 
-.block-form button {
-  align-self: flex-end;
-}
-
-.calendar-grid {
+.topbar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  height: 56px;
   display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 28px;
+}
+
+.topbar::before {
+  /* scroll-edge material: appears only once content is underneath */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--tint-chrome);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-mask-image: linear-gradient(#000 64%, transparent);
+  mask-image: linear-gradient(#000 64%, transparent);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.topbar.is-scrolled::before { opacity: 1; }
+
+.topbar-title {
+  font-weight: 600;
+  font-size: 1rem;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 160ms ease, transform 160ms var(--ease-out);
+}
+
+.topbar.is-titled .topbar-title { opacity: 1; transform: none; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.toast {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 16px;
+  border-radius: 999px;
+  background: var(--label);
+  color: var(--surface);
+  font-size: var(--text-sub);
+  box-shadow: var(--glass-shadow);
+}
+
+.toast .icon-button { background: transparent; color: inherit; }
+
+.content {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+/* ---------- page structure ---------- */
+
+.view { display: block; }
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 2px 0 22px;
+}
+
+.large-title {
+  font-size: var(--text-large);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.large-title .soft { color: var(--label-3); font-weight: 400; }
+
+.subtitle {
+  margin-top: 4px;
+  color: var(--label-2);
+  font-size: var(--text-body);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.today-grid {
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1120px) {
+  .today-grid { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
+}
+
+.task-lists { max-width: 720px; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 4px 8px;
+}
+
+.section-title {
+  font-size: var(--text-headline);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.list-section > .section-title { margin: 0 4px 8px; }
+.heading-count { color: var(--label-3); font-weight: 500; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.section-meta { font-size: var(--text-sub); color: var(--label-3); }
+
+.card {
   background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--elev-1);
-  overflow-x: auto;
+  border-radius: var(--r-card);
+  box-shadow: var(--card-shadow);
 }
 
-.calendar-ruler {
-  flex: 0 0 3.5rem;
+.group {
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
 }
 
-/* D3: the day header stacks the day number over the weekday abbreviation, so
-   each column stays narrow and the header reads as a column label instead of a
-   wide inline date. Both header cells grow together, so the ruler and the days
-   stay aligned. */
-.calendar-ruler-head,
-.calendar-day-head {
-  height: calc(var(--h-lg) + 0.5rem);
-  border-bottom: 1px solid var(--border);
+.group-empty {
+  padding: 14px 16px;
+  color: var(--label-3);
+  font-size: var(--text-sub);
 }
 
-.calendar-day-head {
+.empty-state {
+  max-width: 460px;
+  padding: 28px 24px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--label-2);
+}
+
+.empty-title {
+  color: var(--label);
+  font-weight: 600;
+  font-size: var(--text-headline);
+  margin-bottom: 6px;
+}
+
+.inline-error {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+  font-size: var(--text-sub);
+}
+
+/* ---------- rows ---------- */
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 6px 14px 6px 12px;
+  background: var(--surface);
+}
+
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 46px;
+  right: 0;
+  border-top: 0.5px solid var(--separator);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  text-align: left;
+}
+
+button.row-main {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+button.row-main:active { transform: scale(0.99); }
+
+@media (hover: hover) and (pointer: fine) {
+  .row:has(button.row-main:hover) { background: color-mix(in srgb, var(--surface) 96%, var(--label)); }
+}
+
+.row-title,
+.task-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* the strike is drawn, not toggled: its width animates on completion */
+  background: linear-gradient(currentColor, currentColor) 0 56% / 0 1.5px no-repeat;
+  transition: background-size 320ms var(--ease-out), color 200ms ease;
+}
+
+.task.completed .task-title {
+  background-size: 100% 1.5px;
+  color: var(--label-3);
+}
+
+.row-meta {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.meta-icon { width: 13px; height: 13px; flex: none; }
+.series-frequency { display: inline-flex; align-items: center; gap: 4px; }
+.row-meta.is-overdue,
+.task-deadline-overdue { color: var(--red); }
+.row-meta.is-today,
+.task-deadline-today { color: var(--orange); }
+.task.completed .task-deadline { color: var(--label-3); }
+.row[data-pending="true"] .task-title,
+.row[data-pending="true"] .row-title { opacity: 0.7; }
+
+.task-wash { animation: task-wash 700ms var(--ease-out); }
+
+.task-wash .check:checked {
+  animation: check-pop 450ms var(--ease-spring);
+}
+
+@keyframes task-wash {
+  from { background-color: var(--wash); }
+  to { background-color: var(--surface); }
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- Today ---------- */
+
+.now-card { padding: 20px 22px; }
+
+.now-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: var(--text-sub);
+  color: var(--cat-focus-ink);
+}
+
+.now-label.for-task { color: var(--cat-task-ink); }
+.now-label.is-free { color: var(--label-3); }
+.now-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+.now-title {
+  margin: 8px 0 2px;
+  font-size: var(--text-title);
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+.now-when { color: var(--label-2); }
+
+.progress {
+  margin-top: 16px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cat-focus-ink);
+  opacity: 0.85;
+  transform-origin: left;
+  transition: transform 600ms var(--ease-out);
+}
+
+.progress.for-task i { background: var(--cat-task-ink); }
+
+.progress-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.now-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.now-next { color: var(--label-2); font-size: 0.875rem; min-width: 0; }
+.now-next b { color: var(--label); font-weight: 600; }
+.now-foot .button { margin-left: auto; }
+
+.agenda { padding: 6px 0; }
+
+.agenda-item,
+.agenda-now {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 7px 16px;
+}
+
+.agenda-item time { font-size: var(--text-sub); color: var(--label-3); padding-top: 7px; }
+.agenda-item.is-past { opacity: 0.5; }
+
+.event {
+  border-radius: var(--r-control);
+  padding: 7px 10px;
+  min-width: 0;
+}
+
+.event b { display: block; font-weight: 600; font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event span { font-size: var(--text-caption); opacity: 0.85; font-variant-numeric: tabular-nums; }
+.event.is-pending { outline: 1px dashed currentColor; outline-offset: -1px; }
+
+.agenda-now { padding-block: 2px; }
+.agenda-now time { color: var(--now); font-weight: 600; font-size: var(--text-sub); }
+
+.agenda-now-line {
+  position: relative;
+  align-self: center;
+  border-top: 1.5px solid var(--now);
+}
+
+.agenda-now-line::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -4.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--now);
+}
+
+.agenda-gap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 78px;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.agenda-gap::before {
+  content: "";
+  width: 18px;
+  border-top: 1px dashed var(--label-3);
+  opacity: 0.6;
+}
+
+.cat-focus { background: var(--cat-focus-bg); color: var(--cat-focus-ink); }
+.cat-task { background: var(--cat-task-bg); color: var(--cat-task-ink); }
+
+/* ---------- Calendar ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendar-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1280px) {
+  .calendar-layout { grid-template-columns: minmax(0, 1fr) 272px; }
+}
+
+.cal { overflow: hidden; }
+
+.cal-head,
+.cal-due,
+.cal-body {
+  display: grid;
+  grid-template-columns: 56px repeat(var(--n), minmax(0, 1fr));
+}
+
+.cal-head { border-bottom: 0.5px solid var(--separator); }
+
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  height: 48px;
+  padding-top: 14px;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+}
+
+.day-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 13px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--label);
+  font-variant-numeric: tabular-nums;
+  transform: translateY(1px);
+}
+
+.day-head.is-today { color: var(--now); }
+.day-head.is-today .day-num { background: var(--now); color: var(--on-now); }
+.day-head.is-weekend { color: var(--label-3); }
+
+.cal-due {
+  min-height: 34px;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.cal-due-label {
+  padding: 9px 0 0 12px;
+  font-size: var(--text-tiny);
+  color: var(--label-3);
+}
+
+.due-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 3px;
+  border-left: 0.5px solid var(--separator);
+}
+
+.due-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--label-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.due-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-chip.is-overdue { color: var(--red); }
+
+.cal-scroll {
+  position: relative;
+  height: min(640px, calc(100vh - 260px));
+  min-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cal-body { position: relative; }
+
+.gutter {
+  position: relative;
+  height: calc(var(--hour) * 24);
+  font-size: var(--text-tiny);
+  color: var(--label-3);
+}
+
+.gutter span {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+}
+
+.gutter .gutter-now {
+  z-index: 3;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--now);
+  font-weight: 600;
+}
+
+.calendar-day {
+  position: relative;
+  min-width: 0;
+  border-left: 0.5px solid var(--separator);
+}
+
+.calendar-day.is-weekend { background: color-mix(in srgb, var(--surface) 97.5%, var(--label)); }
+
+.calendar-day-body {
+  position: relative;
+  height: calc(var(--hour) * 24);
+  background-image: repeating-linear-gradient(to bottom, var(--separator) 0 1px, transparent 1px var(--hour));
+  cursor: cell;
+}
+
+.calendar-block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: var(--text-caption);
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: filter var(--dur-hover) ease, transform var(--dur-press) var(--ease-out);
+  animation: block-in 260ms var(--ease-out);
+}
+
+.calendar-block b {
+  max-width: 100%;
+  font-weight: 600;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-block span { opacity: 0.85; white-space: nowrap; }
+.calendar-block.is-short { flex-direction: row; gap: 6px; padding-top: 2px; }
+.calendar-block.is-past { opacity: 0.55; }
+.calendar-block:active { transform: scale(0.98); }
+
+.calendar-block-pending {
+  outline: 1px dashed currentColor;
+  outline-offset: -1px;
+  opacity: 0.8;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .calendar-block:hover { filter: brightness(0.97) saturate(1.1); }
+}
+
+@keyframes block-in {
+  from { opacity: 0; transform: scale(0.96); filter: blur(4px); }
+}
+
+.calendar-draft {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  border-radius: 7px;
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+.now-line {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  border-top: 1.5px solid var(--now);
+  pointer-events: none;
+}
+
+.now-line::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -4.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--now);
+}
+
+.now-line.is-faint { border-top-width: 1px; opacity: 0.35; }
+.now-line.is-faint::before { display: none; }
+
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.tray-title { font-size: 1rem; font-weight: 600; }
+.tray-note { font-size: var(--text-sub); color: var(--label-3); margin-top: 3px; }
+.tray-list { display: flex; flex-direction: column; gap: 8px; }
+
+.tray-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.tray-item div { flex: 1; min-width: 0; }
+.tray-item b { display: block; font-weight: 500; font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-item span { font-size: var(--text-caption); color: var(--label-3); }
+.tray-item span.is-overdue { color: var(--red); }
+
+.tray-sum {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--separator);
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: -8px -4px 14px;
+}
+
+.strip-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 0;
+  border-radius: 12px;
+}
+
+.strip-weekday { font-size: var(--text-tiny); font-weight: 500; color: var(--label-3); }
+
+.strip-date {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+.strip-day.is-today .strip-date { color: var(--now); }
+.strip-day.is-selected .strip-date { background: var(--label); color: var(--surface); }
+.strip-day.is-selected.is-today .strip-date { background: var(--now); color: var(--on-now); }
+.strip-dots { display: flex; gap: 2px; height: 4px; }
+.strip-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--label-3); opacity: 0.6; }
+
+/* ---------- sheets ---------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+.sheet {
+  position: fixed;
+  z-index: 50;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  width: min(400px, calc(100vw - 20px));
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+  border-radius: var(--r-sheet);
+  transform-origin: top left;
+}
+
+.sheet-body,
+.sheet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.sheet-kind { font-size: var(--text-sub); font-weight: 500; color: var(--label-3); }
+
+.sheet-title {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-title);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.25;
+}
+
+.sheet-title:focus { outline: none; }
+.sheet-title::placeholder { color: var(--label-3); font-weight: 600; }
+
+.form-group {
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+}
+
+.form-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 14px;
+}
+
+.form-row + .form-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  border-top: 0.5px solid var(--separator);
+}
+
+.form-row label,
+.form-row dt { flex: 1; }
+.form-row dd { color: var(--label-2); text-align: right; }
+
+.form-control {
+  min-width: 0;
+  max-width: 62%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.form-control:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+select.form-control { text-align: left; cursor: pointer; }
+
+.form-row.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 14px;
+}
+
+.form-row.stacked label { font-size: var(--text-caption); color: var(--label-3); font-weight: 500; }
+.form-row.stacked .form-control { max-width: none; text-align: left; color: var(--label); padding: 8px 10px; }
+
+.sheet-note { font-size: var(--text-sub); color: var(--label-3); }
+.sheet-section-title { font-size: var(--text-sub); font-weight: 600; color: var(--label-2); margin: 0 4px 8px; }
+.occurrence { justify-content: flex-start; }
+.occurrence-date { color: var(--label); }
+.occurrence.done .occurrence-date { color: var(--label-3); }
+
+/* ---------- phone ---------- */
+
+.tabbar {
+  position: fixed;
+  z-index: 30;
+  left: 16px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  width: calc(100vw - 32px - 60px - 10px);
+  height: 60px;
+  padding: 4px;
+  border-radius: 30px;
+}
+
+.tab {
+  position: relative;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
-  line-height: 1.05;
-  font-size: var(--text-sm);
-  color: var(--text-3);
-}
-
-.calendar-day-number {
-  font-size: var(--text-md);
-  font-weight: 500;
-  color: var(--text);
-}
-
-.calendar-day-today .calendar-day-number {
-  color: var(--accent);
-}
-
-.calendar-day-weekday {
-  font-size: var(--text-xs);
-  letter-spacing: 0.02em;
-}
-
-.calendar-hour {
-  font-size: var(--text-xs);
-  line-height: 1;
-  color: var(--text-4);
-  text-align: right;
-  padding-right: var(--space-1);
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--divider);
-}
-
-.calendar-day {
-  flex: 1 1 0;
-  min-width: 5rem;
-  border-left: 1px solid var(--border);
-}
-
-/* The profile zone's current day: a quiet tint, no motion. */
-.calendar-day-today {
-  background: var(--surface-2);
-}
-
-.calendar-day-today .calendar-day-head {
-  color: var(--accent);
+  border-radius: 26px;
+  font-size: var(--text-tiny);
   font-weight: 600;
+  color: var(--label-2);
 }
 
-.calendar-day-body {
-  position: relative;
+.tab > * { position: relative; }
+.tab .tab-pill { position: absolute; inset: 0; border-radius: inherit; background: var(--pill); box-shadow: var(--pill-shadow); }
+.tab-icon { width: 22px; height: 22px; }
+.tab[aria-current="page"] { color: var(--accent); }
+
+.fab {
+  position: fixed;
+  z-index: 30;
+  right: 16px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  color: var(--accent);
+  transition: transform var(--dur-press) var(--ease-out);
 }
 
-/* D2: the delete control is a compact corner affordance, out of the content
-   flow, so the card leads with content instead of a destructive action. It
-   stays a real, always-visible labelled button -- never hover-gated -- so a
-   touch device can still reach it. D1: with the control out of the flow the
-   card no longer needs a one-hour minimum height, so its drawn height stays
-   proportional to its duration and two short blocks in the same hour no
-   longer overlap. */
-.calendar-block {
-  --block-control: 1.25rem;
+.fab svg { width: 24px; height: 24px; }
+
+.account-menu { position: relative; }
+
+.popover {
   position: absolute;
-  left: 2px;
-  right: 2px;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  box-sizing: border-box;
-  /* a tight horizontal inset gives the time label room to sit beside the
-     corner control without truncating */
-  padding: var(--space-1);
-  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--blue) 32%, var(--border));
-  border-radius: var(--r-sm);
-  font-size: var(--text-sm);
-  overflow: hidden;
+  gap: 10px;
+  width: 260px;
+  padding: 14px;
+  border-radius: var(--r-card);
+  transform-origin: top right;
 }
 
-/* A block whose write is not yet acknowledged: a static state, faded and
-   outlined. No pulse or looping animation — it must read as unconfirmed, not
-   as activity. */
-.calendar-block-pending {
-  background: var(--surface-2);
-  border-style: dashed;
-  border-color: var(--border-strong);
-  color: var(--text-3);
-}
+.popover-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.block-time {
-  flex: 0 0 auto;
-  min-width: 0;
-  /* the corner control owns the top-right; the short HH:MM-HH:MM label keeps
-     clear of it inside this gutter, so it never truncates */
-  padding-right: var(--block-control);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-xs);
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-3);
-}
-
-/* the title is the flexible row: in a block too short for its lines it gives
-   up the last line rather than overflowing the card */
-.block-task {
-  flex: 0 1 auto;
-  min-height: 0;
-  padding-right: calc(var(--block-control) + var(--space-1));
-  font-weight: 500;
-  line-height: 1.15;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* a real labelled button pinned to the card's top-right corner: compact, out
-   of the content flow, and always visible so a touch device can reach it */
-.calendar-block button {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: var(--block-control);
-  height: var(--block-control);
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-xs);
-  font-size: var(--text-sm);
-  line-height: 1;
-  color: var(--text-4);
-  background: transparent;
-  border-color: transparent;
-}
-
-/* ---------- narrow viewports: the sidebar becomes a top bar ---------- */
-
-@media (max-width: 720px) {
-  .shell {
-    flex-direction: column;
+@media (max-width: 760px) {
+  .main {
+    margin-left: 0;
+    padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
-
-  .sidebar {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    flex-basis: auto;
-    gap: var(--space-2) var(--space-4);
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .side-label {
-    display: none;
-  }
-
-  .side-nav {
-    flex-direction: row;
-  }
-
-  .nav-item {
+  .topbar { padding: 0 16px; height: 52px; }
+  .content { padding: 0 16px; }
+  .large-title { font-size: 2rem; }
+  .page-head { margin-bottom: 18px; }
+  .toolbar { width: 100%; }
+  .toolbar .button-accent { margin-left: auto; }
+  .cal-scroll { height: calc(100vh - 340px); min-height: 340px; }
+  .sheet {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
     width: auto;
+    max-height: 82vh;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   }
-
-  .side-foot {
-    flex-direction: row;
-    align-items: center;
-    margin-top: 0;
-    margin-left: auto;
-    padding-top: 0;
-    border-top: none;
-    /* the identity line is one nowrap string wider than the bar, and as a
-       flex item .side-foot would otherwise hold its min-content width: the
-       line then ran past the viewport edge and carried the Sign out control
-       off screen with it. With this it shrinks, .who ellipsizes and Sign out
-       stays reachable. */
-    min-width: 0;
-  }
-
-  /* the sidebar becomes the top bar, so its items and the surface content
-     share one left edge: 16 px, the same as .surface below it */
-  .sidebar {
-    padding-inline: var(--space-4);
-  }
-
-  .surface {
-    padding: var(--space-6) var(--space-4);
-  }
-
-  /* D3 (mobile): Home's 32 px section gap is a desktop value; at 390 px the
-     family rhythm is 20-24 px (Tasks groups, form and toolbar gaps), so the
-     sections step down to match instead of doubling the scroll. */
-  .home-section {
-    margin-top: var(--space-6);
-  }
-
-  /* the inset/centred column is a desktop treatment; on a narrow viewport
-     the surface takes the full width again */
-  .surface-inset {
-    margin-inline: 0;
-  }
-
-  /* D1/D2: the blocks are stacked cards, so the day columns keep enough width
-     for a comfortable card instead of squeezing the time label and its
-     control; the grid scrolls sideways as it already did */
-  .calendar-day {
-    min-width: 8rem;
-  }
-
-  /* the details panel becomes a full overlay on narrow viewports, so it is a
-     surface of its own and its content column matches the others (16 px) */
-  .task-details {
-    inset: 0;
-    width: auto;
-    padding-inline: var(--space-4);
-    /* the panel is a full overlay here, so it drops the sheet's rounded
-       left edge and shows square to the viewport */
-    border-radius: 0;
-  }
-
-  /* C2 (mobile): an absolute popover would clip against the viewport edge, so
-     the revealed creation form becomes an inline sheet under its control */
-  .block-form {
-    position: static;
-    width: auto;
-    margin-top: var(--space-2);
-  }
+  .toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
 }
 
-/* ---------- phone: a single day instead of a week (C4) ----------
-   At 640 px and below the grid renders one day column, so the day's blocks
-   are readable at phone width instead of a clipped third column. The weekend
-   grid is untouched: the JS narrow-viewport gate and this breakpoint share the
-   640 px value, so the week view only ever renders above it. */
-@media (max-width: 640px) {
-  /* the toolbar is one compact line: the week label leaves the flow because
-     the day header states which day is shown, and the two week-step buttons
-     leave it because the day header's own stepper already navigates the
-     single visible day (rolling into the adjacent week at the edges). Today
-     stays as the one-tap return to now. Desktop keeps all four controls. */
-  .calendar-toolbar {
-    flex-wrap: nowrap;
-  }
+/* ---------- sign in ---------- */
 
-  .week-nav-button {
-    display: none;
-  }
-
-  .calendar-week-label {
-    display: none;
-  }
-
-  /* the single day's header becomes a row: previous / day label / next */
-  .calendar-day-head {
-    flex-direction: row;
-    gap: var(--space-2);
-    justify-content: center;
-  }
-
-  .calendar-day-label {
-    font-size: var(--text-md);
-    font-weight: 500;
-    color: var(--text);
-  }
-
-  .calendar-day-today .calendar-day-label {
-    color: var(--accent);
-  }
-
-  .day-nav-button {
-    width: var(--h-sm);
-    height: var(--h-sm);
-    padding: 0;
-    border-color: transparent;
-    background: transparent;
-    font-size: var(--text-lg);
-    line-height: 1;
-    color: var(--text-2);
-  }
-
-  /* the one rendered day fills the grid instead of the 8 rem week-column
-     minimum that made the week scroll sideways */
-  .calendar-day {
-    min-width: 0;
-  }
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px 16px;
 }
 
-/* ---------- motion (DP1b) ----------
-   Curves and durations from odd/design/motion-system.md. Transform and
-   opacity only, named properties only, never `transition: all`. Hover and
-   press are gated to cursor devices, which the source omits. Reduced motion
-   (the OS preference, or the in-app [data-motion="reduce"] attribute) keeps
-   feedback but gentler: opacity-only, ~120 ms — not zero. Durations are
-   validated by eye, not asserted. */
-
-:root {
-  /* curves — canonical, from the animate skill's table */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease: var(--ease-out);
-
-  /* durations — named by intent, not by size */
-  --dur-press: 120ms;
-  --dur-hover: 140ms;
-  --dur-enter: 200ms;
-  --dur-panel: 280ms;
-  --dur-signature: 400ms;
-  --dur-reduce: 120ms;
-
-  /* the two reduce triggers swap these assignments, so the rules below are
-     written once and stay correct in both modes */
-  --motion-view: view-enter var(--dur-hover) var(--ease-out);
-  --motion-press: transform var(--dur-press) var(--ease-out);
-  --press-transform: scale(0.98);
-  --motion-hover: background-color var(--dur-hover) ease, border-color var(--dur-hover) ease;
-  --motion-panel: panel-in var(--dur-panel) var(--ease-drawer);
-  --motion-pop: transform var(--dur-signature) var(--spring), opacity var(--dur-press) ease-out;
-  --motion-wash: task-wash var(--dur-signature) var(--ease);
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(400px, 100%);
+  padding: 28px 24px 24px;
 }
+
+.gate-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.022em; }
+.gate .subtitle { margin-top: -10px; }
+.gate-form { display: flex; flex-direction: column; gap: 14px; }
+.gate-form .form-group { background: var(--surface-2); box-shadow: none; }
+.gate-form .form-row.stacked .form-control { background: var(--surface); }
+.gate-actions { display: flex; flex-direction: column; gap: 8px; }
+.gate-actions .button { height: 40px; }
+
+/* ---------- reduced motion: gentler, not zero ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion-view: view-fade var(--dur-reduce) ease-out;
-    --motion-press: opacity var(--dur-reduce) ease-out;
-    --press-transform: none;
-    --motion-panel: view-fade var(--dur-reduce) ease-out;
-    --motion-pop: opacity var(--dur-reduce) ease-out;
-    --motion-wash: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
   }
-
-  button:not(:disabled):active {
-    opacity: 0.6;
-  }
-
-  /* reduced motion keeps the scrim, only gentler: a short opacity fade */
-  .task-details-scrim {
-    animation: view-fade var(--dur-reduce) ease-out;
-  }
-}
-
-/* the in-app setting mirrors the OS preference (no UI exposes it yet) */
-:root[data-motion="reduce"] {
-  --motion-view: view-fade var(--dur-reduce) ease-out;
-  --motion-press: opacity var(--dur-reduce) ease-out;
-  --press-transform: none;
-  --motion-panel: view-fade var(--dur-reduce) ease-out;
-  --motion-pop: opacity var(--dur-reduce) ease-out;
-  --motion-wash: none;
-}
-
-:root[data-motion="reduce"] button:not(:disabled):active {
-  opacity: 0.6;
-}
-
-:root[data-motion="reduce"] .task-details-scrim {
-  animation: view-fade var(--dur-reduce) ease-out;
-}
-
-/* view switch: opacity plus a 4 px rise. App.tsx ties the React key of the
-   view surface to the view, so every switch remounts and replays this. */
-.surface > section {
-  animation: var(--motion-view);
-}
-
-@keyframes view-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-@keyframes view-fade {
-  from {
-    opacity: 0;
-  }
-}
-
-/* the details panel slides in a step from the right (drawer curve); reduce
-   modes swap it for the plain fade through --motion-panel */
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-}
-
-/* hover and press exist only where a cursor can produce them */
-@media (hover: hover) and (pointer: fine) {
-  button:not(:disabled) {
-    transition: var(--motion-press), var(--motion-hover);
-  }
-
-  button:not(:disabled):active {
-    transform: var(--press-transform);
-  }
-
-  .nav-item:hover {
-    background: var(--surface-3);
-    color: var(--text);
-  }
-
-  button:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-
-  /* the row opener stays transparent through hover; the row card itself is
-     the hover affordance */
-  .task-open:hover:not(:disabled) {
-    background: none;
+  .check,
+  .topbar::before,
+  .topbar-title {
+    transition-duration: 150ms !important;
   }
 }
