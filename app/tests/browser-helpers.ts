@@ -12,7 +12,7 @@ const PROJECT_ID = "demo-calendar-app";
 const FIRESTORE_REST =
   "http://127.0.0.1:8187/v1/projects/demo-calendar-app/databases/(default)/documents";
 
-export const password = "redacted-pass";
+export const password = "local-emulator-password";
 
 /* ---------- Auth emulator REST (no sign-in) ---------- */
 

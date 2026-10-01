@@ -76,12 +76,22 @@ be installed. To keep emulators running for development instead:
 `npm run test:smoke` is the one exception to "local only": it runs a single Playwright test
 against the **deployed site** (`https://cumbia-4ca6e.web.app`, configured in
 `playwright.smoke.config.ts`) with no local server and no emulator. It signs in to one fixed,
-clearly-marked smoke account (`offline-smoke@example.com`, created on the first ever run and
-signed in afterwards), creates a task through the UI, reloads online to confirm the task
-survives a fresh load, then takes the browser offline and reloads again to prove both offline
-claims: the service worker serves the shell, and Firestore's persistent cache renders the task.
-It starts no emulator and is matched only by `smoke.spec.ts`, so neither the local suite nor the
-smoke run picks up the other's tests.
+clearly-marked smoke account (created on the first ever run and signed in afterwards), creates a
+task through the UI, reloads online to confirm the task survives a fresh load, then takes the
+browser offline and reloads again to prove both offline claims: the service worker serves the
+shell, and Firestore's persistent cache renders the task. It starts no emulator and is matched
+only by `smoke.spec.ts`, so neither the local suite nor the smoke run picks up the other's tests.
+
+The smoke credentials are read from the environment, never from source. Copy `app/.env.example`
+to `app/.env` and fill it in, or export them in the shell:
+
+```
+SMOKE_EMAIL=... SMOKE_PASSWORD=... npm run test:smoke
+```
+
+Without them the smoke job fails fast with a clear message; the unit and emulator suites never
+need them. Emulator-only passwords (the browser suite and `ui-capture.mjs`) are a separate,
+non-secret local value.
 
 ```
 npm run emulators    # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187

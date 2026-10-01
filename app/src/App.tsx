@@ -50,7 +50,9 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const scrolled = useScrolled();
   const titleHidden = useTitleScrolledAway(view);
 
-  useEffect(() => window.scrollTo(0, 0), [view]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [view]);
 
   useEffect(() => {
     const onError = (event: Event) => setLateError((event as CustomEvent<string>).detail);

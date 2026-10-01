@@ -37,7 +37,7 @@ const OUT_ROOT = "/tmp/ui-loop";
 /* ---------- emulator REST contract (mirrors tests/browser-helpers.ts) ---------- */
 
 const PROJECT_ID = "demo-calendar-app";
-const PASSWORD = "redacted-pass";
+const PASSWORD = "local-emulator-password";
 const PROFILE_TZ = "America/Sao_Paulo"; // UTC-3 all year (Brazil dropped DST in 2019)
 const ZONE_OFFSET = "-03:00";
 const AUTH_EMULATOR = "http://127.0.0.1:9199";

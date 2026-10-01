@@ -1,3 +1,4 @@
+# ----------------------------
 # Local Pi runtime state
 .atl/
 
@@ -10,3 +11,11 @@
 # Never commit credentials
 *-adminsdk-*.json
 *serviceAccount*.json
+
+# Environment files (never commit secrets); keep the example
+.env
+.env.*
+!.env.example
+
+# Local agent tooling (vendored skills are not project material)
+.claude/

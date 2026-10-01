@@ -102,10 +102,10 @@ Closed in `odd/tasks/personal-planner-mvp.md`; each entry names its decision id 
 
 ## Evidence on Hand
 
-- **UI target:** The `references/*.mp4` recordings are the intended UI target — the visual direction to reproduce — not generic evidence.
-- **Observed reference:** `references/brave_9aG7UlfC4Y.mp4` shows Home summary/cards and promotional perspective.
-- **Observed reference:** `references/brave_agommCZfLm.mp4` shows a Calendar time grid plus task list.
-- **Observed reference:** `references/brave_L1xfTRXpX0.mp4` shows a Tasks grouped list and right details panel.
+- **UI target:** The original reference recordings (Home, Calendar and Tasks) were the intended UI target — the visual direction to reproduce — not generic evidence. They were removed from the repository as large binaries; `odd/design/reference-design-language.md` is the durable analysis record.
+- **Observed reference (Home):** Home summary/cards and promotional perspective.
+- **Observed reference (Calendar):** a Calendar time grid plus task list.
+- **Observed reference (Tasks):** a Tasks grouped list and right details panel.
 - **Not confirmed:** The Tasks reference does not confirm a creation flow.
 - **Limit:** Full motion analysis of the reference videos has not been completed.
 

@@ -15,8 +15,26 @@ import { expect, test, type Page } from "@playwright/test";
 
 test.setTimeout(180_000);
 
-const SMOKE_EMAIL = "offline-smoke@example.com";
-const SMOKE_PASSWORD = "redacted-pass";
+/**
+ * Credentials come from the environment, never from source. `app/.env` is
+ * loaded when present; otherwise export SMOKE_EMAIL and SMOKE_PASSWORD. See
+ * `app/.env.example`. The account is a fixed, clearly-marked smoke user.
+ */
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file: use the ambient environment.
+}
+
+const SMOKE_EMAIL = process.env.SMOKE_EMAIL;
+const SMOKE_PASSWORD = process.env.SMOKE_PASSWORD;
+
+if (!SMOKE_EMAIL || !SMOKE_PASSWORD) {
+  throw new Error(
+    "Smoke credentials are not configured. Set SMOKE_EMAIL and SMOKE_PASSWORD " +
+      "(copy app/.env.example to app/.env and fill it in).",
+  );
+}
 
 /**
  * Waits for the precache worker to finish installing and activate. This is a
