@@ -1,14 +1,23 @@
 /* Command palette (CommandPalette.tsx). Co-located so the palette's material
    and motion stay out of app.css.
 
-   Motion: none. The palette is opened by a keyboard shortcut hundreds of times a
-   day -- the frequency tier where the skills say no animation at all, and where
-   even a 120 ms entrance was felt as lag on the next keystroke. It is painted at
-   rest on the frame it opens, and it leaves with no animation whatsoever.
+   Motion (C1): a short soft appearance, then at rest. The palette is opened by a
+   keyboard shortcut hundreds of times a day, so it takes the shortest entrance
+   the app has instead of a sheet's flight: opacity 0 -> 1 with a 2% scale over
+   150 ms, both composited (transform and opacity only, AGENTS.md), on the same
+   --ease-out curve every other appearance uses. The entrance is a CSS animation
+   on [open] rather than a transition with @starting-style: the dialog enters the
+   top layer through showModal(), and an animation simply starts on the first
+   frame the element is displayed (the ::backdrop included), where an entry
+   transition needs its starting frame to survive the display change -- a
+   pattern that silently degrades to no entrance when it is not honoured. Focus
+   is never queued behind the animation: showModal() and input.focus() run in
+   one effect, so a key typed on the opening frame lands in the field.
+
    Nothing inside transitions while the user types: the selected row is painted
-   by [aria-selected] with no transition on the row. Reduced motion is covered by
-   the app's single contract in app.css (prefers-reduced-motion collapses every
-   transition duration), not a second rule here. */
+   by [aria-selected] with no transition on the row. The close stays instant:
+   the dialog unmounts, and a rapid Escape + Cmd+K mounts a fresh dialog whose
+   entrance starts from its first frame (interruption works). */
 
 /* Material (G6): the thick sheet material from glass.css, `glass-thick` on the
    dialog. No lens, on purpose. The lens needs a container with no backdrop
@@ -17,6 +26,11 @@
    would also land on text: the input, the rows and the hint are all text. */
 
 dialog.palette {
+  /* The surface-appearance token: motion.ts's dur.pop (0.15 s), the 150 ms a
+     sheet takes when it appears. The --dur-* ladder in app.css stops at
+     --dur-hover (140 ms), so the value is named here; it becomes an app.css
+     token when the motion-token clean-up lands. */
+  --dur-pop: 150ms;
   position: fixed;
   inset: 0;
   margin: auto;
@@ -30,6 +44,40 @@ dialog.palette {
   border-radius: var(--r-sheet);
   color: var(--label);
   overflow: hidden;
+}
+
+/* Entrance: 150 ms in, and the scrim fades on the same beat so the surface and
+   the dimming behind it arrive as one gesture. The keyframes end at the resting
+   style, so the settled dialog is plain opacity 1 / no transform. */
+dialog.palette[open] {
+  animation: palette-in var(--dur-pop) var(--ease-out);
+}
+
+dialog.palette[open]::backdrop {
+  animation: palette-scrim-in var(--dur-pop) var(--ease-out);
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes palette-scrim-in {
+  from { opacity: 0; }
+}
+
+/* Reduced motion: the fade stays (it is not movement), the scale goes, and the
+   app-wide rule in app.css collapses the duration to 1 ms. */
+@keyframes palette-fade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.palette[open] {
+    animation-name: palette-fade;
+  }
 }
 
 /* The palette mounts closed and the effect below calls showModal(). Without
