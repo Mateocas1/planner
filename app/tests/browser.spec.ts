@@ -420,6 +420,10 @@ test("the row morphs into the details panel and focus returns to the row", async
   // the caret lands in the panel, and the row grew into it rather than popped
   await expect(panel.getByLabel("Rename task")).toBeFocused();
   await expect.poll(async () => (await viewTransitions(page)).ready).toBe(1);
+  // the morph drops the blur from the captured box only (app.css); the panel on
+  // screen keeps the glass material glass.css gives it
+  const material = await panel.evaluate(element => getComputedStyle(element).backdropFilter);
+  expect(material).toContain("blur");
 
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
