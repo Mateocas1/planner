@@ -12,8 +12,8 @@ for (const [name, value] of Object.entries(required)) {
 export default defineConfig({
   testDir: "./tests",
   // `browser.spec.ts` holds the end-to-end flows; feature specs (sync-status,
-  // undo, manip) are named after their feature. The deployed-site smoke suite
-  // has its own config, so it is the only file excluded here.
+  // undo, manip, travel) are named after their feature. The deployed-site smoke
+  // suite has its own config, so it is the only file excluded here.
   testMatch: ["*.spec.ts"],
   testIgnore: ["smoke.spec.ts"],
   use: {

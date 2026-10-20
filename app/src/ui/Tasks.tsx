@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesFrequency } from "../data/series.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
@@ -46,9 +46,11 @@ function upcomingOccurrences(series: SeriesView, completions: Record<string, str
 
 const frequencyLabel: Record<SeriesView["frequency"], string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 
-/** How long a just-completed row stays in place before it moves to Completed,
- * so the check and the strike are seen before the row travels. */
-const settleMs = 480;
+/** How long a just-toggled row stays in place before it travels to its new
+ * group: long enough for the check to land, short enough to stay a beat and not
+ * a wait. It matches the check-pop below, so the glyph finishes exactly as the
+ * row leaves. Reduced motion drops the beat entirely and swaps groups at once. */
+const settleMs = 160;
 
 /**
  * The Tasks surface: inset grouped lists (Repeating, Open, Completed) of
@@ -78,14 +80,37 @@ export function Tasks({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement } | null>(null);
-  // Rows whose completion the user just performed: the wash plays only on
-  // these, never on mount for rows that were already completed.
+  // Rows whose completion the user just performed and that have landed in their
+  // new group: the wash starts there, once, and never on mount for rows that were
+  // already completed.
   const [washIds, setWashIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+  // Rows whose check is mid-pop: the glyph acknowledgment belongs to the row
+  // where it was pressed, so it is dropped the instant the row travels and never
+  // replays on the node that lands in the new group.
+  const [popIds, setPopIds] = useState<ReadonlySet<string>>(() => new Set<string>());
   // Rows held in their old group for a beat after a toggle (see settleMs).
   const [settling, setSettling] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const timers = useRef(new Map<string, number>());
+  // A row's own node is replaced when it changes group, so its focus is restored
+  // once it lands. The id waits here until the row is in its final group.
+  const restoreFocus = useRef<string | null>(null);
+  const reduced = useReducedMotion();
+  const travel = reduced ? 0 : settleMs;
 
   useEffect(() => () => timers.current.forEach(id => window.clearTimeout(id)), []);
+
+  // Give focus back to the check that travelled: same control, new group.
+  useEffect(() => {
+    const id = restoreFocus.current;
+    if (id === null || settling.has(id) || busy) return;
+    // the user has since moved to another check: never steal their focus
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement && active.classList.contains("task-check")) return;
+    const check = document.querySelector<HTMLInputElement>(`li.task[data-task-id="${CSS.escape(id)}"] input.task-check`);
+    if (!check || check.disabled) return;
+    restoreFocus.current = null;
+    check.focus({ preventScroll: true });
+  }, [settling, busy]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -100,7 +125,13 @@ export function Tasks({
   }
 
   function completeTask(task: TaskView, completed: boolean) {
-    setSettling(previous => new Map(previous).set(task.id, task.completed));
+    const row = document.activeElement instanceof Element ? document.activeElement.closest("li.task") : null;
+    if (row !== null && row.getAttribute("data-task-id") === task.id) restoreFocus.current = task.id;
+    // Where to show the row for the beat: the group it is in right now, so a
+    // rapid second toggle re-arms the beat instead of making the row jump
+    // twice, and the row only ever travels once to its final group.
+    const shown = settling.get(task.id) ?? task.completed;
+    setSettling(previous => new Map(previous).set(task.id, shown));
     window.clearTimeout(timers.current.get(task.id));
     timers.current.set(
       task.id,
@@ -110,9 +141,24 @@ export function Tasks({
           next.delete(task.id);
           return next;
         });
-      }, settleMs),
+        // the check has landed; only now does the row leave its group, and the
+        // wash starts in the same render, on the node that arrives, so it plays
+        // once for the completion instead of restarting on the node that travels
+        setWashIds(previous => {
+          const next = new Set(previous);
+          if (completed) next.add(task.id);
+          else next.delete(task.id);
+          return next;
+        });
+        setPopIds(previous => {
+          if (!previous.has(task.id)) return previous;
+          const next = new Set(previous);
+          next.delete(task.id);
+          return next;
+        });
+      }, travel),
     );
-    setWashIds(previous => {
+    setPopIds(previous => {
       const next = new Set(previous);
       if (completed) next.add(task.id);
       else next.delete(task.id);
@@ -142,12 +188,18 @@ export function Tasks({
   const overdue = tasks.filter(task => !task.completed && task.deadline !== undefined && isPastDateKey(task.deadline, today)).length;
 
   const taskRow = (task: TaskView) => (
+    // layout="position": only the box moves, so no title is ever scaled on the
+    // way; layoutId lets the arriving node continue from the departed one, and
+    // Motion retargets mid-flight, so a second toggle never stacks a second
+    // travel. snappy, not smooth: a row crossing two groups is a list reflow,
+    // not a surface entrance, and it must land under 300 ms.
     <motion.li
       key={task.id}
-      layout="position"
-      layoutId={`task-${task.id}`}
-      transition={spring.smooth}
-      className={`row task${task.completed ? " completed" : ""}${washIds.has(task.id) ? " task-wash" : ""}`}
+      layout={reduced ? false : "position"}
+      layoutId={reduced ? undefined : `task-${task.id}`}
+      transition={spring.snappy}
+      className={`row task${task.completed ? " completed" : ""}${washIds.has(task.id) ? " task-wash" : ""}${popIds.has(task.id) ? " task-pop" : ""}`}
+      data-task-id={task.id}
       data-pending={task.pending ? "true" : "false"}
       onAnimationEnd={event => endTaskWash(task.id, event)}
     >

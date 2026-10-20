@@ -899,8 +899,12 @@ time,
 
 .task-wash { animation: task-wash 700ms var(--ease-out); }
 
-.task-wash .check:checked {
-  animation: check-pop 450ms var(--ease-spring);
+/* The glyph acknowledgment is scoped to the row that was toggled, not to the
+   wash: the node that lands in the new group inherits the wash but never the
+   pop, so the check is never played twice. 200 ms with the overshoot at 70 %
+   lands the peak just before the row travels (Tasks.tsx settleMs). */
+.task-pop .check:checked {
+  animation: check-pop 200ms var(--ease-spring);
 }
 
 @keyframes task-wash {
@@ -910,7 +914,7 @@ time,
 
 @keyframes check-pop {
   0% { transform: scale(0.6); }
-  60% { transform: scale(1.12); }
+  70% { transform: scale(1.12); }
   100% { transform: scale(1); }
 }
 
