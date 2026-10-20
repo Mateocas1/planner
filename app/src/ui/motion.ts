@@ -54,8 +54,18 @@ export function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-/** The phone breakpoint shared by the shell and the calendar (DESIGN.md §3). */
-export const phoneQuery = "(max-width: 760px)";
+/**
+ * The phone breakpoint shared by the shell and the calendar (DESIGN.md §3).
+ *
+ * Width alone was wrong for a phone held sideways: 844x390 is wider than a
+ * tablet's portrait width, so it got the desktop sidebar — 244 px of a 390 px
+ * screen, with the sign-out row scrolled out of a 370 px column
+ * (odd/research/responsive-audit.md F4). A viewport that is both narrow and
+ * short is a phone in landscape, and it gets the phone shell. The same string
+ * is repeated in the four phone CSS blocks; media queries cannot share a
+ * constant.
+ */
+export const phoneQuery = "(max-width: 760px), (max-width: 1024px) and (max-height: 480px)";
 
 /**
  * The width a seven-column week needs to stay readable. A tablet is wide enough

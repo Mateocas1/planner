@@ -40,7 +40,7 @@ dialog.palette {
   margin: auto;
   display: flex;
   flex-direction: column;
-  width: min(560px, calc(100vw - 32px));
+  width: min(560px, calc(100% - 32px));
   max-width: none;
   max-height: min(560px, calc(100vh - 32px));
   /* the inset is subtracted here too: a short band must not leave a dialog
@@ -231,9 +231,9 @@ dialog.palette::backdrop {
   .palette-input { min-height: 44px; }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
   dialog.palette {
-    width: calc(100vw - 16px);
+    width: calc(100% - 16px);
     max-height: calc(100vh - 96px);
     max-height: calc(100dvh - 96px - var(--kb-inset, 0px));
   }
