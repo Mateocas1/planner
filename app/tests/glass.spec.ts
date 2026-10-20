@@ -229,3 +229,102 @@ function parseDuration(value: string) {
   const [amount, unit] = value.split(/(?=[a-z]+$)/);
   return unit === "s" ? Number(amount) * 1000 : Number(amount);
 }
+
+/**
+ * The sheen is state held in two custom properties on the hovered element and
+ * rendered by the pill's ::after. This reads all of it in one shot.
+ */
+async function readSheen(page: Page) {
+  return page.evaluate(() => {
+    const button = document.querySelector<HTMLElement>("[data-sheen]");
+    const pill = button?.querySelector<HTMLElement>(".nav-pill, .tab-pill");
+    if (!button || !pill) return null;
+    const sheen = getComputedStyle(pill, "::after");
+    const box = button.getBoundingClientRect();
+    return {
+      inline: button.getAttribute("style") ?? "",
+      x: button.style.getPropertyValue("--sheen-x"),
+      y: button.style.getPropertyValue("--sheen-y"),
+      width: box.width,
+      height: box.height,
+      content: sheen.content,
+      display: sheen.display,
+      opacity: sheen.opacity,
+      transition: sheen.transitionProperty,
+      transform: sheen.transform,
+    };
+  });
+}
+
+test("sheen: one pointer-tracked highlight, written as custom properties", async ({ page }) => {
+  await enterApp(page);
+
+  /* Restraint is the spec: at most three tracked elements, and only the one
+     holding the active slug exists at a time. */
+  const tracked = await page.locator("[data-sheen]").count();
+  expect(tracked).toBeGreaterThan(0);
+  expect(tracked).toBeLessThanOrEqual(3);
+
+  const idle = await readSheen(page);
+  expect(idle).not.toBeNull();
+  expect(idle!.inline).toBe("");
+  expect(idle!.content).not.toBe("none");
+  expect(idle!.opacity).toBe("0");
+  /* Nothing but opacity is animated, and nothing waits on a layout property. */
+  expect(idle!.transition).toBe("opacity");
+
+  const button = page.locator("[data-sheen]").first();
+  const box = (await button.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.58);
+  await expect.poll(async () => (await readSheen(page))!.x).not.toBe("");
+
+  const hovered = (await readSheen(page))!;
+  /* The variables carry the pointer offset inside the element, in pixels. */
+  expect(Number.parseFloat(hovered.x)).toBeGreaterThan(hovered.width * 0.6);
+  expect(Number.parseFloat(hovered.x)).toBeLessThanOrEqual(hovered.width);
+  expect(Number.parseFloat(hovered.y)).toBeGreaterThan(0);
+  expect(Number.parseFloat(hovered.y)).toBeLessThanOrEqual(hovered.height);
+  /* Only custom properties are written: no inline width, top or transform. */
+  expect(hovered.inline.replace(/--sheen-[xy]: -?[\d.]+px;?\s*/g, "").trim()).toBe("");
+  /* The highlight is a transform on the layer, never a re-layout. */
+  expect(hovered.transform).toContain("matrix");
+  await expect.poll(async () => (await readSheen(page))!.opacity).toBe("1");
+  mkdirSync(shotDir, { recursive: true });
+  await page.locator(".sidebar").screenshot({ path: `${shotDir}/light-sheen.png` });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.locator(".sidebar").screenshot({ path: `${shotDir}/dark-sheen.png` });
+  await page.emulateMedia({ colorScheme: "light" });
+
+  /* Leaving the slug clears the state instead of freezing the highlight. */
+  await page.mouse.move(1, 1);
+  await expect.poll(async () => (await readSheen(page))!.opacity).toBe("0");
+  expect((await readSheen(page))!.inline).toBe("");
+
+  /* Reduced motion: the layer is gone and a move writes nothing. */
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect((await readSheen(page))!.display).toBe("none");
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
+  await page.waitForTimeout(120);
+  expect((await readSheen(page))!.inline).toBe("");
+});
+
+test.describe("coarse pointer", () => {
+  /* A touch context reports (hover: none) and (pointer: coarse), which is the
+     media query the sheen gate reads. */
+  test.use({ hasTouch: true });
+
+  test("sheen: no listener and no layer under (hover: none)", async ({ page }) => {
+    await enterApp(page);
+    expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
+
+    const button = page.locator("[data-sheen]").first();
+    const box = (await button.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.waitForTimeout(120);
+
+    const state = await readSheen(page);
+    expect(state).not.toBeNull();
+    expect(state!.inline).toBe("");
+    expect(state!.content).toBe("none");
+  });
+});

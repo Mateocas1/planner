@@ -16,6 +16,9 @@
   --glass-tint-regular: rgb(248 248 250 / 0.68);
   --glass-tint-thick: rgb(250 250 252 / 0.88);
   --glass-sheen: rgb(255 255 255 / 0.4);
+  /* the highlight that follows the pointer: an accent wash, because white on a
+     95%-white pill is invisible */
+  --glass-sheen-track: rgb(0 102 204 / 0.12);
 
   /* specular rim: lit top-left, counter-glint bottom-right, plus thickness */
   --glass-rim-lit: rgb(255 255 255 / 0.92);
@@ -51,6 +54,7 @@
     --glass-tint-regular: rgb(30 30 34 / 0.72);
     --glass-tint-thick: rgb(34 34 38 / 0.9);
     --glass-sheen: rgb(255 255 255 / 0.06);
+    --glass-sheen-track: rgb(255 255 255 / 0.16);
     /* dark mode needs the rim to peak, or the edge disappears */
     --glass-rim-lit: rgb(255 255 255 / 0.28);
     --glass-rim-mid: rgb(255 255 255 / 0.1);
@@ -311,4 +315,62 @@ body::before {
 
 .segmented button[aria-pressed="true"] {
   background-image: linear-gradient(168deg, var(--glass-rim-mid), transparent 58%);
+}
+
+/* ---------- pointer sheen (G4) ---------- */
+
+/* One highlight, tracking the pointer across the glass slug it is over. The
+   layer animates transform and opacity only: the listener writes the pointer
+   position into custom properties and the CSS translates a fixed radial, so a
+   move is one composited frame and no layout read.
+
+   The slug is the only surface that can take it. A pill has a free `::after`;
+   a button does not (rim and press own both pseudos), and a sheen drawn from
+   the element background could not sit above its own tint. Restraint wins
+   either way: the effect belongs on the one element that already reads as a
+   moving object.
+
+   Deviation from §4.2: light mode lights the slug with a low-chroma accent wash
+   instead of white, for the same reason controls darken instead of brightening
+   (see the controls block). Dark mode keeps the white specular. */
+
+@media (hover: hover) and (pointer: fine) {
+  [data-sheen] .nav-pill,
+  [data-sheen] .tab-pill {
+    /* isolation keeps the negative-z highlight above the pill's own tint
+       instead of dropping it behind an ancestor's background */
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  [data-sheen] .nav-pill::after,
+  [data-sheen] .tab-pill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(closest-side, var(--glass-sheen-track), transparent);
+    /* centred on the pointer: the percentage moves the circle by its own size */
+    transform: translate3d(calc(var(--sheen-x, 50%) - 50%), calc(var(--sheen-y, 50%) - 50%), 0);
+    opacity: 0;
+    transition: opacity var(--dur-hover) var(--ease-out);
+  }
+
+  [data-sheen]:hover .nav-pill::after,
+  [data-sheen]:hover .tab-pill::after {
+    opacity: 1;
+  }
+}
+
+/* Movement off: no layer and no listener (the JS gate closes too). */
+@media (prefers-reduced-motion: reduce) {
+  [data-sheen] .nav-pill::after,
+  [data-sheen] .tab-pill::after {
+    display: none;
+  }
 }

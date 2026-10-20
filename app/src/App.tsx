@@ -170,7 +170,7 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
   return (
     <nav aria-label="Main" className="tabbar glass glass-control">
       {views.map(({ id, label, Icon }) => (
-        <button key={id} type="button" className="tab" aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}>
+        <button key={id} type="button" className="tab" aria-current={view === id ? "page" : undefined} data-sheen={view === id ? "" : undefined} onClick={() => onNavigate(id)}>
           {view === id && (
             <motion.span
               layoutId="tab-pill"
