@@ -1,7 +1,6 @@
 /// <reference types="vite-plugin-pwa/client" />
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 // brand.css is the scale itself (--brand-* / --ink-*); app.css maps every colour
 // token onto a step of it, so the scale is loaded first.
@@ -12,6 +11,7 @@ import "./app.css";
 import "./ui/glass.css";
 import { installLens } from "./ui/lens.ts";
 import { installSheen } from "./ui/sheen.ts";
+import { installUpdatePrompt } from "./pwa-update.ts";
 
 // Document-level motion is installed once, outside React: a StrictMode remount
 // must never stack a second pointer listener. The lens gate only sets an
@@ -19,14 +19,13 @@ import { installSheen } from "./ui/sheen.ts";
 installSheen();
 installLens();
 
-// Register the offline app-shell service worker only where the browser has one.
-// `registerSW` is wired to `registerType: "prompt"` in vite.config.ts, and no
-// update callback is passed here: a waiting worker is never activated and the
-// page is never force-reloaded, which would interrupt unsent writes held in the
-// Firestore persistent local cache. See the comment in vite.config.ts.
-if ("serviceWorker" in navigator) {
-  registerSW({ immediate: true });
-}
+// Registers the offline app-shell service worker only where the browser has one.
+// `registerSW` is wired to `registerType: "prompt"` in vite.config.ts: a waiting
+// worker is never activated on its own and the page is never force-reloaded,
+// which would interrupt unsent writes held in the Firestore persistent local
+// cache. `installUpdatePrompt` surfaces that waiting worker as a corner card
+// whose Reload button is the only way a new build takes over (SB1).
+installUpdatePrompt();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

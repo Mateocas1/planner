@@ -20,6 +20,7 @@ import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
 import { useKeyboardInset } from "./ui/viewport.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
+import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
 export type View = "home" | "tasks" | "calendar";
@@ -42,6 +43,9 @@ export default function App() {
       ) : (
         <Shell user={user} view={view} onNavigate={setView} />
       )}
+      {/* Announced outside the shell: an update is just as available on the
+          sign-in screen as inside the app. */}
+      <UpdatePrompt />
     </MotionConfig>
   );
 }
