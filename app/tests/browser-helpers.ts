@@ -1,3 +1,5 @@
+import { expect, type Page } from "@playwright/test";
+
 /**
  * Browser-test helpers that touch the Auth and Firestore emulators.
  *
@@ -215,4 +217,42 @@ export async function readRemoteCompletions(email: string): Promise<Array<{ occu
   const uid = await resolveRemoteUid(email);
   const completions = await listRemoteDocs(uid, "completions");
   return completions.map(doc => doc.data as { occurrenceId: string; completedAt: string });
+}
+
+/* ---------- Signing in through the real form ---------- */
+
+/**
+ * Signs a fresh account up, or an existing one in, through the app's own form,
+ * and waits for the signed-in shell.
+ *
+ * The retry covers one artifact of the local Auth emulator, never app
+ * behaviour. `firebase-tools/lib/emulator/auth/operations.js` asserts
+ * `decoded.payload.iat >= user.validSince` and reports `TOKEN_EXPIRED`; the
+ * emulator stamps `validSince` while it creates the account and `iat` when it
+ * signs the token a moment later, so if the host clock steps *backwards*
+ * between the two stamps it rejects the token it just issued and the SDK's
+ * post-sign-in account lookup fails with `auth/user-token-expired`. WSL2 on this
+ * host steps its clock back 0.7-1.3 s roughly every 15 s (measured with a 50 ms
+ * `Date.now()` sampler), and a sign-up under load takes long enough for both
+ * stamps to straddle a step. The account was created (signUp answered 200), so
+ * re-submitting the same credentials signs it in; every other error still fails
+ * the test, and so does a second artifact.
+ */
+export async function submitAuthForm(page: Page, email: string, kind: "sign up" | "sign in") {
+  await page.goto("/");
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  const submit = page.getByRole("button", {
+    name: kind === "sign up" ? "Create account" : "Sign in",
+    exact: kind === "sign in",
+  });
+  await submit.click();
+  const shell = page.getByText(`Signed in as ${email}`);
+  const clockArtifact = page.getByRole("alert").filter({ hasText: "auth/user-token-expired" });
+  await expect(shell.or(clockArtifact)).toBeVisible();
+  if (await clockArtifact.isVisible()) {
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  }
+  await expect(shell).toBeVisible();
 }

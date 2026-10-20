@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password, readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -8,22 +8,12 @@ function newEmail(prefix: string) {
 }
 
 async function signUp(page: Page, email: string) {
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign up");
 }
 
 /** Signs an existing (remotely seeded) account in through the browser form. */
 async function signInAs(page: Page, email: string) {
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign in");
 }
 
 /** Awaits server-side propagation of a write, then asserts the exact remote state. */
