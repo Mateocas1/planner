@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { password } from "./browser-helpers.ts";
@@ -9,6 +9,11 @@ test.setTimeout(60_000);
 
 /* Screenshots are evidence for the parent review, not assertions. */
 const shotDir = fileURLToPath(new URL("../../odd/runs/glass-shots", import.meta.url));
+
+async function shot(page: Page, name: string) {
+  mkdirSync(shotDir, { recursive: true });
+  await page.screenshot({ path: `${shotDir}/${name}.png` });
+}
 
 function newEmail() {
   return `glass-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
@@ -76,8 +81,7 @@ test("materials: tint, blur and specular rim in light and dark", async ({ page }
   expect(light.rimImage).toContain("linear-gradient");
   expect(light.rimMask).not.toBe("none");
 
-  mkdirSync(shotDir, { recursive: true });
-  await page.screenshot({ path: `${shotDir}/light-page.png` });
+  await shot(page, "light-page");
   await sidebar.screenshot({ path: `${shotDir}/light-sidebar.png` });
 
   /* Dark: the same geometry, a thicker tint and a rim that actually shows. */
@@ -88,7 +92,7 @@ test("materials: tint, blur and specular rim in light and dark", async ({ page }
   const dark = await material();
   expect(dark.backdropFilter).toContain("blur(20px)");
   expect(dark.rimImage).toContain("linear-gradient");
-  await page.screenshot({ path: `${shotDir}/dark-page.png` });
+  await shot(page, "dark-page");
   await sidebar.screenshot({ path: `${shotDir}/dark-sidebar.png` });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -101,7 +105,7 @@ test("materials: tint, blur and specular rim in light and dark", async ({ page }
   });
   expect(thin.backdropFilter).toContain("blur(12px)");
   expect(alphaOf(thin.background)).toBeCloseTo(0.5, 2);
-  await page.screenshot({ path: `${shotDir}/light-phone-tabbar.png` });
+  await shot(page, "light-phone-tabbar");
 });
 
 test("reduced transparency: solid surfaces instead of blur", async ({ page }) => {
@@ -155,3 +159,73 @@ test("forced colors: solid canvas surfaces with a real border", async ({ page })
   expect(surface.rimDisplay).toBe("none");
   expect(surface.blobDisplay).toBe("none");
 });
+
+test("controls: rim, pill styling and an opacity-only press", async ({ page }) => {
+  await enterApp(page);
+
+  /* This slice is CSS-only and must not reach other crews' surfaces. */
+  const glassCss = readFileSync(new URL("../src/ui/glass.css", import.meta.url), "utf8");
+  for (const forbidden of [".calendar-block", ".toast", ".palette", "sync-line", "view-transition-name", "transform-origin"]) {
+    expect(glassCss).not.toContain(forbidden);
+  }
+
+  const navPill = page.locator(".nav-pill").first();
+  await expect(navPill).toBeVisible();
+  const pill = await navPill.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundImage, shadow: style.boxShadow };
+  });
+  expect(pill.background).toContain("linear-gradient");
+  expect(pill.shadow).toContain("inset");
+
+  const accent = page.locator(".button.button-accent").first();
+  await expect(accent).toBeVisible();
+  const read = () =>
+    accent.evaluate((element) => {
+      const rim = getComputedStyle(element, "::before");
+      const press = getComputedStyle(element, "::after");
+      const box = getComputedStyle(element);
+      return {
+        rimImage: rim.backgroundImage,
+        rimMask: rim.maskImage,
+        pressTransition: press.transitionProperty,
+        pressDuration: press.transitionDuration,
+        pressColor: press.backgroundColor,
+        pressOpacity: press.opacity,
+        transform: box.transform,
+      };
+    });
+
+  const idle = await read();
+  expect(idle.rimImage).toContain("linear-gradient");
+  expect(idle.rimMask).not.toBe("none");
+  /* Press animates opacity and nothing else: no transform or layout property. */
+  expect(idle.pressTransition).toBe("opacity");
+  expect(idle.pressOpacity).toBe("0");
+  /* A saturated fill keeps the white brightening overlay from the spec. */
+  expect(alphaOf(idle.pressColor)).toBeCloseTo(0.16, 2);
+
+  /* Reduced motion: no transition left to run, but the feedback still lands. */
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reduced = await read();
+  expect(parseDuration(reduced.pressDuration)).toBeLessThanOrEqual(1);
+
+  await accent.hover();
+  await page.mouse.down();
+  await expect.poll(async () => (await read()).pressOpacity).toBe("1");
+  await page.mouse.up();
+
+  /* Screenshot the controls in place: segment track, pills and buttons. */
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.keyboard.press("Escape");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
+  await expect(page.locator(".segmented")).toBeVisible();
+  await shot(page, "light-calendar");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await shot(page, "dark-calendar");
+});
+
+function parseDuration(value: string) {
+  const [amount, unit] = value.split(/(?=[a-z]+$)/);
+  return unit === "s" ? Number(amount) * 1000 : Number(amount);
+}

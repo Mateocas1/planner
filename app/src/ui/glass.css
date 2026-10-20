@@ -212,3 +212,103 @@ body::before {
     display: none;
   }
 }
+
+/* ---------- controls (G3) ---------- */
+
+/* Controls get the rim of a glass surface without a backdrop of their own: a
+   backdrop filter per button would blow the layer budget (spec §3). Press is an
+   opacity-only overlay, so it never touches layout or paint of the label.
+   Deviation from §4.1: a white overlay over white paper is invisible, so paper
+   surfaces get a faint ink overlay and saturated fills keep the white one. */
+
+.button,
+.icon-button,
+.segmented button {
+  position: relative;
+  isolation: isolate;
+  --press: rgb(255 255 255 / 0.16);
+}
+
+.button,
+.button-danger,
+.segmented button[aria-pressed="true"] {
+  /* paper surface: darken a touch instead of brightening nothing */
+  --press: rgb(20 20 40 / 0.06);
+}
+
+/* A saturated fill still brightens: white is visible on it in both schemes. */
+.button-accent,
+.button-primary {
+  --press: rgb(255 255 255 / 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  .button,
+  .button-danger,
+  .segmented button[aria-pressed="true"] {
+    --press: rgb(255 255 255 / 0.1);
+  }
+  .button-accent,
+  .button-primary {
+    --press: rgb(255 255 255 / 0.16);
+  }
+}
+
+.button::before,
+.icon-button::before,
+.segmented button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    var(--glass-rim-lit) 0%,
+    var(--glass-rim-mid) 32%,
+    transparent 68%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.button::after,
+.icon-button::after,
+.segmented button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--press);
+  opacity: 0;
+  /* press in at press speed, release at hover speed (asymmetric on purpose) */
+  transition: opacity 200ms var(--ease-out);
+}
+
+.button:active:not(:disabled)::after,
+.icon-button:active:not(:disabled)::after,
+.segmented button:active::after {
+  opacity: 1;
+  transition-duration: 120ms;
+}
+
+/* Pills: the nav and tab indicators are the product's sliding glass slug. */
+.nav-pill,
+.tab .tab-pill {
+  background: linear-gradient(168deg, var(--glass-rim-mid), transparent 52%) var(--pill);
+  box-shadow: inset 0 1px 0 var(--glass-rim-mid), var(--pill-shadow);
+}
+
+.segmented button[aria-pressed="true"] {
+  background-image: linear-gradient(168deg, var(--glass-rim-mid), transparent 58%);
+}
