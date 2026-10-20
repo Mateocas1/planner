@@ -38,6 +38,15 @@ export function CalendarIcon({ className }: IconProps) {
   );
 }
 
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <svg {...base} strokeWidth={1.9} className={className}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className }: IconProps) {
   return (
     <svg {...base} strokeWidth={2.3} className={className}>
