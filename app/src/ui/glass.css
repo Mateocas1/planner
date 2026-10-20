@@ -40,8 +40,8 @@
 
   /* ambient backdrop: what the glass actually refracts */
   --glass-blob-1: rgb(60 92 217 / 0.14); /* brand-600 */
-  --glass-blob-2: rgb(104 76 196 / 0.11);
-  --glass-blob-3: rgb(46 155 79 / 0.07);
+  --glass-blob-2: rgb(134 78 188 / 0.11); /* plum 305, the task hue's family */
+  --glass-blob-3: rgb(4 141 179 / 0.08); /* cyan-blue 225, cool counterweight */
 
   /* tokens app.css already consumes (chrome, sheets, pills, cards) */
   --tint-chrome: var(--glass-tint-regular);
@@ -77,8 +77,8 @@
     --glass-thickness: rgb(11 14 21 / 0.4); /* ink-975 */
     --glass-edge: rgb(244 247 252 / 0.09); /* ink-100 */
     --glass-blob-1: rgb(117 152 255 / 0.16); /* brand-500 */
-    --glass-blob-2: rgb(150 130 230 / 0.12);
-    --glass-blob-3: rgb(108 196 136 / 0.07);
+    --glass-blob-2: rgb(177 136 223 / 0.12); /* plum 305 */
+    --glass-blob-3: rgb(92 184 218 / 0.07); /* cyan-blue 225 */
     --glass-shadow: 0 8px 28px rgb(11 14 21 / 0.36), 0 1px 3px rgb(11 14 21 / 0.3);
     --pill: rgb(244 247 252 / 0.09); /* ink-100 */
     --pill-shadow: 0 0 0 0.5px rgb(244 247 252 / 0.06);
