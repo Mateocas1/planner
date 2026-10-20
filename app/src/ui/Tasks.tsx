@@ -253,7 +253,9 @@ export function Tasks({
           morphOpen(() => setSelected({ kind: "task", id: task.id, origin: row }), row);
         }}
       >
-        <span className="task-title">{task.title}</span>
+        {/* A truncated title still gives the full text on a phone, where there
+            is no hover: the title attribute is the only affordance (audit F10). */}
+        <span className="task-title" title={task.title}>{task.title}</span>
         {task.deadline && (
           <span
             className={`row-meta task-deadline${!task.completed && isPastDateKey(task.deadline, today) ? " task-deadline-overdue" : ""}${!task.completed && task.deadline === today ? " task-deadline-today" : ""}`}
@@ -327,7 +329,7 @@ export function Tasks({
                             morphOpen(() => setSelected({ kind: "series", id: seriesRow.id, origin: row }), row);
                           }}
                         >
-                          <span className="task-title">{seriesRow.title}</span>
+                          <span className="task-title" title={seriesRow.title}>{seriesRow.title}</span>
                           <span className="row-meta">
                             <span className="series-frequency">
                               <RepeatIcon className="meta-icon" />

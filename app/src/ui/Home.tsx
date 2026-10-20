@@ -126,7 +126,7 @@ export function Home({
                     <li key={task.id} className="row" data-pending={task.pending ? "true" : "false"}>
                       <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
                       <span className="row-main">
-                        <span className="row-title">{task.title}</span>
+                        <span className="row-title" title={task.title}>{task.title}</span>
                         <span className={`row-meta ${isPastDateKey(task.deadline!, today) ? "is-overdue" : "is-today"}`}>
                           {formatDateKey(task.deadline!, today)}
                         </span>
@@ -143,7 +143,7 @@ export function Home({
                         onChange={() => void settle(completeOccurrence(uid, entry.id, occurrence!.date)).catch(() => undefined)}
                       />
                       <span className="row-main">
-                        <span className="row-title">{entry.title}</span>
+                        <span className="row-title" title={entry.title}>{entry.title}</span>
                         <span className="row-meta is-today"><RepeatIcon className="meta-icon" />{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span>
                       </span>
                     </li>
@@ -165,7 +165,7 @@ export function Home({
                     <li key={task.id} className="row">
                       <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
                       <span className="row-main">
-                        <span className="row-title">{task.title}</span>
+                        <span className="row-title" title={task.title}>{task.title}</span>
                         <span className="row-meta">{formatDateKey(task.deadline!, today)}</span>
                       </span>
                     </li>

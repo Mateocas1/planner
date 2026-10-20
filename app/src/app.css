@@ -69,7 +69,7 @@
   --text-body: 0.9375rem;
   --text-sub: 0.8125rem;
   --text-caption: 0.75rem;
-  --text-tiny: 0.6875rem;
+  --text-tiny: 0.75rem;
 
   /* shape */
   --r-control: 10px;
@@ -893,12 +893,32 @@ time,
 
 .row-meta {
   margin-left: auto;
-  flex: none;
+  /* The meta used to be `flex: none`, so it took its full width and the title
+     yielded everything (odd/research/responsive-audit.md F2): at 320 px a
+     series title was 34 px wide, and at 200 % text zoom the title vanished.
+     It now shrinks, and what is left over is the title's room. */
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-size: var(--text-sub);
   color: var(--label-3);
+}
+
+/* Each piece of the meta truncates inside its own slice instead of pushing the
+   row wider, and the deadline text keeps its own ellipsis. */
+.row-meta > *,
+.row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Under 420 px the meta may not take more than its share even when the title is
+   short: the cap is what keeps a 320 px title readable. */
+@media (max-width: 420px) {
+  .row-meta { max-width: 42%; }
 }
 
 .meta-icon { width: 13px; height: 13px; flex: none; }
@@ -1097,8 +1117,10 @@ time,
 .cal-head,
 .cal-due,
 .cal-body {
+  /* The gutter holds "13:52" at 12 px and at 200 % text zoom; 56 px clipped it
+     (odd/research/responsive-audit.md F8). */
   display: grid;
-  grid-template-columns: 56px repeat(var(--n), minmax(0, 1fr));
+  grid-template-columns: 64px repeat(var(--n), minmax(0, 1fr));
 }
 
 .cal-head { border-bottom: 0.5px solid var(--separator); }
