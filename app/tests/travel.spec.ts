@@ -38,6 +38,9 @@ async function addTask(page: Page, title: string) {
   await add.click();
   await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  // the sheet returns focus to "New task" only when its exit finishes; wait for
+  // that, or a check clicked right after would lose focus to it mid-travel
+  await expect(sheet).toHaveCount(0);
 }
 
 /** The counted section for one task group (Open or Completed). */
@@ -102,6 +105,33 @@ test("reopening a task travels its row back into Open", async ({ page }) => {
   await expect(groupOf(page, "Open").locator("li.task", { hasText: "Back task" })).toHaveCount(1);
   await expect(groupOf(page, "Completed").locator("li.task", { hasText: "Back task" })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "Complete: Back task" })).toBeFocused();
+});
+
+test("the completion wash plays once, on the row that lands in Completed", async ({ page }) => {
+  await signUp(page, newEmail("wash-once"));
+  await openTasks(page);
+  await addTask(page, "Wash task");
+
+  // count every wash start and end on the document, so a restart on the
+  // travelling node cannot hide behind a single final class check
+  await page.evaluate(() => {
+    const washes = { starts: 0, ends: 0 };
+    (window as unknown as { washes: typeof washes }).washes = washes;
+    document.addEventListener("animationstart", event => {
+      if (event.animationName === "task-wash") washes.starts += 1;
+    });
+    document.addEventListener("animationend", event => {
+      if (event.animationName === "task-wash") washes.ends += 1;
+    });
+  });
+  const washes = () =>
+    page.evaluate(() => (window as unknown as { washes: { starts: number; ends: number } }).washes);
+
+  await page.getByRole("checkbox", { name: "Complete: Wash task" }).click();
+  await expect(groupOf(page, "Completed").locator("li.task", { hasText: "Wash task" })).toHaveCount(1);
+  await expect.poll(async () => (await washes()).ends).toBe(1);
+
+  expect((await washes()).starts).toBe(1);
 });
 
 test.describe("with reduced motion", () => {

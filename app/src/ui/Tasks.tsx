@@ -74,8 +74,9 @@ export function Tasks({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement } | null>(null);
-  // Rows whose completion the user just performed: the wash plays only on
-  // these, never on mount for rows that were already completed.
+  // Rows whose completion the user just performed and that have landed in their
+  // new group: the wash starts there, once, and never on mount for rows that were
+  // already completed.
   const [washIds, setWashIds] = useState<ReadonlySet<string>>(() => new Set<string>());
   // Rows whose check is mid-pop: the glyph acknowledgment belongs to the row
   // where it was pressed, so it is dropped the instant the row travels and never
@@ -134,7 +135,15 @@ export function Tasks({
           next.delete(task.id);
           return next;
         });
-        // the check has landed; only now does the row leave its group
+        // the check has landed; only now does the row leave its group, and the
+        // wash starts in the same render, on the node that arrives, so it plays
+        // once for the completion instead of restarting on the node that travels
+        setWashIds(previous => {
+          const next = new Set(previous);
+          if (completed) next.add(task.id);
+          else next.delete(task.id);
+          return next;
+        });
         setPopIds(previous => {
           if (!previous.has(task.id)) return previous;
           const next = new Set(previous);
@@ -143,12 +152,6 @@ export function Tasks({
         });
       }, travel),
     );
-    setWashIds(previous => {
-      const next = new Set(previous);
-      if (completed) next.add(task.id);
-      else next.delete(task.id);
-      return next;
-    });
     setPopIds(previous => {
       const next = new Set(previous);
       if (completed) next.add(task.id);
