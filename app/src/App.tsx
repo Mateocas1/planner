@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
@@ -15,6 +15,7 @@ import { Sheet } from "./ui/Sheet.tsx";
 import { Sidebar, SyncStatus, views } from "./ui/Sidebar.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
+import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
 export type View = "home" | "tasks" | "calendar";
@@ -47,6 +48,11 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
   const [creating, setCreating] = useState<HTMLElement | null>(null);
   const [lateError, setLateError] = useState<string | null>(null);
+  // One undo offer at a time, keyed so a new delete replaces the old toast and
+  // restarts its countdown instead of stacking a second one.
+  const [undo, setUndo] = useState<PendingUndo | null>(null);
+  const undoCursor = useRef(0);
+  const offerUndo = (item: UndoableDelete) => setUndo({ ...item, id: ++undoCursor.current });
   const scrolled = useScrolled();
   const titleHidden = useTitleScrolledAway(view);
 
@@ -131,7 +137,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                 />
               )}
               {view === "tasks" && (
-                <Tasks uid={user.uid} loading={loading} tasks={tasks} series={series} completions={completions} today={today} />
+                <Tasks uid={user.uid} loading={loading} tasks={tasks} series={series} completions={completions} today={today} onDeleted={offerUndo} />
               )}
               {view === "calendar" && (
                 <Calendar
@@ -143,6 +149,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   profileError={profile.error}
                   day={calendarDay}
                   onDayChange={setCalendarDay}
+                  onDeleted={offerUndo}
                 />
               )}
             </motion.div>
@@ -156,6 +163,9 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
             <PlusIcon />
           </button>
         </>
+      )}
+      {undo && (
+        <UndoToast key={undo.id} item={undo} onDismiss={() => setUndo(null)} onError={setLateError} />
       )}
       <AnimatePresence>
         {creating && <NewTaskSheet key="new-task" uid={user.uid} origin={creating} onClose={() => setCreating(null)} />}

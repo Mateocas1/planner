@@ -79,6 +79,34 @@ export async function deleteSeries(uid: string, seriesId: string) {
   await deleteDoc(doc(db, `users/${uid}/series/${seriesId}`));
 }
 
+/** A series definition exactly as it was stored, captured before it is deleted. */
+export type DeletedSeries = {
+  id: string;
+  title: string;
+  frequency: Frequency;
+  anchorDate: string;
+  deadline?: string;
+};
+
+/**
+ * Puts a deleted series back under its original document id with the exact
+ * anchor, frequency and deadline it held. Restoring the same id is what keeps
+ * the series' immutable per-occurrence completion records (`seriesId:date`)
+ * attached to it, so the plan reappears with its history intact rather than as
+ * a copy. The definition is validated through the domain module first.
+ */
+export async function restoreSeries(uid: string, series: DeletedSeries) {
+  if (!series.id || series.id.includes("/")) throw new Error("series ID is invalid");
+  const validated = createTask(series.id, series.title, series.deadline);
+  const recurrence = requireValidRecurrence(series.id, series.frequency, series.anchorDate);
+  await setDoc(doc(db, `users/${uid}/series/${series.id}`), {
+    title: validated.title,
+    frequency: recurrence.frequency,
+    anchorDate: recurrence.anchorDate,
+    ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
+  });
+}
+
 /**
  * Completes exactly one occurrence by writing its immutable completion record.
  * Other occurrences are untouched: each has its own occurrenceId.

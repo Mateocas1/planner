@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
-import { completeOccurrence, deleteSeries, renameSeries, setSeriesAnchor, setSeriesFrequency } from "../data/series.ts";
+import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesFrequency } from "../data/series.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
-import { deleteTask, renameTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
+import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
+import { type UndoableDelete } from "./UndoToast.tsx";
+import { settle } from "./write.ts";
 
 function addDays(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -61,6 +63,7 @@ export function Tasks({
   completions,
   loading,
   today,
+  onDeleted,
 }: {
   uid: string;
   tasks: TaskView[];
@@ -68,6 +71,7 @@ export function Tasks({
   completions: Record<string, string>;
   loading: boolean;
   today: string;
+  onDeleted: (item: UndoableDelete) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -269,8 +273,13 @@ export function Tasks({
             onAnchorChange={anchorDate => void run(() => setSeriesAnchor(uid, selectedSeries.id, selectedSeries.frequency, anchorDate))}
             onCompleteOccurrence={date => void run(() => completeOccurrence(uid, selectedSeries.id, date))}
             onDelete={() => {
+              // Capture the definition before the sheet closes: undo rewrites it
+              // under the same id, so its completion history stays attached.
+              const deleted = selectedSeries;
               setSelected(null);
-              void run(() => deleteSeries(uid, selectedSeries.id));
+              void settle(deleteSeries(uid, deleted.id))
+                .then(() => onDeleted({ message: "Series deleted", restore: () => restoreSeries(uid, deleted) }))
+                .catch(() => undefined);
             }}
           />
         )}
@@ -287,8 +296,13 @@ export function Tasks({
             }
             onToggleCompleted={() => completeTask(selectedTask, !selectedTask.completed)}
             onDelete={() => {
+              // The row's exact fields (title, completion, deadline) travel with
+              // the offer: undo rewrites them under the same document id.
+              const deleted = selectedTask;
               setSelected(null);
-              void run(() => deleteTask(uid, selectedTask.id));
+              void settle(deleteTask(uid, deleted.id))
+                .then(() => onDeleted({ message: "Task deleted", restore: () => restoreTask(uid, deleted) }))
+                .catch(() => undefined);
             }}
           />
         )}
