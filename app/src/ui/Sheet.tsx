@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { animate, usePresence, useReducedMotion } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
 import { dur, easeOut, easeOutCss, ms } from "./motion.ts";
+import { keepFocusedFieldVisible } from "./viewport.ts";
 
 /** The resting transform every flight ends on: one string, never four props. */
 const restTransform = "translate(0px, 0px) scale(1, 1)";
@@ -231,6 +232,17 @@ export function Sheet({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // A field that takes focus while the on-screen keyboard is up must not end up
+  // behind it, and neither must the field the sheet already had when the
+  // keyboard arrives over the panel. keepFocusedFieldVisible covers both and
+  // moves the sheet's own scroller by the overlap -- never the page, and never a
+  // field that was already in the clear.
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    return keepFocusedFieldVisible(sheet);
+  }, []);
 
   // A morphed close removes the panel from the new state at once: it must not
   // be painted twice while the row is still growing back. Its snapshot is the

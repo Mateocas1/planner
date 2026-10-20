@@ -33,12 +33,19 @@ dialog.palette {
   --dur-pop: 150ms;
   position: fixed;
   inset: 0;
+  /* Lifted off the keyboard's covered band (ui/viewport.ts): the native modal is
+     centred by margin:auto inside the box that is left, so it settles in the
+     visible area with the field at its top and the list scrolling under it. */
+  bottom: var(--kb-inset, 0px);
   margin: auto;
   display: flex;
   flex-direction: column;
   width: min(560px, calc(100vw - 32px));
   max-width: none;
   max-height: min(560px, calc(100vh - 32px));
+  /* the inset is subtracted here too: a short band must not leave a dialog
+     taller than it is, or margin:auto would centre it half off the top edge */
+  max-height: min(560px, calc(100dvh - 32px - var(--kb-inset, 0px)));
   padding: 6px;
   border: 0;
   border-radius: var(--r-sheet);
@@ -221,5 +228,6 @@ dialog.palette::backdrop {
   dialog.palette {
     width: calc(100vw - 16px);
     max-height: calc(100vh - 96px);
+    max-height: calc(100dvh - 96px - var(--kb-inset, 0px));
   }
 }
