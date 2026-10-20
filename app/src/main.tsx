@@ -7,6 +7,14 @@ import "./app.css";
 // glass.css is imported after app.css on purpose: it owns the glass materials
 // and tokens that app.css used to define.
 import "./ui/glass.css";
+import { installLens } from "./ui/lens.ts";
+import { installSheen } from "./ui/sheen.ts";
+
+// Document-level motion is installed once, outside React: a StrictMode remount
+// must never stack a second pointer listener. The lens gate only sets an
+// attribute on <html>; CSS decides whether the filter is used.
+installSheen();
+installLens();
 
 // Register the offline app-shell service worker only where the browser has one.
 // `registerSW` is wired to `registerType: "prompt"` in vite.config.ts, and no
