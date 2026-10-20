@@ -5,14 +5,18 @@
    Text never sits inside a filtered layer.
 
    Load order matters: this file is imported after app.css, so it replaces the
-   old `.glass` recipe and owns the glass tokens. The legacy class names
-   (`.glass-chrome`, `.glass-sheet`, `.glass-control`) stay as aliases until
-   placement (G2) renames the surfaces; contrast figures live in
-   `app/scripts/glass-contrast.mjs`. */
+   old `.glass` recipe and owns the glass tokens. Placement (G2) assigns one
+   material per surface by role: `.glass-regular` on the sidebar and the
+   scrolled top bar, `.glass-float` on the phone's tab bar and FAB, and
+   `.glass-thick` on the sheet, the popover and the palette. Contrast figures
+   live in `app/scripts/glass-contrast.mjs`. */
 
 :root {
   /* tints: cool paper in light mode, graphite-blue in dark */
   --glass-tint-thin: rgb(248 248 250 / 0.5);
+  /* Floating chrome: the thin blur, but tinted to the floor that keeps an 11px
+     tab label legible over whatever scrolls under it (spec §3). */
+  --glass-tint-float: rgb(248 248 250 / 0.62);
   --glass-tint-regular: rgb(248 248 250 / 0.68);
   --glass-tint-thick: rgb(250 250 252 / 0.88);
   --glass-sheen: rgb(255 255 255 / 0.4);
@@ -54,6 +58,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --glass-tint-thin: rgb(32 32 38 / 0.55);
+    --glass-tint-float: rgb(32 32 38 / 0.62);
     --glass-tint-regular: rgb(30 30 34 / 0.72);
     --glass-tint-thick: rgb(34 34 38 / 0.9);
     --glass-sheen: rgb(255 255 255 / 0.06);
@@ -151,35 +156,58 @@ body::before {
   mask-composite: exclude;
 }
 
-.glass-thin,
-.glass-control {
+.glass-thin {
   --glass-blur: 12px;
   --glass-sat: 150%;
   --glass-tint: var(--glass-tint-thin);
 }
 
-.glass-regular,
-.glass-chrome {
+/* Floating chrome (tab bar, FAB): the thin blur over a tint floor, because these
+   two sit directly on top of live content rather than beside it. */
+.glass-float {
+  --glass-blur: 12px;
+  --glass-sat: 150%;
+  --glass-tint: var(--glass-tint-float);
+}
+
+.glass-regular {
   --glass-blur: 20px;
   --glass-sat: 170%;
   --glass-tint: var(--glass-tint-regular);
 }
 
-.glass-thick,
-.glass-sheet {
+.glass-thick {
   --glass-blur: 32px;
   --glass-sat: 180%;
   --glass-tint: var(--glass-tint-thick);
 }
 
-/* ---------- fallbacks ---------- */
+/* ---------- placement (G2) ---------- */
 
-/* Scrolled top bar: the same regular material, drawn on its masked ::before. */
+/* Scrolled top bar: the same regular material as the sidebar, drawn on its own
+   masked ::before because the bar itself must let content scroll through. */
 .topbar::before {
-  background: var(--tint-chrome);
+  background: var(--glass-tint-regular);
   -webkit-backdrop-filter: blur(20px) saturate(170%);
   backdrop-filter: blur(20px) saturate(170%);
 }
+
+/* Phone layer budget (spec §2). The tab bar, the FAB and a panel are already
+   three backdrop layers, so the scrolled top bar gives its glass up while a
+   panel is open instead of becoming a fourth blur. A thick material is, in this
+   app, exactly "a panel is open": the sheet, the account popover and the
+   command palette are the only thick surfaces. The bar keeps a solid fill so
+   content can still scroll under it, and forced-colors keeps overriding that
+   fill with Canvas as it does everywhere else. */
+@media (max-width: 760px) {
+  body:has(.glass-thick) .topbar::before {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ---------- fallbacks ---------- */
 
 @media (prefers-reduced-transparency: reduce) {
   .glass,
@@ -322,6 +350,37 @@ body::before {
 .segmented button:active::after {
   opacity: 1;
   transition-duration: 120ms;
+}
+
+/* Chips: the rim and nothing else. A backdrop per chip would blow the layer
+   budget, and a chip lives inside a repainting row (spec §3). */
+.due-chip {
+  position: relative;
+  isolation: isolate;
+}
+
+.due-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    var(--glass-rim-lit) 0%,
+    var(--glass-rim-mid) 32%,
+    transparent 68%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
 /* Pills: the nav and tab indicators are the product's sliding glass slug. */
