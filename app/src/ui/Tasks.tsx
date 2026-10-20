@@ -47,9 +47,10 @@ function upcomingOccurrences(series: SeriesView, completions: Record<string, str
 const frequencyLabel: Record<SeriesView["frequency"], string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 
 /** How long a just-toggled row stays in place before it travels to its new
- * group: long enough for the check to land, short enough to stay a beat and not
- * a wait. It matches the check-pop below, so the glyph finishes exactly as the
- * row leaves. Reduced motion drops the beat entirely and swaps groups at once. */
+ * group: long enough for the check to read, short enough to stay a beat and not
+ * a wait. The circle's pop peaks at 70 % of its --dur-state (about 140 ms, see
+ * check-pop in app.css), so the glyph is already landing as the row leaves.
+ * Reduced motion drops the beat entirely and swaps groups at once. */
 const settleMs = 160;
 
 /**
