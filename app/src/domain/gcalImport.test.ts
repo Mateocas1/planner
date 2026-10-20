@@ -174,6 +174,62 @@ test("ids are deterministic per calendar and event, and safe as document ids", (
   assert.deepEqual(plan({ events }), plan({ events }));
 });
 
+test("an item that is not an object is skipped as unusable instead of throwing", () => {
+  const junk = [null, 5, "event", ["id"], true] as unknown as GcalEvent[];
+  const result = plan({ events: junk });
+  assert.deepEqual(result.blocks, []);
+  assert.deepEqual(result.tasks, []);
+  assert.equal(result.skipped.unusable, junk.length);
+});
+
+test("a response whose items are not a list imports nothing and does not throw", () => {
+  const result = plan({ events: { items: [{ id: "e1" }] } as unknown as GcalEvent[] });
+  assert.deepEqual(result.blocks, []);
+  assert.deepEqual(result.tasks, []);
+  assert.deepEqual(result.skipped, { cancelled: 0, declined: 0, workingLocation: 0, outOfOffice: 0, focusTime: 0, imported: 0, unusable: 0 });
+});
+
+test("a non-string summary is no title, not a crash", () => {
+  const result = plan({
+    events: [
+      timed({ id: "numeric-summary", summary: 5 as unknown as string }),
+      timed({ id: "object-summary", summary: { text: "Design review" } as unknown as string }),
+    ],
+  });
+  assert.deepEqual(result.blocks.map(block => block.title), [undefined, undefined]);
+  assert.equal(result.skipped.unusable, 0);
+});
+
+test("a null attendee entry is not an answer and does not crash the mapper", () => {
+  const result = plan({
+    events: [
+      timed({ id: "null-attendee", attendees: [null] as unknown as GcalEvent["attendees"] }),
+      timed({
+        id: "among-attendees",
+        attendees: [null, { self: true, responseStatus: "declined" }] as unknown as GcalEvent["attendees"],
+      }),
+    ],
+  });
+  assert.deepEqual(result.blocks.map(block => block.source?.eventId), ["null-attendee"]);
+  assert.equal(result.skipped.declined, 1);
+  assert.equal(result.skipped.unusable, 0);
+});
+
+test("a null or non-object edge, id or status is unusable, never a crash", () => {
+  const result = plan({
+    events: [
+      timed({ id: "null-start", start: null as unknown as GcalEvent["start"] }),
+      timed({ id: "null-end", end: null as unknown as GcalEvent["end"] }),
+      timed({ id: "numeric-start", start: 5 as unknown as GcalEvent["start"] }),
+      timed({ id: "string-end", end: "2026-10-20T15:00:00+02:00" as unknown as GcalEvent["end"] }),
+      timed({ id: 7 as unknown as string }),
+      timed({ id: "object-status", status: { value: "confirmed" } as unknown as string }),
+    ],
+  });
+  assert.deepEqual(result.blocks, []);
+  assert.equal(result.skipped.unusable, 6);
+});
+
 test("events the mapper cannot use are counted, never partially imported", () => {
   const result = plan({
     events: [

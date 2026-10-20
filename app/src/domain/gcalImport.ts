@@ -114,15 +114,21 @@ export function importDocId(calendarId: string, eventId: string): string {
   return `${GCAL_ID_PREFIX}${calendarKey(calendarId)}_${eventId}`;
 }
 
+/** A JSON value that can be read as an object; everything else cannot be an event. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /** A declined invitation: the viewer's own attendee entry says `declined`. */
 function declinedBySelf(event: GcalEvent): boolean {
   return Array.isArray(event.attendees)
-    && event.attendees.some(attendee => attendee.self === true && attendee.responseStatus === "declined");
+    && event.attendees.some(attendee => isRecord(attendee) && attendee.self === true && attendee.responseStatus === "declined");
 }
 
 /** The event's only, or first, day; an all-day event carries `date`, not `dateTime`. */
 function isAllDay(event: GcalEvent): boolean {
-  return typeof event.start?.date === "string" && event.start.dateTime === undefined;
+  const start = event.start;
+  return isRecord(start) && typeof start.date === "string" && start.dateTime === undefined;
 }
 
 /**
@@ -132,8 +138,10 @@ function isAllDay(event: GcalEvent): boolean {
  * planner uses when it turns a grid slot into a block, so a DST day behaves the
  * same in both paths. Returns null for an edge the mapper cannot place.
  */
-function instantOf(time: GcalEventTime | undefined, fallbackTimeZone: string): string | null {
-  if (time === undefined) return null;
+function instantOf(time: GcalEventTime | null | undefined, fallbackTimeZone: string): string | null {
+  // `== null` on purpose: an absent edge and a JSON `null` edge are the same
+  // thing to the mapper, and a non-object edge cannot carry a stamp at all.
+  if (time == null || typeof time !== "object") return null;
   const value = typeof time.dateTime === "string" ? time.dateTime.trim() : "";
   if (offsetInstant.test(value)) return value;
   if (!wallClock.test(value)) return null;
@@ -161,8 +169,25 @@ export function planImport(input: ImportPlanInput): ImportPlan {
   // Two copies of one event in one response must not produce two writes.
   const planned = new Set<string>();
 
-  for (const event of input.events) {
-    if (event.status === "cancelled") {
+  // Untrusted JSON: a body whose `items` is not a list holds no events, and an
+  // item that is not an object is counted, never thrown on. `data/google-client.ts`
+  // refuses a page that is not a list page before it reaches this point.
+  const events: unknown[] = Array.isArray(input.events) ? input.events : [];
+
+  for (const item of events) {
+    if (!isRecord(item)) {
+      skipped.unusable += 1;
+      continue;
+    }
+    const event = item as GcalEvent;
+    // A status that is present but not text leaves the event's fate unknown, so
+    // it is not imported on a guess; a missing status reads as a live event.
+    const status = event.status;
+    if (status !== undefined && typeof status !== "string") {
+      skipped.unusable += 1;
+      continue;
+    }
+    if (status === "cancelled") {
       skipped.cancelled += 1;
       continue;
     }
@@ -185,7 +210,7 @@ export function planImport(input: ImportPlanInput): ImportPlan {
       skipped.imported += 1;
       continue;
     }
-    const title = (event.summary ?? "").trim();
+    const title = typeof event.summary === "string" ? event.summary.trim() : "";
     if (isAllDay(event)) {
       const date = event.start?.date ?? "";
       try {

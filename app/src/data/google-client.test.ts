@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GOOGLE_SCOPES,
+  MAX_PAGES,
   authMessage,
   calendarsFrom,
   eventWindow,
   eventsUrl,
+  googleMessages,
   listCalendars,
   listEvents,
   statusMessage,
+  truncatedNote,
+  withTimeout,
 } from "./google-client.ts";
 
 /** A fetch stand-in: each call pops the next canned response. */
@@ -81,7 +85,7 @@ test("listing events follows nextPageToken to the last page", async () => {
     { body: { items: [{ id: "a" }, { id: "b" }], nextPageToken: "page2" } },
     { body: { items: [{ id: "c" }] } },
   ]);
-  const events = await listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: impl });
+  const { events } = await listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: impl });
   assert.deepEqual(events.map(event => event.id), ["a", "b", "c"]);
   assert.equal(calls.length, 2);
   assert.equal(new URL(calls[1]).searchParams.get("pageToken"), "page2");
@@ -113,6 +117,55 @@ test("a failed request is reported as a calm sentence, never a status code", asy
   await assert.rejects(listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: offline }), {
     message: statusMessage(0),
   });
+});
+
+test("a page with no items key is an empty window, not a shape we cannot read", async () => {
+  /* The Calendar API omits `items` when the window holds no events; refusing an
+     empty window would turn "nothing in this range" into an error. */
+  const empty = fakeFetch([{ body: { kind: "calendar#events", summary: "primary" } }]);
+  const list = await listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: empty.impl });
+  assert.deepEqual(list, { events: [], truncated: false });
+
+  const noCalendars = fakeFetch([{ body: {} }]);
+  assert.deepEqual(await listCalendars("token", { fetchImpl: noCalendars.impl }), []);
+});
+
+test("a page body that is not a list page is refused with a sentence, never read as empty", async () => {
+  for (const body of [null, "text", 5, { items: "nope" }, { items: {} }]) {
+    const page = fakeFetch([{ body }]);
+    await assert.rejects(
+      listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: page.impl }),
+      { message: googleMessages.failed },
+      `body ${JSON.stringify(body)} was accepted`,
+    );
+  }
+  /* The calendar list has the same rule: a shape we cannot read is a sentence. */
+  const calendars = fakeFetch([{ body: { items: 7 } }]);
+  await assert.rejects(listCalendars("token", { fetchImpl: calendars.impl }), { message: googleMessages.failed });
+});
+
+test("a read that stops at the page limit reports the truncation, so the preview can say so", async () => {
+  const capped = fakeFetch(
+    Array.from({ length: MAX_PAGES }, (_, index) => ({ body: { items: [{ id: `e${index}` }], nextPageToken: `p${index + 1}` } })),
+  );
+  const truncated = await listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: capped.impl });
+  assert.equal(capped.calls.length, MAX_PAGES);
+  assert.equal(truncated.events.length, MAX_PAGES);
+  assert.equal(truncated.truncated, true);
+  assert.equal(truncatedNote(truncated.events.length), `Only the first ${MAX_PAGES} events were loaded; narrow the range.`);
+
+  /* A read that ends on its own is complete, and says nothing about its size. */
+  const whole = fakeFetch([{ body: { items: [{ id: "a" }] } }]);
+  const complete = await listEvents("token", "primary", { timeMin: "t1", timeMax: "t2" }, { fetchImpl: whole.impl });
+  assert.equal(complete.truncated, false);
+});
+
+test("a hung Google sign-in load gives up with a sentence instead of waiting forever", async () => {
+  const hang = new Promise<string>(() => undefined);
+  await assert.rejects(withTimeout(hang, 5, googleMessages.unavailable), { message: googleMessages.unavailable });
+  /* A load that answers in time is returned untouched, and its timer is dropped. */
+  assert.equal(await withTimeout(Promise.resolve("ready"), 50, googleMessages.unavailable), "ready");
+  await assert.rejects(withTimeout(Promise.reject(new Error("script")), 50, googleMessages.unavailable), { message: "script" });
 });
 
 test("sign-in failures name what the user can do about them", () => {

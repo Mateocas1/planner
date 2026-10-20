@@ -16,8 +16,9 @@ import { googleClientId } from "./firebase-config.ts";
  * length of one import -- it is never written to storage or to Firestore. When
  * it expires the user connects again, which is one click.
  *
- * The GIS script is loaded lazily, on the first click that needs it, so a
- * third-party script of Google's size never enters the app bundle: the only
+ * The GIS script is never in the app bundle: it is loaded lazily from Google,
+ * warmed when the import sheet opens and awaited again by the first click, so a
+ * cold cache does not eat the user gesture the consent popup needs. The only
  * trace of it in the build is the URL string below.
  */
 
@@ -34,7 +35,10 @@ const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 export const MAX_EVENTS_PER_PAGE = 250;
 
 /** A page loop that stops: ten thousand events is more than a planner imports. */
-const MAX_PAGES = 40;
+export const MAX_PAGES = 40;
+
+/** How long a hung `gsi/client` load is given before the sheet stops waiting. */
+export const GIS_LOAD_TIMEOUT_MS = 10_000;
 
 /**
  * What the user is told when a step of the import fails. Every sentence names
@@ -120,6 +124,39 @@ export function calendarsFrom(body: unknown): GcalCalendar[] {
   });
 }
 
+/** What `listEvents` read: the events, and whether the page cap cut the read short. */
+export type EventList = { events: GcalEvent[]; truncated: boolean };
+
+/**
+ * The note under a truncated preview. A capped read still imports what it read;
+ * the note says how much arrived and what narrows it, instead of letting the
+ * count look complete.
+ */
+export function truncatedNote(count: number): string {
+  return `Only the first ${count} events were loaded; narrow the range.`;
+}
+
+/**
+ * Resolves with `promise`, or rejects with `message` if it has not settled
+ * within `ms`. Exported so the loader's bound is testable without a DOM: the
+ * sheet must never sit on "connecting" because a script never answered.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      cause => {
+        clearTimeout(timer);
+        reject(cause);
+      },
+    );
+  });
+}
+
 /** The `events.list` URL for one calendar and one window (single page). */
 export function eventsUrl(calendarId: string, query: EventWindow & { pageToken?: string }): string {
   const url = new URL(`${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`);
@@ -132,6 +169,28 @@ export function eventsUrl(calendarId: string, query: EventWindow & { pageToken?:
   url.searchParams.set("timeMax", query.timeMax);
   if (query.pageToken !== undefined && query.pageToken !== "") url.searchParams.set("pageToken", query.pageToken);
   return url.toString();
+}
+
+/**
+ * The `items` array of one page, or null when the body is not a list page.
+ * A body without `items` is an empty page: the Calendar API omits the field
+ * when the window holds no events, so treating it as malformed would turn
+ * "nothing in this range" into "Google could not be read".
+ */
+function pageItems(body: unknown): unknown[] | null {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
+  const items = (body as { items?: unknown }).items;
+  if (items === undefined) return [];
+  return Array.isArray(items) ? items : null;
+}
+
+/**
+ * The next page token of one page. Only a non-empty string is a page: anything
+ * else ends the loop instead of fetching a page Google did not ask for.
+ */
+function nextPageToken(body: unknown): string {
+  const next = (body as { nextPageToken?: unknown } | null)?.nextPageToken;
+  return typeof next === "string" ? next : "";
 }
 
 export type RequestOptions = { fetchImpl?: typeof fetch };
@@ -166,9 +225,12 @@ export async function listCalendars(token: string, options: RequestOptions = {})
     url.searchParams.set("maxResults", "250");
     if (pageToken !== "") url.searchParams.set("pageToken", pageToken);
     const body = await getJson(url.toString(), token, fetchImpl);
-    calendars.push(...calendarsFrom(body));
-    const next = (body as { nextPageToken?: unknown } | null)?.nextPageToken;
-    pageToken = typeof next === "string" ? next : "";
+    // A shape the Calendar API never sends is not an empty calendar list: say
+    // so, rather than showing the user a picker with no calendars in it.
+    const items = pageItems(body);
+    if (items === null) throw new Error(googleMessages.failed);
+    calendars.push(...calendarsFrom({ items }));
+    pageToken = nextPageToken(body);
     if (pageToken === "") break;
   }
   return calendars;
@@ -178,26 +240,33 @@ export async function listCalendars(token: string, options: RequestOptions = {})
  * Every event in the window for one calendar, following `nextPageToken` to the
  * last page. The items are returned as Google sent them: the mapper, not this
  * function, decides what an item means, and an item it cannot use is counted
- * as unusable there instead of disappearing here.
+ * as unusable there instead of disappearing here. A read that stops at the page
+ * cap returns `truncated`, so the preview can say the count is not the whole
+ * window.
  */
 export async function listEvents(
   token: string,
   calendarId: string,
   window: EventWindow,
   options: RequestOptions = {},
-): Promise<GcalEvent[]> {
+): Promise<EventList> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const events: GcalEvent[] = [];
   let pageToken = "";
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const body = await getJson(eventsUrl(calendarId, { ...window, pageToken }), token, fetchImpl);
-    const items = (body as { items?: unknown } | null)?.items;
-    if (Array.isArray(items)) events.push(...(items as GcalEvent[]));
-    const next = (body as { nextPageToken?: unknown } | null)?.nextPageToken;
-    pageToken = typeof next === "string" ? next : "";
-    if (pageToken === "") break;
+    // A body whose `items` is not a list holds no readable events. It is not a
+    // silent empty page: the sheet says the read failed, and nothing is imported
+    // from a shape the mapper was never designed to read.
+    const items = pageItems(body);
+    if (items === null) throw new Error(googleMessages.failed);
+    events.push(...(items as GcalEvent[]));
+    pageToken = nextPageToken(body);
+    if (pageToken === "") return { events, truncated: false };
   }
-  return events;
+  // The loop ran out of pages, not the token: there may be more events than we
+  // read, so the caller can say what the count above does not include.
+  return { events, truncated: true };
 }
 
 /* ---------- the token client ---------- */
@@ -211,6 +280,8 @@ type OAuth2 = {
     callback: (response: TokenResponse) => void;
     error_callback: (error: { type?: string }) => void;
   }) => TokenClient;
+  /** Hands one access token back before its hour is up. */
+  revoke?: (token: string, done?: () => void) => void;
 };
 
 /** The shape GIS installs on the page. It is absent until the script runs. */
@@ -226,13 +297,15 @@ let loading: Promise<OAuth2> | null = null;
 /**
  * Loads `gsi/client` once, on demand, and hands back the token client factory.
  * Concurrent callers share one script tag. A failed load clears the memo so the
- * next click retries instead of remembering a transient network failure.
+ * next click retries instead of remembering a transient network failure, and a
+ * load that never answers is abandoned after `GIS_LOAD_TIMEOUT_MS` so the sheet
+ * never sits on "connecting" forever.
  */
 export function loadGis(): Promise<OAuth2> {
   const ready = gisApi();
   if (ready !== null) return Promise.resolve(ready);
   if (loading !== null) return loading;
-  loading = new Promise<OAuth2>((resolve, reject) => {
+  loading = withTimeout(new Promise<OAuth2>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = GIS_SRC;
     script.async = true;
@@ -244,11 +317,25 @@ export function loadGis(): Promise<OAuth2> {
     };
     script.onerror = () => reject(new Error(googleMessages.unavailable));
     document.head.appendChild(script);
-  }).catch(cause => {
+  }), GIS_LOAD_TIMEOUT_MS, googleMessages.unavailable).catch(cause => {
     loading = null;
     throw cause;
   });
   return loading;
+}
+
+/**
+ * Hands an access token back to Google when the sheet closes after using it, so
+ * the roughly one hour of residual validity is cut short. The token is already
+ * memory-only; this narrows the window rather than changing the model. A
+ * browser that never loaded GIS has nothing to revoke, which is not a failure.
+ */
+export function revokeToken(token: string): void {
+  try {
+    gisApi()?.revoke?.(token);
+  } catch {
+    // Revocation is best effort: the token has already been dropped from memory.
+  }
 }
 
 /**

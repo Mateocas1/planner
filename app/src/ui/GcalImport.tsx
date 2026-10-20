@@ -5,14 +5,17 @@ import {
   googleMessages,
   listCalendars,
   listEvents,
+  loadGis,
   requestToken,
+  revokeToken,
+  truncatedNote,
+  type EventList,
   type GcalCalendar,
 } from "../data/google-client.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 import {
   importedIds,
   planImport,
-  type GcalEvent,
   type ImportPlan,
   type ImportSkipReason,
   type ImportSkips,
@@ -34,9 +37,13 @@ import "./GcalImport.css";
  * the documents that land -- the UI never maps an event itself.
  *
  * The token lives in this component's state and nowhere else: never in
- * localStorage, never in Firestore. Closing the sheet drops it, and the next
- * open asks Google again. That is the token model (no server, no refresh token),
- * not an oversight.
+ * localStorage, never in Firestore. Closing the sheet drops it and revokes it at
+ * Google, and the next open asks Google again. That is the token model (no
+ * server, no refresh token), not an oversight.
+ *
+ * The GIS script is warmed when the sheet mounts, not when Connect is pressed,
+ * so the token request happens inside the click's user gesture even on a cold
+ * cache; a load that hangs is abandoned with a sentence (see data/google-client).
  *
  * Motion is the sheet's own (ui/Sheet.tsx): the panel grows out of the entry the
  * user pressed and returns to it, the content fades and sharpens once, and
@@ -130,7 +137,7 @@ export function GcalImportSheet({
   const [calendars, setCalendars] = useState<GcalCalendar[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [range, setRange] = useState<Range>(90);
-  const [events, setEvents] = useState<Record<string, GcalEvent[]>>({});
+  const [events, setEvents] = useState<Record<string, EventList>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -149,11 +156,33 @@ export function GcalImportSheet({
   );
 
   // One mapper call per selected calendar: the calendar id is part of every
-  // deterministic document id, so the plans cannot share one call.
-  const plans = useMemo<ImportPlan[]>(
-    () => chosen.map(id => planImport({ calendarId: id, events: events[id] ?? [], timeZone, existing })),
-    [chosen, events, timeZone, existing],
-  );
+  // deterministic document id, so the plans cannot share one call. The mapper
+  // is defensive by design; this try/catch is the backstop that keeps a shape it
+  // did not anticipate from blanking the app during render -- the sheet says so
+  // in place and leaves the import untouched.
+  const planning = useMemo(() => {
+    try {
+      return {
+        plans: chosen.map(id => planImport({ calendarId: id, events: events[id]?.events ?? [], timeZone, existing })),
+        error: "",
+      };
+    } catch {
+      return { plans: [] as ImportPlan[], error: "These events could not be read. Nothing was changed." };
+    }
+  }, [chosen, events, timeZone, existing]);
+  const plans = planning.plans;
+
+  /** How many events a capped read did read, or null when the whole window
+   * arrived: a read the page limit cut short says so, because its count is not
+   * the count of the window. */
+  const capped = useMemo(() => {
+    let count: number | null = null;
+    for (const id of chosen) {
+      const list = events[id];
+      if (list?.truncated === true) count = (count ?? 0) + list.events.length;
+    }
+    return count;
+  }, [chosen, events]);
 
   const totals = useMemo(() => {
     const skipped = emptySkips();
@@ -170,6 +199,23 @@ export function GcalImportSheet({
   /** Everything imported so far, for the removal safety net. */
   const imported = useMemo(() => importedIds(blocks, tasks), [blocks, tasks]);
   const importedTotal = imported.blockIds.length + imported.taskIds.length;
+
+  // Warm the GIS script as the sheet opens, not when Connect is pressed: the
+  // consent popup has to open inside the click's user gesture, and a cold cache
+  // would spend that gesture on a script load. A failure here is not reported --
+  // pressing Connect retries the load and speaks if it fails again.
+  useEffect(() => {
+    void loadGis().catch(() => undefined);
+  }, []);
+
+  // The token is handed back to Google when it is replaced or the sheet goes
+  // away: the import is over, and the residual hour of validity buys nothing.
+  // It is already memory-only; this narrows the window rather than changing the
+  // model, and a failed revoke is not worth telling the user about.
+  useEffect(() => {
+    if (token === null) return undefined;
+    return () => revokeToken(token);
+  }, [token]);
 
   const connect = useCallback(async () => {
     setNotice(null);
@@ -361,9 +407,20 @@ export function GcalImportSheet({
             </fieldset>
 
             <div className="gcal-counts">
-              <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks)}</p>
-              {skippedSentence(totals.skipped) !== "" && (
-                <p className="gcal-note">{skippedSentence(totals.skipped)}</p>
+              {/* A shape the mapper did not anticipate is a sentence and an
+                  untouched import, never a blank screen. */}
+              {planning.error !== "" ? (
+                <p className="inline-error" role="alert">{planning.error}</p>
+              ) : (
+                <>
+                  <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks)}</p>
+                  {skippedSentence(totals.skipped) !== "" && (
+                    <p className="gcal-note">{skippedSentence(totals.skipped)}</p>
+                  )}
+                  {capped !== null && (
+                    <p className="gcal-note is-warn" role="status">{truncatedNote(capped)}</p>
+                  )}
+                </>
               )}
             </div>
 

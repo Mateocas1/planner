@@ -187,7 +187,11 @@ async function stubGoogle(page: Page, options: { pages: Record<string, unknown[]
       callback: (response: { access_token?: string }) => void;
       error_callback: (error: { type?: string }) => void;
     };
-    const scope = window as unknown as { google?: unknown; __gis?: Record<string, string> };
+    const scope = window as unknown as {
+      google?: unknown;
+      __gis?: Record<string, string>;
+      __revoked?: string[];
+    };
     scope.google = {
       accounts: {
         oauth2: {
@@ -200,6 +204,11 @@ async function stubGoogle(page: Page, options: { pages: Record<string, unknown[]
                 else config.callback({ access_token: "stub-access-token" });
               },
             };
+          },
+          /* The sheet hands the token back when it closes; the stub records it
+             so a test can prove the revoke instead of trusting the call site. */
+          revoke(token: string) {
+            (scope.__revoked ??= []).push(token);
           },
         },
       },
@@ -325,6 +334,50 @@ test("the preview counts what the mapper will write, and a second import writes 
   const again = await readRemoteImport(email);
   expect(again.blocks.length).toBe(written.blocks.length);
   expect(again.tasks.length).toBe(written.tasks.length);
+});
+
+test("a malformed event is counted as unusable, and the valid ones still import", async ({ page }) => {
+  const email = newEmail("gcal-unusable");
+  await createRemoteAccount(email);
+  await updateRemoteProfile(email, "UTC");
+  const today = dayKey(0);
+  await stubGoogle(page, {
+    pages: {
+      primary: [
+        {
+          items: [
+            timedEvent("evt-ok", "Design review", `${today}T10:00:00+00:00`, `${today}T11:00:00+00:00`),
+            /* The review's crash cases in one item: a summary that is not text
+               and edges that are not objects. The mapper counts it instead of
+               throwing, and the sheet says so like any other skip. */
+            { id: "evt-malformed", status: "confirmed", summary: 5, updated: "2026-10-18T09:00:00.000Z", start: null, end: null },
+          ],
+        },
+      ],
+    },
+  });
+  await submitAuthForm(page, email, "sign in");
+
+  const sheet = await openImportSheet(page);
+  await sheet.getByRole("button", { name: "Connect Google Calendar" }).click();
+
+  /* The preview still renders, the app is still up, and the bad item is named as
+     a reason rather than silently dropped. The GIS stub still answers with the
+     script preloaded on mount. */
+  await expect(sheet.getByText("1 work block to import")).toBeVisible();
+  await expect(sheet.getByText("Skipped: 1 unusable.")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await sheet.getByRole("button", { name: "Import 1 item" }).click();
+  await expect(page.locator(".undo-toast")).toContainText("Imported 1 work block");
+  const written = await readRemoteImport(email);
+  expect(written.blocks.map(block => block.title)).toEqual(["Design review"]);
+  expect(written.tasks).toEqual([]);
+
+  /* Closing the sheet hands the token back to Google, and it was never stored. */
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __revoked?: string[] }).__revoked ?? []))
+    .toEqual(["stub-access-token"]);
 });
 
 test("a closed or blocked Google sign-in says so, imports nothing, and an offline tab says why", async ({ page }) => {
