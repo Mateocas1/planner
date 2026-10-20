@@ -1,5 +1,29 @@
 export type Task = { id: string; title: string; deadline?: string };
-export type WorkBlock = { id: string; start: string; end: string; taskId?: string };
+
+/**
+ * Where an imported block came from. A block that was not imported carries no
+ * source at all, so every stored block written before imports existed still
+ * reads as it did.
+ */
+export type BlockSource = {
+  provider: "gcal";
+  calendarId: string;
+  eventId: string;
+  updated: string;
+  recurringEventId?: string;
+};
+
+/** The optional fields an imported block adds to the plain start/end pair. */
+export type BlockExtras = { title?: string; source?: BlockSource };
+
+export type WorkBlock = {
+  id: string;
+  start: string;
+  end: string;
+  taskId?: string;
+  title?: string;
+  source?: BlockSource;
+};
 export type Recurrence = {
   seriesId: string;
   frequency: "daily" | "weekly" | "monthly";
@@ -42,11 +66,111 @@ export function createTask(id: string, title: string, deadline?: string): Task {
   return { id, title: trimmed, ...(deadline === undefined ? {} : { deadline }) };
 }
 
-export function createWorkBlock(id: string, start: string, end: string, taskId?: string): WorkBlock {
+/**
+ * Validates the import source of a block. The provider is a closed one-value
+ * union today, and the identifiers must be non-empty and free of the path
+ * separator, because they end up in document ids.
+ */
+function requireBlockSource(source: BlockSource): BlockSource {
+  const valid = source !== null && typeof source === "object"
+    && source.provider === "gcal"
+    && typeof source.calendarId === "string" && source.calendarId !== ""
+    && typeof source.eventId === "string" && source.eventId !== "" && !source.eventId.includes("/")
+    && (source.recurringEventId === undefined || (typeof source.recurringEventId === "string" && source.recurringEventId !== ""));
+  if (!valid) throw new Error("block source is invalid");
+  // `updated` is Google's own RFC 3339 stamp; the zoned-instant check is what
+  // makes it comparable later, so a stamp without an offset is rejected.
+  try {
+    requireInstant(source.updated);
+  } catch {
+    throw new Error("block source is invalid: expected a zoned ISO updated stamp");
+  }
+  return {
+    provider: "gcal",
+    calendarId: source.calendarId,
+    eventId: source.eventId,
+    updated: source.updated,
+    ...(source.recurringEventId === undefined ? {} : { recurringEventId: source.recurringEventId }),
+  };
+}
+
+/**
+ * Reads an import source out of a stored document. A block written before
+ * imports existed has no source, and a hand-edited document may hold a partial
+ * one; in either case the block still reads, minus the source. Only a complete
+ * source is reported.
+ */
+function parseBlockSource(value: unknown): BlockSource | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const data = value as Record<string, unknown>;
+  if (data.provider !== "gcal"
+      || typeof data.calendarId !== "string" || data.calendarId === ""
+      || typeof data.eventId !== "string" || data.eventId === ""
+      || typeof data.updated !== "string" || data.updated === "") {
+    return undefined;
+  }
+  return {
+    provider: "gcal",
+    calendarId: data.calendarId,
+    eventId: data.eventId,
+    updated: data.updated,
+    ...(typeof data.recurringEventId === "string" && data.recurringEventId !== ""
+      ? { recurringEventId: data.recurringEventId }
+      : {}),
+  };
+}
+
+/**
+ * Reads a stored block document as a work block. The optional fields are
+ * dropped when they are absent or malformed, so a document written before
+ * titles and import sources existed reads as the plain block it always was.
+ */
+export function parseBlock(id: string, data: Record<string, unknown>): WorkBlock {
+  const taskId = data.taskId === undefined ? undefined : String(data.taskId);
+  const title = typeof data.title === "string" && data.title !== "" ? data.title : undefined;
+  const source = parseBlockSource(data.source);
+  return {
+    id,
+    start: String(data.start),
+    end: String(data.end),
+    ...(taskId === undefined ? {} : { taskId }),
+    ...(title === undefined ? {} : { title }),
+    ...(source === undefined ? {} : { source }),
+  };
+}
+
+/**
+ * The stored document fields of a work block. This is the closed block schema:
+ * optional fields are omitted rather than written as null, so a plain block is
+ * still exactly its two instants. Every whole-document block write (create,
+ * restore, import) goes through here, which is what makes a restored block the
+ * same document that was deleted, and `parseBlock` its exact inverse.
+ */
+export function blockFields(block: WorkBlock): Record<string, unknown> {
+  return {
+    start: block.start,
+    end: block.end,
+    ...(block.taskId === undefined ? {} : { taskId: block.taskId }),
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.source === undefined ? {} : { source: block.source }),
+  };
+}
+
+export function createWorkBlock(id: string, start: string, end: string, taskId?: string, extras?: BlockExtras): WorkBlock {
   requireInstant(start);
   requireInstant(end);
   if (Date.parse(end) <= Date.parse(start)) throw new Error("work block duration must be positive");
-  return { id, start, end, ...(taskId === undefined ? {} : { taskId }) };
+  const title = extras?.title === undefined ? undefined : extras.title.trim();
+  if (title !== undefined && title === "") throw new Error("work block title must not be empty");
+  const source = extras?.source === undefined ? undefined : requireBlockSource(extras.source);
+  return {
+    id,
+    start,
+    end,
+    ...(taskId === undefined ? {} : { taskId }),
+    ...(title === undefined ? {} : { title }),
+    ...(source === undefined ? {} : { source }),
+  };
 }
 
 export function occurrenceId(seriesId: string, date: string): string {

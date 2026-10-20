@@ -1,5 +1,5 @@
 import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
-import { createTask } from "../domain/model.ts";
+import { createTask, type Task } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 
@@ -10,13 +10,23 @@ import { forgetRemoval, trackRemoval } from "./pending.ts";
  * swallowed here).
  */
 
+/**
+ * The stored shape of a task: the closed set of fields a task document holds.
+ * Optional fields are omitted rather than written as null. Every task write
+ * path that rewrites a whole document (create, restore, import) goes through
+ * here, so a restored task is the document that was deleted.
+ */
+export function taskFields(task: Task, completed: boolean): Record<string, unknown> {
+  return {
+    title: task.title,
+    completed,
+    ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
+  };
+}
+
 export async function addTask(uid: string, title: string, deadline?: string) {
   const task = createTask("pending-mint", title, deadline);
-  await addDoc(collection(db, `users/${uid}/tasks`), {
-    title: task.title,
-    completed: false,
-    ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
-  });
+  await addDoc(collection(db, `users/${uid}/tasks`), taskFields(task, false));
 }
 
 export async function renameTask(uid: string, taskId: string, title: string) {
@@ -61,11 +71,7 @@ export async function restoreTask(uid: string, task: DeletedTask) {
   const validated = createTask(task.id, task.title, task.deadline);
   if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
   const path = `users/${uid}/tasks/${task.id}`;
-  const write = setDoc(doc(db, path), {
-    title: validated.title,
-    completed: task.completed,
-    ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
-  });
+  const write = setDoc(doc(db, path), taskFields(validated, task.completed));
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.
   forgetRemoval(path);

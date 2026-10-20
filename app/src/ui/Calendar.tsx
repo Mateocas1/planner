@@ -559,7 +559,7 @@ function CalendarView({
                                 resizeByKeyboard(item, event.key === "ArrowDown" ? 1 : -1);
                               }}
                             >
-                              <b>{task ? task.title : "Work block"}</b>
+                              <b>{task ? task.title : item.block.title ?? "Work block"}</b>
                               <span>{range}</span>
                               {resizable && (
                                 <>
