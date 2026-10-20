@@ -261,6 +261,9 @@ test("dragging the bottom edge by 30 minutes moves the end, keeps the start and 
 
   await expect(block).toContainText("10:00–11:30");
   await expect(block).not.toHaveAttribute("data-resizing", /.*/);
+  // The release lands past the block's old edge, over the day column: it must
+  // be read as the end of the resize, not as an empty-slot click.
+  await expect(page.getByRole("complementary", { name: "New block" })).toHaveCount(0);
   expect(await block.getAttribute("data-start")).toBe(before);
   await expect.poll(async () => Date.parse((await block.getAttribute("data-end"))!)).toBe(end + 30 * minuteMs);
   expect(Date.parse((await block.getAttribute("data-start"))!)).toBe(start);
@@ -365,4 +368,29 @@ test("Shift+Arrow resizes the end by one step, persists each press and stops at 
   expect(Date.parse(remote.end) - Date.parse(remote.start)).toBe(30 * minuteMs);
   expect(Date.parse(remote.start)).toBe(start);
   await expect(block).toContainText("10:00–10:30");
+});
+
+test("a block that ends on another day is not resizable, so a clipped end is never persisted", async ({ page }) => {
+  const email = newEmail("manip-crossday");
+  await signUp(page, email);
+  const day = localDateKey(new Date());
+  const nextDay = localDateKey(new Date(Date.now() + 86_400_000));
+  // 23:00-02:00 renders clipped at midnight in today's column (the D3 limit).
+  await seedTaskAndBlock(email, "Overnight", `${day}T23:00:00+00:00`, `${nextDay}T02:00:00+00:00`);
+  await openCalendar(page);
+  const block = page.locator(`[data-date="${day}"] .calendar-block`);
+  await expect(block).toHaveCount(1);
+  const endAttr = await block.getAttribute("data-end");
+
+  // No edge handles, and the keyboard path leaves it alone: persisting the
+  // clipped midnight would destroy the real end of the block.
+  await expect(block.locator(".block-handle")).toHaveCount(0);
+  await block.focus();
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.waitForTimeout(1_000);
+  expect(await block.getAttribute("data-end")).toBe(endAttr);
+  const blocks = await readRemoteBlocks(email);
+  expect(blocks).toHaveLength(1);
+  expect(Date.parse(blocks[0].end)).toBe(Date.parse(`${nextDay}T02:00:00Z`));
+  expect(Date.parse(blocks[0].start)).toBe(Date.parse(`${day}T23:00:00Z`));
 });

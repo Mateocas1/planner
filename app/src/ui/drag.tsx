@@ -212,17 +212,19 @@ export function DragGrip({ task }: { task: TaskView }) {
  * to re-register.
  */
 export function useCalendarDropTarget(target: DropTarget): void {
-  const api = useContext(TaskDragContext);
+  // `setTarget` is stable across renders (the api object is not), so the
+  // registration below survives every drop-slot update without churn.
+  const setTarget = useContext(TaskDragContext)?.setTarget;
   const latest = useRef(target);
   useEffect(() => {
     latest.current = target;
   });
   useEffect(() => {
-    if (!api) return;
-    api.setTarget({
+    if (!setTarget) return;
+    setTarget({
       resolve: (x, y) => latest.current.resolve(x, y),
       commit: (task, slot) => latest.current.commit(task, slot),
     });
-    return () => api.setTarget(null);
-  }, [api]);
+    return () => setTarget(null);
+  }, [setTarget]);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dropLengthMinutes, dropStart, instantForEdge, minBlockMinutes, movedEdge, snapMinutes, stepMinutes } from "./grid.ts";
+import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, minBlockMinutes, movedEdge, snapMinutes, stepMinutes } from "./grid.ts";
 
 test("snapMinutes rounds to the grid's step and stays inside the day", () => {
   assert.equal(stepMinutes, 30);
@@ -42,6 +42,26 @@ test("keyboard resize uses the same one-step rule", () => {
   // At the minimum duration the key changes nothing, so nothing is written.
   assert.deepEqual(movedEdge("end", -stepMinutes, 540, 570), { start: 540, end: 570 });
   assert.equal(minBlockMinutes, stepMinutes);
+});
+
+test("a dragged edge follows the pointer without snapping, inside the day", () => {
+  // Mid-drag the block keeps the pointer's minute: the step belongs to release.
+  assert.deepEqual(draggedEdge("end", 95, 480, 540), { start: 480, end: 635 });
+  assert.deepEqual(draggedEdge("start", -95, 480, 660), { start: 385, end: 660 });
+  assert.deepEqual(draggedEdge("end", 2000, 480, 540), { start: 480, end: 1440 });
+  assert.deepEqual(draggedEdge("start", -1000, 480, 660), { start: 0, end: 660 });
+  // One step apart is the floor for the normal case.
+  assert.deepEqual(draggedEdge("end", -600, 480, 540), { start: 480, end: 510 });
+  assert.deepEqual(draggedEdge("start", 600, 480, 660), { start: 630, end: 660 });
+});
+
+test("a stored block shorter than one step can only grow, never invert", () => {
+  // 08:00-08:10: neither edge may move in the direction that would snap it past
+  // the other one, but both may grow the block.
+  assert.deepEqual(draggedEdge("start", 30, 480, 490), { start: 480, end: 490 });
+  assert.deepEqual(draggedEdge("start", -30, 480, 490), { start: 450, end: 490 });
+  assert.deepEqual(draggedEdge("end", -30, 480, 490), { start: 480, end: 490 });
+  assert.deepEqual(draggedEdge("end", 60, 480, 490), { start: 480, end: 550 });
 });
 
 test("a dropped task lands on the step with room for its default length", () => {

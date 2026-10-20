@@ -33,6 +33,9 @@ export function snapMinutes(minutes: number): number {
  * The block a single edge dragged by `deltaMinutes` would produce: the moving
  * edge snaps to the step, the other edge stays put, the pair stays at least
  * `minBlockMinutes` apart, and neither edge leaves the day.
+ *
+ * A stored block shorter than one step can only grow from here: its moving edge
+ * refuses the direction that would have to snap it past the other edge.
  */
 export function movedEdge(
   edge: "start" | "end",
@@ -45,6 +48,24 @@ export function movedEdge(
     return { start: snapInside(start + deltaMinutes, 0, Math.max(0, Math.min(dayMinutes, end) - minBlockMinutes)), end };
   }
   return { start, end: snapInside(end + deltaMinutes, start + minBlockMinutes, dayMinutes) };
+}
+
+/** The block a single edge sits at while it is dragged, before snapping: the
+ * pointer's minute, clamped so the block never inverts or leaves the day, and
+ * so an edge of a block shorter than one step never moves the block backwards. */
+export function draggedEdge(
+  edge: "start" | "end",
+  deltaMinutes: number,
+  start: number,
+  end: number,
+  dayMinutes: number = minutesPerDay,
+): { start: number; end: number } {
+  if (edge === "start") {
+    const latest = end - minBlockMinutes >= start ? end - minBlockMinutes : start;
+    return { start: Math.max(0, Math.min(start + deltaMinutes, latest)), end };
+  }
+  const earliest = start + minBlockMinutes <= end ? start + minBlockMinutes : end;
+  return { start, end: Math.min(dayMinutes, Math.max(end + deltaMinutes, earliest)) };
 }
 
 /** Where a task dropped at `minutes` starts: snapped, with room for its length. */

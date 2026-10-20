@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { addBlock, deleteBlock, setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { useCalendarDropTarget, useTaskDrag, DragGrip } from "./drag.tsx";
-import { dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
+import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
 import "./Calendar.css";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
@@ -117,9 +117,6 @@ function CalendarView({
   // release) and the last thing the grid changed, announced politely.
   const [resize, setResize] = useState<{ id: string; edge: "start" | "end"; key: string; start: number; end: number } | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const suppressClick = useRef(false);
-  const resizeToken = useRef(0);
-  const settleAnimation = useRef<{ stop: () => void } | null>(null);
   const drag = useTaskDrag();
   const drop = drag?.carrying?.drop ?? null;
   const draftRef = useRef<HTMLDivElement>(null);
@@ -243,13 +240,12 @@ function CalendarView({
     );
   }
 
-  /** Where an edge sits while it is dragged: the pointer, clamped so the block
-   * never inverts or leaves the day but not yet snapped to the step. */
-  function rawEdge(edge: "start" | "end", deltaMinutes: number, base: { start: number; end: number }) {
-    if (edge === "start") {
-      return { start: Math.max(0, Math.min(base.start + deltaMinutes, base.end - stepMinutes)), end: base.end };
-    }
-    return { start: base.start, end: Math.min(minutesPerDay, Math.max(base.end + deltaMinutes, base.start + stepMinutes)) };
+  /** The block's stored edges as minutes of its own day, or null when it ends
+   * on another day: the layout clips such a block at midnight, so resizing it
+   * would persist the clip as the block's real end. */
+  function storedEdges(item: Laid): { start: number; end: number } | null {
+    const end = wallMinutes(new Date(item.block.end), timeZone);
+    return dateKey(new Date(item.block.end), timeZone) === item.key ? { start: item.startMinutes, end } : null;
   }
 
   /** Where a carried task would land under the pointer. */
@@ -286,28 +282,35 @@ function CalendarView({
   }
 
   /** Dragging an edge: the block follows the pointer exactly (no lag, no text
-   * scaling), Escape reverts, and release snaps to the grid's step, persists,
-   * and lets the block settle onto its stored geometry with a spring. */
+   * scaling), Escape reverts, and the release snaps to the grid's step and
+   * persists through the data layer. A release moves `top` and `height`, so it
+   * is a snap rather than an animation: the product animates transform,
+   * opacity, filter and clip-path on live DOM, and a resize is none of those. */
   function beginResize(item: Laid, edge: "start" | "end", event: React.PointerEvent<HTMLElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    const base = storedEdges(item);
+    if (!base) return;
     event.preventDefault();
     event.stopPropagation();
-    const block = event.currentTarget.closest<HTMLElement>(".calendar-block");
     const originY = event.clientY;
-    const base = { start: item.startMinutes, end: item.endMinutes };
-    const token = resizeToken.current + 1;
-    resizeToken.current = token;
-    settleAnimation.current?.stop();
-    settleAnimation.current = null;
     let delta = 0;
-    suppressClick.current = true;
+    // The click that follows this gesture belongs to the resize: it must not
+    // open the block's details, and a release over empty grid must not open the
+    // creation sheet. Capture on the window runs before React's own listeners,
+    // and the timer removes the listener after the click has been dispatched.
+    const swallow = (clickEvent: MouseEvent) => {
+      clickEvent.preventDefault();
+      clickEvent.stopPropagation();
+    };
+    window.addEventListener("click", swallow, true);
+    window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     // Mark the block as resizing from the press, not from the first move: the
     // press-scale rule must not shrink the block while its edge is grabbed.
     setResize({ id: item.block.id, edge, key: item.key, ...base });
 
     const move = (moveEvent: PointerEvent) => {
       delta = ((moveEvent.clientY - originY) / hourHeight) * 60;
-      setResize({ id: item.block.id, edge, key: item.key, ...rawEdge(edge, delta, base) });
+      setResize({ id: item.block.id, edge, key: item.key, ...draggedEdge(edge, delta, base.start, base.end) });
     };
 
     const end = (commit: boolean) => {
@@ -315,38 +318,13 @@ function CalendarView({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKey);
-      if (!commit) {
-        setResize(null);
-        suppressClick.current = false;
-        return;
-      }
-      // The click that follows this pointerup must not open the details sheet.
-      window.setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
+      setResize(null);
+      if (!commit) return;
       const snapped = movedEdge(edge, delta, base.start, base.end);
-      if (snapped.start === base.start && snapped.end === base.end) {
-        setResize(null);
-        return;
-      }
+      if (snapped.start === base.start && snapped.end === base.end) return;
       void saveTimes(item, snapped.start, snapped.end)
         .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
         .catch(fail);
-      const release = () => {
-        if (resizeToken.current === token) setResize(null);
-      };
-      if (block && !reduced) {
-        settleAnimation.current = animate(
-          block,
-          {
-            top: (snapped.start / 60) * hourHeight + 1,
-            height: Math.max(20, ((snapped.end - snapped.start) / 60) * hourHeight - 2),
-          },
-          { type: "spring", bounce: 0.12, duration: 0.3, onComplete: release },
-        );
-      } else {
-        release();
-      }
     };
 
     const onUp = () => end(true);
@@ -368,11 +346,13 @@ function CalendarView({
    * crossing one step past it. Focus stays on the block, so a run of presses is
    * a run of resizes. */
   function resizeByKeyboard(item: Laid, direction: 1 | -1) {
+    const base = storedEdges(item);
+    if (!base) return;
     // A block already at (or below) one step has nothing left to give; without
     // this, snapping a legacy short block up would grow it instead.
-    if (direction < 0 && item.endMinutes - item.startMinutes <= stepMinutes) return;
-    const snapped = movedEdge("end", direction * stepMinutes, item.startMinutes, item.endMinutes);
-    if (snapped.end === item.endMinutes) return;
+    if (direction < 0 && base.end - base.start <= stepMinutes) return;
+    const snapped = movedEdge("end", direction * stepMinutes, base.start, base.end);
+    if (snapped.end === base.end) return;
     setPlanError(null);
     void saveTimes(item, snapped.start, snapped.end)
       .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
@@ -526,6 +506,10 @@ function CalendarView({
                           const height = Math.max(20, ((endMinutes - startMinutes) / 60) * hourHeight - 2);
                           const width = 100 / item.columns;
                           const past = Date.parse(item.block.end) <= nowMs;
+                          // A block that ends on another day is clipped at midnight
+                          // in this column; resizing it would persist the clip, so it
+                          // is not resizable here (the known D3 limitation).
+                          const resizable = dateKey(new Date(item.block.end), timeZone) === item.key;
                           const range = live
                             ? `${minutesLabel(startMinutes)}–${minutesLabel(endMinutes)}`
                             : `${timeLabel(new Date(item.block.start), timeZone)}–${timeLabel(new Date(item.block.end), timeZone)}`;
@@ -538,40 +522,38 @@ function CalendarView({
                               data-start={item.block.start}
                               data-end={item.block.end}
                               data-resizing={live ? live.edge : undefined}
-                              aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown"
+                              aria-keyshortcuts={resizable ? "Shift+ArrowUp Shift+ArrowDown" : undefined}
                               style={{
                                 top: (startMinutes / 60) * hourHeight + 1,
                                 height,
                                 left: `calc(${item.column * width}% + 3px)`,
                                 width: `calc(${width}% - 6px)`,
                               }}
-                              onClick={event => {
-                                if (suppressClick.current) {
-                                  event.preventDefault();
-                                  return;
-                                }
-                                setOpenBlock({ id: item.block.id, origin: event.currentTarget });
-                              }}
+                              onClick={event => setOpenBlock({ id: item.block.id, origin: event.currentTarget })}
                               onKeyDown={event => {
-                                if (!event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+                                if (!resizable || !event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
                                 event.preventDefault();
                                 resizeByKeyboard(item, event.key === "ArrowDown" ? 1 : -1);
                               }}
                             >
                               <b>{task ? task.title : "Work block"}</b>
                               <span>{range}</span>
-                              <span
-                                className="block-handle block-handle-start"
-                                aria-hidden="true"
-                                data-edge="start"
-                                onPointerDown={event => beginResize(item, "start", event)}
-                              />
-                              <span
-                                className="block-handle block-handle-end"
-                                aria-hidden="true"
-                                data-edge="end"
-                                onPointerDown={event => beginResize(item, "end", event)}
-                              />
+                              {resizable && (
+                                <>
+                                  <span
+                                    className="block-handle block-handle-start"
+                                    aria-hidden="true"
+                                    data-edge="start"
+                                    onPointerDown={event => beginResize(item, "start", event)}
+                                  />
+                                  <span
+                                    className="block-handle block-handle-end"
+                                    aria-hidden="true"
+                                    data-edge="end"
+                                    onPointerDown={event => beginResize(item, "end", event)}
+                                  />
+                                </>
+                              )}
                             </button>
                           );
                         })}
