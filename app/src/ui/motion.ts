@@ -36,7 +36,20 @@ export const dur = {
   enter: 0.16,
   exit: 0.18,
   flight: 0.4,
+  /** The content's blur-to-sharp behind a landed panel: long enough to read as
+   *  a focus pull, short enough that the field the panel focuses is crisp again
+   *  before the user types (odd/research/melon-expand.md §b). */
+  blur: 0.26,
 } as const;
+
+/**
+ * How far out of focus the content of a panel starts (in px), before the card
+ * lands and the text sharpens. The card is close to the eye on a desktop and
+ * held at arm's length on a phone -- and the phone is the low-end GPU -- so a
+ * coarse pointer gets half the radius. It is never applied to the panel itself:
+ * a filter on a backdrop-filter surface repaints the glass flat (Sheet.tsx).
+ */
+export const expandBlur = { fine: 8, coarse: 4 } as const;
 
 /** The same token in milliseconds, which is what WAAPI's `duration` takes. */
 export const ms = (seconds: number) => Math.round(seconds * 1000);
