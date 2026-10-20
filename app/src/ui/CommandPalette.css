@@ -76,7 +76,11 @@ dialog.palette::backdrop {
   flex: none;
   width: 18px;
   height: 18px;
-  color: var(--label-3);
+  /* --label-2, not --label-3: the focused field's --fill-hover lightens the
+     sheet, and in dark mode --label-3 falls to 4.30:1 on it (the proof in
+     scripts/glass-contrast.mjs holds both tiers to AA). The quiet tier of a
+     filled control is --label-2; --label stays for the text the user types. */
+  color: var(--label-2);
 }
 
 /* the field's own close control stays quiet: the glass carries the surface */
@@ -100,7 +104,9 @@ dialog.palette::backdrop {
 }
 
 .palette-input::placeholder {
-  color: var(--label-3);
+  /* same reason as .palette-icon: --label-3 does not clear AA on the focused
+     field in dark mode (4.30:1), and a placeholder is text */
+  color: var(--label-2);
   font-weight: 400;
 }
 
