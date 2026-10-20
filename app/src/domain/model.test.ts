@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOccurrenceCompletion, createTask, createWorkBlock, expandOccurrences, occurrenceId, type Recurrence } from "./model.ts";
+import { blockFields, createOccurrenceCompletion, createTask, createWorkBlock, expandOccurrences, occurrenceId, parseBlock, type Recurrence } from "./model.ts";
 
 test("occurrence identity is stable for a series and UTC date", () => {
   assert.equal(occurrenceId("series-a", "2026-02-03"), "series-a:2026-02-03");
@@ -85,4 +85,59 @@ test("monthly expansion respects the anchor, the range bounds and the window lim
   assert.equal(expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-31" }, "2026-01-01", "2027-01-01").length, 7);
   assert.throws(() => expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-01" }, "2026-01-01", "2027-01-02"), /window/);
   assert.throws(() => expandOccurrences({ seriesId: "m", frequency: "monthly", anchorDate: "2026-01-01" }, "2026-02-01", "2026-01-01"));
+});
+
+test("a work block may carry a title and its Google import source, both validated", () => {
+  const source = { provider: "gcal" as const, calendarId: "primary", eventId: "evt1", updated: "2026-10-20T12:00:00.000Z" };
+  assert.deepEqual(
+    createWorkBlock("b1", "2026-02-03T09:00:00+05:30", "2026-02-03T10:00:00+05:30", undefined, { title: " Plan ", source }),
+    { id: "b1", start: "2026-02-03T09:00:00+05:30", end: "2026-02-03T10:00:00+05:30", title: "Plan", source },
+  );
+  assert.deepEqual(
+    createWorkBlock("b1", "2026-02-03T09:00:00Z", "2026-02-03T10:00:00Z", "t1", { title: "Plan", source: { ...source, recurringEventId: "series" } }),
+    { id: "b1", start: "2026-02-03T09:00:00Z", end: "2026-02-03T10:00:00Z", taskId: "t1", title: "Plan", source: { ...source, recurringEventId: "series" } },
+  );
+  // Absent optional fields stay absent, which is what an old stored block looks like.
+  assert.deepEqual(createWorkBlock("b1", "2026-02-03T09:00:00Z", "2026-02-03T10:00:00Z"), {
+    id: "b1", start: "2026-02-03T09:00:00Z", end: "2026-02-03T10:00:00Z"
+  });
+  assert.deepEqual(createWorkBlock("b1", "2026-02-03T09:00:00Z", "2026-02-03T10:00:00Z", undefined, { source }), {
+    id: "b1", start: "2026-02-03T09:00:00Z", end: "2026-02-03T10:00:00Z", source
+  });
+  for (const title of ["", "   "]) {
+    assert.throws(() => createWorkBlock("b1", "2026-02-03T09:00:00Z", "2026-02-03T10:00:00Z", undefined, { title }), /title/);
+  }
+  const bad = [
+    { ...source, provider: "other" },
+    { ...source, calendarId: "" },
+    { ...source, eventId: "" },
+    { ...source, eventId: "a/b" },
+    { ...source, updated: "2026-10-20T12:00:00" },
+    { ...source, updated: "" },
+    { ...source, recurringEventId: "" },
+  ];
+  for (const source of bad) {
+    assert.throws(() => createWorkBlock("b1", "2026-02-03T09:00:00Z", "2026-02-03T10:00:00Z", undefined, { source: source as never }), /source/);
+  }
+});
+
+test("a stored block round-trips through its document fields, title and source included", () => {
+  const source = { provider: "gcal" as const, calendarId: "primary", eventId: "evt1", updated: "2026-10-20T12:00:00.000Z", recurringEventId: "series" };
+  const block = createWorkBlock("b1", "2026-02-03T09:00:00+05:30", "2026-02-03T10:00:00+05:30", undefined, { title: "Plan", source });
+  const stored = blockFields(block);
+  assert.deepEqual(stored, {
+    start: "2026-02-03T09:00:00+05:30",
+    end: "2026-02-03T10:00:00+05:30",
+    title: "Plan",
+    source,
+  });
+  // What undo restores is the document that was deleted, field for field.
+  assert.deepEqual(parseBlock("b1", stored), block);
+  // A document written before titles and sources existed still reads, unchanged.
+  const legacy = { start: "2026-02-03T09:00:00Z", end: "2026-02-03T10:00:00Z" };
+  assert.deepEqual(parseBlock("b2", legacy), { id: "b2", start: legacy.start, end: legacy.end });
+  assert.deepEqual(blockFields(parseBlock("b2", { ...legacy, taskId: "t1" })), { ...legacy, taskId: "t1" });
+  // A malformed optional field is dropped, never handed to a surface as is.
+  assert.deepEqual(parseBlock("b3", { ...legacy, title: "", source: { provider: "gcal", calendarId: "" } }), { id: "b3", start: legacy.start, end: legacy.end });
+  assert.deepEqual(parseBlock("b4", { ...legacy, source: { provider: "other", calendarId: "c", eventId: "e", updated: "2026-10-20T12:00:00Z" } }), { id: "b4", start: legacy.start, end: legacy.end });
 });

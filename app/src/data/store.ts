@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
-import type { Recurrence, Task, WorkBlock } from "../domain/model.ts";
+import { parseBlock as parseStoredBlock, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
@@ -51,15 +51,9 @@ function toTask(doc: QueryDocumentSnapshot): TaskView {
   };
 }
 
+/** A stored block document read as the domain block plus its pending flag. */
 function toBlock(doc: QueryDocumentSnapshot): BlockView {
-  const data = doc.data();
-  return {
-    id: doc.id,
-    start: String(data.start),
-    end: String(data.end),
-    ...(data.taskId === undefined ? {} : { taskId: String(data.taskId) }),
-    pending: doc.metadata.hasPendingWrites,
-  };
+  return { ...parseStoredBlock(doc.id, doc.data()), pending: doc.metadata.hasPendingWrites };
 }
 
 function toSeries(doc: QueryDocumentSnapshot): SeriesView {
