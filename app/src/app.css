@@ -1413,17 +1413,28 @@ time,
   background: var(--scrim);
 }
 
+/* A panel is a card centred in what the user can see (S2/S3), on every screen:
+   the same geometry the command palette uses. `inset` + `margin: auto` centres
+   it in the band the on-screen keyboard leaves (ui/viewport.ts) instead of
+   anchoring it to an edge, and `height: fit-content` is what makes the vertical
+   centring possible at all -- with `height: auto` the two inset edges would
+   stretch the box to the full band and the margins would have nothing to
+   share. Tall content still clamps at max-height and scrolls inside the card.
+
+   Zero inset where nothing covers the page, which is every desktop. Not a
+   transition: layout stays off the compositor, so the panel moves to the
+   visible band with the keyboard instead of animating a layout property. */
 .sheet {
   position: fixed;
   z-index: 50;
-  top: 10px;
-  right: 10px;
-  /* The keyboard's covered band (ui/viewport.ts) lifts the bottom edge, so the
-     panel is sized against what the user can see. Zero where nothing covers the
-     page, which is every desktop. Not a transition: layout stays off the
-     compositor, so the panel jumps to the visible area with the keyboard. */
-  bottom: calc(10px + var(--kb-inset, 0px));
-  width: min(400px, calc(100% - 20px));
+  top: 12px;
+  bottom: calc(12px + var(--kb-inset, 0px));
+  left: 0;
+  right: 0;
+  height: fit-content;
+  margin: auto;
+  width: min(520px, calc(100% - 24px));
+  max-height: min(84vh, calc(100dvh - 24px - var(--kb-inset, 0px)));
   overflow-y: auto;
   /* the panel's own scroll ends at the panel: the page behind never moves */
   overscroll-behavior: contain;
@@ -1614,19 +1625,19 @@ select.form-control { text-align: left; cursor: pointer; }
     min-height: min(340px, 45vh);
     min-height: min(340px, 45dvh);
   }
-  /* A bottom sheet on a phone is sized against the visible band: the inset the
-     keyboard covers is subtracted from both its bottom edge and the height it
-     may take, so its first and last row -- title and primary action -- stay
-     above the keyboard and the rest scrolls inside it. inset-left/right keep it
-     off the landscape notch. */
+  /* On a phone the card is centred too (S3), near full width, and it is sized
+     against the visible band: the inset the keyboard covers is subtracted from
+     its bottom edge and from the height it may take, so its first and last
+     row -- title and primary action -- stay above the keyboard and the rest
+     scrolls inside it. inset-left/right keep it off the landscape notch. */
   .sheet {
-    top: auto;
+    top: 8px;
     left: calc(8px + env(safe-area-inset-left, 0px));
     right: calc(8px + env(safe-area-inset-right, 0px));
     bottom: calc(8px + var(--kb-inset, 0px));
     width: auto;
-    max-height: min(82vh, calc(100vh - 16px - var(--kb-inset, 0px)));
-    max-height: min(82dvh, calc(100dvh - 16px - var(--kb-inset, 0px)));
+    max-height: min(88vh, calc(100vh - 16px - var(--kb-inset, 0px)));
+    max-height: min(88dvh, calc(100dvh - 16px - var(--kb-inset, 0px)));
     padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   }
   .toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
