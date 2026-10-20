@@ -224,6 +224,13 @@ dialog.palette::backdrop {
   font-size: var(--text-sub);
 }
 
+/* A thumb on a 25.8 px field: the row the field sits in grows to 44 and the
+   field with it, while the mouse keeps the compact row
+   (odd/research/responsive-audit.md F3). */
+@media (pointer: coarse) {
+  .palette-input { min-height: 44px; }
+}
+
 @media (max-width: 760px) {
   dialog.palette {
     width: calc(100vw - 16px);

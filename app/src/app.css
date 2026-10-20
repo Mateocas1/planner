@@ -436,6 +436,49 @@ time,
 .switch:checked { background: var(--green-fill); }
 .switch:checked::after { transform: translateX(18px); }
 
+/* ---------- touch targets ----------
+   A mouse can hit a 28 px control; a thumb cannot, and the app was built for the
+   mouse: only `.check` carried a 44 px hit area (odd/research/responsive-audit.md
+   F3). The `44x44` floor (WCAG 2.2 §2.5.8, Apple's 44 pt) is applied as a
+   `min-height` where the box can grow and as an invisible `::before` where the
+   visible pill must keep its size, and it is scoped to a coarse pointer so the
+   desktop's density is untouched. */
+@media (pointer: coarse) {
+  /* A round control cannot grow its hit area with a pseudo: glass.css already
+     owns `.icon-button::before` for the rim and `::after` for the press, both
+     `inset: 0` and `pointer-events: none`, and it loads after this file. The
+     circle itself grows instead, which the rim follows. */
+  .icon-button,
+  .icon-button.large { width: 44px; height: 44px; }
+
+  .row-main { min-height: 44px; }
+
+  .button,
+  .button.small,
+  .segmented button,
+  .form-control,
+  .sheet-title,
+  .gate-actions .button {
+    min-height: 44px;
+  }
+
+  /* The round variant is 32 wide, which is a mouse's column: a thumb needs the
+     width as well, so it grows in both directions. */
+  .button.icon { min-width: 44px; }
+
+  /* The switch is a 44x26 pill by design; the target around it is 44 tall. */
+  .switch { position: relative; }
+  .switch::before {
+    content: "";
+    position: absolute;
+    inset: -9px 0;
+    border-radius: 22px;
+  }
+
+  /* An inline link has no pill to grow wide, but it can claim the height. */
+  .link-button { min-height: 44px; }
+}
+
 /* ---------- shell ---------- */
 
 .shell {
@@ -1305,11 +1348,14 @@ time,
 
 .strip-weekday { font-size: var(--text-tiny); font-weight: 500; color: var(--label-3); }
 
+/* Seven columns of a 320 px strip leave 41 px each, so the circle cannot reach
+   44 px without wrapping the row; 40 px is the largest that still fits, and the
+   column around it is the rest of the target (audit F9). */
 .strip-date {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

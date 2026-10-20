@@ -54,10 +54,11 @@ async function textZoom(page: Page, px: number) {
 type Box = { x: number; y: number; width: number; height: number };
 
 /**
- * The effective hit area of a control: its own box, widened by the `::before`
- * a control may carry, and probed with `elementFromPoint` so a hit area that
- * exists only in CSS is not taken on faith. `misses` counts the four corners of
- * a `min` by `min` square centred on the control that do not land on it.
+ * The effective hit area of a control: its own box, widened by the `::before` it
+ * may carry, probed with `elementFromPoint` so a target that exists only in CSS
+ * is not taken on faith. `misses` counts the eight points on a circle of radius
+ * `min / 2` around the control that do not land on it, which is the shape both a
+ * square target and a round one built from a circular `::before` satisfy.
  */
 async function hitArea(page: Page, selector: string, min = 44) {
   return page.evaluate(
@@ -67,14 +68,12 @@ async function hitArea(page: Page, selector: string, min = 44) {
       const rect = element.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      const half = size / 2 - 0.5;
-      const corners: Array<[number, number]> = [
-        [cx - half, cy - half],
-        [cx + half, cy - half],
-        [cx - half, cy + half],
-        [cx + half, cy + half],
-      ];
-      const misses = corners.filter(([x, y]) => {
+      const radius = size / 2 - 0.5;
+      const ring = Array.from({ length: 8 }, (_, index) => {
+        const angle = (index * Math.PI) / 4;
+        return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius] as [number, number];
+      });
+      const misses = ring.filter(([x, y]) => {
         const hit = document.elementFromPoint(x, y);
         return !hit || !(hit === element || element.contains(hit));
       }).length;
@@ -85,8 +84,17 @@ async function hitArea(page: Page, selector: string, min = 44) {
 }
 
 async function expectHitArea(page: Page, selector: string, name: string, min = 44) {
+  // A panel arrives with a 340 ms morph that owns the top layer, so a probe taken
+  // on its first frames hits the transition instead of the panel. The target is
+  // static once the surface has landed, so poll until the answer is the plain one
+  // and read it once more for the box in the message.
+  await expect
+    .poll(async () => (await hitArea(page, selector, min))?.misses ?? -1, {
+      message: `${name} keeps a ${min} px hit area`,
+    })
+    .toBe(0);
   const area = await hitArea(page, selector, min);
-  expect(area, `${name} exists`).not.toBeNull();
+  expect(area, `${name} exists (box ${area!.width}x${area!.height})`).not.toBeNull();
   expect(area!.misses, `${name} keeps a ${min} px hit area (box ${area!.width}x${area!.height})`).toBe(0);
 }
 
@@ -102,6 +110,19 @@ async function settled<T>(read: () => Promise<T>): Promise<T> {
     })
     .toBe(true);
   return previous;
+}
+
+/**
+ * A control's height once the surface holding it has landed: a panel arrives with
+ * a spring from the row that opened it, and a frame halfway through that flight
+ * is not the size the control will have.
+ */
+async function expectHeight(page: Page, selector: string, name: string, min: number) {
+  await expect
+    .poll(async () => (await page.locator(selector).first().boundingBox())?.height ?? 0, {
+      message: `${name} is at least ${min} px tall`,
+    })
+    .toBeGreaterThanOrEqual(min);
 }
 
 /* ============================ F1: the week grid ============================ */
@@ -287,14 +308,14 @@ test.describe("a thumb on a phone", () => {
     await openTasks(page);
 
     await expectHitArea(page, ".topbar-actions .icon-button.large", "the top bar's search", 44);
-    const row = await page.locator(".row-main.task-open").first().boundingBox();
-    expect(row!.height, "a task row is a 44 px tall target").toBeGreaterThanOrEqual(44);
+    await expectHeight(page, ".row-main.task-open", "a task row", 44);
 
-    await page.locator(".row-main.task-open").first().click();
+    // The first row is a repeating task, whose panel is "Series details": the
+    // task panel needs a one-off task.
+    await page.locator(".row.task:not(.series-row) .task-open").first().click();
     await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
-    await expectHitArea(page, ".sheet .icon-button[aria-label='Close']", "the sheet's close", 44);
-    const control = await page.locator(".sheet .form-control").first().boundingBox();
-    expect(control!.height, "a form control is 44 px tall").toBeGreaterThanOrEqual(44);
+    await expectHitArea(page, ".sheet .sheet-head .icon-button", "the sheet's close", 44);
+    await expectHeight(page, ".sheet .form-control", "a form control", 44);
     await expectHitArea(page, ".sheet .switch", "the reminder switch", 44);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("complementary", { name: "Task details" })).toHaveCount(0);
@@ -302,16 +323,14 @@ test.describe("a thumb on a phone", () => {
     await page.getByRole("button", { name: "New task" }).click();
     const sheet = page.getByRole("complementary", { name: "New task" });
     await expect(sheet).toBeVisible();
-    const titleField = await page.locator(".sheet-title").boundingBox();
-    expect(titleField!.height, "the sheet's title field is 44 px tall").toBeGreaterThanOrEqual(44);
-    await expectHitArea(page, ".sheet .icon-button[aria-label='Close']", "the New task sheet's close", 44);
+    await expectHeight(page, ".sheet-title", "the sheet's title field", 44);
+    await expectHitArea(page, ".sheet .sheet-head .icon-button", "the New task sheet's close", 44);
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
 
     await page.keyboard.press("Control+k");
     await expect(page.locator("dialog.palette")).toBeVisible();
-    const input = await page.locator(".palette-input").boundingBox();
-    expect(input!.height, "the palette's field is 44 px tall").toBeGreaterThanOrEqual(44);
+    await expectHeight(page, ".palette-input", "the palette's field", 44);
     await expectHitArea(page, "dialog.palette .icon-button", "the palette's close", 44);
     await page.keyboard.press("Escape");
     await expect(page.locator("dialog.palette")).toHaveCount(0);
@@ -321,8 +340,7 @@ test.describe("a thumb on a phone", () => {
     await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
     await page.getByRole("button", { name: "Delete task" }).click();
     await expect(page.locator(".undo-toast")).toBeVisible();
-    const undo = await page.locator(".undo-toast-action").boundingBox();
-    expect(undo!.height, "Undo is a 44 px target").toBeGreaterThanOrEqual(44);
+    await expectHeight(page, ".undo-toast-action", "Undo", 44);
     await expectHitArea(page, ".undo-toast-close", "the toast's dismiss", 44);
   });
 });
@@ -360,6 +378,7 @@ test.describe("a thumb on a tablet", () => {
     const icon = await page.locator(".toolbar .button.icon").first().boundingBox();
     await expectHitArea(page, ".toolbar .button.icon", "the previous-range button", 44);
     expect(icon!.width, "the icon button keeps its 44 px hit area").toBeLessThanOrEqual(60);
+    expect(icon!.height, "and is 44 px tall, not the mouse's 32").toBeGreaterThanOrEqual(44);
 
     const plan = await page.locator(".tray .button.small").first().boundingBox();
     expect(plan, "the tray offers Plan").not.toBeNull();
