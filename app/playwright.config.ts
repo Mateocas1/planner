@@ -11,7 +11,7 @@ for (const [name, value] of Object.entries(required)) {
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["browser.spec.ts"],
+  testMatch: ["browser.spec.ts", "travel.spec.ts"],
   use: {
     baseURL: "http://127.0.0.1:4174",
     // C1: the rendered date string depends on the locale, so pin it. The
