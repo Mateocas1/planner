@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Contrast proof for glass materials (G1 acceptance).
+ * Contrast proof for glass materials (G1 acceptance, extended by M2c to the
+ * palette's filled rows and the toast's own fill).
  *
  * Reads the real tokens out of `src/app.css` and `src/ui/glass.css`, composites
  * every glass tint over the backdrops the app actually puts behind chrome, and
@@ -256,9 +257,134 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
-/* The strongest claim the suite can make: every enforced cell clears AA. */
+/* ---------- palette (F3) and toast (F1) ---------- */
+
+/**
+ * Reads the translucency a component sheet declares for its own surface, e.g.
+ * the toast's `color-mix(in srgb, var(--surface) 90%, transparent)`. Reading it
+ * instead of restating it keeps the proof honest if the material is retuned.
+ */
+function readColorMix(file, selector) {
+  const css = readFileSync(join(appDir, file), "utf8");
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) throw new Error(`${file}: no ${selector} rule`);
+  const rule = css.slice(start, css.indexOf("}", start));
+  const match = rule.match(/color-mix\(\s*in srgb,\s*var\(--([a-z0-9-]+)\)\s*([\d.]+)%,\s*transparent\s*\)/i);
+  if (!match) throw new Error(`${file}: ${selector} has no translucent color-mix background`);
+  return { token: `--${match[1]}`, ratio: Number(match[2]) / 100 };
+}
+
+/**
+ * The token a component sheet paints one property of one element with, so the
+ * palette's own text tiers are read from CommandPalette.css instead of being
+ * restated here and drifting away from it.
+ */
+function readToken(file, selector, property) {
+  const css = readFileSync(join(appDir, file), "utf8");
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) throw new Error(`${file}: no ${selector} rule`);
+  const rule = css.slice(start, css.indexOf("}", start));
+  const match = rule.match(new RegExp(`${property}\\s*:\\s*var\\((--[a-z0-9-]+)\\)`, "i"));
+  if (!match) throw new Error(`${file}: ${selector} does not set ${property} to a token`);
+  return match[1];
+}
+
+const PALETTE_CSS = "src/ui/CommandPalette.css";
+const toastBase = readColorMix("src/ui/UndoToast.css", ".undo-toast");
+/* The palette's quiet tier on its filled field: the placeholder and the search
+   icon. Text, so it is held to AA like every other label. */
+const paletteQuiet = readToken(PALETTE_CSS, ".palette-input::placeholder", "color");
+/* The selected row's icon is a graphic object, not text (WCAG 1.4.11 floor). */
+const paletteSelectedIcon = readToken(
+  PALETTE_CSS,
+  '.palette-option[aria-selected="true"] .palette-option-icon',
+  "color",
+);
+
+/** WCAG 1.4.11: non-text contrast for graphical objects needed to understand the UI. */
+const NON_TEXT = 3;
+
+for (const scheme of ["light", "dark"]) {
+  const tokens = new Map([
+    ...app.light,
+    ...glass.light,
+    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
+  ]);
+  const page = parseColor(tokens.get("--bg-top"), tokens);
+  const scrim = over(parseColor(tokens.get("--scrim"), tokens), page);
+  /* The palette is the thick sheet material over the dimmed page. */
+  const palette = over(parseColor(tokens.get("--glass-tint-thick"), tokens), scrim);
+  const toastFill = parseColor(tokens.get(toastBase.token), tokens);
+  const toast = over([...toastFill.slice(0, 3), toastBase.ratio * toastFill[3]], page);
+  const paletteField = over(parseColor(tokens.get("--fill-hover"), tokens), palette);
+  const paletteSelected = over(parseColor(tokens.get("--fill-press"), tokens), palette);
+
+  /* Only these three places put text on something other than the plain
+     material: the palette's focused field, its selected row, and the toast,
+     whose fill is its own recipe and whose backdrop is whatever scrolled. */
+  const surfaces = [
+    { name: "palette-field", backdrop: "palette", base: paletteField, labels: ["--label", paletteQuiet] },
+    { name: "palette-selected", backdrop: "palette", base: paletteSelected, labels: ["--label"] },
+    { name: "toast", backdrop: "page", base: toast, labels: ["--label", "--label-2", "--label-3"] },
+  ];
+
+  for (const surface of surfaces) {
+    for (const label of surface.labels) {
+      const value = ratio(parseColor(tokens.get(label), tokens), surface.base);
+      const pass = value >= AA;
+      if (!pass) failures += 1;
+      rows.push({
+        scheme,
+        material: surface.name,
+        backdrop: surface.backdrop,
+        label,
+        surface: toHex(surface.base),
+        value,
+        floor: AA,
+        enforced: true,
+        pass,
+      });
+    }
+  }
+
+  /* The toast's Undo button is the accent pair; the selected palette row paints
+     its icon in the accent. One is text, the other a graphic object. */
+  const graphics = [
+    { name: "toast-action", backdrop: "accent", label: "--on-accent", base: parseColor(tokens.get("--accent"), tokens), floor: AA },
+    {
+      name: "palette-selected-icon",
+      backdrop: "palette",
+      label: paletteSelectedIcon,
+      base: paletteSelected,
+      floor: NON_TEXT,
+    },
+  ];
+  for (const graphic of graphics) {
+    const value = ratio(parseColor(tokens.get(graphic.label), tokens), graphic.base);
+    const pass = value >= graphic.floor;
+    if (!pass) failures += 1;
+    rows.push({
+      scheme,
+      material: graphic.name,
+      backdrop: graphic.backdrop,
+      label: graphic.label,
+      surface: toHex(graphic.base),
+      value,
+      floor: graphic.floor,
+      enforced: true,
+      pass,
+    });
+  }
+}
+
+/* The strongest claim the suite can make: every enforced cell clears the WCAG
+   floor that applies to it — AA for text, 1.4.11 for a graphic object. */
+const floorOf = (row) => row.floor ?? AA;
 const enforced = rows.filter((row) => row.enforced);
-const worst = enforced.reduce((a, b) => (a.value <= b.value ? a : b));
+const text = enforced.filter((row) => floorOf(row) === AA);
+const graphics = enforced.filter((row) => floorOf(row) !== AA);
+/* Each bucket shares one floor, so the lowest value is the closest call. */
+const worstOf = (list) => list.reduce((a, b) => (a.value <= b.value ? a : b));
 
 if (verbose || failures > 0) {
   const header = "scheme  material  backdrop       label      surface   ratio  status";
@@ -267,7 +393,7 @@ if (verbose || failures > 0) {
     console.log(
       [
         row.scheme.padEnd(7),
-        row.material.padEnd(9),
+        row.material.padEnd(22),
         row.backdrop.padEnd(15),
         row.label.padEnd(10),
         row.surface.padEnd(9),
@@ -284,7 +410,9 @@ if (failures > 0) {
   process.exit(1);
 }
 
+const describe = (row) =>
+  `${row.value.toFixed(2)}:1, ${row.scheme} ${row.material} ${row.backdrop} ${row.label}`;
 console.log(
-  `glass contrast: ${enforced.length} enforced pairs >= ${AA}:1 ` +
-    `(worst ${worst.value.toFixed(2)}:1, ${worst.scheme} ${worst.material} ${worst.backdrop} ${worst.label})`,
+  `glass contrast: ${text.length} text pairs >= ${AA}:1 (worst ${describe(worstOf(text))}); ` +
+    `${graphics.length} graphic pairs >= ${NON_TEXT}:1 (worst ${describe(worstOf(graphics))})`,
 );
