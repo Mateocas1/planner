@@ -3,6 +3,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
+// brand.css is the scale itself (--brand-* / --ink-*); app.css maps every colour
+// token onto a step of it, so the scale is loaded first.
+import "./ui/brand.css";
 import "./app.css";
 // glass.css is imported after app.css on purpose: it owns the glass materials
 // and tokens that app.css used to define.

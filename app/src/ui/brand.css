@@ -1,0 +1,75 @@
+/* Brand scale — hue 268 (OKLCH), "dusk indigo".
+
+   The colour of the sky between day and night: deep enough to read as focus,
+   cool enough to disappear behind content, and far enough from every state hue
+   (red 27, amber 50, green 149) that "error" never looks like "accent".
+
+   Two tracks share lightness and hue. `--brand-*` carries colour (accent,
+   categories, selection, the ambient tint); `--ink-*` carries material
+   (surfaces, text, glass tints, shadows). They coincide at both ends, where
+   chroma is only 0.004-0.016, so near-white and near-black stay tints of the
+   brand instead of going neutral grey.
+
+   This file is scheme-independent on purpose: light and dark read the same 13
+   steps and simply pick different rungs. It is imported before app.css, which
+   is where each token is mapped onto a step (odd/research/brand-color.md §4).
+   Neither file restates a hex.
+
+   The values are hex, not oklch(): app/scripts/glass-contrast.mjs parses hex
+   and rgb() only, and the contrast proof has to read the same bytes the
+   browser paints.
+
+   step     L     C-b    brand      C-i    ink
+    50    .990   .004   #FAFCFF   .004   #FAFCFF
+   100    .975   .008   #F4F7FC   .008   #F4F7FC
+   200    .958   .014   #EDF1FB   .010   #EEF1F8
+   300    .940   .028   #E3EBFF   .012   #E8EBF4
+   400    .840   .078   #B5C9FE   .014   #C6CAD4
+   500    .700   .156   #7598FF   .016   #9A9EA9
+   600    .525   .195   #3C5CD9   .018   #666A75
+   700    .460   .185   #2E49BD   .020   #535864
+   800    .370   .140   #213688   .022   #3B404C
+   900    .275   .085   #162351   .018   #242731
+   925    .235   .050   #141D36   .016   #1B1E26
+   950    .200   .040   #0E1528   .016   #13161D
+   975    .165   .030   #090E1B   .016   #0B0E15
+
+   Alpha tokens (glass tints, fills, separators, shadows) stay `rgb(r g b / a)`
+   literals in their own sheets, with a comment naming the step they are built
+   from: an alpha cannot be inherited from a hex, and relative-colour syntax is
+   not in the contrast script's parser. */
+
+:root {
+  /* brand track: chromatic, reaches C 0.195 at 600 */
+  --brand-50: #FAFCFF;
+  --brand-100: #F4F7FC;
+  --brand-200: #EDF1FB;
+  --brand-300: #E3EBFF;
+  --brand-400: #B5C9FE;
+  /* the dark hover step, between 500 and 400: only --accent-hover uses it, and
+     brand-400 is too light for a hover on an accent-filled button */
+  --brand-450: #90AEFF;
+  --brand-500: #7598FF;
+  --brand-600: #3C5CD9;
+  --brand-700: #2E49BD;
+  --brand-800: #213688;
+  --brand-900: #162351;
+  --brand-925: #141D36;
+  --brand-950: #0E1528;
+  --brand-975: #090E1B;
+
+  /* ink track: the same L and H, chroma capped at 0.022 */
+  --ink-50: #FAFCFF;
+  --ink-100: #F4F7FC;
+  --ink-200: #EEF1F8;
+  --ink-300: #E8EBF4;
+  --ink-400: #C6CAD4;
+  --ink-500: #9A9EA9;
+  --ink-600: #666A75;
+  --ink-700: #535864;
+  --ink-800: #3B404C;
+  --ink-900: #242731;
+  --ink-925: #1B1E26;
+  --ink-950: #13161D;
+  --ink-975: #0B0E15;
+}

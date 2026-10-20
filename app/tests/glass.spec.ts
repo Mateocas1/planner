@@ -849,7 +849,7 @@ test("undo toast: dark glass with light ink in both colour schemes", async ({ pa
     expect(material.backdropFilter, scheme).toContain("saturate(1.8)");
     expect(alphaOf(material.background), scheme).toBeGreaterThanOrEqual(0.82);
     expect(Math.max(...channelsOf(material.background)), scheme).toBeLessThan(64);
-    expect(material.color, scheme).toBe("rgb(255, 255, 255)");
+    expect(material.color, scheme).toBe("rgb(250, 252, 255)");
   }
 });
 
@@ -863,7 +863,7 @@ test("undo toast: reduced transparency goes solid dark, never light", async ({ p
   expect(solid.backdropFilter).toBe("none");
   expect(alphaOf(solid.background)).toBe(1);
   expect(Math.max(...channelsOf(solid.background))).toBeLessThan(64);
-  expect(solid.color).toBe("rgb(255, 255, 255)");
+  expect(solid.color).toBe("rgb(250, 252, 255)");
 
   await emulateReducedTransparency(page, "no-preference");
   expect((await readMaterial(toast)).backdropFilter).toContain("blur(32px)");
