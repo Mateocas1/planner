@@ -1,7 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createOccurrenceCompletion, createTask, expandOccurrences, occurrenceId, type Recurrence } from "../domain/model.ts";
 import { db } from "./client.ts";
-import { trackRemoval } from "./pending.ts";
+import { forgetRemoval, trackRemoval } from "./pending.ts";
 
 /** Frequency of a recurring series, exactly as the domain defines it. */
 export type Frequency = Recurrence["frequency"];
@@ -77,7 +77,7 @@ export async function setSeriesAnchor(uid: string, seriesId: string, frequency: 
  */
 export async function deleteSeries(uid: string, seriesId: string) {
   if (!seriesId || seriesId.includes("/")) throw new Error("series ID is invalid");
-  await trackRemoval(deleteDoc(doc(db, `users/${uid}/series/${seriesId}`)));
+  await trackRemoval(`users/${uid}/series/${seriesId}`, deleteDoc(doc(db, `users/${uid}/series/${seriesId}`)));
 }
 
 /** A series definition exactly as it was stored, captured before it is deleted. */
@@ -100,12 +100,17 @@ export async function restoreSeries(uid: string, series: DeletedSeries) {
   if (!series.id || series.id.includes("/")) throw new Error("series ID is invalid");
   const validated = createTask(series.id, series.title, series.deadline);
   const recurrence = requireValidRecurrence(series.id, series.frequency, series.anchorDate);
-  await setDoc(doc(db, `users/${uid}/series/${series.id}`), {
+  const path = `users/${uid}/series/${series.id}`;
+  const write = setDoc(doc(db, path), {
     title: validated.title,
     frequency: recurrence.frequency,
     anchorDate: recurrence.anchorDate,
     ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
   });
+  // The restore is the pending write now: the delete it undoes no longer counts
+  // on its own (see forgetRemoval), so one document is one pending change.
+  forgetRemoval(path);
+  await write;
 }
 
 /**

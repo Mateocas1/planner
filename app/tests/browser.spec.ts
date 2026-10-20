@@ -46,9 +46,19 @@ async function openTasks(page: Page) {
 async function settleSheet(page: Page, label: string) {
   const sheet = page.getByRole("complementary", { name: label });
   if ((await sheet.count()) === 0) return;
-  const closing = (await sheet.getAttribute("data-state")) === "closing";
+  // Read the form's control first. A submit's continuation re-enables the form
+  // and starts the panel's exit in the same commit, so an enabled control means
+  // that commit has already happened and the panel is leaving. Sampling
+  // data-state first and the control second let the two reads straddle that
+  // commit: a leaving panel read as open, and the next fill landed on a form
+  // that unmounted under it.
   const submitting = await sheet.getByRole("button", { name: /^Add (task|block)$/ }).isDisabled().catch(() => false);
-  if (closing || submitting) await expect(sheet).toHaveCount(0);
+  if (submitting) {
+    await expect(sheet).toHaveCount(0);
+    return;
+  }
+  const state = await sheet.getAttribute("data-state").catch(() => null);
+  if (state !== "open") await expect(sheet).toHaveCount(0);
 }
 
 /**
