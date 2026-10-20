@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { motion } from "motion/react";
 import type { View } from "../App.tsx";
-import type { BlockView } from "../data/store.ts";
+import type { BlockView, TaskView } from "../data/store.ts";
+import { setTaskCompleted } from "../data/tasks.ts";
+import { formatDateKey, isPastDateKey } from "./format.ts";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
-import { spring } from "./motion.ts";
+import { spring, useNow } from "./motion.ts";
 import { SyncStatus } from "./SyncStatus.tsx";
 import { setThemePreference, useThemePreference, type ThemePreference } from "./theme.ts";
-import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey } from "./time.ts";
+import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, mondayOf, timeLabel, wallDayKey } from "./time.ts";
+import { settle } from "./write.ts";
+// The sidebar's own content (value roadmap §3) ships its styles beside it, so
+// this unit never edits the shared sheet it would collide with.
+import "./Sidebar.css";
 
 export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
   { id: "home", label: "Today", Icon: TodayIcon },
@@ -17,29 +23,40 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
 /**
  * The desktop sidebar: a quiet glass material holding the month, the view
  * navigation (nav "Main", the name the browser tests address) with a pill that
- * slides to the active view, the sync status and the account.
+ * slides to the active view, and the two blocks that answer "what comes next"
+ * (value roadmap §3).
+ *
+ * The content blocks exist only here: the sidebar is visible on Tasks and
+ * Calendar, where Home's now-card and due list are not. Everything they show is
+ * derived from data the store already holds, in the profile timezone (D3).
  */
 export function Sidebar({
   email,
+  uid,
   view,
   openCount,
   pending,
+  tasks,
   blocks,
   timeZone,
   selectedDay,
   onNavigate,
   onPickDay,
+  onOpenTask,
   onSignOut,
 }: {
   email: string;
+  uid: string;
   view: View;
   openCount: number;
   pending: number;
+  tasks: TaskView[];
   blocks: BlockView[];
   timeZone: string | null;
   selectedDay: string | null;
   onNavigate: (view: View) => void;
   onPickDay: (key: string) => void;
+  onOpenTask: (taskId: string) => void;
   onSignOut: () => void;
 }) {
   return (
@@ -68,6 +85,12 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+      {timeZone && (
+        <>
+          <UpNext blocks={blocks} tasks={tasks} timeZone={timeZone} />
+          <DueSoon uid={uid} tasks={tasks} timeZone={timeZone} onOpenTask={onOpenTask} />
+        </>
+      )}
       <div className="side-foot">
         <ThemeSwitch />
         <SyncStatus pending={pending} />
@@ -77,6 +100,120 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+/* ---------- the two content blocks ---------- */
+
+/** The block's own name: the task it belongs to, or the product's word for an
+ * unlinked block (`Calendar.tsx` uses the same wording). */
+function blockTitle(block: BlockView, tasks: TaskView[]): string {
+  return tasks.find(task => task.id === block.taskId)?.title ?? "Work block";
+}
+
+/** "14:00 – 15:00" in the profile zone. */
+function blockRange(block: BlockView, timeZone: string): string {
+  return `${timeLabel(new Date(block.start), timeZone)} – ${timeLabel(new Date(block.end), timeZone)}`;
+}
+
+/**
+ * Up next: the block running at this minute, then the next one still to start
+ * today. Two rows at most -- this is a hint about what comes next, not a
+ * second agenda. Nothing to add a timer to here: the focus timer is its own
+ * unit (value roadmap §5 row 5).
+ */
+function UpNext({ blocks, tasks, timeZone }: { blocks: BlockView[]; tasks: TaskView[]; timeZone: string }) {
+  const now = useNow();
+  const nowMs = now.getTime();
+  const today = dateKey(now, timeZone);
+  const todayBlocks = blocks
+    .filter(block => dateKey(new Date(block.start), timeZone) === today)
+    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  const current = todayBlocks.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
+  const next = todayBlocks.find(block => Date.parse(block.start) > nowMs);
+  const rows = [
+    ...(current ? [{ block: current, running: true }] : []),
+    ...(next ? [{ block: next, running: false }] : []),
+  ];
+
+  return (
+    <section className="side-block side-up-next" aria-labelledby="side-up-next-heading">
+      <h3 id="side-up-next-heading" className="side-label">Up next</h3>
+      {rows.length === 0 ? (
+        <p className="side-empty">Nothing else today.</p>
+      ) : (
+        <ul className="side-card">
+          {rows.map(({ block, running }) => (
+            <li key={block.id} className={`side-row${running ? " is-now" : ""}`}>
+              <p className="side-row-title" title={blockTitle(block, tasks)}>{blockTitle(block, tasks)}</p>
+              <p className="side-row-meta">
+                {running ? "now" : `in ${formatDuration((Date.parse(block.start) - nowMs) / 60_000)}`}
+                {" · "}
+                {blockRange(block, timeZone)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Due soon: the next five open deadlines, overdue first, capped so the block
+ * never becomes a second task list. Each row can be completed in place and
+ * opens the task's own panel on the Tasks surface.
+ */
+function DueSoon({
+  uid,
+  tasks,
+  timeZone,
+  onOpenTask,
+}: {
+  uid: string;
+  tasks: TaskView[];
+  timeZone: string;
+  onOpenTask: (taskId: string) => void;
+}) {
+  const now = useNow();
+  const today = dateKey(now, timeZone);
+  const weekAhead = wallDayKey(keyToWallUtc(today) + 7 * dayMs);
+  const due = tasks
+    .filter(task => !task.completed && task.deadline !== undefined && task.deadline <= weekAhead)
+    .sort((left, right) => left.deadline!.localeCompare(right.deadline!) || left.title.localeCompare(right.title))
+    .slice(0, 5);
+  const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
+
+  return (
+    <section className="side-block side-due" aria-labelledby="side-due-heading">
+      <h3 id="side-due-heading" className="side-label">Due soon</h3>
+      {due.length === 0 ? (
+        <p className="side-empty">Nothing due this week.</p>
+      ) : (
+        <ul className="side-card">
+          {due.map(task => {
+            const overdue = isPastDateKey(task.deadline!, today);
+            return (
+              <li key={task.id} className="side-due-row" data-pending={task.pending ? "true" : "false"}>
+                <input
+                  type="checkbox"
+                  className="check"
+                  checked={false}
+                  aria-label={`Complete: ${task.title}`}
+                  onChange={() => complete(task)}
+                />
+                <button type="button" className="side-due-open" onClick={() => onOpenTask(task.id)}>
+                  <span className="side-due-title" title={task.title}>{task.title}</span>
+                  <span className={`side-due-meta${overdue ? " is-overdue" : ""}`}>
+                    {overdue ? `Overdue · ${formatDateKey(task.deadline!, today)}` : formatDateKey(task.deadline!, today)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 

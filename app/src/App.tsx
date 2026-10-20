@@ -104,9 +104,11 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       {!phone && (
         <Sidebar
           email={user.email ?? ""}
+          uid={user.uid}
           view={view}
           openCount={openCount}
           pending={pending}
+          tasks={tasks}
           blocks={blocks}
           timeZone={profile.timeZone}
           selectedDay={calendarDay}
@@ -114,6 +116,10 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           onPickDay={key => {
             setCalendarDay(key === today ? null : key);
             onNavigate("calendar");
+          }}
+          onOpenTask={taskId => {
+            setPendingTask(taskId);
+            onNavigate("tasks");
           }}
           onSignOut={signOut}
         />

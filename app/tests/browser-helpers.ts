@@ -259,6 +259,70 @@ export async function submitAuthForm(page: Page, email: string, kind: "sign up" 
   await expect(shell).toBeVisible();
 }
 
+/* ---------- Sidebar fixture (tests/sidebar.spec.ts) ---------- */
+
+/**
+ * Seeds one account for the sidebar assertions: the profile time zone, the open
+ * tasks with their deadlines, and the work blocks, all before the browser signs
+ * in. A block names its task by title, so a test never has to seed twice.
+ */
+export async function seedSidebarFixture(
+  email: string,
+  timeZone: string,
+  fixture: {
+    tasks?: Array<{ title: string; deadline?: string; completed?: boolean }>;
+    blocks?: Array<{ start: string; end: string; task?: string }>;
+  } = {},
+): Promise<{ taskIds: Record<string, string> }> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  await setRemoteDoc(uid, "profile/main", { timeZone });
+  const taskIds: Record<string, string> = {};
+  for (const task of fixture.tasks ?? []) {
+    taskIds[task.title] = await addRemoteDoc(uid, "tasks", {
+      title: task.title,
+      completed: task.completed ?? false,
+      ...(task.deadline ? { deadline: task.deadline } : {}),
+    });
+  }
+  for (const block of fixture.blocks ?? []) {
+    const taskId = block.task === undefined ? undefined : taskIds[block.task];
+    if (block.task !== undefined && taskId === undefined) {
+      throw new Error(`seedSidebarFixture: block names unknown task ${block.task}`);
+    }
+    await addRemoteDoc(uid, "blocks", { start: block.start, end: block.end, ...(taskId ? { taskId } : {}) });
+  }
+  return { taskIds };
+}
+
+/**
+ * The effective hit area of a control: its own box, widened by the `::before`
+ * it may carry, probed with `elementFromPoint` so a target that exists only in
+ * CSS is not taken on faith. `misses` counts the eight points on a circle of
+ * radius `min / 2` around the control that do not land on it.
+ */
+export async function hitArea(page: Page, selector: string, min = 44) {
+  return page.evaluate(
+    ({ selector: sel, min: size }) => {
+      const element = document.querySelector<HTMLElement>(sel);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const radius = size / 2 - 0.5;
+      const misses = Array.from({ length: 8 }, (_, index) => {
+        const angle = (index * Math.PI) / 4;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        const hit = document.elementFromPoint(x, y);
+        return !hit || !(hit === element || element.contains(hit));
+      }).filter(Boolean).length;
+      return { width: Math.round(rect.width * 10) / 10, height: Math.round(rect.height * 10) / 10, misses };
+    },
+    { selector, min },
+  );
+}
+
 /* ---------- Responsive fixture (tests/responsive.spec.ts) ---------- */
 
 /** A wall-clock day key in `timeZone`, independent of the browser's own zone. */
