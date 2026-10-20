@@ -1,0 +1,242 @@
+import { toZonedInstant } from "./instant.ts";
+import { createTask, createWorkBlock, type BlockSource, type Task, type WorkBlock } from "./model.ts";
+
+/**
+ * The pure half of "Import from Google Calendar": Google's `events.list` items
+ * (fetched with `singleEvents=true`) in, an `ImportPlan` out. Nothing here
+ * touches the network, Firestore or the DOM, so the whole mapping -- offsets,
+ * zones, dedupe and the deterministic document ids -- is testable and the
+ * write in data/gcal.ts only has to apply the plan.
+ *
+ * Owner decisions encoded here: a timed event becomes a work block, an all-day
+ * event becomes a task dated from its first day, and a meeting never becomes a
+ * task (a meeting is timed, so it is a block).
+ */
+
+/** The `start`/`end` shape of a Calendar API event. */
+export type GcalEventTime = { date?: string; dateTime?: string; timeZone?: string };
+
+/** The attendee fields the mapper reads (only the viewer's own answer matters). */
+export type GcalAttendee = { self?: boolean; responseStatus?: string };
+
+/**
+ * The subset of a Calendar API event the import reads. Every field is optional
+ * because the input is untrusted JSON off the wire: the mapper decides what is
+ * usable and counts the rest instead of throwing.
+ */
+export type GcalEvent = {
+  id?: string;
+  status?: string;
+  summary?: string;
+  updated?: string;
+  eventType?: string;
+  recurringEventId?: string;
+  start?: GcalEventTime;
+  end?: GcalEventTime;
+  attendees?: GcalAttendee[];
+};
+
+/** Why an event produced no block and no task. */
+export type ImportSkipReason =
+  | "cancelled"
+  | "declined"
+  | "workingLocation"
+  | "outOfOffice"
+  | "focusTime"
+  | "imported"
+  | "unusable";
+
+export type ImportSkips = Record<ImportSkipReason, number>;
+
+/** What the planner already holds, so a second import writes nothing twice. */
+export type ExistingImportData = {
+  /** Document ids of the stored blocks. */
+  blockIds?: Iterable<string>;
+  /** Document ids of the stored tasks. */
+  taskIds?: Iterable<string>;
+  /** `source.eventId` of the stored imported blocks. */
+  eventIds?: Iterable<string>;
+};
+
+export type ImportPlanInput = {
+  /** The Google calendar the events came from (`primary` for the main one). */
+  calendarId: string;
+  events: GcalEvent[];
+  /** The profile's IANA zone: the fallback for a `dateTime` without an offset. */
+  timeZone: string;
+  existing?: ExistingImportData;
+};
+
+export type ImportPlan = {
+  calendarId: string;
+  /** Blocks to write, each with a deterministic document id. */
+  blocks: WorkBlock[];
+  /** Tasks to write, each with a deterministic document id. */
+  tasks: Task[];
+  skipped: ImportSkips;
+};
+
+/** Every imported document id starts with this prefix. */
+export const GCAL_ID_PREFIX = "gcal_";
+
+const wallClock = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
+const offsetInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+/** Google's own event id alphabet; anything else cannot become a document id. */
+const safeEventId = /^[A-Za-z0-9._-]{1,200}$/;
+
+function emptySkips(): ImportSkips {
+  return { cancelled: 0, declined: 0, workingLocation: 0, outOfOffice: 0, focusTime: 0, imported: 0, unusable: 0 };
+}
+
+/** FNV-1a as base 36: short, stable, and the same in every runtime. */
+function digest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * A short, safe key for a calendar id. The readable slug alone can collide
+ * once it is truncated (`me@a.com` and `me@b.com` both slug to `me-a-com`), so
+ * a digest of the full id follows it; the result only ever holds `[a-z0-9-]`,
+ * which is what makes it usable inside a document id.
+ */
+export function calendarKey(calendarId: string): string {
+  const slug = calendarId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
+  return `${slug === "" ? "cal" : slug}-${digest(calendarId)}`;
+}
+
+/** The deterministic document id a calendar event imports as. */
+export function importDocId(calendarId: string, eventId: string): string {
+  return `${GCAL_ID_PREFIX}${calendarKey(calendarId)}_${eventId}`;
+}
+
+/** A declined invitation: the viewer's own attendee entry says `declined`. */
+function declinedBySelf(event: GcalEvent): boolean {
+  return Array.isArray(event.attendees)
+    && event.attendees.some(attendee => attendee.self === true && attendee.responseStatus === "declined");
+}
+
+/** The event's only, or first, day; an all-day event carries `date`, not `dateTime`. */
+function isAllDay(event: GcalEvent): boolean {
+  return typeof event.start?.date === "string" && event.start.dateTime === undefined;
+}
+
+/**
+ * The zoned ISO instant an event edge denotes. A stamp that already carries an
+ * offset is kept exactly as Google sent it; a bare wall clock is interpreted in
+ * the event's own zone, falling back to the profile zone -- the same helper the
+ * planner uses when it turns a grid slot into a block, so a DST day behaves the
+ * same in both paths. Returns null for an edge the mapper cannot place.
+ */
+function instantOf(time: GcalEventTime | undefined, fallbackTimeZone: string): string | null {
+  if (time === undefined) return null;
+  const value = typeof time.dateTime === "string" ? time.dateTime.trim() : "";
+  if (offsetInstant.test(value)) return value;
+  if (!wallClock.test(value)) return null;
+  const zone = typeof time.timeZone === "string" && time.timeZone !== "" ? time.timeZone : fallbackTimeZone;
+  try {
+    return toZonedInstant(value.slice(0, 16), zone);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Maps one page (or every page) of Google events to the blocks and tasks to
+ * create. Already-imported events are skipped by document id and by event id,
+ * so re-importing the same window is a no-op -- with the deterministic ids the
+ * write path is idempotent even if two imports race.
+ */
+export function planImport(input: ImportPlanInput): ImportPlan {
+  const skipped = emptySkips();
+  const blocks: WorkBlock[] = [];
+  const tasks: Task[] = [];
+  const existingBlockIds = new Set(input.existing?.blockIds ?? []);
+  const existingTaskIds = new Set(input.existing?.taskIds ?? []);
+  const existingEventIds = new Set(input.existing?.eventIds ?? []);
+  // Two copies of one event in one response must not produce two writes.
+  const planned = new Set<string>();
+
+  for (const event of input.events) {
+    if (event.status === "cancelled") {
+      skipped.cancelled += 1;
+      continue;
+    }
+    if (declinedBySelf(event)) {
+      skipped.declined += 1;
+      continue;
+    }
+    const eventType = event.eventType;
+    if (eventType === "workingLocation" || eventType === "outOfOffice" || eventType === "focusTime") {
+      skipped[eventType] += 1;
+      continue;
+    }
+    const eventId = typeof event.id === "string" ? event.id : "";
+    if (!safeEventId.test(eventId)) {
+      skipped.unusable += 1;
+      continue;
+    }
+    const id = importDocId(input.calendarId, eventId);
+    if (existingBlockIds.has(id) || existingTaskIds.has(id) || existingEventIds.has(eventId) || planned.has(id)) {
+      skipped.imported += 1;
+      continue;
+    }
+    const title = (event.summary ?? "").trim();
+    if (isAllDay(event)) {
+      const date = event.start?.date ?? "";
+      try {
+        tasks.push(createTask(id, title, date));
+        planned.add(id);
+      } catch {
+        // No summary, or a date Google did not send: a task needs both.
+        skipped.unusable += 1;
+      }
+      continue;
+    }
+    const start = instantOf(event.start, input.timeZone);
+    const end = instantOf(event.end, input.timeZone);
+    const updated = typeof event.updated === "string" ? event.updated : "";
+    if (start === null || end === null || updated === "") {
+      skipped.unusable += 1;
+      continue;
+    }
+    const source: BlockSource = {
+      provider: "gcal",
+      calendarId: input.calendarId,
+      eventId,
+      updated,
+      ...(typeof event.recurringEventId === "string" && event.recurringEventId !== ""
+        ? { recurringEventId: event.recurringEventId }
+        : {}),
+    };
+    try {
+      blocks.push(createWorkBlock(id, start, end, undefined, { ...(title === "" ? {} : { title }), source }));
+      planned.add(id);
+    } catch {
+      // A rejected pair of instants (an end not after its start) is not imported.
+      skipped.unusable += 1;
+    }
+  }
+
+  return { calendarId: input.calendarId, blocks, tasks, skipped };
+}
+
+/** The smallest shape `importedIds` needs from a stored block. */
+export type ImportedBlockRef = { id: string; source?: { provider: string } };
+
+/**
+ * The documents "Remove imported events" deletes: blocks that say where they
+ * came from, and tasks whose id carries the import prefix. Tasks have no
+ * `source` field -- their schema is closed -- so their deterministic id is the
+ * record of where they came from, and nothing else in the app mints that
+ * prefix (Firestore assigns every user-created task a random id).
+ */
+export function importedIds(blocks: Iterable<ImportedBlockRef>, tasks: Iterable<{ id: string }>): { blockIds: string[]; taskIds: string[] } {
+  const blockIds = [...blocks].filter(block => block.source?.provider === "gcal").map(block => block.id);
+  const taskIds = [...tasks].filter(task => task.id.startsWith(GCAL_ID_PREFIX)).map(task => task.id);
+  return { blockIds, taskIds };
+}
