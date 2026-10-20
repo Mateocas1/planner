@@ -21,6 +21,7 @@ import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
+import { useFocusTimer } from "./ui/useFocusTimer.ts";
 import { useKeyboardInset } from "./ui/viewport.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
@@ -59,6 +60,9 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const { loading, tasks, blocks, series, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
   const phone = useMediaQuery(phoneQuery);
+  // One timer for the whole shell: the sidebar card shows it and the palette
+  // commands change it. A phone has no focus surface yet, so it runs none.
+  const focus = useFocusTimer({ blocks, tasks, timeZone: profile.timeZone, enabled: !phone });
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
   const [creating, setCreating] = useState<HTMLElement | null>(null);
   const [lateError, setLateError] = useState<string | null>(null);
@@ -128,6 +132,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           blocks={blocks}
           timeZone={profile.timeZone}
           selectedDay={calendarDay}
+          focus={focus}
           onNavigate={onNavigate}
           onPickDay={key => {
             setCalendarDay(key === today ? null : key);
@@ -260,6 +265,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           uid={user.uid}
           timeZone={zone}
           tasks={tasks}
+          focus={focus}
           onClose={() => setPaletteOpen(false)}
           onNavigate={onNavigate}
           onImport={() => openImport(null)}

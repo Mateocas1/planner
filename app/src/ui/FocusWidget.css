@@ -1,0 +1,138 @@
+/* FT1 — the focus timer's surface in the sidebar (odd/research/value-roadmap.md
+ * §3, §5 row 5).
+ *
+ * It is the product's list material, so the card reuses `.side-card` from
+ * Sidebar.css rather than restating a fill, and every text pair here is one
+ * `scripts/glass-contrast.mjs` already proves on --surface (--label, --label-2,
+ * --label-3, --accent).
+ *
+ * The digits never animate: a number that eases is a number the eye has to
+ * chase, so the countdown is plain text with tabular numerals, one recomputed
+ * value per second. The card itself enters and leaves with the sidebar's own
+ * spring (opacity and transform only) -- see the motion decision in the report.
+ */
+
+.focus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.focus-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+
+.focus-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  color: var(--label);
+}
+
+/* Fixed width, tabular digits: the countdown cannot reflow the card as it
+   counts, and `ch` sizing keeps the layout stable at 0:05 and 1:30 alike. */
+.focus-time {
+  flex: none;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--label);
+}
+
+/* A pause is a state, not a warning: the digits step back and the action says
+   "Resume", so the state never rests on colour alone. */
+.focus-time.is-paused { color: var(--label-2); }
+
+/* The block is over: calm, secondary, and the same size, so nothing jumps. */
+.focus-time.is-done {
+  color: var(--label-3);
+  font-variant-numeric: normal;
+}
+
+.focus-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* The compact control, in the paint `.icon-button` already ships: --fill-hover
+   behind --label-2. Same press scale as every other control in the app. */
+.focus-action {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fill-hover);
+  color: var(--label-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+}
+
+.focus-action:active { transform: scale(0.96); }
+
+@media (hover: hover) and (pointer: fine) {
+  .focus-action:hover { color: var(--label); }
+}
+
+/* ---------- the row that hosts the ▶ ----------
+ *
+ * Sidebar.css owns the row's material and padding. Making the row a flex line
+ * so the ▶ can sit at its end belongs to this unit, so it lives here instead of
+ * reopening the sheet the sidebar block shipped in. */
+
+.side-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.side-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- the ▶ on an Up next row ---------- */
+
+.focus-start {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px -4px 0;
+  border-radius: 50%;
+  color: var(--label-3);
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+.focus-start:active { transform: scale(0.94); }
+
+.focus-play {
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .focus-start:hover { background: var(--fill-hover); color: var(--accent); }
+}
+
+/* The focus ring is the app's own; the resting glyph is small, so the target
+   grows to the 44 px phone minimum wherever the pointer is coarse. */
+.focus-start:focus-visible { color: var(--accent); }
+
+@media (pointer: coarse) {
+  .focus-start {
+    width: 44px;
+    height: 44px;
+    margin: -10px -8px -10px 0;
+  }
+}
