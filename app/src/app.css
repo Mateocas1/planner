@@ -1265,12 +1265,22 @@ time,
   max-width: 100%;
   font-weight: 600;
   font-size: 0.78rem;
+  /* The block is minutes x --hour tall while its label is rem, so at 200 % text
+     zoom a 30 minute block is shorter than one line. Whole lines of 1.15 let
+     the clip land between them, never through a glyph (audit F7). */
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.calendar-block span {
+  max-width: 100%;
+  opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.calendar-block span { opacity: 0.85; white-space: nowrap; }
 .calendar-block.is-short { flex-direction: row; gap: 6px; padding-top: 2px; }
 .calendar-block.is-past { opacity: 0.55; }
 .calendar-block:active { transform: scale(0.98); }
@@ -1649,11 +1659,20 @@ select.form-control { text-align: left; cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 18px;
-  width: min(400px, 100%);
+  /* The grid's auto track grows to the card's min-content, so at 200 % text zoom
+     a card that may shrink to nothing still pushed the page 60 px sideways. It
+     now takes the track, may shrink below its content, and breaks long words
+     (audit F6). */
+  width: 100%;
+  max-width: min(400px, 100%);
+  min-width: 0;
   padding: 28px 24px 24px;
 }
 
+.gate { grid-template-columns: minmax(0, 1fr); }
 .gate-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.022em; }
+.gate-title,
+.gate .subtitle { overflow-wrap: anywhere; }
 .gate .subtitle { margin-top: -10px; }
 .gate-form { display: flex; flex-direction: column; gap: 14px; }
 .gate-form .form-group { background: var(--surface-2); box-shadow: none; }

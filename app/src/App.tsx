@@ -285,7 +285,7 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
             exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
             transition={spring.snappy}
           >
-            <p className="popover-email">{email}</p>
+            <p className="popover-email" title={email}>{email}</p>
             <SyncStatus pending={pending} />
             <button type="button" className="button" onClick={onSignOut}>Sign out</button>
           </motion.div>
