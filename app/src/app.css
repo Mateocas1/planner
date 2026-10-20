@@ -1734,22 +1734,36 @@ select.form-control { text-align: left; cursor: pointer; }
    grows into place and shrinks back out of it, and nothing is stretched. The
    page keeps painting the row itself, so the transition only borrows its box:
    on the way in the panel grows out of the row, on the way out it collapses
-   into the row's box while it dissolves. */
+   into the row's box while it dissolves.
+
+   Both boxes sit on the page's midline -- the row in its list, the panel
+   centred on the screen -- so each snapshot is pinned to the middle of the box
+   it is fitted in. That is what makes the row's copy read as growing into the
+   panel: the right-edge pin the docked panel needed would slide it sideways. */
 ::view-transition-old(task-morph),
 ::view-transition-new(task-morph) {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  /* The panel's right edge and the row's right edge are the same edge of the
-     page, so the panel is pinned there instead of drifting to the middle of the
-     morphing box. */
-  object-position: 100% 0;
+  object-position: 50% 50%;
 }
 
 ::view-transition-image-pair(task-morph) { overflow: clip; }
 
-::view-transition-old(task-morph) { animation: var(--morph-old); }
-::view-transition-new(task-morph) { animation: var(--morph-new); }
+/* The arriving side comes into focus. The blur is painted on the frozen
+   snapshot rather than on the live panel, so it costs a bitmap filter for the
+   length of the morph and leaves nothing on the DOM: the panel that takes over
+   at the end is crisp, with no composited layer over the field it focused.
+   (odd/research/melon-expand.md §b.) */
+::view-transition-old(task-morph) {
+  animation: var(--morph-old), morph-unfocus var(--morph-dur) var(--ease-out) both;
+}
+::view-transition-new(task-morph) {
+  animation: var(--morph-new), morph-focus var(--morph-dur) var(--ease-out) both;
+}
+
+@keyframes morph-focus { from { filter: blur(6px) } }
+@keyframes morph-unfocus { to { filter: blur(6px) } }
 
 /* The panel is on screen almost immediately and grows with the box, at its own
    proportions the whole way: the row is what visibly becomes the panel, rather
@@ -1792,7 +1806,8 @@ select.form-control { text-align: left; cursor: pointer; }
     animation-duration: 150ms !important;
   }
   /* The morph never starts under reduced motion (morph.ts); this covers a
-     preference changed while a transition is already playing. */
+     preference changed while a transition is already playing, and keeps the
+     snapshot's blur out of the reduced path entirely. */
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {
