@@ -30,6 +30,11 @@ export type PendingUndo = UndoableDelete & { id: number };
  * restoreBlock, restoreSeries). The delete itself is already applied when the
  * toast appears, so the offer is a compensating write under the original id,
  * not a deferred one.
+ *
+ * `data-offer` names the offer the node is showing. A delete is offered when
+ * the write is acknowledged, so for a moment after a second delete the first
+ * offer is still mounted with the same sentence; the attribute is how a test
+ * (or a person reading the DOM) tells the replacement apart from the original.
  */
 export function UndoToast({
   item,
@@ -77,7 +82,7 @@ export function UndoToast({
   };
 
   return (
-    <div className="undo-toast" role="status" data-state={closing ? "closing" : "open"}>
+    <div className="undo-toast" role="status" data-state={closing ? "closing" : "open"} data-offer={item.id}>
       <span className="undo-toast-label">
         {item.message}
         <span className="undo-toast-separator" aria-hidden="true"> · </span>
