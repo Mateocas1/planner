@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password } from "./browser-helpers.ts";
+import { submitAuthForm } from "./browser-helpers.ts";
 
 /**
  * Cross-feature invariants (M1).
@@ -18,12 +18,7 @@ function newEmail(prefix: string) {
 }
 
 async function signUp(page: Page, email: string) {
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign up");
 }
 
 async function openTasks(page: Page) {

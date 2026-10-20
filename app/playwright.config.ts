@@ -11,6 +11,16 @@ for (const [name, value] of Object.entries(required)) {
 
 export default defineConfig({
   testDir: "./tests",
+  // The suite runs on a 6 GB host that other agents share, and every worker is a
+  // whole Chromium with a glass/blur-heavy page. At Playwright's default (half the
+  // logical CPUs, 6 here) the renderers plus the emulator JVM exhaust RAM: measured
+  // 71 MB free, load 65, sign-ups taking 2 s and a view mount missing a 5 s budget.
+  // Three workers fit the box, which is what keeps the timeouts below honest.
+  workers: 3,
+  // A view mount is a JS round trip through React and Firestore, not a local
+  // assertion, so it gets more than Playwright's 5 s default. It is a budget, not a
+  // tolerance: the assertion is unchanged and still fails when the app is wrong.
+  expect: { timeout: 10_000 },
   // `browser.spec.ts` holds the end-to-end flows; feature specs (sync-status,
   // undo, manip, travel, palette, glass) are named after their feature. The
   // deployed-site smoke suite has its own config, so it is the only file

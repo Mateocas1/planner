@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { password } from "./browser-helpers.ts";
+import { submitAuthForm } from "./browser-helpers.ts";
 
 /**
  * W3 of the motion review (odd/research/motion-review.md): the calendar body and
@@ -20,12 +20,7 @@ const newEmail = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
 
 async function signUp(page: Page, email: string) {
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign up");
 }
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Main" });
@@ -98,24 +93,62 @@ async function wallDateKey(page: Page, offsetDays: number): Promise<string> {
 const dayKeys = (page: Page) =>
   page.locator(".calendar-day").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-date")));
 
-/** Samples the body that is in the flow for `ms`: the transform and opacity the
- * browser computed, which is what a dropped frame or a layout animation would
- * show up in. The body leaving the page is excluded, because AnimatePresence
- * parks it out of flow and projects it, and that projection is not the slide. */
-async function sampleBodies(page: Page, ms: number) {
-  return page.evaluate(async (window) => {
-    const samples: Array<{ transform: string; opacity: number }> = [];
-    const until = performance.now() + window;
-    while (performance.now() < until) {
-      for (const node of document.querySelectorAll(".cal-body")) {
-        const style = getComputedStyle(node);
-        if (style.position === "absolute") continue;
-        samples.push({ transform: style.transform, opacity: Number(style.opacity) });
-      }
-      await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
-    }
-    return samples;
-  }, ms);
+/**
+ * Starts a frame recorder on the calendar scroller that begins the moment the
+ * body changes, so the slide is captured from its own first frame whatever the
+ * click's round trip costs. Sampling after the click raced the animation: on a
+ * loaded suite the sampler could start after a 400 ms slide had already ended
+ * and catch one fading frame. Nothing races the click now -- the recorder is a
+ * passive observer installed beforehand, and `readBodies` waits for it.
+ *
+ * The body leaving the page is excluded, because AnimatePresence parks it out of
+ * flow and projects it, and that projection is not the slide.
+ */
+async function recordBodies(page: Page, windowMs: number) {
+  await page.evaluate(windowMs => {
+    type Frame = { at: number; transform: string; opacity: number };
+    const state: { samples: Frame[]; done: boolean } = { samples: [], done: false };
+    (globalThis as unknown as { __slideMotion: typeof state }).__slideMotion = state;
+    const scroller = document.querySelector(".cal-scroll");
+    if (!scroller) throw new Error("the calendar body is not on screen");
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      const started = performance.now();
+      const until = started + windowMs;
+      const loop = () => {
+        for (const node of document.querySelectorAll(".cal-body")) {
+          const style = getComputedStyle(node);
+          if (style.position === "absolute") continue;
+          state.samples.push({
+            at: performance.now() - started,
+            transform: style.transform,
+            opacity: Number(style.opacity),
+          });
+        }
+        if (performance.now() < until) requestAnimationFrame(loop);
+        else state.done = true;
+      };
+      requestAnimationFrame(loop);
+    });
+    observer.observe(scroller, { childList: true });
+  }, windowMs);
+}
+
+async function readBodies(page: Page) {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          () => (globalThis as unknown as { __slideMotion?: { done: boolean } }).__slideMotion?.done === true,
+        ),
+      { timeout: 15_000, message: "the slide was never recorded" },
+    )
+    .toBe(true);
+  return page.evaluate(
+    () =>
+      (globalThis as unknown as { __slideMotion: { samples: Array<{ at: number; transform: string; opacity: number }> } })
+        .__slideMotion.samples,
+  );
 }
 
 /** The transform of the body that is in the flow, once nothing is moving. */
@@ -179,12 +212,17 @@ test("a range change slides the body with one transform, never a scale", async (
   const before = await dayKeys(page);
   expect(before.length).toBe(7);
 
+  await recordBodies(page, 1_200);
   await page.getByRole("group", { name: "Calendar navigation" }).getByRole("button", { name: "Next week" }).click();
-  const samples = await sampleBodies(page, 600);
+  const samples = await readBodies(page);
 
   const moving = samples.filter(sample => !RESTING.has(sample.transform));
-  // a tween, not a teleport: the body is caught mid-flight on several frames
-  expect(moving.length).toBeGreaterThan(3);
+  // A tween, not a teleport. The frame count is a property of the machine, not of
+  // the slide -- a loaded browser drops frames and a smooth 400 ms spring can be
+  // caught twice -- so the interval the motion covers is what proves it: a jump
+  // has no interval to measure.
+  expect(moving.length).toBeGreaterThan(1);
+  expect(moving[moving.length - 1].at - moving[0].at).toBeGreaterThanOrEqual(100);
   for (const sample of moving) {
     // a pure translation: no scale, no skew and no vertical drift, so no text is
     // ever distorted and nothing leaves the compositor
@@ -221,8 +259,9 @@ test.describe("with reduced motion", () => {
     await openCalendar(page);
     const before = await dayKeys(page);
 
+    await recordBodies(page, 1_200);
     await page.getByRole("group", { name: "Calendar navigation" }).getByRole("button", { name: "Next week" }).click();
-    const samples = await sampleBodies(page, 600);
+    const samples = await readBodies(page);
 
     // no movement at all: every frame is at the resting box
     expect(samples.every(sample => RESTING.has(sample.transform))).toBe(true);
@@ -315,7 +354,10 @@ test("a tray neighbour reflows in the 250 ms spring, not the 400 ms one", async 
   expect(await page.locator(".tray-item").allTextContents()).not.toContain(leaving);
 
   const moving = samples.filter(sample => sample.transforms.some(transform => !RESTING.has(transform)));
-  expect(moving.length).toBeGreaterThan(3);
+  // Two frames at the very least: one frame shows no tween. How many more the
+  // browser manages is a property of the machine, so the 100-360 ms interval
+  // below -- not a minimum frame count -- is what pins the 250 ms spring.
+  expect(moving.length).toBeGreaterThan(1);
   for (const sample of moving) {
     // a position-only reflow: no row is ever scaled or sheared
     for (const transform of sample.transforms.filter(value => !RESTING.has(value))) {

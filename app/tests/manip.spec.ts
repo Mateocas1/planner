@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { password, readRemoteBlocks, seedTaskAndBlock } from "./browser-helpers.ts";
+import { readRemoteBlocks, seedTaskAndBlock, submitAuthForm } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -12,12 +12,7 @@ function newEmail(prefix: string) {
 }
 
 async function signUp(page: Page, email: string) {
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign up");
 }
 
 function nav(page: Page) {
