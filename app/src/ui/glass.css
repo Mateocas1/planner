@@ -19,6 +19,9 @@
   /* the highlight that follows the pointer: an accent wash, because white on a
      95%-white pill is invisible */
   --glass-sheen-track: rgb(0 102 204 / 0.12);
+  /* the lens tint is thinner than the pill fill, so refraction has something
+     to show through */
+  --glass-lens-tint: rgb(255 255 255 / 0.5);
 
   /* specular rim: lit top-left, counter-glint bottom-right, plus thickness */
   --glass-rim-lit: rgb(255 255 255 / 0.92);
@@ -55,6 +58,9 @@
     --glass-tint-thick: rgb(34 34 38 / 0.9);
     --glass-sheen: rgb(255 255 255 / 0.06);
     --glass-sheen-track: rgb(255 255 255 / 0.16);
+    /* thinner than the resting pill on purpose: the tab label is --accent,
+       which loses contrast as the fill lightens toward it */
+    --glass-lens-tint: rgb(255 255 255 / 0.06);
     /* dark mode needs the rim to peak, or the edge disappears */
     --glass-rim-lit: rgb(255 255 255 / 0.28);
     --glass-rim-mid: rgb(255 255 255 / 0.1);
@@ -372,5 +378,31 @@ body::before {
   [data-sheen] .nav-pill::after,
   [data-sheen] .tab-pill::after {
     display: none;
+  }
+}
+
+/* ---------- lens (G5) ---------- */
+
+/* The pill element itself carries the displacement filter, and it carries no
+   text: the backdrop bends, the label above it never moves. `.glass-lens` alone
+   is inert; `html[data-lens]` (set by ui/lens.ts only for a wide Chromium
+   pointer with motion and transparency allowed) is what turns the map on.
+   Below that gate the pill keeps the material from the controls block. */
+
+html[data-lens] .glass-lens {
+  background-color: var(--glass-lens-tint);
+  -webkit-backdrop-filter: url(#glass-lens) blur(1px) saturate(160%);
+  backdrop-filter: url(#glass-lens) blur(1px) saturate(160%);
+}
+
+/* Belt and braces for the gate: a resize or a preference change must never
+   leave a filter the map cannot serve, even for the frame before the attribute
+   is revoked. Every one of these keeps the plain material. */
+@media (max-width: 390px), (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce),
+  (prefers-contrast: more), (forced-colors: active) {
+  html[data-lens] .glass-lens {
+    background-color: var(--pill);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

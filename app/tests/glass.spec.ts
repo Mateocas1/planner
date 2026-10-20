@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { password } from "./browser-helpers.ts";
+import { isBlink, shouldEnableLens, type LensEnv } from "../src/ui/lens.ts";
 
 // 2x so the 1px specular rim is actually legible in the saved screenshots.
 test.use({ deviceScaleFactor: 2 });
@@ -326,5 +327,93 @@ test.describe("coarse pointer", () => {
     expect(state).not.toBeNull();
     expect(state!.inline).toBe("");
     expect(state!.content).toBe("none");
+  });
+});
+
+test("lens: displacement filter only where the map can render", async ({ page }) => {
+  /* Engine gate first: Gecko and WebKit never see the filter. */
+  expect(
+    isBlink(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    ),
+  ).toBe(false);
+  expect(isBlink("Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0")).toBe(false);
+  expect(
+    isBlink(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+    ),
+  ).toBe(true);
+
+  /* Then the whole matrix, so every condition is proven on its own. */
+  const capable: LensEnv = {
+    blink: true,
+    displacement: true,
+    hoverFine: true,
+    calm: false,
+    clear: false,
+    saveData: false,
+    wide: true,
+  };
+  expect(shouldEnableLens(capable)).toBe(true);
+  for (const veto of ["blink", "displacement", "hoverFine", "wide"] as const) {
+    expect(shouldEnableLens({ ...capable, [veto]: false })).toBe(false);
+  }
+  for (const veto of ["calm", "clear", "saveData"] as const) {
+    expect(shouldEnableLens({ ...capable, [veto]: true })).toBe(false);
+  }
+
+  await enterApp(page);
+  const root = page.locator("html");
+  await expect(root).toHaveAttribute("data-lens", "");
+
+  /* Nothing readable sits inside the filtered layer: the label is a sibling. */
+  const layers = await page.locator(".glass-lens").evaluateAll((elements) =>
+    elements.map((element) => ({ text: element.textContent?.trim() ?? "", children: element.childElementCount })),
+  );
+  expect(layers.length).toBeGreaterThan(0);
+  for (const layer of layers) {
+    expect(layer.text).toBe("");
+    expect(layer.children).toBe(0);
+  }
+
+  const filterOf = async (selector: string) =>
+    page.locator(selector).first().evaluate((element) => getComputedStyle(element).backdropFilter);
+
+  expect(await filterOf(".nav-pill.glass-lens")).toContain("url(");
+  mkdirSync(shotDir, { recursive: true });
+  await page.locator(".sidebar").screenshot({ path: `${shotDir}/light-lens.png` });
+
+  /* A phone width revokes the gate, and CSS agrees on the pill it can see. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf(".tab-pill.glass-lens")).toBe("none");
+
+  /* Back to desktop, then each reduced preference closes the gate again. */
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(root).toHaveAttribute("data-lens", "");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf(".nav-pill.glass-lens")).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(root).toHaveAttribute("data-lens", "");
+
+  await emulateReducedTransparency(page, "reduce");
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf(".nav-pill.glass-lens")).toBe("none");
+  await emulateReducedTransparency(page, "no-preference");
+  await expect(root).toHaveAttribute("data-lens", "");
+});
+
+test.describe("non-Blink engine", () => {
+  test.use({ userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0" });
+
+  test("lens: no displacement filter on a Firefox user agent", async ({ page }) => {
+    await enterApp(page);
+    expect(await page.evaluate(() => navigator.userAgent)).toContain("Firefox");
+    expect(await page.locator("html").getAttribute("data-lens")).toBeNull();
+    expect(
+      await page.locator(".nav-pill.glass-lens").evaluate((element) => getComputedStyle(element).backdropFilter),
+    ).toBe("none");
   });
 });

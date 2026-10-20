@@ -174,7 +174,7 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
           {view === id && (
             <motion.span
               layoutId="tab-pill"
-              className="tab-pill"
+              className="tab-pill glass-lens"
               aria-hidden="true"
               transition={spring.smooth}
               animate={{ scaleX: [1.18, 1], scaleY: [0.9, 1] }}
