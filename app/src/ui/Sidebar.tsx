@@ -42,7 +42,7 @@ export function Sidebar({
   onSignOut: () => void;
 }) {
   return (
-    <aside className="sidebar glass glass-chrome">
+    <aside className="sidebar glass glass-regular">
       {timeZone && <MiniMonth blocks={blocks} timeZone={timeZone} selectedDay={selectedDay} onPickDay={onPickDay} />}
       <nav aria-label="Main" className="side-nav">
         {views.map(({ id, label, Icon }) => (
