@@ -57,6 +57,16 @@ export function useMediaQuery(query: string): boolean {
 /** The phone breakpoint shared by the shell and the calendar (DESIGN.md §3). */
 export const phoneQuery = "(max-width: 760px)";
 
+/**
+ * The width a seven-column week needs to stay readable. A tablet is wide enough
+ * for the desktop shell and far too narrow for seven day columns plus the 56 px
+ * gutter: at 768 px each column is 55 px and its block titles truncate to
+ * "Wo…" (odd/research/responsive-audit.md F1). Between the phone breakpoint and
+ * this one the calendar opens on the day range instead -- the week is a tap
+ * away, and a column that cannot hold a word is not a week.
+ */
+export const narrowQuery = "(max-width: 1000px)";
+
 /** The current instant, refreshed every 30 s so "now" lines and progress move. */
 export function useNow(): Date {
   const [now, setNow] = useState(() => new Date());

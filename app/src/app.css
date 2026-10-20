@@ -1042,7 +1042,10 @@ time,
   align-items: start;
 }
 
-@media (min-width: 1280px) {
+/* The tray is 272 px plus a 24 px gap: beside the grid it costs every day
+   column 40 px, which is what squeezed a 1280 px window to 86 px columns. It
+   only sits alongside a week that still has room for it (audit F1). */
+@media (min-width: 1440px) {
   .calendar-layout { grid-template-columns: minmax(0, 1fr) 272px; }
 }
 
