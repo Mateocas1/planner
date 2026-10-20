@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { View } from "../App.tsx";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
-import { PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
+import { CalendarIcon, PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
 import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
@@ -38,12 +38,15 @@ export function CommandPalette({
   onClose,
   onNavigate,
   onOpenTask,
+  onImport,
 }: {
   uid: string;
   tasks: TaskView[];
   onClose: () => void;
   onNavigate: (view: View) => void;
   onOpenTask: (taskId: string) => void;
+  /** Runs the "Import from Google Calendar" command (the sheet is the shell's). */
+  onImport: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +97,14 @@ export function CommandPalette({
     if (command.kind === "theme") {
       /* a repaint, not a navigation: the palette closes and the page stays */
       setThemePreference(command.pref);
+      onClose();
+      return;
+    }
+    if (command.kind === "action") {
+      /* The sheet that opens takes the focus; handing it back to the trigger
+         behind the dialog would fight the panel's own focus return. */
+      restoreFocus.current = false;
+      onImport();
       onClose();
       return;
     }
@@ -225,6 +236,7 @@ function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
+  if (command.kind === "action") return <CalendarIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }

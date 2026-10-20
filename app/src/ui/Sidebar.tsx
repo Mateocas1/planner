@@ -45,6 +45,7 @@ export function Sidebar({
   onPickDay,
   onOpenTask,
   onSignOut,
+  onImport,
 }: {
   email: string;
   uid: string;
@@ -59,6 +60,8 @@ export function Sidebar({
   onPickDay: (key: string) => void;
   onOpenTask: (taskId: string) => void;
   onSignOut: () => void;
+  /** Opens the Google Calendar import; the pressed control is its origin. */
+  onImport: (origin: HTMLElement) => void;
 }) {
   return (
     <aside className="sidebar glass glass-regular">
@@ -100,7 +103,16 @@ export function Sidebar({
           <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
           <ThemeSwitch />
         </div>
-        <button type="button" className="link-button side-signout" onClick={onSignOut}>Sign out</button>
+        {/* Two links on one row: the import entry is a footer action like Sign
+            out, and it costs no height there, which is what keeps the chrome
+            inside a short window. The sidebar's stylesheet belongs to the
+            sidebar-fill unit, so this row is laid out inline. */}
+        <div style={{ display: "flex", gap: 10, justifyContent: "space-between", whiteSpace: "nowrap" }}>
+          <button type="button" className="link-button side-signout" onClick={event => onImport(event.currentTarget)}>
+            Import from Google Calendar
+          </button>
+          <button type="button" className="link-button side-signout" onClick={onSignOut}>Sign out</button>
+        </div>
       </div>
     </aside>
   );

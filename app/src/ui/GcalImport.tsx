@@ -1,0 +1,412 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { removeImported, writeImportPlan } from "../data/gcal.ts";
+import {
+  eventWindow,
+  googleMessages,
+  listCalendars,
+  listEvents,
+  requestToken,
+  type GcalCalendar,
+} from "../data/google-client.ts";
+import type { BlockView, TaskView } from "../data/store.ts";
+import {
+  importedIds,
+  planImport,
+  type GcalEvent,
+  type ImportPlan,
+  type ImportSkipReason,
+  type ImportSkips,
+} from "../domain/gcalImport.ts";
+import { CloseIcon } from "./icons.tsx";
+import { Sheet } from "./Sheet.tsx";
+import { useOnline } from "./SyncStatus.tsx";
+import { dateKey } from "./time.ts";
+import type { UndoableDelete } from "./UndoToast.tsx";
+import "./GcalImport.css";
+
+/**
+ * The import from Google Calendar (value roadmap §1 and §5 row 4b).
+ *
+ * The sheet is a preview, not a wizard: one screen states what the chosen
+ * calendars and range would create, counts what the mapper will skip and why,
+ * and only then writes. Everything it shows comes from `domain/gcalImport.ts`,
+ * which is also what `data/gcal.ts` writes, so the numbers on this screen are
+ * the documents that land -- the UI never maps an event itself.
+ *
+ * The token lives in this component's state and nowhere else: never in
+ * localStorage, never in Firestore. Closing the sheet drops it, and the next
+ * open asks Google again. That is the token model (no server, no refresh token),
+ * not an oversight.
+ *
+ * Motion is the sheet's own (ui/Sheet.tsx): the panel grows out of the entry the
+ * user pressed and returns to it, the content fades and sharpens once, and
+ * nothing here animates a count or a row. A preview that is being read must not
+ * move.
+ */
+
+/** The ranges the sheet offers, in days from today. 90 is the roadmap default. */
+const ranges = [30, 90, 180] as const;
+type Range = (typeof ranges)[number];
+
+type Phase = "idle" | "connecting" | "loading" | "preview";
+
+/** One line of feedback: an error, or the result of a removal. */
+type Notice = { tone: "error" | "ok"; text: string };
+
+/** How each skip bucket reads in the sheet. The mapper's names are internal. */
+const skipLabels: Record<ImportSkipReason, string> = {
+  cancelled: "cancelled",
+  declined: "declined",
+  workingLocation: "working location",
+  outOfOffice: "out of office",
+  focusTime: "focus time",
+  imported: "already imported",
+  unusable: "unusable",
+};
+
+function plural(count: number, noun: string): string {
+  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
+}
+
+/** "2 work blocks and 1 task", or the one noun when the other count is zero. */
+function itemsSentence(blocks: number, tasks: number): string {
+  const parts = [
+    ...(blocks === 0 ? [] : [plural(blocks, "work block")]),
+    ...(tasks === 0 ? [] : [plural(tasks, "task")]),
+  ];
+  return parts.length === 0 ? "" : parts.join(" and ");
+}
+
+/** What the import button is about to do, in one sentence. */
+function previewSentence(blocks: number, tasks: number): string {
+  const items = itemsSentence(blocks, tasks);
+  return items === "" ? "Nothing new to import." : `${items} to import`;
+}
+
+/** The skipped buckets as one quiet line, biggest reasons first (by the order
+ * the mapper declares them, which is the order a person reads them). */
+function skippedSentence(skips: ImportSkips): string {
+  const parts = (Object.keys(skipLabels) as ImportSkipReason[])
+    .filter(reason => skips[reason] > 0)
+    .map(reason => `${skips[reason]} ${skipLabels[reason]}`);
+  return parts.length === 0 ? "" : `Skipped: ${parts.join(", ")}.`;
+}
+
+/** The toast sentence after a successful import. */
+export function importedMessage(counts: { blocks: number; tasks: number }): string {
+  return `Imported ${itemsSentence(counts.blocks, counts.tasks)}`;
+}
+
+function removedMessage(counts: { blocks: number; tasks: number }): string {
+  const items = itemsSentence(counts.blocks, counts.tasks);
+  return items === "" ? "There was nothing imported to remove." : `Removed ${items}.`;
+}
+
+function emptySkips(): ImportSkips {
+  return { cancelled: 0, declined: 0, workingLocation: 0, outOfOffice: 0, focusTime: 0, imported: 0, unusable: 0 };
+}
+
+export function GcalImportSheet({
+  uid,
+  blocks,
+  tasks,
+  timeZone,
+  origin,
+  onClose,
+  onOfferUndo,
+}: {
+  uid: string;
+  blocks: BlockView[];
+  tasks: TaskView[];
+  timeZone: string;
+  origin: HTMLElement | null;
+  onClose: () => void;
+  /** Offers the import as one undoable action in the shell's toast. */
+  onOfferUndo: (item: UndoableDelete) => void;
+}) {
+  const online = useOnline();
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [token, setToken] = useState<string | null>(null);
+  const [calendars, setCalendars] = useState<GcalCalendar[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [range, setRange] = useState<Range>(90);
+  const [events, setEvents] = useState<Record<string, GcalEvent[]>>({});
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  // The day the sheet was opened on: the window is a decision the user made by
+  // opening this sheet, not one that moves while they read the preview.
+  const [today] = useState(() => dateKey(new Date(), timeZone));
+
+  /** What the planner already holds, so the plan is idempotent by construction. */
+  const existing = useMemo(
+    () => ({
+      blockIds: blocks.map(block => block.id),
+      taskIds: tasks.map(task => task.id),
+      eventIds: blocks.flatMap(block => (block.source === undefined ? [] : [block.source.eventId])),
+    }),
+    [blocks, tasks],
+  );
+
+  // One mapper call per selected calendar: the calendar id is part of every
+  // deterministic document id, so the plans cannot share one call.
+  const plans = useMemo<ImportPlan[]>(
+    () => chosen.map(id => planImport({ calendarId: id, events: events[id] ?? [], timeZone, existing })),
+    [chosen, events, timeZone, existing],
+  );
+
+  const totals = useMemo(() => {
+    const skipped = emptySkips();
+    let blockCount = 0;
+    let taskCount = 0;
+    for (const plan of plans) {
+      blockCount += plan.blocks.length;
+      taskCount += plan.tasks.length;
+      for (const reason of Object.keys(skipped) as ImportSkipReason[]) skipped[reason] += plan.skipped[reason];
+    }
+    return { blocks: blockCount, tasks: taskCount, skipped };
+  }, [plans]);
+
+  /** Everything imported so far, for the removal safety net. */
+  const imported = useMemo(() => importedIds(blocks, tasks), [blocks, tasks]);
+  const importedTotal = imported.blockIds.length + imported.taskIds.length;
+
+  const connect = useCallback(async () => {
+    setNotice(null);
+    setPhase("connecting");
+    try {
+      const accessToken = await requestToken();
+      setToken(accessToken);
+      setPhase("loading");
+      const list = await listCalendars(accessToken);
+      setCalendars(list);
+      // The owner's decision: the primary calendar is what an import starts
+      // from; the others are one checkbox away.
+      const first = list.find(calendar => calendar.primary) ?? list[0];
+      setChosen(first === undefined ? [] : [first.id]);
+      if (list.length === 0) {
+        setToken(null);
+        setPhase("idle");
+        setNotice({ tone: "error", text: "This Google account has no calendars to read." });
+      }
+    } catch (cause) {
+      // A closed popup, a blocked one or a refused consent all land here, and
+      // all of them leave the import untouched: the sheet goes back to the step
+      // that can be retried.
+      setToken(null);
+      setPhase("idle");
+      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : googleMessages.failed });
+    }
+  }, []);
+
+  // Fetch the window for the selected calendars. A new range, a new calendar or
+  // a retry after connecting all run through this one effect, so the preview can
+  // never show counts from a window the user is no longer looking at.
+  useEffect(() => {
+    if (token === null || chosen.length === 0) return;
+    let live = true;
+    setPhase("loading");
+    const window = eventWindow(today, range, timeZone);
+    void (async () => {
+      try {
+        const pages = await Promise.all(chosen.map(id => listEvents(token, id, window)));
+        if (!live) return;
+        setEvents(Object.fromEntries(chosen.map((id, index) => [id, pages[index]])));
+        setNotice(null);
+        setPhase("preview");
+      } catch (cause) {
+        if (!live) return;
+        // An expired token cannot be refreshed without a new gesture, so the
+        // sheet returns to the connect step instead of offering a retry that
+        // would fail the same way.
+        setToken(null);
+        setEvents({});
+        setPhase("idle");
+        setNotice({ tone: "error", text: cause instanceof Error ? cause.message : googleMessages.failed });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [token, chosen, range, today, timeZone]);
+
+  function toggle(calendarId: string) {
+    setChosen(current =>
+      current.includes(calendarId) ? current.filter(id => id !== calendarId) : [...current, calendarId],
+    );
+  }
+
+  async function runImport() {
+    if (busy || !online) return;
+    setBusy(true);
+    setNotice(null);
+    const batch: { blocks: ImportPlan["blocks"]; tasks: ImportPlan["tasks"] } = { blocks: [], tasks: [] };
+    const counts = { blocks: 0, tasks: 0 };
+    try {
+      for (const plan of plans) {
+        if (plan.blocks.length === 0 && plan.tasks.length === 0) continue;
+        const written = await writeImportPlan(uid, plan);
+        counts.blocks += written.blocks;
+        counts.tasks += written.tasks;
+        batch.blocks.push(...plan.blocks);
+        batch.tasks.push(...plan.tasks);
+      }
+      // The undo is exactly this batch, not everything ever imported: the ids
+      // are already known, so the compensating delete is bounded to these.
+      onOfferUndo({
+        message: importedMessage(counts),
+        restore: () => removeImported(uid, batch.blocks, batch.tasks).then(() => undefined),
+      });
+      onClose();
+    } catch {
+      setNotice({
+        tone: "error",
+        text: "The import stopped partway. Run it again to finish; the imported documents keep their ids, so nothing is duplicated.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRemove() {
+    if (busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const counts = await removeImported(uid, blocks, tasks);
+      setConfirmRemove(false);
+      setNotice({ tone: "ok", text: removedMessage(counts) });
+    } catch {
+      setNotice({ tone: "error", text: "Nothing was removed. Try again." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet label="Import from Google Calendar" className="gcal-sheet" origin={origin} onClose={onClose}>
+      <div className="sheet-form">
+        <header className="sheet-head">
+          <span className="sheet-kind">Import from Google Calendar</span>
+          <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+
+        <p className="gcal-lead">
+          {phase === "preview"
+            ? "Nothing has been written yet. Check the counts, then import."
+            : "Import copies the events in the range you pick. It reads Google and never writes back; the Google sign-in is kept in this tab only."}
+        </p>
+
+        {!online && (
+          <p className="gcal-note is-warn" role="status">
+            You are offline. Importing needs a connection.
+          </p>
+        )}
+
+        {/* Both primary buttons autofocus: the panel opens on the action that
+            moves the flow forward, so a keyboard user never has to tab past the
+            close control to start it. */}
+        {phase === "idle" && (
+          <button type="button" className="button-primary" autoFocus disabled={!online} onClick={() => void connect()}>
+            Connect Google Calendar
+          </button>
+        )}
+
+        {phase === "connecting" && (
+          <p className="gcal-note" role="status">Waiting for Google…</p>
+        )}
+
+        {phase === "loading" && (
+          <p className="gcal-note" role="status">Reading your Google calendars…</p>
+        )}
+
+        {phase === "preview" && (
+          <>
+            <fieldset className="gcal-field">
+              <legend className="sheet-section-title">Range</legend>
+              <div className="gcal-range">
+                {ranges.map(days => (
+                  <label key={days} className="gcal-range-option">
+                    <input
+                      type="radio"
+                      name="gcal-range"
+                      value={days}
+                      checked={range === days}
+                      onChange={() => setRange(days)}
+                    />
+                    <span>{days} days</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="gcal-field">
+              <legend className="sheet-section-title">Calendars</legend>
+              <div className="gcal-calendars">
+                {calendars.map(calendar => (
+                  <label key={calendar.id} className="gcal-calendar">
+                    <input
+                      type="checkbox"
+                      className="check"
+                      checked={chosen.includes(calendar.id)}
+                      onChange={() => toggle(calendar.id)}
+                    />
+                    <span className="gcal-calendar-name">{calendar.summary}</span>
+                    {calendar.primary === true && <span className="gcal-tag">Primary</span>}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="gcal-counts">
+              <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks)}</p>
+              {skippedSentence(totals.skipped) !== "" && (
+                <p className="gcal-note">{skippedSentence(totals.skipped)}</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="button-primary"
+              autoFocus
+              disabled={busy || !online || totals.blocks + totals.tasks === 0}
+              onClick={() => void runImport()}
+            >
+              {busy ? "Importing…" : `Import ${plural(totals.blocks + totals.tasks, "item")}`}
+            </button>
+          </>
+        )}
+
+        {notice !== null && (
+          <p className={notice.tone === "error" ? "inline-error" : "gcal-note"} role={notice.tone === "error" ? "alert" : "status"}>
+            {notice.text}
+          </p>
+        )}
+
+        {importedTotal > 0 && !confirmRemove && (
+          <button type="button" className="link-button gcal-remove" onClick={() => setConfirmRemove(true)}>
+            Remove imported events ({importedTotal})
+          </button>
+        )}
+
+        {confirmRemove && (
+          <div className="gcal-confirm" role="group" aria-label="Remove imported events">
+            <p className="gcal-confirm-text">
+              Remove {plural(importedTotal, "imported item")}? Blocks and tasks you created are not touched.
+            </p>
+            <div className="gcal-confirm-actions">
+              <button type="button" className="button-danger" disabled={busy} onClick={() => void runRemove()}>
+                Remove
+              </button>
+              <button type="button" className="button" onClick={() => setConfirmRemove(false)}>
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Sheet>
+  );
+}

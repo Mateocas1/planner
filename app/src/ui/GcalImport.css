@@ -1,0 +1,202 @@
+/* GC2 — the Google Calendar import sheet (odd/research/value-roadmap.md §1,
+ * "Design: Import from Google Calendar"; §5 row 4b).
+ *
+ * A preview, not a wizard: range, calendars, what the mapper will create,
+ * what it will skip and why, and one action. Everything sits on the opaque
+ * `.form-group` material the creation sheets already use (--surface), so every
+ * text pair here is one scripts/glass-contrast.mjs already proves: --label,
+ * --label-2 and --label-3 on --surface, and --on-accent on the --accent fill.
+ *
+ * Nothing in this sheet animates on its own. The panel's entrance and exit are
+ * ui/Sheet.tsx; a list of counts that the user is reading must not move, and a
+ * check is the product's own --dur-state transition, which ui/app.css owns.
+ */
+
+.gcal-lead {
+  margin: 0;
+  font-size: var(--text-sub);
+  line-height: 1.45;
+  color: var(--label-2);
+}
+
+.gcal-note {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.gcal-note.is-warn { color: var(--red); }
+
+/* ---------- range ---------- */
+
+.gcal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The legend is the section title; the sheet's own spacing rule already sets
+   it, so this only removes the fieldset's default padding dance. */
+.gcal-field legend { padding: 0; }
+
+.gcal-range {
+  display: flex;
+  gap: 6px;
+}
+
+/* A native radio, hidden but focusable: the label is the control, so a screen
+   reader announces the fieldset's three options and arrow keys move between
+   them without a single line of key handling. */
+.gcal-range-option {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  font-size: var(--text-sub);
+  font-weight: 500;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+/* The input covers the whole segment and is transparent: the entire label is
+   the radio's hit target (and Playwright's), while the paint stays the label's.
+   The input is positioned, so it paints above the label's own text. */
+.gcal-range-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.gcal-range-option:has(input:checked) {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+
+.gcal-range-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- calendars ---------- */
+
+.gcal-calendars {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+
+.gcal-calendar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.gcal-calendar + .gcal-calendar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  border-top: 0.5px solid var(--separator);
+}
+
+.gcal-calendar-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  color: var(--label);
+}
+
+.gcal-tag {
+  flex: none;
+  font-size: var(--text-tiny);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gcal-calendar:hover { background: var(--fill-hover); }
+}
+
+/* ---------- counts ---------- */
+
+.gcal-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+}
+
+.gcal-summary {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- remove imported ---------- */
+
+.gcal-remove {
+  align-self: flex-start;
+  font-size: var(--text-caption);
+  text-align: left;
+}
+
+.gcal-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+}
+
+.gcal-confirm-text {
+  margin: 0;
+  font-size: var(--text-sub);
+  line-height: 1.4;
+  color: var(--label);
+}
+
+.gcal-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gcal-confirm-actions .button-danger,
+.gcal-confirm-actions .button {
+  flex: 1;
+  width: auto;
+}

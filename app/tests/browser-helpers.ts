@@ -186,6 +186,57 @@ export async function readRemoteTasks(email: string) {
   return tasks.map(doc => doc.data);
 }
 
+/** A Firestore REST field, as far as an imported document uses one. */
+type RawField = { stringValue?: string; booleanValue?: boolean; mapValue?: { fields?: Record<string, RawField> } };
+
+/**
+ * The documents a Google Calendar import wrote, read raw.
+ *
+ * Unlike the typed readers above this one does not decode: an imported block
+ * carries a nested `source` map, which is exactly the shape the typed encoder
+ * refuses on purpose. The import tests need the write itself -- the block's
+ * title and its gcal source, the task's deadline and its deterministic id -- so
+ * they read what the server holds, not a rendering of it.
+ */
+export async function readRemoteImport(email: string): Promise<{
+  blocks: Array<{ id: string; title?: string; start?: string; end?: string; source?: { provider?: string; eventId?: string; calendarId?: string } }>;
+  tasks: Array<{ id: string; title?: string; deadline?: string; completed?: boolean }>;
+}> {
+  const uid = await resolveRemoteUid(email);
+  const read = async (kind: "blocks" | "tasks") => {
+    const response = await firestoreFetch(`users/${uid}/${kind}`);
+    if (!response.ok) {
+      throw new Error(`emulator list failed: ${response.status} ${await response.text()}`);
+    }
+    // An empty collection returns {} with no "documents" key.
+    const body = (await response.json()) as { documents?: Array<{ name: string; fields?: Record<string, RawField> }> };
+    return (body.documents ?? []).map(document => {
+      const fields = document.fields ?? {};
+      const text = (key: string) => fields[key]?.stringValue;
+      const source = fields.source?.mapValue?.fields;
+      return {
+        id: document.name.split("/").pop()!,
+        ...(text("title") === undefined ? {} : { title: text("title") }),
+        ...(text("start") === undefined ? {} : { start: text("start") }),
+        ...(text("end") === undefined ? {} : { end: text("end") }),
+        ...(text("deadline") === undefined ? {} : { deadline: text("deadline") }),
+        ...(fields.completed === undefined ? {} : { completed: fields.completed.booleanValue }),
+        ...(source === undefined
+          ? {}
+          : {
+              source: {
+                provider: source.provider?.stringValue,
+                eventId: source.eventId?.stringValue,
+                calendarId: source.calendarId?.stringValue,
+              },
+            }),
+      };
+    });
+  };
+  const [blocks, tasks] = await Promise.all([read("blocks"), read("tasks")]);
+  return { blocks, tasks };
+}
+
 /** Seeds the profile timezone and one work block before the user is ever signed in. */
 export async function seedProfileAndBlock(email: string, timeZone: string, start: string, end: string): Promise<void> {
   await createRemoteAccount(email);

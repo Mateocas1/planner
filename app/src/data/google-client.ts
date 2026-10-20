@@ -16,8 +16,9 @@ import { googleClientId } from "./firebase-config.ts";
  * length of one import -- it is never written to storage or to Firestore. When
  * it expires the user connects again, which is one click.
  *
- * The GIS script is loaded lazily, on the first click that needs it, so the
- * ~40 KB of `accounts.google.com/gsi/client` never enters the app bundle.
+ * The GIS script is loaded lazily, on the first click that needs it, so a
+ * third-party script of Google's size never enters the app bundle: the only
+ * trace of it in the build is the URL string below.
  */
 
 /** The two read-only scopes: events to import, and the list of calendars. */
