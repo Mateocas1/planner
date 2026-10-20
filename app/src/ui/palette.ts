@@ -10,7 +10,7 @@ import type { ThemePreference } from "./theme.ts";
  *   the user did not ask for;
  * - a typed query always offers "create this title" first, which is what makes
  *   Enter the quick-add path, then the matching tasks by title, then any
- *   destination the query names.
+ *   destination the query names, then the theme and action commands it names.
  *
  * Every row has a stable id: it is the option's DOM id and the value the
  * combobox points at with aria-activedescendant.
@@ -26,11 +26,26 @@ export type PaletteTask = { id: string; title: string };
  * nothing, which is why it is not a destination. */
 export type PaletteThemeCommand = { kind: "theme"; id: string; pref: ThemePreference; label: string };
 
+/**
+ * A one-shot command: it opens a surface of its own instead of navigating or
+ * creating. It matches on `keywords` rather than on its label, so typing "cal"
+ * still offers only the Calendar destination -- the label is a sentence, not a
+ * search key.
+ */
+export type PaletteActionCommand = {
+  kind: "action";
+  id: string;
+  action: "gcal-import";
+  label: string;
+  keywords: string[];
+};
+
 export type PaletteCommand =
   | { kind: "create"; id: "create"; title: string }
   | { kind: "navigate"; id: string; view: View; label: string }
   | { kind: "task"; id: string; taskId: string; label: string }
-  | PaletteThemeCommand;
+  | PaletteThemeCommand
+  | PaletteActionCommand;
 
 /**
  * The theme values as palette commands (value roadmap §4). They appear for a
@@ -41,6 +56,22 @@ export const themeCommands: PaletteThemeCommand[] = [
   { kind: "theme", id: "theme-system", pref: "system", label: "Theme: System" },
   { kind: "theme", id: "theme-light", pref: "light", label: "Theme: Light" },
   { kind: "theme", id: "theme-dark", pref: "dark", label: "Theme: Dark" },
+];
+
+/**
+ * The actions the palette can run, in value-roadmap order: one entry today, the
+ * Google Calendar import (value roadmap §1). They appear for a typed query that
+ * names them, like the theme commands, so an empty palette still offers only the
+ * places to go.
+ */
+export const actionCommands: PaletteActionCommand[] = [
+  {
+    kind: "action",
+    id: "action-gcal-import",
+    action: "gcal-import",
+    label: "Import from Google Calendar",
+    keywords: ["import", "google"],
+  },
 ];
 
 /** How many tasks a query may list, so a broad word cannot bury the rest. */
@@ -65,7 +96,8 @@ export function buildCommands(
     .filter(destination => destination.label.toLowerCase().includes(needle))
     .map(navigateCommand);
   const matchedThemes = themeCommands.filter(command => command.label.toLowerCase().includes(needle));
-  return [{ kind: "create", id: "create", title: query }, ...matchedTasks, ...matchedDestinations, ...matchedThemes];
+  const matchedActions = actionCommands.filter(command => command.keywords.some(keyword => keyword.includes(needle)));
+  return [{ kind: "create", id: "create", title: query }, ...matchedTasks, ...matchedDestinations, ...matchedThemes, ...matchedActions];
 }
 
 function navigateCommand(destination: PaletteDestination): PaletteCommand {

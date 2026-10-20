@@ -10,6 +10,7 @@ import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
+import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
@@ -69,6 +70,15 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   // Command palette: open/closed, and the task the palette asked the Tasks
   // surface to reveal. The request survives the view change that mounts it.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The Google Calendar import sheet: whether it is open, and the control that
+  // opened it (its box is what the panel grows out of). The palette closes
+  // before the sheet mounts, so that path has no origin and the panel pops.
+  const [importOpen, setImportOpen] = useState(false);
+  const importOrigin = useRef<HTMLElement | null>(null);
+  const openImport = (origin: HTMLElement | null) => {
+    importOrigin.current = origin;
+    setImportOpen(true);
+  };
   const [pendingTask, setPendingTask] = useState<string | null>(null);
   const clearPendingTask = useCallback(() => setPendingTask(null), []);
   const scrolled = useScrolled();
@@ -128,6 +138,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
             onNavigate("tasks");
           }}
           onSignOut={signOut}
+          onImport={openImport}
         />
       )}
       <div className="main">
@@ -144,7 +155,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
               <SearchIcon />
             </button>
             {phone ? (
-              <AccountMenu email={user.email ?? ""} pending={pending} onSignOut={signOut} />
+              <AccountMenu email={user.email ?? ""} pending={pending} onSignOut={signOut} onImport={openImport} />
             ) : (
               <button type="button" className="button button-accent" onClick={newTask}>
                 <PlusIcon />New task
@@ -230,6 +241,20 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           <NewTaskSheet key="new-task" uid={user.uid} timeZone={zone} origin={creating} onClose={() => setCreating(null)} />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {importOpen && (
+          <GcalImportSheet
+            key="gcal-import"
+            uid={user.uid}
+            blocks={blocks}
+            tasks={tasks}
+            timeZone={zone}
+            origin={importOrigin.current}
+            onClose={() => setImportOpen(false)}
+            onOfferUndo={offerUndo}
+          />
+        )}
+      </AnimatePresence>
       {paletteOpen && (
         <CommandPalette
           uid={user.uid}
@@ -237,6 +262,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           tasks={tasks}
           onClose={() => setPaletteOpen(false)}
           onNavigate={onNavigate}
+          onImport={() => openImport(null)}
           onOpenTask={taskId => {
             setPendingTask(taskId);
             onNavigate("tasks");
@@ -283,7 +309,17 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
 
 /** On a phone the account lives behind a button in the top bar. The identity
  * line stays in the accessibility tree so the signed-in state is announced. */
-function AccountMenu({ email, pending, onSignOut }: { email: string; pending: number; onSignOut: () => void }) {
+function AccountMenu({
+  email,
+  pending,
+  onSignOut,
+  onImport,
+}: {
+  email: string;
+  pending: number;
+  onSignOut: () => void;
+  onImport: (origin: HTMLElement) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="account-menu">
@@ -304,6 +340,18 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
             <SyncStatus pending={pending} />
             {/* No sidebar at this width, so the theme control lives here. */}
             <ThemeSwitch />
+            {/* And so does the import entry: the same footer action, one tap
+                from the account the calendars belong to. */}
+            <button
+              type="button"
+              className="link-button"
+              onClick={event => {
+                setOpen(false);
+                onImport(event.currentTarget);
+              }}
+            >
+              Import from Google Calendar
+            </button>
             <button type="button" className="button" onClick={onSignOut}>Sign out</button>
           </motion.div>
         )}
