@@ -14,7 +14,7 @@ import { Home } from "./ui/Home.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
-import { Sidebar, views } from "./ui/Sidebar.tsx";
+import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
@@ -287,6 +287,8 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
           >
             <p className="popover-email" title={email}>{email}</p>
             <SyncStatus pending={pending} />
+            {/* No sidebar at this width, so the theme control lives here. */}
+            <ThemeSwitch />
             <button type="button" className="button" onClick={onSignOut}>Sign out</button>
           </motion.div>
         )}

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { motion } from "motion/react";
 import type { View } from "../App.tsx";
 import type { BlockView } from "../data/store.ts";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { SyncStatus } from "./SyncStatus.tsx";
+import { setThemePreference, useThemePreference, type ThemePreference } from "./theme.ts";
 import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey } from "./time.ts";
 
 export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
@@ -68,6 +69,7 @@ export function Sidebar({
         ))}
       </nav>
       <div className="side-foot">
+        <ThemeSwitch />
         <SyncStatus pending={pending} />
         <div className="account">
           <span className="who" title={email}>Signed in as {email}</span>
@@ -148,5 +150,121 @@ function MiniMonth({
         })}
       </div>
     </section>
+  );
+}
+
+/* ---------- theme ---------- */
+
+/**
+ * The three values of the theme switch, in the order the control shows them.
+ * System is the default: the page follows the OS until the user picks one.
+ */
+const themeOptions: { id: ThemePreference; label: string }[] = [
+  { id: "system", label: "System" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+];
+
+/**
+ * The theme icons. They live here, beside the control that uses them, because
+ * the sidebar footer row that will host this switch is the next unit (value
+ * roadmap §4); when the control moves into its own module, these move with it.
+ * Same stroke family as ui/icons.tsx, drawn on the same 24 px grid.
+ */
+type ThemeIconProps = { className?: string };
+
+const themeIconBase = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+
+function MonitorIcon({ className }: ThemeIconProps) {
+  return (
+    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+      <rect x="3" y="4.5" width="18" height="12.5" rx="2.5" />
+      <path d="M9 21h6M12 17v4" />
+    </svg>
+  );
+}
+
+function SunIcon({ className }: ThemeIconProps) {
+  return (
+    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+    </svg>
+  );
+}
+
+function MoonIcon({ className }: ThemeIconProps) {
+  return (
+    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+      <path d="M20.5 14.8A8.6 8.6 0 0 1 9.2 3.5a8.6 8.6 0 1 0 11.3 11.3Z" />
+    </svg>
+  );
+}
+
+/** The icon for one theme value: monitor, sun or moon. */
+export function ThemeIcon({ preference, className }: { preference: ThemePreference; className?: string }) {
+  if (preference === "light") return <SunIcon className={className} />;
+  if (preference === "dark") return <MoonIcon className={className} />;
+  return <MonitorIcon className={className} />;
+}
+
+/**
+ * System / Light / Dark as a native radiogroup: one tab stop (the checked
+ * radio), arrow keys move the selection and therefore the theme, exactly like a
+ * native radio set. The switch itself is the same paint the inline script does at
+ * load, so the page flips without a transition (see app.css).
+ */
+export function ThemeSwitch({ className }: { className?: string }) {
+  const preference = useThemePreference();
+  const groupRef = useRef<HTMLDivElement>(null);
+
+  function choose(next: ThemePreference) {
+    setThemePreference(next);
+    /* Keyboard selection takes focus with it; a click already has it. */
+    const buttons = groupRef.current?.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+    buttons?.[themeOptions.findIndex(option => option.id === next)]?.focus();
+  }
+
+  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const index = themeOptions.findIndex(option => option.id === preference);
+    let next: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % themeOptions.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + themeOptions.length) % themeOptions.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = themeOptions.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    choose(themeOptions[next].id);
+  }
+
+  return (
+    <div
+      ref={groupRef}
+      className={`theme-switch${className ? ` ${className}` : ""}`}
+      role="radiogroup"
+      aria-label="Theme"
+      onKeyDown={onKeyDown}
+    >
+      {themeOptions.map(option => (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={preference === option.id}
+          tabIndex={preference === option.id ? 0 : -1}
+          onClick={() => choose(option.id)}
+        >
+          <ThemeIcon preference={option.id} />
+          <span className="sr-only">{option.label}</span>
+        </button>
+      ))}
+    </div>
   );
 }

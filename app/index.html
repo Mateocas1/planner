@@ -12,8 +12,32 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#EEF1F8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0B0E15" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#EEF1F8" />
+    <!--
+      Theme bootstrap. A classic inline script, so the parser runs it before any
+      paint and before the deferred module bundle: read the per-device choice,
+      resolve System through the OS, publish the resolved scheme where the CSS
+      reads it (`html[data-theme]`) and in the browser-chrome colour. Without it
+      a stored Dark would paint light for one frame while React mounts. The two
+      colours below are the same ones src/ui/theme.ts writes at runtime.
+    -->
+    <script>
+      (function () {
+        var preference = "system";
+        try {
+          var stored = localStorage.getItem("planner-theme");
+          if (stored === "system" || stored === "light" || stored === "dark") preference = stored;
+        } catch (error) {
+          /* storage blocked (private mode, denied policy): System is the default */
+        }
+        var dark =
+          preference === "dark" ||
+          (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", dark ? "#0B0E15" : "#EEF1F8");
+      })();
+    </script>
     <title>Personal Planner</title>
   </head>
   <body>
