@@ -1,12 +1,12 @@
-import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { password, readRemoteTasks, seedTaskAndBlock } from "./browser-helpers.ts";
 
 /**
  * The command palette (F3 / spec S8). Every assertion goes through the UI: the
  * dialog's semantics, the keyboard contract (arrows, Enter, Escape, focus), the
- * two things it does (quick-add a title, open a task's details) and the motion
- * budget a keyboard surface gets.
+ * two things it does (quick-add a title, open a task's details) and the short
+ * soft entrance a keyboard surface gets (C1: fade plus a slight scale, never a
+ * gate on typing).
  */
 
 test.setTimeout(60_000);
@@ -27,6 +27,82 @@ async function signUp(page: Page, email: string) {
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Command palette" });
 const field = (page: Page) => dialog(page).getByRole("combobox", { name: "Search tasks or run a command" });
 const options = (page: Page) => dialog(page).getByRole("listbox", { name: "Results" }).getByRole("option");
+
+/** What the palette looked like at one instant. */
+interface PaletteShot {
+  opacity: string;
+  transform: string;
+  /** The scrim behind the dialog (::backdrop), read through its pseudo. */
+  scrim: string;
+  /** Name of the CSS animation running on the dialog, if any. */
+  animation: string;
+  duration: number | null;
+  /** Whether the search field already owns focus at that instant. */
+  focused: boolean;
+}
+
+/** The opening frame and the settled frame of one palette entrance. */
+interface PaletteOpening {
+  start: PaletteShot | null;
+  settled: PaletteShot | null;
+}
+
+/**
+ * Watches for the palette entering the top layer, and records it twice: in the
+ * microtask right after showModal() (the opening frame, before any paint, so the
+ * entrance cannot have moved on) and once its animation finished.
+ *
+ * A per-frame rAF sampler would be the obvious tool, but it races the 150 ms
+ * entrance on a loaded machine and misses it entirely, which is the same
+ * mistake as asserting only after toBeVisible(). A mutation callback runs in the
+ * task that opened the dialog: it sees the entrance at its first frame and at
+ * every clock speed.
+ */
+async function watchPaletteOpen(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const store = window as unknown as { __paletteOpening: PaletteOpening };
+    const opening: PaletteOpening = (store.__paletteOpening = { start: null, settled: null });
+
+    const shot = (dialog: HTMLDialogElement): PaletteShot => {
+      const style = getComputedStyle(dialog);
+      const entry = dialog
+        .getAnimations()
+        .find(animation => animation instanceof CSSAnimation) as CSSAnimation | undefined;
+      const timing = entry?.effect?.getTiming().duration;
+      return {
+        opacity: style.opacity,
+        transform: style.transform,
+        scrim: getComputedStyle(dialog, "::backdrop").opacity,
+        animation: entry?.animationName ?? "",
+        duration: typeof timing === "number" ? timing : null,
+        focused: document.activeElement === dialog.querySelector(".palette-input"),
+      };
+    };
+
+    const observer = new MutationObserver(() => {
+      const dialog = document.querySelector<HTMLDialogElement>("dialog.palette[open]");
+      if (!dialog || opening.start) return;
+      opening.start = shot(dialog);
+      const entry = dialog.getAnimations().find(animation => animation instanceof CSSAnimation);
+      const settle = () => {
+        opening.settled = shot(dialog);
+        observer.disconnect();
+      };
+      if (entry) void entry.finished.then(settle, settle);
+      else settle();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  });
+}
+
+async function paletteOpening(page: Page): Promise<PaletteOpening> {
+  await page.waitForFunction(
+    () => (window as unknown as { __paletteOpening?: PaletteOpening }).__paletteOpening?.settled != null,
+    undefined,
+    { timeout: 15_000, polling: 50 },
+  );
+  return page.evaluate(() => (window as unknown as { __paletteOpening: PaletteOpening }).__paletteOpening);
+}
 
 test("Cmd/Ctrl+K opens a centered modal dialog whose focus cannot leave, and Escape gives focus back", async ({ page }) => {
   const email = newEmail("palette-dialog");
@@ -154,39 +230,88 @@ test("a task found by title opens in its details panel from any view", async ({ 
   await expect(panel.getByLabel("Rename task")).toHaveValue("Pay the rent");
 });
 
-test("the palette is painted at rest with no entrance at all, animates nothing per keystroke, and respects reduced motion", async ({ page }) => {
-  const email = newEmail("palette-motion");
-  await signUp(page, email);
+test("it opens with a short soft entrance that never blocks typing", async ({ page }) => {
+  await signUp(page, newEmail("palette-entrance"));
 
-  // A keyboard shortcut used hundreds of times a day gets no animation, not a
-  // short one: the dialog is at rest on the frame it opens, with no transition,
-  // no keyframes and no @starting-style left to replay on the next Cmd+K.
-  const css = readFileSync(new URL("../src/ui/CommandPalette.css", import.meta.url), "utf8");
-  expect(css).not.toContain("@starting-style");
+  // The opening is watched before the shortcut, and the typing has no wait in
+  // front of it: focus must be there, not queued behind the entrance.
+  await watchPaletteOpen(page);
   await page.keyboard.press("Control+k");
-  await expect(dialog(page)).toBeVisible();
-  await expect(dialog(page)).toHaveCSS("opacity", "1");
-  await expect(dialog(page)).toHaveCSS("transform", "none");
-  await expect(dialog(page)).toHaveCSS("transition-duration", "0s");
-  await expect(dialog(page)).toHaveCSS("animation-name", "none");
+  await page.keyboard.type("milk");
+  const opening = await paletteOpening(page);
 
-  // selecting or filtering rows while typing is never animated
+  // the entrance ran: the opening frame was translucent and scaled
+  const start = opening.start!;
+  expect(Number(start.opacity)).toBeLessThan(0.99);
+  expect(start.transform).not.toBe("none");
+  // ~150 ms, and the backdrop fades with the surface
+  expect(start.animation).toBe("palette-in");
+  expect(start.duration).toBeGreaterThanOrEqual(100);
+  expect(start.duration).toBeLessThanOrEqual(200);
+  expect(Number(start.scrim)).toBeLessThan(0.99);
+  // settled: opacity 1 and no transform left behind
+  expect(opening.settled!.opacity).toBe("1");
+  expect(opening.settled!.transform).toBe("none");
+
+  // S2: the field owned focus on the opening frame, which is why the keystrokes
+  // typed with no wait all landed in it
+  expect(start.focused).toBe(true);
+  await expect(field(page)).toHaveValue("milk");
+  await expect(page.getByRole("option", { name: "Create “milk”" })).toHaveAttribute("aria-selected", "true");
+
+  // what the user types is still never animated
   await field(page).fill("water the plants");
   await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
-  await expect(options(page).first()).toHaveCSS("transition-duration", "0s");
   await expect(options(page).first()).toHaveCSS("animation-name", "none");
+  await expect(options(page).first()).toHaveCSS("transition-duration", "0s");
   await expect(field(page)).toHaveCSS("transition-duration", "0s");
+});
 
-  // the OS preference changes nothing here: there was never an entrance to
-  // collapse, so the reopening palette is also at rest immediately
-  await page.keyboard.press("Escape");
-  await expect(dialog(page)).toHaveCount(0);
+test("reduced motion keeps the fade and applies no scale", async ({ page }) => {
+  await signUp(page, newEmail("palette-reduced"));
   await page.emulateMedia({ reducedMotion: "reduce" });
+
+  await watchPaletteOpen(page);
   await page.keyboard.press("Control+k");
   await expect(dialog(page)).toBeVisible();
-  await expect(dialog(page)).toHaveCSS("opacity", "1");
+  await expect(field(page)).toBeFocused();
+  // the fade-only variant is the one that runs, so no scale is ever applied
+  await expect(dialog(page)).toHaveCSS("animation-name", "palette-fade");
+
+  const opening = await paletteOpening(page);
+  expect(opening.start!.animation).toBe("palette-fade");
+  expect(opening.start!.transform).toBe("none");
+  expect(opening.settled!.transform).toBe("none");
+  expect(opening.settled!.opacity).toBe("1");
+  await expect(dialog(page)).toHaveCSS("opacity", "1", { timeout: 15_000 });
+});
+
+test("opening, closing and reopening rapidly leaves a usable palette", async ({ page }) => {
+  await signUp(page, newEmail("palette-interrupt"));
+
+  await page.keyboard.press("Control+k");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+k");
+  await page.keyboard.press("Escape");
+  expect(await dialog(page).count()).toBe(0);
+
+  await page.keyboard.press("Control+k");
+  await expect(dialog(page)).toBeVisible();
+  await expect(field(page)).toBeFocused();
+  await page.keyboard.type("buy milk");
+  await expect(field(page)).toHaveValue("buy milk");
+  await expect(page.getByRole("option", { name: "Create “buy milk”" })).toHaveAttribute("aria-selected", "true");
+
+  // the close stays instant, and a third open also lands at rest. The settle
+  // read gets a longer budget than the 5 s default: a single composited
+  // entrance advances with the document timeline, so a machine busy enough to
+  // stall frames for seconds delays it without any defect in the palette.
+  await page.keyboard.press("Escape");
+  expect(await dialog(page).count()).toBe(0);
+  await page.keyboard.press("Control+k");
+  await expect(dialog(page)).toBeVisible();
+  await expect(dialog(page)).toHaveCSS("opacity", "1", { timeout: 15_000 });
   await expect(dialog(page)).toHaveCSS("transform", "none");
-  await expect(dialog(page)).toHaveCSS("animation-name", "none");
 });
 
 test("the top bar trigger opens it, arrows wrap, Enter runs a destination, and a backdrop click closes it", async ({ page }) => {
