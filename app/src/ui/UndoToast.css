@@ -1,11 +1,22 @@
-/* Undo toast (F1).
-   A single offer pinned to the bottom of the shell. It borrows the sheet glass
-   recipe but at a far higher opacity, so the sentence clears AA contrast over
-   whatever scrolls behind it while it still reads as part of the chrome. The
-   motion is a transition on opacity and a short rise — never a keyframe, so it
-   can be interrupted and reversed by a second delete. */
+/* Undo toast (F1, G6 dark glass).
+   A single offer pinned to the bottom of the shell. It is the dark glass
+   material (odd/research/glass-direction.md §3): a graphite tint at 0.86, the
+   thick blur, and light text. The fill stays dark over whatever scrolls behind
+   it in both colour schemes, so the white sentence clears AA without the
+   toast needing a second, scheme-aware recipe. The motion is a transition on
+   opacity and a short rise — never a keyframe, so it can be interrupted and
+   reversed by a second delete. */
 
 .undo-toast {
+  /* graphite at 0.86 (the spec floor is 0.82); the solid twin is the same
+     graphite, used when transparency is reduced */
+  --toast-tint: rgb(24 24 30 / 0.86);
+  --toast-solid: rgb(24 24 30);
+  /* light ink for the dark fill; quiet is the secondary tier (separator and
+     close control) */
+  --toast-label: #FFFFFF;
+  --toast-quiet: rgb(255 255 255 / 0.72);
+
   position: fixed;
   z-index: 60;
   inset-inline: 0;
@@ -18,15 +29,16 @@
   gap: 10px;
   padding: 7px 7px 7px 16px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
+  background: var(--toast-tint);
+  /* the thick material's blur and saturation (glass.css, .glass-thick) */
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
   box-shadow:
     inset 0 1px 0 var(--rim-hi),
     inset 0 -1px 0 var(--rim-lo),
     0 0 0 0.5px var(--ring),
     var(--glass-shadow);
-  color: var(--label);
+  color: var(--toast-label);
   font-size: var(--text-sub);
 
   /* The closed state is also the exit target: 160 ms out. */
@@ -59,7 +71,7 @@
   overflow: hidden;
 }
 
-.undo-toast-separator { color: var(--label-3); }
+.undo-toast-separator { color: var(--toast-quiet); }
 
 .undo-toast-action {
   flex: none;
@@ -84,11 +96,11 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--label-3);
+  color: var(--toast-quiet);
   transition: transform var(--dur-press) var(--ease-out), color var(--dur-hover) ease;
 }
 
-.undo-toast-close:hover { color: var(--label); }
+.undo-toast-close:hover { color: var(--toast-label); }
 .undo-toast-close:active { transform: scale(0.94); }
 .undo-toast-close svg { width: 14px; height: 14px; }
 
@@ -98,10 +110,11 @@
 }
 
 /* Transparency is a legibility risk, not a promise: drop the blur and go
-   solid when the reader asked for less transparency or more contrast. */
+   solid when the reader asked for less transparency or more contrast. The
+   solid is the dark graphite, so the light ink still clears AA. */
 @media (prefers-reduced-transparency: reduce) {
   .undo-toast {
-    background: var(--surface);
+    background: var(--toast-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -109,10 +122,22 @@
 
 @media (prefers-contrast: more) {
   .undo-toast {
-    background: var(--surface);
+    background: var(--toast-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    box-shadow: 0 0 0 1px var(--label-3), var(--glass-shadow);
+    box-shadow: 0 0 0 1px var(--toast-quiet), var(--glass-shadow);
+  }
+}
+
+/* Forced colors drop every background and shadow, so the offer keeps a real
+   border and the system's own text colour. Same rule as the glass surfaces. */
+@media (forced-colors: active) {
+  .undo-toast {
+    background: Canvas;
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
   }
 }
 

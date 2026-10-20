@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { password } from "./browser-helpers.ts";
 import { isBlink, shouldEnableLens, type LensEnv } from "../src/ui/lens.ts";
 
@@ -653,3 +653,86 @@ for (const { width, height, layout } of AUDITED) {
     expect(toast.bottom).toBeLessThan(toast.viewport.height);
   });
 }
+
+/** The material an element paints, read from the element itself. */
+async function readMaterial(locator: Locator) {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backdropFilter: style.backdropFilter,
+      background: style.backgroundColor,
+      color: style.color,
+      borderTopStyle: style.borderTopStyle,
+    };
+  });
+}
+
+/** `rgba(24, 24, 30, 0.86)` -> [24, 24, 30], so a fill's lightness is a measured value. */
+function channelsOf(color: string) {
+  const inner = color.slice(color.indexOf("(") + 1, color.lastIndexOf(")"));
+  return inner.split(/[\s,/]+/).filter(Boolean).slice(0, 3).map(Number);
+}
+
+test("undo toast: dark glass with light ink in both colour schemes", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  const toast = page.locator(".undo-toast");
+
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const material = await readMaterial(toast);
+    /* the thick blur on a graphite tint at least 0.82 opaque (spec §3) */
+    expect(material.backdropFilter, scheme).toContain("blur(32px)");
+    expect(material.backdropFilter, scheme).toContain("saturate(1.8)");
+    expect(alphaOf(material.background), scheme).toBeGreaterThanOrEqual(0.82);
+    expect(Math.max(...channelsOf(material.background)), scheme).toBeLessThan(64);
+    expect(material.color, scheme).toBe("rgb(255, 255, 255)");
+  }
+});
+
+test("undo toast: reduced transparency goes solid dark, never light", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  const toast = page.locator(".undo-toast");
+
+  await emulateReducedTransparency(page, "reduce");
+  const solid = await readMaterial(toast);
+  expect(solid.backdropFilter).toBe("none");
+  expect(alphaOf(solid.background)).toBe(1);
+  expect(Math.max(...channelsOf(solid.background))).toBeLessThan(64);
+  expect(solid.color).toBe("rgb(255, 255, 255)");
+
+  await emulateReducedTransparency(page, "no-preference");
+  expect((await readMaterial(toast)).backdropFilter).toContain("blur(32px)");
+});
+
+test("undo toast: forced colors drop the material and keep a real border", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  await page.emulateMedia({ forcedColors: "active" });
+
+  const forced = await readMaterial(page.locator(".undo-toast"));
+  expect(forced.backdropFilter).toBe("none");
+  expect(forced.borderTopStyle).toBe("solid");
+});
+
+test("palette: thick material in both schemes, and no lens", async ({ page }) => {
+  await enterApp(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.locator("dialog.palette");
+  await expect(palette).toHaveClass(/glass-thick/);
+
+  const material = await readMaterial(palette);
+  expect(material.backdropFilter).toContain("blur(32px)");
+  expect(material.backdropFilter).toContain("saturate(1.8)");
+  /* the lens would sit inside this dialog's own backdrop filter and over its
+     text (CommandPalette.css), so the palette never carries it */
+  expect(material.backdropFilter).not.toContain("url(");
+  await expect(palette).not.toHaveClass(/glass-lens/);
+  expect(alphaOf(material.background)).toBeCloseTo(0.88, 2);
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect
+    .poll(async () => alphaOf((await readMaterial(palette)).background))
+    .toBeCloseTo(0.9, 2);
+});
