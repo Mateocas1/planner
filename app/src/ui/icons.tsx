@@ -114,3 +114,17 @@ export function PersonIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** The drag grip: two columns of dots, the smallest honest "grab me" mark. */
+export function GripIcon({ className }: IconProps) {
+  return (
+    <svg {...base} stroke="none" fill="currentColor" className={className}>
+      <circle cx="9.5" cy="6" r="1.15" />
+      <circle cx="14.5" cy="6" r="1.15" />
+      <circle cx="9.5" cy="12" r="1.15" />
+      <circle cx="14.5" cy="12" r="1.15" />
+      <circle cx="9.5" cy="18" r="1.15" />
+      <circle cx="14.5" cy="18" r="1.15" />
+    </svg>
+  );
+}
