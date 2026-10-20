@@ -1,0 +1,161 @@
+/* SB1 — the sidebar's own content (odd/research/value-roadmap.md §3).
+ *
+ * Two blocks that answer "what comes next" from the chrome Tasks and Calendar
+ * actually show. Utility over decoration: these rows are the product's list
+ * material (an opaque card on the glass), so every text pair here is one
+ * `scripts/glass-contrast.mjs` already proves (--label, --label-2, --label-3,
+ * --red and --now on --surface). Nothing animates: the blocks appear and
+ * disappear with the data, and a sidebar that moves while the user is reading
+ * is noise, not delight.
+ *
+ * The sidebar is also a height container: a short window drops the less
+ * important block first (never scrolls the chrome, §3).
+ */
+
+.sidebar {
+  /* The sidebar's own height decides what it can hold. It is fixed top/bottom,
+     so its box is externally sized and size containment costs nothing. */
+  container-type: size;
+  container-name: sidebar;
+}
+
+/* ---------- block chrome ---------- */
+
+.side-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.side-label {
+  margin: 0;
+  padding: 0 10px;
+  font-size: var(--text-tiny);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.side-empty {
+  margin: 0;
+  padding: 0 10px;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+/* The list material, as a card on the glass: opaque, so its labels keep the
+   contrast they have everywhere else in the app. */
+.side-card {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+
+/* ---------- up next ---------- */
+
+.side-row {
+  min-width: 0;
+  padding: 8px 12px;
+}
+
+.side-row + .side-row { border-top: 0.5px solid var(--separator); }
+
+.side-row-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sub);
+  font-weight: 500;
+  color: var(--label);
+}
+
+.side-row-meta {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-3);
+}
+
+/* The running block is marked in the now colour, and its meta already says
+   "now", so the state never depends on colour alone. */
+.side-row.is-now .side-row-meta { color: var(--now); }
+
+/* ---------- due soon ---------- */
+
+.side-due-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 8px 2px 12px;
+}
+
+.side-due-row + .side-due-row { border-top: 0.5px solid var(--separator); }
+
+.side-due-row[data-pending="true"] .side-due-title { opacity: 0.7; }
+
+.side-due-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 4px;
+  border-radius: var(--r-control);
+  text-align: left;
+}
+
+.side-due-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sub);
+  font-weight: 500;
+  color: var(--label);
+}
+
+.side-due-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-3);
+}
+
+.side-due-meta.is-overdue { color: var(--red); }
+
+@media (hover: hover) and (pointer: fine) {
+  .side-due-open:hover .side-due-title { color: var(--accent); }
+}
+
+@media (pointer: coarse) {
+  .side-due-open { min-height: 44px; }
+}
+
+/* ---------- a short window ----------
+ *
+ * The chrome is never scrolled: a 700 px sidebar drops Due soon first, and a
+ * short one drops Up next too. The month, the navigation and the footer always
+ * stay. */
+
+@container sidebar (max-height: 760px) {
+  .side-due { display: none; }
+}
+
+@container sidebar (max-height: 620px) {
+  .side-up-next { display: none; }
+}
