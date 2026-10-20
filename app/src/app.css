@@ -54,19 +54,7 @@
   --cat-task-bg: rgb(104 76 196 / 0.11);
   --cat-task-ink: #4E3597;
 
-  /* glass */
-  --tint-chrome: rgb(248 248 250 / 0.72);
-  --tint-sheet: rgb(250 250 252 / 0.80);
-  --tint-control: rgb(255 255 255 / 0.58);
-  --rim-hi: rgb(255 255 255 / 0.9);
-  --rim-lo: rgb(255 255 255 / 0.3);
-  --ring: rgb(20 20 40 / 0.08);
-  --sheen: rgb(255 255 255 / 0.45);
-  --glass-shadow: 0 8px 28px rgb(20 20 40 / 0.08), 0 1px 3px rgb(20 20 40 / 0.05);
-  --pill: rgb(255 255 255 / 0.95);
-  --pill-shadow: 0 1px 2px rgb(20 20 40 / 0.10), 0 0 0 0.5px rgb(20 20 40 / 0.06);
-  --card-shadow: 0 0 0 1px rgb(20 20 40 / 0.045), 0 1px 2px -1px rgb(20 20 40 / 0.06), 0 3px 10px rgb(20 20 40 / 0.035);
-  --scrim: rgb(20 20 30 / 0.16);
+  /* glass tokens live in ui/glass.css (imported after this file) */
 
   /* type */
   --font: "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -121,18 +109,6 @@
     --cat-focus-ink: #B4D1F4;
     --cat-task-bg: rgb(150 130 230 / 0.15);
     --cat-task-ink: #CEC3F4;
-    --tint-chrome: rgb(30 30 34 / 0.76);
-    --tint-sheet: rgb(34 34 38 / 0.84);
-    --tint-control: rgb(44 44 48 / 0.64);
-    --rim-hi: rgb(255 255 255 / 0.07);
-    --rim-lo: rgb(255 255 255 / 0.02);
-    --ring: rgb(255 255 255 / 0.07);
-    --sheen: rgb(255 255 255 / 0.03);
-    --glass-shadow: 0 8px 28px rgb(0 0 0 / 0.36), 0 1px 3px rgb(0 0 0 / 0.3);
-    --pill: rgb(255 255 255 / 0.09);
-    --pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.06);
-    --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.055);
-    --scrim: rgb(0 0 0 / 0.42);
     color-scheme: dark;
   }
 }
@@ -232,45 +208,9 @@ time,
 
 /* ---------- material ---------- */
 
-.glass {
-  position: relative;
-  isolation: isolate;
-  background: var(--tint, var(--tint-chrome));
-  -webkit-backdrop-filter: blur(var(--blur, 28px)) saturate(var(--sat, 170%));
-  backdrop-filter: blur(var(--blur, 28px)) saturate(var(--sat, 170%));
-  box-shadow: inset 0 1px 0 var(--rim-hi), inset 0 -1px 0 var(--rim-lo), 0 0 0 0.5px var(--ring), var(--glass-shadow);
-}
-
-.glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(160deg, var(--sheen), transparent 38%);
-}
-
-.glass-chrome { --tint: var(--tint-chrome); }
-.glass-sheet { --tint: var(--tint-sheet); --blur: 36px; }
-.glass-control { --tint: var(--tint-control); --blur: 16px; --sat: 160%; }
-
-@media (prefers-reduced-transparency: reduce) {
-  .glass,
-  .topbar::before {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-    --tint: var(--surface) !important;
-  }
-}
+/* Materials, tint tokens and fallbacks live in ui/glass.css. */
 
 @media (prefers-contrast: more) {
-  .glass {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-    --tint: var(--surface) !important;
-    box-shadow: 0 0 0 1px var(--label-3);
-  }
   .card, .group { box-shadow: 0 0 0 1px var(--label-3); }
 }
 
