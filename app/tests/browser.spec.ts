@@ -104,15 +104,15 @@ test("Today shows what is due, what is coming up and today's schedule from the p
   await openTasks(page);
   await addTaskThroughForm(page, "Open task");
   await revealTaskForm(page);
-  await page.getByLabel("Task title").fill("Due today");
+  await page.getByLabel("Task title").fill("Dental bill");
   await page.getByLabel("Deadline").fill(today);
   await page.getByRole("button", { name: "Add task" }).click();
-  await expect(page.locator(".task-title", { hasText: "Due today" })).toBeVisible();
+  await expect(page.locator(".task-title", { hasText: "Dental bill" })).toBeVisible();
   await revealTaskForm(page);
-  await page.getByLabel("Task title").fill("Due soon");
+  await page.getByLabel("Task title").fill("Renew passport");
   await page.getByLabel("Deadline").fill(dayKey(3));
   await page.getByRole("button", { name: "Add task" }).click();
-  await expect(page.locator(".task-title", { hasText: "Due soon" })).toBeVisible();
+  await expect(page.locator(".task-title", { hasText: "Renew passport" })).toBeVisible();
   await addTaskThroughForm(page, "Done task");
   await page.getByRole("checkbox", { name: "Complete: Done task" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Done task" })).toHaveCount(1);
@@ -126,21 +126,21 @@ test("Today shows what is due, what is coming up and today's schedule from the p
 
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Today" }).click();
   const due = page.getByRole("region", { name: "Due today" });
-  await expect(due.getByRole("checkbox", { name: "Complete: Due today" })).toBeVisible();
+  await expect(due.getByRole("checkbox", { name: "Complete: Dental bill" })).toBeVisible();
   await expect(due.getByText("Open task")).toHaveCount(0);
   await expect(due.getByText("Done task")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Coming up" }).getByText("Due soon")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Coming up" }).getByText("Renew passport")).toBeVisible();
   const schedule = page.getByRole("region", { name: "Schedule" });
   await expect(schedule.getByText("Work block")).toBeVisible();
   await expect(schedule.getByText("09:00 – 10:00")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks 3 open" })).toBeVisible();
 
   // Completing from Today writes the same completion the Tasks list does.
-  await due.getByRole("checkbox", { name: "Complete: Due today" }).click();
+  await due.getByRole("checkbox", { name: "Complete: Dental bill" }).click();
   await expect(due.getByText("Nothing due today.")).toBeVisible();
   await expect
-    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Due today"), { timeout: 15_000 })
-    .toEqual({ title: "Due today", completed: true, deadline: today });
+    .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Dental bill"), { timeout: 15_000 })
+    .toEqual({ title: "Dental bill", completed: true, deadline: today });
 });
 
 test("creating a task with a deadline shows the row and persists it to the server", async ({ page }) => {

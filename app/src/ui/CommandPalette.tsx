@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import type { View } from "../App.tsx";
+import { addSeries } from "../data/series.ts";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
+import { parseQuickAdd, type QuickAdd } from "../domain/quickAdd.ts";
 import { PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
 import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
+import { quickAddPartLabel } from "./QuickAddChips.tsx";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
 import { settle } from "./write.ts";
@@ -34,12 +37,15 @@ const focusableSelector = 'button:not([disabled]), input:not([disabled]), [tabin
  */
 export function CommandPalette({
   uid,
+  timeZone,
   tasks,
   onClose,
   onNavigate,
   onOpenTask,
 }: {
   uid: string;
+  /** The profile zone: the create row's date preview is a planner day. */
+  timeZone: string;
   tasks: TaskView[];
   onClose: () => void;
   onNavigate: (view: View) => void;
@@ -59,6 +65,10 @@ export function CommandPalette({
   const [error, setError] = useState<string | null>(null);
 
   const commands = useMemo(() => buildCommands(query, tasks, destinations), [query, tasks]);
+  // The same parser the New task sheet uses, so one line creates the same task
+  // from either place. The clock is read per keystroke: "tomorrow" follows the
+  // planner's day, and a panel left open past midnight must not keep yesterday's.
+  const parsed = useMemo(() => parseQuickAdd(query, { now: new Date(), timeZone }), [query, timeZone]);
   const activeIndex = Math.max(0, commands.findIndex(command => command.id === activeId));
   const active = commands[activeIndex];
 
@@ -97,14 +107,23 @@ export function CommandPalette({
       onClose();
       return;
     }
-    void create(command.title);
+    void create();
   }
 
-  async function create(title: string) {
+  /**
+   * Creates what the line asked for: a task with its deadline, or a series when
+   * a repeat was recognized. A line that is nothing but a date leaves no title,
+   * and the domain says so -- the palette shows that message like any other.
+   */
+  async function create() {
     setBusy(true);
     setError(null);
     try {
-      await settle(addTask(uid, title));
+      await settle(
+        parsed.frequency === undefined
+          ? addTask(uid, parsed.title, parsed.deadline)
+          : addSeries(uid, parsed.title, parsed.frequency, parsed.anchorDate ?? parsed.today, parsed.deadline),
+      );
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
@@ -207,7 +226,7 @@ export function CommandPalette({
             onClick={() => run(command)}
           >
             <span className="palette-option-icon" aria-hidden="true">{commandIcon(command)}</span>
-            <span className="palette-option-label">{commandLabel(command)}</span>
+            <span className="palette-option-label">{commandLabel(command, parsed)}</span>
           </li>
         ))}
       </ul>
@@ -216,9 +235,17 @@ export function CommandPalette({
   );
 }
 
-function commandLabel(command: PaletteCommand): string {
-  if (command.kind === "create") return `Create “${command.title}”`;
-  return command.label;
+/**
+ * A row's label. The create row names the title the parser kept and previews
+ * every part it recognized, so Enter never creates something other than what the
+ * row says; when the line is nothing but a date the raw text stands in for the
+ * (empty) title the domain will reject.
+ */
+function commandLabel(command: PaletteCommand, parsed: QuickAdd): string {
+  if (command.kind !== "create") return command.label;
+  const title = parsed.title === "" ? command.title : parsed.title;
+  const detail = parsed.parts.map(part => quickAddPartLabel(part, parsed.today)).join(" · ");
+  return detail === "" ? `Create “${title}”` : `Create “${title}” — ${detail}`;
 }
 
 function commandIcon(command: PaletteCommand) {

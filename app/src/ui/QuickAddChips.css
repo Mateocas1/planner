@@ -1,0 +1,76 @@
+/* Quick-add chips: what the New task title line was understood to mean.
+ *
+ * They sit in the create sheet between the title field and the grouped controls,
+ * which is where the user reads the parse before pressing Add task. A chip is a
+ * control (pressing it undoes the parse for that part), so it carries the app's
+ * own focus ring and a 30 px body that grows to the 44 px touch floor under a
+ * coarse pointer.
+ */
+
+.quick-add-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quick-add-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--label-2);
+  font-family: inherit;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.quick-add-chip:hover {
+  background: var(--surface);
+  color: var(--label);
+}
+
+.quick-add-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.quick-add-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The undo glyph is drawn by the sheet's own rule, not markup: the chip's text
+ * stays its label, so a test or a screen reader reads "tomorrow", not
+ * "tomorrow x". */
+.quick-add-chip::after {
+  content: "×";
+  color: var(--label-3);
+  font-size: 15px;
+  line-height: 1;
+}
+
+@media (pointer: coarse) {
+  .quick-add-chip {
+    min-height: 44px;
+    padding: 6px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-add-chip {
+    transition: none;
+  }
+}
