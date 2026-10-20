@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/domain/model.test.ts",
+    "test": "node --experimental-strip-types --test src/domain/model.test.ts src/ui/palette.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "dev": "vite",
