@@ -1,15 +1,14 @@
 /* Command palette (CommandPalette.tsx). Co-located so the palette's material
    and motion stay out of app.css.
 
-   Motion: the palette is opened by a keyboard shortcut hundreds of times a day,
-   the frequency tier where the skills say no animation at all. It is held to the
-   smallest step that can exist — a single press-feedback beat (--dur-press,
-   120 ms) of opacity and scale(0.98) on entry — and it leaves with no animation
-   whatsoever, because an exit animation would be felt as lag on the next
-   keystroke. Nothing inside transitions while the user types: the selected row
-   is painted by [aria-selected] with no transition on the row. Reduced motion
-   is covered by the app's single contract in app.css (prefers-reduced-motion
-   collapses every transition duration), not a second rule here. */
+   Motion: none. The palette is opened by a keyboard shortcut hundreds of times a
+   day -- the frequency tier where the skills say no animation at all, and where
+   even a 120 ms entrance was felt as lag on the next keystroke. It is painted at
+   rest on the frame it opens, and it leaves with no animation whatsoever.
+   Nothing inside transitions while the user types: the selected row is painted
+   by [aria-selected] with no transition on the row. Reduced motion is covered by
+   the app's single contract in app.css (prefers-reduced-motion collapses every
+   transition duration), not a second rule here. */
 
 /* Material (G6): the thick sheet material from glass.css, `glass-thick` on the
    dialog. No lens, on purpose. The lens needs a container with no backdrop
@@ -31,8 +30,6 @@ dialog.palette {
   border-radius: var(--r-sheet);
   color: var(--label);
   overflow: hidden;
-  transform-origin: center;
-  transition: opacity var(--dur-press) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
 
 /* The palette mounts closed and the effect below calls showModal(). Without
@@ -40,18 +37,6 @@ dialog.palette {
    display:none and flash a centered empty panel for a frame before it opens. */
 dialog.palette:not([open]) {
   display: none;
-}
-
-dialog.palette[open] {
-  opacity: 1;
-  transform: scale(1);
-}
-
-@starting-style {
-  dialog.palette[open] {
-    opacity: 0;
-    transform: scale(0.98);
-  }
 }
 
 dialog.palette::backdrop {
