@@ -137,7 +137,11 @@ html {
 
 body {
   margin: 0;
+  /* vh first: engines without dvh (older Safari) keep the old value, and where
+     dvh exists it wins and follows the browser's collapsing toolbars. Neither
+     unit sees the on-screen keyboard, which is what --kb-inset is for. */
   min-height: 100vh;
+  min-height: 100dvh;
   color: var(--label);
   background: linear-gradient(var(--bg-top), var(--bg) 360px) var(--bg);
   font: 400 var(--text-body) / 1.4 var(--font);
@@ -163,6 +167,20 @@ select {
   font: inherit;
   color: inherit;
   letter-spacing: inherit;
+}
+
+/* iOS zooms the page when a focused field's text is under 16 px, which is the
+   zoom the report felt like: half the sheet outside the screen. `max()` only
+   raises the floor -- a 22 px title or a 17 px palette field keep their size,
+   because a class rule setting font-size beats this element selector -- and it
+   is scoped to touch and to the phone layout, so the desktop type ramp is
+   untouched. */
+@media (pointer: coarse), (max-width: 760px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
 }
 
 button {
@@ -422,6 +440,7 @@ time,
 
 .shell {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .sidebar {
@@ -587,6 +606,7 @@ time,
 .main {
   margin-left: 264px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding-bottom: 72px;
 }
 
@@ -1106,6 +1126,7 @@ time,
 .cal-scroll {
   position: relative;
   height: min(640px, calc(100vh - 260px));
+  height: min(640px, calc(100dvh - 260px));
   min-height: 380px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1312,9 +1333,15 @@ time,
   z-index: 50;
   top: 10px;
   right: 10px;
-  bottom: 10px;
+  /* The keyboard's covered band (ui/viewport.ts) lifts the bottom edge, so the
+     panel is sized against what the user can see. Zero where nothing covers the
+     page, which is every desktop. Not a transition: layout stays off the
+     compositor, so the panel jumps to the visible area with the keyboard. */
+  bottom: calc(10px + var(--kb-inset, 0px));
   width: min(400px, calc(100vw - 20px));
   overflow-y: auto;
+  /* the panel's own scroll ends at the panel: the page behind never moves */
+  overscroll-behavior: contain;
   padding: 16px 18px 20px;
   border-radius: var(--r-sheet);
   transform-origin: top left;
@@ -1482,20 +1509,26 @@ select.form-control { text-align: left; cursor: pointer; }
     margin-left: 0;
     padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
-  .topbar { padding: 0 16px; height: 52px; }
+  .topbar { padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px)); height: 52px; }
   .content { padding: 0 16px; }
   .large-title { font-size: 2rem; }
   .page-head { margin-bottom: 18px; }
   .toolbar { width: 100%; }
   .toolbar .button-accent { margin-left: auto; }
-  .cal-scroll { height: calc(100vh - 340px); min-height: 340px; }
+  .cal-scroll { height: calc(100vh - 340px); height: calc(100dvh - 340px); min-height: 340px; }
+  /* A bottom sheet on a phone is sized against the visible band: the inset the
+     keyboard covers is subtracted from both its bottom edge and the height it
+     may take, so its first and last row -- title and primary action -- stay
+     above the keyboard and the rest scrolls inside it. inset-left/right keep it
+     off the landscape notch. */
   .sheet {
     top: auto;
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: calc(8px + var(--kb-inset, 0px));
     width: auto;
-    max-height: 82vh;
+    max-height: min(82vh, calc(100vh - 16px - var(--kb-inset, 0px)));
+    max-height: min(82dvh, calc(100dvh - 16px - var(--kb-inset, 0px)));
     padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   }
   .toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
@@ -1507,6 +1540,7 @@ select.form-control { text-align: left; cursor: pointer; }
   display: grid;
   place-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px 16px;
 }
 

@@ -2,7 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: the page may paint under the notch and the home
+         indicator, which env(safe-area-inset-*) then pads (tab bar, FAB, sheets).
+         interactive-widget=resizes-content: Chrome on Android shrinks the layout
+         viewport for the on-screen keyboard instead of only the visual one, so
+         fixed and *vh surfaces follow it; iOS Safari has no such switch, which is
+         what ui/viewport.ts measures for. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#EEF1F8" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0E15" media="(prefers-color-scheme: dark)" />
     <title>Personal Planner</title>

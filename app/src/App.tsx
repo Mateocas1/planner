@@ -18,12 +18,16 @@ import { Sidebar, views } from "./ui/Sidebar.tsx";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
+import { useKeyboardInset } from "./ui/viewport.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
 export type View = "home" | "tasks" | "calendar";
 
 export default function App() {
+  // The keyboard inset is published once for the whole app: the sign-in gate and
+  // every sheet and the palette size themselves against the same variable.
+  useKeyboardInset();
   const { loading, user } = useSession();
   const [view, setView] = useState<View>("home");
 
