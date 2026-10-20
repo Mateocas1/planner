@@ -409,8 +409,11 @@ time,
   background: #fff;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
-  transform: scale(0);
-  transition: transform 160ms var(--ease-out);
+  opacity: 0;
+  transform: scale(0.6);
+  /* Unchecking is a correction, so it snaps back at press speed with no
+     overshoot. The check itself lands on the spring: see :checked below. */
+  transition: opacity var(--dur-press) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
 
 .check:checked {
@@ -419,7 +422,12 @@ time,
 }
 
 .check:checked::after {
+  opacity: 1;
   transform: scale(1);
+  /* the transition is read from the state being entered, so the check lands on
+     --ease-spring over 200 ms while only the uncheck takes the press-speed
+     exit above; the overshoot peaks around 130 ms, inside the feedback budget */
+  transition: opacity var(--dur-press) var(--ease-out), transform 200ms var(--ease-spring);
 }
 
 .check:disabled { cursor: default; opacity: 0.55; }
@@ -830,6 +838,7 @@ time,
   min-height: 46px;
   padding: 6px 14px 6px 12px;
   background: var(--surface);
+  transition: background-color var(--dur-hover) ease;
 }
 
 .row + .row::before {
@@ -851,14 +860,17 @@ time,
   text-align: left;
 }
 
-button.row-main {
-  transition: transform var(--dur-press) var(--ease-out);
-}
-
-button.row-main:active { transform: scale(0.99); }
-
 @media (hover: hover) and (pointer: fine) {
   .row:has(button.row-main:hover) { background: color-mix(in srgb, var(--surface) 96%, var(--label)); }
+}
+
+/* A press moves the row it belongs to, never the text inside it: scaling the
+   opener shrank the title inside a row that stayed put. It is declared after
+   the hover tint so the deeper fill wins while the pointer is still on the
+   row, lands on the press frame, and eases back out through .row. */
+.row:has(button.row-main:active) {
+  background: color-mix(in srgb, var(--surface) 92%, var(--label));
+  transition-duration: 0s;
 }
 
 .row-title,

@@ -12,8 +12,21 @@ export const spring = {
   lively: { type: "spring", bounce: 0.25, duration: 0.45 },
 } satisfies Record<string, Transition>;
 
-/** The strong ease-out used for fades and short tweens. */
+/** The strong ease-out used for fades and short tweens (CSS --ease-out). */
 export const easeOut = [0.23, 1, 0.32, 1] as const;
+
+/**
+ * Sheet tempos, in seconds for Motion. They extend the --dur-* ladder in app.css
+ * past its interaction tokens: a surface appears in 150 ms, its content lands a
+ * beat later, and a dismissal is gone in 180 ms. A sheet is opened a handful of
+ * times an hour, so it sits at the fast end of the modal budget: the panel morph,
+ * not the duration, is what makes it legible.
+ */
+export const dur = {
+  pop: 0.15,
+  enter: 0.16,
+  exit: 0.18,
+} as const;
 
 /** True while a media query matches; follows changes. */
 export function useMediaQuery(query: string): boolean {
