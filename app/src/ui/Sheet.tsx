@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { animate, usePresence, useReducedMotion } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
-import { dur, easeOut, easeOutCss } from "./motion.ts";
+import { dur, easeOut, easeOutCss, ms } from "./motion.ts";
 
 /** The resting transform every flight ends on: one string, never four props. */
 const restTransform = "translate(0px, 0px) scale(1, 1)";
@@ -105,11 +105,17 @@ export function Sheet({
     if (!from) {
       // No measurable source, or reduced motion: the panel pops from its own
       // top-left corner and the content rises the last 4 px behind it. This is
-      // the one path where a rise is not the same motion twice.
-      animate(sheet, { opacity: [0, 1], scale: reduced ? 1 : [0.97, 1] }, { duration: dur.pop, ease: easeOut });
+      // the one path where a rise is not the same motion twice. With reduced
+      // motion neither scale nor rise is handed to Motion at all, so the only
+      // animation left is the fade.
+      animate(
+        sheet,
+        reduced ? { opacity: [0, 1] } : { opacity: [0, 1], scale: [0.97, 1] },
+        { duration: dur.pop, ease: easeOut },
+      );
       animate(
         body,
-        { opacity: [0, 1], y: reduced ? 0 : [4, 0] },
+        reduced ? { opacity: [0, 1] } : { opacity: [0, 1], y: [4, 0] },
         {
           duration: dur.enter,
           ease: easeOut,
@@ -126,10 +132,13 @@ export function Sheet({
     // it on the compositor even while the form it carries is still settling.
     sheet.animate(
       [
-        { transform: flightTransform(from.x, from.y, from.scaleX, from.scaleY), opacity: 0.4 },
+        {
+          transform: flightTransform(from.x, from.y, from.scaleX, from.scaleY),
+          opacity: 0.4,
+        },
         { transform: restTransform, opacity: 1 },
       ],
-      { duration: dur.flight, easing: easeOutCss },
+      { duration: ms(dur.flight), easing: easeOutCss },
     );
     // The panel already carries the movement, so the content only fades in: a
     // rise here would be the same motion twice, and the panel never scales the
@@ -173,11 +182,16 @@ export function Sheet({
       .animate(
         [
           {
-            transform: flightTransform(to.x * away, to.y * away, 1 + (to.scaleX - 1) * away, 1 + (to.scaleY - 1) * away),
+            transform: flightTransform(
+              to.x * away,
+              to.y * away,
+              1 + (to.scaleX - 1) * away,
+              1 + (to.scaleY - 1) * away,
+            ),
             opacity: 0,
           },
         ],
-        { duration: dur.exit, easing: easeOutCss, fill: "forwards" },
+        { duration: ms(dur.exit), easing: easeOutCss, fill: "forwards" },
       )
       .finished.then(done, done);
     // eslint-disable-next-line react-hooks/exhaustive-deps

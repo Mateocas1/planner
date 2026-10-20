@@ -84,8 +84,9 @@ test("a view change fades the new page in on opacity alone, and the old page is 
 });
 
 test("with reduced motion a view change still lands, still without moving", async ({ page }) => {
-  await signUp(page, newEmail("page-fade-reduce"));
+  // The preference is set before the app boots, like an OS setting would be.
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await signUp(page, newEmail("page-fade-reduce"));
 
   const frames = await samplePageSwitch(page, "Tasks", 450);
 
@@ -119,9 +120,19 @@ test("the phone's tab pill travels on a pure translation, inside the snappy spri
   // it travels ...
   const moving = frames.filter(frame => frame.transform !== "none");
   expect(moving.length).toBeGreaterThan(0);
-  // ... as a pure translation: the scaleX 1.18 / scaleY 0.9 squash is gone,
-  // because two overshooting springs on a 22 px glyph read as a wobble
-  for (const frame of moving) expect(frame.transform.startsWith("matrix(1, 0, 0, 1, ")).toBe(true);
+  // ... without the vertical squash (scaleY 0.9) that made a 22 px glyph wobble.
+  // The horizontal scale a layout animation uses to bridge two tab widths is
+  // Motion's own projection, not the removed `animate` overshoot: only the
+  // vertical axis is free to be flat, so that is what is pinned here.
+  for (const frame of moving) {
+    const match = frame.transform.match(/^matrix\(([^)]+)\)$/);
+    expect(match).not.toBeNull();
+    const [a, b, c, d] = match![1].split(",").map(Number);
+    expect([a, b, c, d].every(Number.isFinite)).toBe(true);
+    expect(b).toBe(0);
+    expect(c).toBe(0);
+    expect(d).toBe(1);
+  }
   // ... and it settles inside spring.snappy's 250 ms, not the old 400 ms smooth
   // spring, so the phone matches the desktop nav pill
   expect(moving[moving.length - 1].t).toBeLessThanOrEqual(350);
@@ -253,16 +264,21 @@ test("the creation sheet's flight is one composited transform without blur, and 
 });
 
 test("with reduced motion the creation sheet still fades in, without a flight", async ({ page }) => {
-  await signUp(page, newEmail("sheet-flight-reduce"));
+  // Before boot: Motion reads the preference once per mount, so an OS setting
+  // that was already in force is the deterministic path to test.
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await signUp(page, newEmail("sheet-flight-reduce"));
 
   const flights = await readSheetFlight(page, "open");
   const sheet = page.getByRole("complementary", { name: "New task" });
   await expect(sheet).toBeVisible();
 
-  // Reduced motion keeps a gentler entrance (a fade), and never starts the
-  // FLIP: no native flight exists and no filter is applied.
-  expect(flights).toEqual([]);
+  // Reduced motion keeps a gentler entrance (an opacity fade, no movement) and
+  // never starts the FLIP: one opacity-only animation, no transform, no filter.
+  expect(flights).toHaveLength(1);
+  expect(flights[0].properties, JSON.stringify(flights)).toEqual(["opacity"]);
+  expect(flights[0].transforms.every(transform => transform === "")).toBe(true);
+  expect(flights[0].filter).toBe("none");
   await expect
     .poll(async () => sheet.evaluate(element => Number(getComputedStyle(element).opacity)))
     .toBe(1);
