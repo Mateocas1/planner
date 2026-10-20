@@ -23,8 +23,9 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
 /**
  * The desktop sidebar: a quiet glass material holding the month, the view
  * navigation (nav "Main", the name the browser tests address) with a pill that
- * slides to the active view, and the two blocks that answer "what comes next"
- * (value roadmap §3).
+ * slides to the active view, the two blocks that answer "what comes next"
+ * (value roadmap §3), and one dense footer row with the sync line, the account
+ * and the theme control.
  *
  * The content blocks exist only here: the sidebar is visible on Tasks and
  * Calendar, where Home's now-card and due list are not. Everything they show is
@@ -92,12 +93,14 @@ export function Sidebar({
         </>
       )}
       <div className="side-foot">
-        <ThemeSwitch />
         <SyncStatus pending={pending} />
-        <div className="account">
-          <span className="who" title={email}>Signed in as {email}</span>
-          <button type="button" className="link-button" onClick={onSignOut}>Sign out</button>
+        <div className="side-foot-row">
+          {/* The address is what the row is for: "Signed in as" stays in the
+              accessible name only, so the email itself gets the width. */}
+          <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
+          <ThemeSwitch />
         </div>
+        <button type="button" className="link-button side-signout" onClick={onSignOut}>Sign out</button>
       </div>
     </aside>
   );

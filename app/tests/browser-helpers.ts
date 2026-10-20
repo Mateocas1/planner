@@ -238,8 +238,15 @@ export async function readRemoteCompletions(email: string): Promise<Array<{ occu
  * re-submitting the same credentials signs it in; every other error still fails
  * the test, and so does a second artifact.
  */
-export async function submitAuthForm(page: Page, email: string, kind: "sign up" | "sign in") {
-  await page.goto("/");
+export async function submitAuthForm(
+  page: Page,
+  email: string,
+  kind: "sign up" | "sign in",
+  /* A test that serves the built app itself (the update prompt) signs in on its
+     own origin; everything else signs in on the suite's preview server. */
+  options: { url?: string } = {},
+) {
+  await page.goto(options.url ?? "/");
   await expect(page.getByLabel("Email")).toBeVisible();
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
