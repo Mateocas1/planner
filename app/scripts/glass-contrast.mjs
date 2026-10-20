@@ -204,6 +204,58 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
+/* ---------- pills (G3) and the lens host (G5) ---------- */
+
+/**
+ * The sliding pill is its own thin layer over the chrome that holds it: the nav
+ * pill over the regular sidebar, the tab pill over the thin tab bar. Each fill
+ * gets its own proof against the label the pill actually carries.
+ *
+ * The floating action button is the lens host (G5). It sits directly on the
+ * page, so its fill is composited over the page, not over chrome. Its icon is
+ * `--accent`, and both the lens fill and the plain thin fallback are proven.
+ */
+const pills = [
+  { name: "nav", host: "--glass-tint-regular", label: "--label" },
+  { name: "tab", host: "--glass-tint-thin", label: "--accent" },
+  { name: "fab", host: null, label: "--accent" },
+];
+const pillFills = [
+  { name: "pill", token: "--pill", materials: ["nav", "tab"] },
+  { name: "lens", token: "--glass-lens-tint", materials: ["fab"] },
+  { name: "plain", token: "--glass-tint-thin", materials: ["fab"] },
+];
+
+for (const scheme of ["light", "dark"]) {
+  const tokens = new Map([
+    ...app.light,
+    ...glass.light,
+    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
+  ]);
+  const page = parseColor(tokens.get("--bg-top"), tokens);
+  for (const pill of pills) {
+    const chrome = pill.host ? over(parseColor(tokens.get(pill.host), tokens), page) : page;
+    for (const fill of pillFills) {
+      if (!fill.materials.includes(pill.name)) continue;
+      const surface = over(parseColor(tokens.get(fill.token), tokens), chrome);
+      const value = ratio(parseColor(tokens.get(pill.label), tokens), surface);
+      const enforced = true;
+      const pass = value >= AA;
+      if (!pass) failures += 1;
+      rows.push({
+        scheme,
+        material: `${fill.name}-${pill.name}`,
+        backdrop: pill.host ? "chrome" : "page",
+        label: pill.label,
+        surface: toHex(surface),
+        value,
+        enforced,
+        pass,
+      });
+    }
+  }
+}
+
 /* The strongest claim the suite can make: every enforced cell clears AA. */
 const enforced = rows.filter((row) => row.enforced);
 const worst = enforced.reduce((a, b) => (a.value <= b.value ? a : b));

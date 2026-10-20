@@ -9,6 +9,26 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      The glass lens: a displacement map the sliding pill references through
+      backdrop-filter. Two definitions, one use, no effect until ui/lens.ts
+      turns on html[data-lens] for a browser that can render it.
+    -->
+    <svg class="glass-lens-map" width="0" height="0" aria-hidden="true" focusable="false">
+      <filter
+        id="glass-lens"
+        x="-10%"
+        y="-10%"
+        width="120%"
+        height="120%"
+        color-interpolation-filters="sRGB"
+      >
+        <!-- low-frequency noise bends the backdrop like a thick edge -->
+        <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" seed="3" result="noise" />
+        <feGaussianBlur in="noise" stdDeviation="1.5" result="soft" />
+        <feDisplacementMap in="SourceGraphic" in2="soft" scale="12" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

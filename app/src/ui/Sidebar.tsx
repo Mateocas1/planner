@@ -52,6 +52,7 @@ export function Sidebar({
             className="nav-item"
             aria-current={view === id ? "page" : undefined}
             {...(id === "calendar" ? { "data-drop-nav": "calendar" } : {})}
+            data-sheen={view === id ? "" : undefined}
             onClick={() => onNavigate(id)}
           >
             {view === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={spring.snappy} aria-hidden="true" />}
