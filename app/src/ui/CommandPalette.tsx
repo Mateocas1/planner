@@ -150,7 +150,7 @@ export function CommandPalette({
   return (
     <dialog
       ref={dialogRef}
-      className="palette glass glass-sheet"
+      className="palette glass glass-thick"
       role="dialog"
       aria-modal="true"
       aria-labelledby="palette-heading"

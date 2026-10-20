@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { password } from "./browser-helpers.ts";
+import { isBlink, shouldEnableLens, type LensEnv } from "../src/ui/lens.ts";
 
 // 2x so the 1px specular rim is actually legible in the saved screenshots.
 test.use({ deviceScaleFactor: 2 });
@@ -13,6 +14,32 @@ const shotDir = fileURLToPath(new URL("../../odd/runs/glass-shots", import.meta.
 async function shot(page: Page, name: string) {
   mkdirSync(shotDir, { recursive: true });
   await page.screenshot({ path: `${shotDir}/${name}.png` });
+}
+
+/** Decodes two PNG screenshots in the page and counts pixels whose largest channel delta exceeds `tolerance`. */
+async function changedPixels(page: Page, a: Buffer, b: Buffer, tolerance: number) {
+  return page.evaluate(
+    async ({ a, b, tolerance }) => {
+      const decode = async (base64: string) => {
+        const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = canvas.getContext("2d")!;
+        context.drawImage(bitmap, 0, 0);
+        return context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      };
+      const [pa, pb] = [await decode(a), await decode(b)];
+      let changed = 0;
+      let peak = 0;
+      for (let i = 0; i < pa.length; i += 4) {
+        const delta = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]));
+        peak = Math.max(peak, delta);
+        if (delta > tolerance) changed += 1;
+      }
+      return { changed, peak };
+    },
+    { a: a.toString("base64"), b: b.toString("base64"), tolerance },
+  );
 }
 
 function newEmail() {
@@ -229,3 +256,483 @@ function parseDuration(value: string) {
   const [amount, unit] = value.split(/(?=[a-z]+$)/);
   return unit === "s" ? Number(amount) * 1000 : Number(amount);
 }
+
+/**
+ * The sheen is state held in two custom properties on the hovered element and
+ * rendered by the pill's ::after. This reads all of it in one shot.
+ */
+async function readSheen(page: Page) {
+  return page.evaluate(() => {
+    const button = document.querySelector<HTMLElement>("[data-sheen]");
+    const pill = button?.querySelector<HTMLElement>(".nav-pill, .tab-pill");
+    if (!button || !pill) return null;
+    const sheen = getComputedStyle(pill, "::after");
+    const box = button.getBoundingClientRect();
+    return {
+      inline: button.getAttribute("style") ?? "",
+      x: button.style.getPropertyValue("--sheen-x"),
+      y: button.style.getPropertyValue("--sheen-y"),
+      width: box.width,
+      height: box.height,
+      content: sheen.content,
+      display: sheen.display,
+      opacity: sheen.opacity,
+      transition: sheen.transitionProperty,
+      transform: sheen.transform,
+    };
+  });
+}
+
+test("sheen: one pointer-tracked highlight, written as custom properties", async ({ page }) => {
+  await enterApp(page);
+
+  /* Restraint is the spec: at most three tracked elements, and only the one
+     holding the active slug exists at a time. */
+  const tracked = await page.locator("[data-sheen]").count();
+  expect(tracked).toBeGreaterThan(0);
+  expect(tracked).toBeLessThanOrEqual(3);
+
+  const idle = await readSheen(page);
+  expect(idle).not.toBeNull();
+  expect(idle!.inline).toBe("");
+  expect(idle!.content).not.toBe("none");
+  expect(idle!.opacity).toBe("0");
+  /* Nothing but opacity is animated, and nothing waits on a layout property. */
+  expect(idle!.transition).toBe("opacity");
+
+  const button = page.locator("[data-sheen]").first();
+  const box = (await button.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.58);
+  await expect.poll(async () => (await readSheen(page))!.x).not.toBe("");
+
+  const hovered = (await readSheen(page))!;
+  /* The variables carry the pointer offset inside the element, in pixels. */
+  expect(Number.parseFloat(hovered.x)).toBeGreaterThan(hovered.width * 0.6);
+  expect(Number.parseFloat(hovered.x)).toBeLessThanOrEqual(hovered.width);
+  expect(Number.parseFloat(hovered.y)).toBeGreaterThan(0);
+  expect(Number.parseFloat(hovered.y)).toBeLessThanOrEqual(hovered.height);
+  /* Only custom properties are written: no inline width, top or transform. */
+  expect(hovered.inline.replace(/--sheen-[xy]: -?[\d.]+px;?\s*/g, "").trim()).toBe("");
+  /* The highlight is a transform on the layer, never a re-layout. */
+  expect(hovered.transform).toContain("matrix");
+  await expect.poll(async () => (await readSheen(page))!.opacity).toBe("1");
+  mkdirSync(shotDir, { recursive: true });
+  await page.locator(".sidebar").screenshot({ path: `${shotDir}/light-sheen.png` });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.locator(".sidebar").screenshot({ path: `${shotDir}/dark-sheen.png` });
+  await page.emulateMedia({ colorScheme: "light" });
+
+  /* Leaving the slug clears the state instead of freezing the highlight. */
+  await page.mouse.move(1, 1);
+  await expect.poll(async () => (await readSheen(page))!.opacity).toBe("0");
+  expect((await readSheen(page))!.inline).toBe("");
+
+  /* Reduced motion: the layer is gone and a move writes nothing. */
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect((await readSheen(page))!.display).toBe("none");
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
+  await page.waitForTimeout(120);
+  expect((await readSheen(page))!.inline).toBe("");
+});
+
+test.describe("coarse pointer", () => {
+  /* A touch context reports (hover: none) and (pointer: coarse), which is the
+     media query the sheen gate reads. */
+  test.use({ hasTouch: true });
+
+  test("sheen: no listener and no layer under (hover: none)", async ({ page }) => {
+    await enterApp(page);
+    expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
+
+    const button = page.locator("[data-sheen]").first();
+    const box = (await button.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.waitForTimeout(120);
+
+    const state = await readSheen(page);
+    expect(state).not.toBeNull();
+    expect(state!.inline).toBe("");
+    expect(state!.content).toBe("none");
+  });
+});
+
+test("lens: displacement filter only where the map can render", async ({ page }) => {
+  /* Engine gate first: Gecko and WebKit never see the filter. */
+  expect(
+    isBlink(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    ),
+  ).toBe(false);
+  expect(isBlink("Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0")).toBe(false);
+  expect(
+    isBlink(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+    ),
+  ).toBe(true);
+
+  /* Then the whole matrix, so every condition is proven on its own. */
+  const capable: LensEnv = {
+    blink: true,
+    displacement: true,
+    hoverFine: true,
+    calm: false,
+    clear: false,
+    saveData: false,
+    wide: true,
+  };
+  expect(shouldEnableLens(capable)).toBe(true);
+  for (const veto of ["blink", "displacement", "hoverFine", "wide"] as const) {
+    expect(shouldEnableLens({ ...capable, [veto]: false })).toBe(false);
+  }
+  for (const veto of ["calm", "clear", "saveData"] as const) {
+    expect(shouldEnableLens({ ...capable, [veto]: true })).toBe(false);
+  }
+
+  await enterApp(page);
+  const root = page.locator("html");
+
+  /* The pills sit in glass chrome, which is a backdrop root: none of them carries the lens. */
+  await expect(page.locator(".nav-pill")).toHaveCount(1);
+  await expect(page.locator(".nav-pill.glass-lens")).toHaveCount(0);
+
+  /* The floating button is the host. It renders only at phone widths, and the gate needs more than 390px, so 600px is where both hold. */
+  await page.setViewportSize({ width: 600, height: 900 });
+  await expect(root).toHaveAttribute("data-lens", "");
+  const fab = page.locator(".fab");
+  await expect(fab).toHaveClass(/glass-lens/);
+  await expect(page.locator(".glass-lens")).toHaveCount(1);
+
+  /* The host sits on the page: no ancestor is a backdrop root, so the lens samples live content. */
+  expect(
+    await fab.evaluate((element) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.backdropFilter !== "none" || style.filter !== "none" || style.opacity !== "1") return false;
+      }
+      return true;
+    }),
+  ).toBe(true);
+
+  /* The button floats in the viewport's bottom-right corner, not in the page's flow. */
+  const box = await fab.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(600);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(900);
+
+  /* Nothing readable sits inside the filtered layer. The icon is SVG art, painted above the backdrop. */
+  const layers = await page.locator(".glass-lens").evaluateAll((elements) =>
+    elements.map((element) => ({
+      text: element.textContent?.trim() ?? "",
+      readable: [...element.querySelectorAll("*")].filter((child) => !(child instanceof SVGElement)).length,
+    })),
+  );
+  expect(layers).toHaveLength(1);
+  expect(layers[0].text).toBe("");
+  expect(layers[0].readable).toBe(0);
+
+  const filterOf = async () => fab.evaluate((element) => getComputedStyle(element).backdropFilter);
+  expect(await filterOf()).toContain("url(");
+
+  /* A flat page refracts to itself, so put a high-contrast probe under the button (z 25, the button is 30). */
+  await fab.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const probe = document.createElement("div");
+    probe.id = "lens-probe";
+    probe.style.cssText = `position:fixed;z-index:25;left:${box.left - 40}px;top:${box.top - 40}px;width:${box.width + 80}px;height:${box.height + 80}px;background:repeating-linear-gradient(45deg,#000 0 6px,#fff 6px 12px);`;
+    document.body.append(probe);
+  });
+
+  /* Perceptible: lens on, lens removed, and the lens blur without its displacement. The displacement alone must change the pixels. */
+  /* The button is position: fixed, so an element screenshot can miss it; clip the viewport to its box instead. */
+  mkdirSync(shotDir, { recursive: true });
+  await page.mouse.move(0, 0);
+  const shotOf = async (name: string) =>
+    page.screenshot({
+      path: `${shotDir}/${name}.png`,
+      clip: (await fab.boundingBox()) ?? undefined,
+      animations: "disabled",
+      caret: "hide",
+    });
+  const lensOn = await shotOf("fab-lens");
+  await fab.evaluate((element) => {
+    element.style.setProperty("backdrop-filter", "blur(1px) saturate(160%)", "important");
+    element.style.setProperty("-webkit-backdrop-filter", "blur(1px) saturate(160%)", "important");
+  });
+  const blurOnly = await shotOf("fab-blur-only");
+  await fab.evaluate((element) => {
+    element.style.removeProperty("backdrop-filter");
+    element.style.removeProperty("-webkit-backdrop-filter");
+  });
+  await page.evaluate(() => document.documentElement.removeAttribute("data-lens"));
+  const lensOff = await shotOf("fab-lens-off");
+  expect(lensOn.equals(lensOff)).toBe(false);
+  expect(lensOn.equals(blurOnly)).toBe(false);
+  /* Measured at 2x: the displacement alone moves ~10k of 57.6k pixels (peak delta 79). The floor is a tenth of that. */
+  expect((await changedPixels(page, lensOn, blurOnly, 16)).changed).toBeGreaterThan(1000);
+  expect((await changedPixels(page, lensOn, lensOff, 16)).changed).toBeGreaterThan(1000);
+  await page.evaluate(() => document.getElementById("lens-probe")?.remove());
+
+  /* A phone width revokes the gate, and the button falls back to the plain material. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf()).not.toContain("url(");
+
+  /* Back to 600px, then each reduced preference closes the gate again. */
+  await page.setViewportSize({ width: 600, height: 900 });
+  await expect(root).toHaveAttribute("data-lens", "");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf()).not.toContain("url(");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(root).toHaveAttribute("data-lens", "");
+
+  await emulateReducedTransparency(page, "reduce");
+  await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
+  expect(await filterOf()).not.toContain("url(");
+  await emulateReducedTransparency(page, "no-preference");
+  await expect(root).toHaveAttribute("data-lens", "");
+});
+
+test.describe("non-Blink engine", () => {
+  test.use({ userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0" });
+
+  test("lens: no displacement filter on a Firefox user agent", async ({ page }) => {
+    await enterApp(page);
+    await page.setViewportSize({ width: 600, height: 900 });
+    expect(await page.evaluate(() => navigator.userAgent)).toContain("Firefox");
+    expect(await page.locator("html").getAttribute("data-lens")).toBeNull();
+    expect(
+      await page.locator(".fab").evaluate((element) => getComputedStyle(element).backdropFilter),
+    ).not.toContain("url(");
+  });
+});
+
+/**
+ * Layout audit (M2c): a glass material must never take a surface's position
+ * away.
+ *
+ * `.glass` has to be a positioned box for its rim. That default lives in
+ * `@layer glass-layout` — a layered rule loses to every unlayered one whatever
+ * the file order — so a surface that declares `position: fixed`, `sticky` or
+ * `absolute` in app.css or in its own component sheet keeps it, and glass.css
+ * loading last stops being able to reflow the shell. This audit is the proof:
+ * every glass surface in the app, at the phone and desktop widths, computes the
+ * position it owns and lands inside the viewport instead of below the fold.
+ *
+ * The failure this guards is real and was shipped twice: an unlayered
+ * `position: relative` on `.glass` turned the sidebar and the sheet into in-flow
+ * boxes (the document grew ~740px and scrolled itself), and the FAB dropped out
+ * of `position: fixed` to (-16, 946) at 600x900.
+ */
+
+type Geometry = {
+  name: string;
+  position: string;
+  transform: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  viewport: { width: number; height: number };
+};
+
+/**
+ * Waits for a surface's entry motion to land, then reads the box it rests on.
+ * Entry is a transform (the sheet's FLIP, the palette's scale, the toast's
+ * rise), so the read waits for identity instead of racing the spring.
+ */
+async function restingGeometry(page: Page, selector: string, name: string): Promise<Geometry> {
+  const element = page.locator(selector);
+  await expect(element, `${name} is rendered once`).toHaveCount(1);
+  await expect(element, `${name} is visible`).toBeVisible();
+  let reading: Geometry | null = null;
+  await expect
+    .poll(
+      async () => {
+        const measured = await element.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const box = node.getBoundingClientRect();
+          const root = document.documentElement;
+          return {
+            position: style.position,
+            transform: style.transform,
+            left: box.left,
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+            viewport: { width: root.clientWidth, height: root.clientHeight },
+          };
+        });
+        reading = { name, ...measured };
+        return measured.transform === "none" || measured.transform === "matrix(1, 0, 0, 1, 0, 0)";
+      },
+      { message: `${name}: the entry motion never settled on a resting box` },
+    )
+    .toBe(true);
+  return reading!;
+}
+
+/** The audit's claim, in one place: this surface owns this position and sits inside the viewport. */
+async function expectInPlace(page: Page, selector: string, name: string, position: string) {
+  const geometry = await restingGeometry(page, selector, name);
+  expect(geometry.position, `${name} keeps its own position`).toBe(position);
+  expect(geometry.left, `${name} left edge`).toBeGreaterThanOrEqual(0);
+  expect(geometry.top, `${name} top edge`).toBeGreaterThanOrEqual(0);
+  expect(geometry.right, `${name} right edge`).toBeLessThanOrEqual(geometry.viewport.width);
+  expect(geometry.bottom, `${name} bottom edge`).toBeLessThanOrEqual(geometry.viewport.height);
+  return geometry;
+}
+
+/** Creates a task and deletes it: the only way the undo toast is on screen. */
+async function offerUndo(page: Page) {
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("Task title").fill("Pack bags");
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".sheet")).toHaveCount(0);
+  await page.getByRole("button", { name: "Pack bags" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expect(page.locator(".undo-toast")).toHaveAttribute("data-state", "open");
+}
+
+const AUDITED = [
+  { width: 390, height: 844, layout: "phone" },
+  { width: 1280, height: 800, layout: "desktop" },
+] as const;
+
+for (const { width, height, layout } of AUDITED) {
+  test(`layout: every glass surface keeps its own position at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await enterApp(page);
+
+    /* On screen as soon as the shell renders. The sidebar is desktop-only and
+       the tab bar and FAB are phone-only, so the missing pair is asserted
+       absent rather than skipped. */
+    if (layout === "desktop") {
+      await expectInPlace(page, ".sidebar.glass", "sidebar", "fixed");
+      await expect(page.locator(".tabbar")).toHaveCount(0);
+      await expect(page.locator(".fab")).toHaveCount(0);
+    } else {
+      await expect(page.locator(".sidebar")).toHaveCount(0);
+      await expectInPlace(page, ".tabbar.glass", "tab bar", "fixed");
+      await expectInPlace(page, ".fab.glass", "floating button", "fixed");
+    }
+    await expectInPlace(page, ".topbar", "top bar", "sticky");
+
+    /* The palette: a modal dialog, fixed and centred. */
+    await page.keyboard.press("Control+k");
+    const palette = await expectInPlace(page, "dialog.palette.glass", "command palette", "fixed");
+    expect(palette.left).toBeGreaterThan(0);
+    expect(palette.top).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("dialog.palette")).toHaveCount(0);
+
+    /* A sheet: fixed, and rooted at the control that opened it. */
+    await page.getByRole("button", { name: "New task" }).click();
+    await expectInPlace(page, ".sheet.glass", "new task sheet", "fixed");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".sheet")).toHaveCount(0);
+
+    /* The account popover: absolutely positioned under its trigger, and only
+       the phone's top bar renders it. */
+    if (layout === "phone") {
+      await page.getByRole("button", { name: "Account" }).click();
+      const popover = await expectInPlace(page, ".popover.glass", "account popover", "absolute");
+      expect(popover.top).toBeGreaterThan(0);
+      await page.getByRole("button", { name: "Account" }).click();
+      await expect(page.locator(".popover")).toHaveCount(0);
+    } else {
+      await expect(page.locator(".popover")).toHaveCount(0);
+    }
+
+    /* The undo toast: fixed to the bottom, above the phone's tab bar. */
+    await offerUndo(page);
+    const toast = await expectInPlace(page, ".undo-toast", "undo toast", "fixed");
+    expect(toast.bottom).toBeLessThan(toast.viewport.height);
+  });
+}
+
+/** The material an element paints, read from the element itself. */
+async function readMaterial(locator: Locator) {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backdropFilter: style.backdropFilter,
+      background: style.backgroundColor,
+      color: style.color,
+      borderTopStyle: style.borderTopStyle,
+    };
+  });
+}
+
+/** `rgba(24, 24, 30, 0.86)` -> [24, 24, 30], so a fill's lightness is a measured value. */
+function channelsOf(color: string) {
+  const inner = color.slice(color.indexOf("(") + 1, color.lastIndexOf(")"));
+  return inner.split(/[\s,/]+/).filter(Boolean).slice(0, 3).map(Number);
+}
+
+test("undo toast: dark glass with light ink in both colour schemes", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  const toast = page.locator(".undo-toast");
+
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const material = await readMaterial(toast);
+    /* the thick blur on a graphite tint at least 0.82 opaque (spec §3) */
+    expect(material.backdropFilter, scheme).toContain("blur(32px)");
+    expect(material.backdropFilter, scheme).toContain("saturate(1.8)");
+    expect(alphaOf(material.background), scheme).toBeGreaterThanOrEqual(0.82);
+    expect(Math.max(...channelsOf(material.background)), scheme).toBeLessThan(64);
+    expect(material.color, scheme).toBe("rgb(255, 255, 255)");
+  }
+});
+
+test("undo toast: reduced transparency goes solid dark, never light", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  const toast = page.locator(".undo-toast");
+
+  await emulateReducedTransparency(page, "reduce");
+  const solid = await readMaterial(toast);
+  expect(solid.backdropFilter).toBe("none");
+  expect(alphaOf(solid.background)).toBe(1);
+  expect(Math.max(...channelsOf(solid.background))).toBeLessThan(64);
+  expect(solid.color).toBe("rgb(255, 255, 255)");
+
+  await emulateReducedTransparency(page, "no-preference");
+  expect((await readMaterial(toast)).backdropFilter).toContain("blur(32px)");
+});
+
+test("undo toast: forced colors drop the material and keep a real border", async ({ page }) => {
+  await enterApp(page);
+  await offerUndo(page);
+  await page.emulateMedia({ forcedColors: "active" });
+
+  const forced = await readMaterial(page.locator(".undo-toast"));
+  expect(forced.backdropFilter).toBe("none");
+  expect(forced.borderTopStyle).toBe("solid");
+});
+
+test("palette: thick material in both schemes, and no lens", async ({ page }) => {
+  await enterApp(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.locator("dialog.palette");
+  await expect(palette).toHaveClass(/glass-thick/);
+
+  const material = await readMaterial(palette);
+  expect(material.backdropFilter).toContain("blur(32px)");
+  expect(material.backdropFilter).toContain("saturate(1.8)");
+  /* the lens would sit inside this dialog's own backdrop filter and over its
+     text (CommandPalette.css), so the palette never carries it */
+  expect(material.backdropFilter).not.toContain("url(");
+  await expect(palette).not.toHaveClass(/glass-lens/);
+  expect(alphaOf(material.background)).toBeCloseTo(0.88, 2);
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect
+    .poll(async () => alphaOf((await readMaterial(palette)).background))
+    .toBeCloseTo(0.9, 2);
+});

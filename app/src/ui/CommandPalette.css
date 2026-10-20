@@ -11,6 +11,12 @@
    is covered by the app's single contract in app.css (prefers-reduced-motion
    collapses every transition duration), not a second rule here. */
 
+/* Material (G6): the thick sheet material from glass.css, `glass-thick` on the
+   dialog. No lens, on purpose. The lens needs a container with no backdrop
+   filter of its own, and the field and rows sit inside this dialog's backdrop
+   filter (a nested backdrop root samples a flat surface, see G5b). Its refraction
+   would also land on text: the input, the rows and the hint are all text. */
+
 dialog.palette {
   position: fixed;
   inset: 0;
@@ -76,7 +82,11 @@ dialog.palette::backdrop {
   flex: none;
   width: 18px;
   height: 18px;
-  color: var(--label-3);
+  /* --label-2, not --label-3: the focused field's --fill-hover lightens the
+     sheet, and in dark mode --label-3 falls to 4.30:1 on it (the proof in
+     scripts/glass-contrast.mjs holds both tiers to AA). The quiet tier of a
+     filled control is --label-2; --label stays for the text the user types. */
+  color: var(--label-2);
 }
 
 /* the field's own close control stays quiet: the glass carries the surface */
@@ -100,7 +110,9 @@ dialog.palette::backdrop {
 }
 
 .palette-input::placeholder {
-  color: var(--label-3);
+  /* same reason as .palette-icon: --label-3 does not clear AA on the focused
+     field in dark mode (4.30:1), and a placeholder is text */
+  color: var(--label-2);
   font-weight: 400;
 }
 
