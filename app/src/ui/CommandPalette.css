@@ -11,6 +11,12 @@
    is covered by the app's single contract in app.css (prefers-reduced-motion
    collapses every transition duration), not a second rule here. */
 
+/* Material (G6): the thick sheet material from glass.css, `glass-thick` on the
+   dialog. No lens, on purpose. The lens needs a container with no backdrop
+   filter of its own, and the field and rows sit inside this dialog's backdrop
+   filter (a nested backdrop root samples a flat surface, see G5b). Its refraction
+   would also land on text: the input, the rows and the hint are all text. */
+
 dialog.palette {
   position: fixed;
   inset: 0;

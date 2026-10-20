@@ -257,12 +257,12 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
-/* ---------- palette (F3) and toast (F1) ---------- */
+/* ---------- palette (F3) and toast (F1, dark glass since G6) ---------- */
 
 /**
  * Reads the translucency a component sheet declares for its own surface, e.g.
- * the toast's `color-mix(in srgb, var(--surface) 90%, transparent)`. Reading it
- * instead of restating it keeps the proof honest if the material is retuned.
+ * the palette's error line `color-mix(in srgb, var(--red) 10%, transparent)`.
+ * Reading it instead of restating it keeps the proof honest if it is retuned.
  */
 function readColorMix(file, selector) {
   const css = readFileSync(join(appDir, file), "utf8");
@@ -289,8 +289,29 @@ function readToken(file, selector, property) {
   return match[1];
 }
 
+/**
+ * Reads every custom property one rule declares, so the toast's dark tint and
+ * its ink come from UndoToast.css instead of being restated here.
+ */
+function readDeclarations(file, selector) {
+  const css = readFileSync(join(appDir, file), "utf8");
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) throw new Error(`${file}: no ${selector} rule`);
+  const rule = css.slice(start, css.indexOf("}", start));
+  const declared = new Map();
+  for (const match of rule.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+);/gi)) {
+    declared.set(match[1], match[2].trim());
+  }
+  return declared;
+}
+
 const PALETTE_CSS = "src/ui/CommandPalette.css";
-const toastBase = readColorMix("src/ui/UndoToast.css", ".undo-toast");
+const TOAST_CSS = "src/ui/UndoToast.css";
+/* The palette's error line: red at 10% over the palette, its text in red. */
+const paletteError = readColorMix(PALETTE_CSS, ".palette-error");
+const paletteErrorText = readToken(PALETTE_CSS, ".palette-error", "color");
+/* The toast's own tokens: the dark tint, its solid twin, and its two ink tiers. */
+const toastRule = readDeclarations(TOAST_CSS, ".undo-toast");
 /* The palette's quiet tier on its filled field: the placeholder and the search
    icon. Text, so it is held to AA like every other label. */
 const paletteQuiet = readToken(PALETTE_CSS, ".palette-input::placeholder", "color");
@@ -314,23 +335,40 @@ for (const scheme of ["light", "dark"]) {
   const scrim = over(parseColor(tokens.get("--scrim"), tokens), page);
   /* The palette is the thick sheet material over the dimmed page. */
   const palette = over(parseColor(tokens.get("--glass-tint-thick"), tokens), scrim);
-  const toastFill = parseColor(tokens.get(toastBase.token), tokens);
-  const toast = over([...toastFill.slice(0, 3), toastBase.ratio * toastFill[3]], page);
+  const toastTokens = new Map([...tokens, ...toastRule]);
+  const toastTint = parseColor(toastTokens.get("--toast-tint"), toastTokens);
+  const toastSolid = parseColor(toastTokens.get("--toast-solid"), toastTokens);
+  const errorTint = parseColor(tokens.get(paletteError.token), tokens);
+  const paletteErrorBase = over([errorTint[0], errorTint[1], errorTint[2], paletteError.ratio], palette);
   const paletteField = over(parseColor(tokens.get("--fill-hover"), tokens), palette);
   const paletteSelected = over(parseColor(tokens.get("--fill-press"), tokens), palette);
 
-  /* Only these three places put text on something other than the plain
-     material: the palette's focused field, its selected row, and the toast,
-     whose fill is its own recipe and whose backdrop is whatever scrolled. */
+  /* Where the palette puts text on something other than the plain material: its
+     focused field, its selected row and its error line. */
+  /* The toast is dark glass over whatever scrolled behind it, so its ink is
+     proven over every enforced backdrop; the solid twin is the reduced-
+     transparency fallback and is proven on its own. */
+  const toastInk = ["--toast-label", "--toast-quiet"];
   const surfaces = [
     { name: "palette-field", backdrop: "palette", base: paletteField, labels: ["--label", paletteQuiet] },
     { name: "palette-selected", backdrop: "palette", base: paletteSelected, labels: ["--label"] },
-    { name: "toast", backdrop: "page", base: toast, labels: ["--label", "--label-2", "--label-3"] },
+    { name: "palette-error", backdrop: "palette", base: paletteErrorBase, labels: [paletteErrorText] },
+    ...backdrops(tokens)
+      .filter((backdrop) => backdrop.enforced)
+      .map((backdrop) => ({
+        name: "toast",
+        backdrop: backdrop.name,
+        base: over(toastTint, backdrop.color),
+        labels: toastInk,
+        sheet: toastTokens,
+      })),
+    { name: "toast-solid", backdrop: "reduced transparency", base: toastSolid, labels: toastInk, sheet: toastTokens },
   ];
 
   for (const surface of surfaces) {
+    const sheet = surface.sheet ?? tokens;
     for (const label of surface.labels) {
-      const value = ratio(parseColor(tokens.get(label), tokens), surface.base);
+      const value = ratio(parseColor(sheet.get(label), sheet), surface.base);
       const pass = value >= AA;
       if (!pass) failures += 1;
       rows.push({
