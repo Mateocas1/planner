@@ -54,8 +54,28 @@ export function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-/** The phone breakpoint shared by the shell and the calendar (DESIGN.md §3). */
-export const phoneQuery = "(max-width: 760px)";
+/**
+ * The phone breakpoint shared by the shell and the calendar (DESIGN.md §3).
+ *
+ * Width alone was wrong for a phone held sideways: 844x390 is wider than a
+ * tablet's portrait width, so it got the desktop sidebar — 244 px of a 390 px
+ * screen, with the sign-out row scrolled out of a 370 px column
+ * (odd/research/responsive-audit.md F4). A viewport that is both narrow and
+ * short is a phone in landscape, and it gets the phone shell. The same string
+ * is repeated in the four phone CSS blocks; media queries cannot share a
+ * constant.
+ */
+export const phoneQuery = "(max-width: 760px), (max-width: 1024px) and (max-height: 480px)";
+
+/**
+ * The width a seven-column week needs to stay readable. A tablet is wide enough
+ * for the desktop shell and far too narrow for seven day columns plus the 56 px
+ * gutter: at 768 px each column is 55 px and its block titles truncate to
+ * "Wo…" (odd/research/responsive-audit.md F1). Between the phone breakpoint and
+ * this one the calendar opens on the day range instead -- the week is a tap
+ * away, and a column that cannot hold a word is not a week.
+ */
+export const narrowQuery = "(max-width: 1000px)";
 
 /** The current instant, refreshed every 30 s so "now" lines and progress move. */
 export function useNow(): Date {

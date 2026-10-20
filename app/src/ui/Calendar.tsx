@@ -7,7 +7,7 @@ import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, movedEdge, s
 import "./Calendar.css";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
-import { easeOut, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
+import { easeOut, narrowQuery, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
 import { Sheet } from "./Sheet.tsx";
 import { type UndoableDelete } from "./UndoToast.tsx";
 import {
@@ -123,6 +123,9 @@ function CalendarView({
 }) {
   const now = useNow();
   const phone = useMediaQuery(phoneQuery);
+  // The shell is a phone; the grid needs a second, wider line: below 1000 px a
+  // seven-column week is 55 px a column even though the shell is a desktop's.
+  const narrow = useMediaQuery(narrowQuery);
   const reduced = useReducedMotion();
   const [range, setRange] = useState<Range>("week");
   const [direction, setDirection] = useState(0);
@@ -142,7 +145,7 @@ function CalendarView({
   const todayKey = dateKey(now, timeZone);
   const selectedKey = day ?? todayKey;
   const selectedUtc = keyToWallUtc(selectedKey);
-  const isDay = phone || range === "day";
+  const isDay = narrow || range === "day";
   const weekUtc = useMemo(() => Array.from({ length: 7 }, (_, index) => mondayOf(selectedUtc) + index * dayMs), [selectedUtc]);
   const days = isDay ? [selectedUtc] : weekUtc;
   const dayKeys = days.map(wallDayKey);

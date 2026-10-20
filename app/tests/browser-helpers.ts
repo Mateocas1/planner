@@ -124,7 +124,7 @@ async function listRemoteDocs(uid: string, kind: "tasks" | "blocks" | "series" |
 }
 
 /** Creates a document with a server-generated id and returns that id. */
-async function addRemoteDoc(uid: string, kind: "tasks" | "blocks", data: Record<string, string | boolean>) {
+async function addRemoteDoc(uid: string, kind: "tasks" | "blocks" | "series", data: Record<string, string | boolean>) {
   const response = await firestoreFetch(`users/${uid}/${kind}`, {
     method: "POST",
     body: JSON.stringify({ fields: encodeFields(data) }),
@@ -257,4 +257,65 @@ export async function submitAuthForm(page: Page, email: string, kind: "sign up" 
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
   }
   await expect(shell).toBeVisible();
+}
+
+/* ---------- Responsive fixture (tests/responsive.spec.ts) ---------- */
+
+/** A wall-clock day key in `timeZone`, independent of the browser's own zone. */
+function dayKeyIn(timeZone: string, at: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at);
+  const part = (type: string) => Number(parts.find(entry => entry.type === type)!.value);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${part("year")}-${pad(part("month"))}-${pad(part("day"))}`;
+}
+
+/** `key` moved by `days` weekday-agnostic days, as a day key. */
+function addDays(key: string, days: number): string {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Seeds the content the responsive assertions measure: titles long enough to
+ * truncate at 320 px (one of them a single unbreakable token), a deadline today
+ * and one overdue -- the widest and the narrowest `.row-meta` -- two repeating
+ * tasks, and blocks on today at 09:00, 11:00 and 20:00, the last one only 30
+ * minutes long so a zoomed label has to clip.
+ *
+ * The profile time zone is seeded with it, so the calendar renders this week in
+ * `timeZone` whatever zone the emulator host believes it is in.
+ */
+export async function seedResponsiveFixture(email: string, timeZone: string): Promise<void> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  await setRemoteDoc(uid, "profile/main", { timeZone });
+  const today = dayKeyIn(timeZone, new Date());
+  const tasks: Array<{ title: string; deadline?: string; completed?: boolean }> = [
+    { title: "Prepare the quarterly roadmap review with design and engineering leads", deadline: today },
+    { title: "Follow up with the accountant about the Q3 invoices and the withholding form", deadline: addDays(today, -1) },
+    { title: "Book the dentist appointment for the molar that has been hurting since Tuesday" },
+    { title: "Supercalifragilisticexpialidociousness_and_an_unbreakable_token_that_never_wraps" },
+    { title: "Rewrite the onboarding copy so a first-time user understands the product", deadline: addDays(today, 3) },
+  ];
+  const ids = new Map<string, string>();
+  for (const task of tasks) {
+    const id = await addRemoteDoc(uid, "tasks", {
+      title: task.title,
+      completed: task.completed ?? false,
+      ...(task.deadline ? { deadline: task.deadline } : {}),
+    });
+    ids.set(task.title, id);
+  }
+  await addRemoteDoc(uid, "series", { title: "Weekly planning with the whole team", frequency: "weekly", anchorDate: today });
+  await addRemoteDoc(uid, "series", { title: "Morning stretch", frequency: "daily", anchorDate: today });
+  const offset = "-03:00";
+  const blocks: Array<{ start: string; end: string; taskId?: string }> = [
+    { start: `${today}T09:00:00${offset}`, end: `${today}T10:30:00${offset}`, taskId: ids.get(tasks[0].title) },
+    { start: `${today}T11:00:00${offset}`, end: `${today}T12:00:00${offset}` },
+    { start: `${today}T20:00:00${offset}`, end: `${today}T20:30:00${offset}`, taskId: ids.get(tasks[3].title) },
+  ];
+  for (const block of blocks) {
+    await addRemoteDoc(uid, "blocks", { start: block.start, end: block.end, ...(block.taskId ? { taskId: block.taskId } : {}) });
+  }
 }

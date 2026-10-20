@@ -69,7 +69,7 @@
   --text-body: 0.9375rem;
   --text-sub: 0.8125rem;
   --text-caption: 0.75rem;
-  --text-tiny: 0.6875rem;
+  --text-tiny: 0.75rem;
 
   /* shape */
   --r-control: 10px;
@@ -436,6 +436,49 @@ time,
 .switch:checked { background: var(--green-fill); }
 .switch:checked::after { transform: translateX(18px); }
 
+/* ---------- touch targets ----------
+   A mouse can hit a 28 px control; a thumb cannot, and the app was built for the
+   mouse: only `.check` carried a 44 px hit area (odd/research/responsive-audit.md
+   F3). The `44x44` floor (WCAG 2.2 §2.5.8, Apple's 44 pt) is applied as a
+   `min-height` where the box can grow and as an invisible `::before` where the
+   visible pill must keep its size, and it is scoped to a coarse pointer so the
+   desktop's density is untouched. */
+@media (pointer: coarse) {
+  /* A round control cannot grow its hit area with a pseudo: glass.css already
+     owns `.icon-button::before` for the rim and `::after` for the press, both
+     `inset: 0` and `pointer-events: none`, and it loads after this file. The
+     circle itself grows instead, which the rim follows. */
+  .icon-button,
+  .icon-button.large { width: 44px; height: 44px; }
+
+  .row-main { min-height: 44px; }
+
+  .button,
+  .button.small,
+  .segmented button,
+  .form-control,
+  .sheet-title,
+  .gate-actions .button {
+    min-height: 44px;
+  }
+
+  /* The round variant is 32 wide, which is a mouse's column: a thumb needs the
+     width as well, so it grows in both directions. */
+  .button.icon { min-width: 44px; }
+
+  /* The switch is a 44x26 pill by design; the target around it is 44 tall. */
+  .switch { position: relative; }
+  .switch::before {
+    content: "";
+    position: absolute;
+    inset: -9px 0;
+    border-radius: 22px;
+  }
+
+  /* An inline link has no pill to grow wide, but it can claim the height. */
+  .link-button { min-height: 44px; }
+}
+
 /* ---------- shell ---------- */
 
 .shell {
@@ -658,7 +701,7 @@ time,
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100% - 32px);
   padding: 10px 10px 10px 16px;
   border-radius: 999px;
   background: var(--label);
@@ -850,12 +893,32 @@ time,
 
 .row-meta {
   margin-left: auto;
-  flex: none;
+  /* The meta used to be `flex: none`, so it took its full width and the title
+     yielded everything (odd/research/responsive-audit.md F2): at 320 px a
+     series title was 34 px wide, and at 200 % text zoom the title vanished.
+     It now shrinks, and what is left over is the title's room. */
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-size: var(--text-sub);
   color: var(--label-3);
+}
+
+/* Each piece of the meta truncates inside its own slice instead of pushing the
+   row wider, and the deadline text keeps its own ellipsis. */
+.row-meta > *,
+.row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Under 420 px the meta may not take more than its share even when the title is
+   short: the cap is what keeps a 320 px title readable. */
+@media (max-width: 420px) {
+  .row-meta { max-width: 42%; }
 }
 
 .meta-icon { width: 13px; height: 13px; flex: none; }
@@ -1042,7 +1105,10 @@ time,
   align-items: start;
 }
 
-@media (min-width: 1280px) {
+/* The tray is 272 px plus a 24 px gap: beside the grid it costs every day
+   column 40 px, which is what squeezed a 1280 px window to 86 px columns. It
+   only sits alongside a week that still has room for it (audit F1). */
+@media (min-width: 1440px) {
   .calendar-layout { grid-template-columns: minmax(0, 1fr) 272px; }
 }
 
@@ -1051,8 +1117,10 @@ time,
 .cal-head,
 .cal-due,
 .cal-body {
+  /* The gutter holds "13:52" at 12 px and at 200 % text zoom; 56 px clipped it
+     (odd/research/responsive-audit.md F8). */
   display: grid;
-  grid-template-columns: 56px repeat(var(--n), minmax(0, 1fr));
+  grid-template-columns: 64px repeat(var(--n), minmax(0, 1fr));
 }
 
 .cal-head { border-bottom: 0.5px solid var(--separator); }
@@ -1127,7 +1195,11 @@ time,
   position: relative;
   height: min(640px, calc(100vh - 260px));
   height: min(640px, calc(100dvh - 260px));
-  min-height: 380px;
+  /* A fixed 380 px floor beat the height on a short viewport: at 844x390 the
+     grid started at y=324 and only 66 px of it was above the fold
+     (odd/research/responsive-audit.md F5). The floor now yields to the screen. */
+  min-height: min(380px, 45vh);
+  min-height: min(380px, 45dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1193,12 +1265,22 @@ time,
   max-width: 100%;
   font-weight: 600;
   font-size: 0.78rem;
+  /* The block is minutes x --hour tall while its label is rem, so at 200 % text
+     zoom a 30 minute block is shorter than one line. Whole lines of 1.15 let
+     the clip land between them, never through a glyph (audit F7). */
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.calendar-block span {
+  max-width: 100%;
+  opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.calendar-block span { opacity: 0.85; white-space: nowrap; }
 .calendar-block.is-short { flex-direction: row; gap: 6px; padding-top: 2px; }
 .calendar-block.is-past { opacity: 0.55; }
 .calendar-block:active { transform: scale(0.98); }
@@ -1302,11 +1384,14 @@ time,
 
 .strip-weekday { font-size: var(--text-tiny); font-weight: 500; color: var(--label-3); }
 
+/* Seven columns of a 320 px strip leave 41 px each, so the circle cannot reach
+   44 px without wrapping the row; 40 px is the largest that still fits, and the
+   column around it is the rest of the target (audit F9). */
 .strip-date {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1338,7 +1423,7 @@ time,
      page, which is every desktop. Not a transition: layout stays off the
      compositor, so the panel jumps to the visible area with the keyboard. */
   bottom: calc(10px + var(--kb-inset, 0px));
-  width: min(400px, calc(100vw - 20px));
+  width: min(400px, calc(100% - 20px));
   overflow-y: auto;
   /* the panel's own scroll ends at the panel: the page behind never moves */
   overscroll-behavior: contain;
@@ -1439,13 +1524,18 @@ select.form-control { text-align: left; cursor: pointer; }
 
 /* ---------- phone ---------- */
 
+/* The bar and the button are pinned to the safe edges, and the bar stops one
+   60 px button and one 10 px gap short of the right inset. `100vw` included the
+   classic scrollbar, so the gap collapsed on a desktop-narrow window (audit
+   F11). */
 .tabbar {
   position: fixed;
   z-index: 30;
-  left: 16px;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: calc(70px + max(16px, env(safe-area-inset-right, 0px)));
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   display: flex;
-  width: calc(100vw - 32px - 60px - 10px);
+  width: auto;
   height: 60px;
   padding: 4px;
   border-radius: 30px;
@@ -1473,7 +1563,7 @@ select.form-control { text-align: left; cursor: pointer; }
 .fab {
   position: fixed;
   z-index: 30;
-  right: 16px;
+  right: max(16px, env(safe-area-inset-right, 0px));
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   display: grid;
   place-items: center;
@@ -1504,7 +1594,8 @@ select.form-control { text-align: left; cursor: pointer; }
 
 .popover-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-@media (max-width: 760px) {
+/* A phone is its width, or the landscape shape of one (F4). */
+@media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
   .main {
     margin-left: 0;
     padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
@@ -1515,7 +1606,14 @@ select.form-control { text-align: left; cursor: pointer; }
   .page-head { margin-bottom: 18px; }
   .toolbar { width: 100%; }
   .toolbar .button-accent { margin-left: auto; }
-  .cal-scroll { height: calc(100vh - 340px); height: calc(100dvh - 340px); min-height: 340px; }
+  /* The phone grid takes what the header leaves, between a usable 220 px and a
+     560 px ceiling, and its floor no longer outgrows the screen (F5). */
+  .cal-scroll {
+    height: clamp(220px, calc(100vh - 340px), 560px);
+    height: clamp(220px, calc(100dvh - 340px), 560px);
+    min-height: min(340px, 45vh);
+    min-height: min(340px, 45dvh);
+  }
   /* A bottom sheet on a phone is sized against the visible band: the inset the
      keyboard covers is subtracted from both its bottom edge and the height it
      may take, so its first and last row -- title and primary action -- stay
@@ -1534,6 +1632,19 @@ select.form-control { text-align: left; cursor: pointer; }
   .toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
 }
 
+/* A phone held sideways is 390 px tall and its week strip spends 79 of them on a
+   day picker the toolbar already offers with prev/next (audit F4/F5 measured the
+   grid starting 324 px down). The strip yields on a short viewport and the grid
+   takes the room it left; the month stays in the page title. */
+@media (max-width: 1024px) and (max-height: 480px) {
+  .week-strip { display: none; }
+  .cal-scroll {
+    height: calc(100vh - 230px);
+    height: calc(100dvh - 230px);
+    min-height: 150px;
+  }
+}
+
 /* ---------- sign in ---------- */
 
 .gate {
@@ -1548,11 +1659,20 @@ select.form-control { text-align: left; cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 18px;
-  width: min(400px, 100%);
+  /* The grid's auto track grows to the card's min-content, so at 200 % text zoom
+     a card that may shrink to nothing still pushed the page 60 px sideways. It
+     now takes the track, may shrink below its content, and breaks long words
+     (audit F6). */
+  width: 100%;
+  max-width: min(400px, 100%);
+  min-width: 0;
   padding: 28px 24px 24px;
 }
 
+.gate { grid-template-columns: minmax(0, 1fr); }
 .gate-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.022em; }
+.gate-title,
+.gate .subtitle { overflow-wrap: anywhere; }
 .gate .subtitle { margin-top: -10px; }
 .gate-form { display: flex; flex-direction: column; gap: 14px; }
 .gate-form .form-group { background: var(--surface-2); box-shadow: none; }
