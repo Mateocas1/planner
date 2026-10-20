@@ -26,13 +26,16 @@ const AA = 4.5;
 /* ---------- token extraction ---------- */
 
 /**
- * Splits app.css into light and dark mode token maps. Dark tokens are the ones
- * declared inside `@media (prefers-color-scheme: dark)`, so the script reads
- * the block boundaries instead of guessing which value belongs where.
+ * Splits app.css into light and dark mode token maps. The resolved scheme is an
+ * attribute (`<html data-theme="dark">`, set by the inline script in
+ * index.html), so the dark tokens are the ones declared in the
+ * `:root[data-theme="dark"]` block, and the script reads the block boundaries
+ * instead of guessing which value belongs where.
  */
 function readSchemeTokens(file) {
   const css = readFileSync(join(appDir, file), "utf8");
-  const darkStart = css.indexOf("@media (prefers-color-scheme: dark)");
+  const marker = ':root[data-theme="dark"]';
+  const darkStart = css.indexOf(marker);
   if (darkStart < 0) throw new Error(`${file}: no dark-mode block found`);
   let depth = 0;
   let darkEnd = css.length;

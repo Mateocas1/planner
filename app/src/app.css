@@ -89,37 +89,50 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: var(--ink-975);
-    --bg-top: var(--ink-950);
-    --surface: var(--ink-925);
-    --surface-2: var(--ink-900);
-    --fill-hover: rgb(244 247 252 / 0.045);
-    --fill-press: rgb(244 247 252 / 0.08);
-    --label: var(--ink-100);
-    --label-2: var(--ink-400);
-    --label-3: var(--ink-500);
-    --separator: rgb(244 247 252 / 0.08);
-    --check-ring: rgb(244 247 252 / 0.3);
-    --accent: var(--brand-500);
-    --accent-hover: var(--brand-450);
-    --accent-soft: rgb(117 152 255 / 0.16);
-    --on-accent: var(--ink-975);
-    --now: #F66D62;
-    /* dark --now is a light red, so its ink flips to the page colour */
-    --on-now: var(--ink-975);
-    --red: #F07A70;
-    --orange: #E7A45C;
-    --green: #6CC488;
-    --green-fill: #3E9E5C;
-    --wash: rgb(108 196 136 / 0.10);
-    --cat-focus-bg: rgb(117 152 255 / 0.15);
-    --cat-focus-ink: var(--brand-400);
-    --cat-task-bg: rgb(194 130 208 / 0.15);
-    --cat-task-ink: #E0C2E7; /* plum 320, L .851 */
-    color-scheme: dark;
-  }
+/* The single dark switch (value roadmap §4). `<html data-theme>` is always the
+   resolved scheme: the inline script in index.html paints it before the first
+   frame, and src/ui/theme.ts keeps it live. System is resolved there, so this
+   file has one dark block instead of a media query plus a copy of the same
+   tokens for an explicit choice. `color-scheme` rides along, so form controls
+   and scrollbars are drawn by the browser in the scheme the page paints. */
+:root[data-theme="dark"] {
+  --bg: var(--ink-975);
+  --bg-top: var(--ink-950);
+  --surface: var(--ink-925);
+  --surface-2: var(--ink-900);
+  --fill-hover: rgb(244 247 252 / 0.045);
+  --fill-press: rgb(244 247 252 / 0.08);
+  --label: var(--ink-100);
+  --label-2: var(--ink-400);
+  --label-3: var(--ink-500);
+  --separator: rgb(244 247 252 / 0.08);
+  --check-ring: rgb(244 247 252 / 0.3);
+  --accent: var(--brand-500);
+  --accent-hover: var(--brand-450);
+  --accent-soft: rgb(117 152 255 / 0.16);
+  --on-accent: var(--ink-975);
+  --now: #F66D62;
+  /* dark --now is a light red, so its ink flips to the page colour */
+  --on-now: var(--ink-975);
+  --red: #F07A70;
+  --orange: #E7A45C;
+  --green: #6CC488;
+  --green-fill: #3E9E5C;
+  --wash: rgb(108 196 136 / 0.10);
+  --cat-focus-bg: rgb(117 152 255 / 0.15);
+  --cat-focus-ink: var(--brand-400);
+  --cat-task-bg: rgb(194 130 208 / 0.15);
+  --cat-task-ink: #E0C2E7; /* plum 320, L .851 */
+  color-scheme: dark;
+}
+
+/* A theme change is a repaint, not a motion opportunity: the runtime marks the
+   switching frame so no control eases from the old colours to the new ones.
+   Everything is back to its normal transitions on the next frame. */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 /* ---------- base ---------- */
@@ -344,6 +357,43 @@ time,
   box-shadow: var(--pill-shadow);
 }
 
+/* The theme control (System / Light / Dark): the segmented shell, icon-only so
+   it fits the sidebar footer. The checked pill carries the state and the accent
+   marks it, which is why the checked icon is the accent rather than the label
+   ink; the radio's own name is the only text (sr-only). */
+.theme-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--label-3);
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+.theme-switch button svg { width: 15px; height: 15px; }
+
+.theme-switch button[aria-checked="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--pill-shadow);
+}
+
+/* In the phone's account popover the row is as wide as the menu. */
+.popover .theme-switch {
+  display: flex;
+  width: 100%;
+}
+
+.popover .theme-switch button { flex: 1; }
+
 /* the round check: the product's signature control */
 .check {
   appearance: none;
@@ -456,6 +506,7 @@ time,
   .button,
   .button.small,
   .segmented button,
+  .theme-switch button,
   .form-control,
   .sheet-title,
   .gate-actions .button {
