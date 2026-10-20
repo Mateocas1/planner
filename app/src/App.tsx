@@ -197,7 +197,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       {phone && (
         <>
           <TabBar view={view} onNavigate={onNavigate} />
-          <button type="button" className="fab glass glass-control glass-lens" aria-label="New task" onClick={newTask}>
+          <button type="button" className="fab glass glass-float glass-lens" aria-label="New task" onClick={newTask}>
             <PlusIcon />
           </button>
         </>
@@ -229,7 +229,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
  * stretches along the way, like a droplet, then settles. */
 function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => void }) {
   return (
-    <nav aria-label="Main" className="tabbar glass glass-control">
+    <nav aria-label="Main" className="tabbar glass glass-float">
       {views.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -270,7 +270,7 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
       <AnimatePresence>
         {open && (
           <motion.div
-            className="popover glass glass-sheet"
+            className="popover glass glass-thick"
             initial={{ opacity: 0, scale: 0.94, filter: "blur(4px)" }}
             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
             exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
