@@ -74,6 +74,12 @@ async function addTaskThroughForm(page: Page, title: string, deadline?: string) 
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+  // The submitted sheet plays its 180 ms exit before it leaves the DOM, and it
+  // is still an accessible "New task" panel carrying a "Task title" field
+  // until then. Wait for it to be really gone: a label lookup made in that
+  // window (`getByLabel("Task")` in the block form, a check clicked after a
+  // create) reads a closing form instead of the one on screen.
+  await settleSheet(page, "New task");
 }
 
 async function openCalendar(page: Page) {
@@ -246,7 +252,7 @@ test("deleting a block offers undo, and undo restores it at the same instants an
   await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
-  await page.getByLabel("Task").selectOption({ label: "Deep work" });
+  await page.getByLabel("Task", { exact: true }).selectOption({ label: "Deep work" });
   await page.getByRole("button", { name: "Add block" }).click();
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);
