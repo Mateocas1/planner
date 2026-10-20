@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { animate, usePresence, useReducedMotion } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
-import { dur, easeOut, easeOutCss, ms } from "./motion.ts";
+import { dur, easeOut, easeOutCss, expandBlur, ms } from "./motion.ts";
 import { keepFocusedFieldVisible } from "./viewport.ts";
 
 /** The resting transform every flight ends on: one string, never four props. */
@@ -12,11 +12,13 @@ const flightTransform = (x: number, y: number, scaleX: number, scaleY: number) =
   `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})`;
 
 /**
- * The glass sheet (DESIGN.md §3, "Details"): a floating panel that grows out
- * of the element that opened it and returns towards it when it closes. It is
- * rendered inside an AnimatePresence by its owner; the exit keeps it mounted
- * (usePresence + safeToRemove) until the dismissal animation finishes, so
- * Close, Escape and a scrim click all leave the same way.
+ * The glass sheet (DESIGN.md §3, "Details"): a floating card centred in what the
+ * user can see (app.css, S2/S3) that grows out of the element that opened it and
+ * returns towards it when it closes. It is rendered inside an AnimatePresence by
+ * its owner; the exit keeps it mounted (usePresence + safeToRemove) until the
+ * dismissal animation finishes, so Close, Escape and a scrim click all leave the
+ * same way, and a panel reopened mid-dismissal flies in again instead of being
+ * left where the dismissal stopped.
  *
  * A `shared` sheet leaves the flight to the native view transition started by
  * morph.ts (the row's box becomes the panel's): the owner opens it with
@@ -31,12 +33,14 @@ const flightTransform = (x: number, y: number, scaleX: number, scaleY: number) =
  * on one composited `transform` string (WAAPI, 400 ms ease-out) while its
  * opacity comes up behind it. One string, not x/y/scaleX/scaleY: those
  * shorthands are written by script every frame, while a single transform runs
- * off the main thread. No filter either: a blur on a backdrop-filter surface
- * makes the glass behind it repaint flat, which is the material the sheet is
- * made of. The content fades in a beat later and never gets a scale of its own,
- * so the field the sheet focuses keeps its geometry. Without a measurable source
- * (or with reduced motion) the panel pops from its top-left corner over 150 ms
- * and the content rises the last 4 px.
+ * off the main thread. The content behind it comes into focus: a short
+ * blur-to-sharp (8 px, 4 px on touch), applied to .sheet-body and cleared when
+ * it lands. Never to the sheet itself -- a filter on a backdrop-filter surface
+ * makes the glass behind it repaint flat, which is the material it is made of.
+ * The content never gets a scale of its own, so the field the sheet focuses
+ * keeps its geometry. Without a measurable source (or with reduced motion) the
+ * panel pops from its top-left corner over 150 ms and the content rises the last
+ * 4 px.
  *
  * The fallback exit covers less ground than the entry: a dismissal says "gone",
  * not "back where it came from", so it travels 45% of the way to the source in
@@ -68,6 +72,18 @@ export function Sheet({
   const scrimRef = useRef<HTMLDivElement>(null);
   /** This mount arrived through a view transition, which owns both ends. */
   const morphed = useRef(false);
+  /** The entry ran at mount; anything later is a re-entry (see the effect below). */
+  const entered = useRef(false);
+  /** Presence as of the last commit, so a superseded exit never removes a
+   * panel the user has just reopened. */
+  const present = useRef(isPresent);
+  /** The control inside the panel that had the caret when it was dismissed, so
+   * a reopen puts the caret back where the user left it. */
+  const lastField = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    present.current = isPresent;
+  }, [isPresent]);
 
   /** Transform that lays the resting sheet over the origin's current box. */
   const flipFrom = (sheet: HTMLElement) => {
@@ -83,24 +99,13 @@ export function Sheet({
     };
   };
 
-  useLayoutEffect(() => {
-    const sheet = sheetRef.current;
-    const body = bodyRef.current;
-    const scrim = scrimRef.current;
-    if (!sheet || !body || !scrim) return;
-    // Registered before the browser paints, so a dismissal that starts in the
-    // same frame as the mount still finds a panel to shrink.
-    const unregister = shared ? registerPanel(sheet, scrim) : undefined;
-    const transition = shared ? currentMorph() : null;
-    if (transition) {
-      // The row is growing into this panel: name both sides of the morph and
-      // leave the geometry to the browser. A Motion flight here would be a
-      // second owner of the same entrance.
-      morphed.current = true;
-      transition.shared(sheet);
-      transition.scrim(scrim);
-      return unregister;
-    }
+  /**
+   * One entrance: the panel travels from the trigger's box to its resting box,
+   * and the content behind it comes into focus. Re-runnable -- a panel that is
+   * re-admitted while its dismissal still runs flies in again -- so it reads
+   * the origin and the current viewport each time.
+   */
+  const playEntry = (sheet: HTMLElement, body: HTMLElement, scrim: HTMLElement) => {
     animate(scrim, { opacity: [0, 1] }, { duration: 0.2, ease: easeOut });
     const from = reduced ? null : flipFrom(sheet);
     if (!from) {
@@ -127,7 +132,7 @@ export function Sheet({
           },
         },
       );
-      return unregister;
+      return;
     }
     // The flight is native WAAPI with one transform string, so the browser owns
     // it on the compositor even while the form it carries is still settling.
@@ -141,17 +146,84 @@ export function Sheet({
       ],
       { duration: ms(dur.flight), easing: easeOutCss },
     );
-    // The panel already carries the movement, so the content only fades in: a
-    // rise here would be the same motion twice, and the panel never scales the
-    // body, so the field the sheet just focused keeps its geometry.
-    animate(body, { opacity: [0, 1] }, { duration: dur.enter, delay: 0.1, ease: easeOut });
+    // The panel already carries the movement, so the content only fades in and
+    // sharpens: a rise here would be the same motion twice, and the panel never
+    // scales the body, so the field the sheet just focused keeps its geometry.
+    // The blur is a focus pull, not motion -- 8 px on a fine pointer and 4 px on
+    // touch -- and it goes on the body only: a filter on the sheet itself would
+    // repaint the glass behind it flat.
+    const radius = window.matchMedia("(pointer: coarse)").matches ? expandBlur.coarse : expandBlur.fine;
+    animate(body, { opacity: [0, 1] }, { duration: dur.enter, delay: 0.06, ease: easeOut });
+    // The blur is native WAAPI so the filter is interpolated on the compositor
+    // and, unlike a script-written value, leaves nothing behind: with fill
+    // "backwards" it holds the first frame through the delay and hands the body
+    // back un-filtered when it lands (no lingering layer under the caret).
+    body.animate([{ filter: `blur(${radius}px)` }, { filter: "blur(0px)" }], {
+      duration: ms(dur.blur),
+      delay: 60,
+      easing: easeOutCss,
+      fill: "backwards",
+    });
+  };
+
+  useLayoutEffect(() => {
+    const sheet = sheetRef.current;
+    const body = bodyRef.current;
+    const scrim = scrimRef.current;
+    if (!sheet || !body || !scrim) return;
+    // Registered before the browser paints, so a dismissal that starts in the
+    // same frame as the mount still finds a panel to shrink.
+    const unregister = shared ? registerPanel(sheet, scrim) : undefined;
+    const transition = shared ? currentMorph() : null;
+    if (transition) {
+      // The row is growing into this panel: name both sides of the morph and
+      // leave the geometry to the browser. A Motion flight here would be a
+      // second owner of the same entrance.
+      morphed.current = true;
+      entered.current = true;
+      transition.shared(sheet);
+      transition.scrim(scrim);
+      return unregister;
+    }
+    entered.current = true;
+    playEntry(sheet, body, scrim);
     return unregister;
-    // Measure once at mount: the origin is where the user's eye already is.
+    // Measure once at mount: the origin is where the user's eye already is (a
+    // re-entry measures again, in the effect below).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (isPresent) return;
+    if (isPresent) {
+      // A panel re-admitted while its dismissal still runs is the same mount:
+      // the entry above does not run again, and the dismissal is still filling
+      // forwards, which would leave the panel 45% away from its own box at
+      // opacity 0. Cancel what the dismissal wrote, drop the inline values it
+      // stopped on, and fly in again from the trigger -- which is exactly what
+      // reopening a panel should do.
+      if (!entered.current) {
+        entered.current = true;
+        return;
+      }
+      const sheet = sheetRef.current;
+      const body = bodyRef.current;
+      const scrim = scrimRef.current;
+      if (!sheet || !body || !scrim || morphed.current) return;
+      for (const element of [sheet, body, scrim]) {
+        for (const animation of element.getAnimations()) animation.cancel();
+        element.style.opacity = "";
+        element.style.transform = "";
+        element.style.filter = "";
+      }
+      playEntry(sheet, body, scrim);
+      // The caret is part of opening a panel: a fresh mount gets it from the
+      // field's own autoFocus, and a re-admitted panel takes back the control the
+      // user had -- the press that reopened it left the caret on the trigger
+      // behind the scrim.
+      const field = lastField.current;
+      if (field?.isConnected && !sheet.contains(document.activeElement)) field.focus({ preventScroll: true });
+      return;
+    }
     const sheet = sheetRef.current;
     const scrim = scrimRef.current;
     const body = bodyRef.current;
@@ -165,9 +237,19 @@ export function Sheet({
       safeToRemove?.();
       return;
     }
+    // Remember where the caret was inside the panel: if this dismissal is
+    // superseded by a reopen, that is where it goes back.
+    lastField.current =
+      document.activeElement instanceof HTMLElement && sheet.contains(document.activeElement)
+        ? document.activeElement
+        : null;
     animate(scrim, { opacity: 0 }, { duration: dur.exit, ease: easeOut });
     const to = reduced ? null : flipFrom(sheet);
-    const done = () => safeToRemove?.();
+    // A dismissal that is superseded by a reopen must not remove the panel the
+    // user is looking at: the caret and the mount now belong to the new state.
+    const done = () => {
+      if (!present.current) safeToRemove?.();
+    };
     if (!to) {
       animate(sheet, { opacity: 0 }, { duration: dur.exit, ease: easeOut }).then(done);
       return;
