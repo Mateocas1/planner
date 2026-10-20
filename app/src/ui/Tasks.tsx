@@ -5,6 +5,7 @@ import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSerie
 import type { SeriesView, TaskView } from "../data/store.ts";
 import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
+import { DragGrip } from "./drag.tsx";
 import { RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
@@ -174,6 +175,7 @@ export function Tasks({
           </span>
         )}
       </button>
+      <DragGrip task={task} />
     </motion.li>
   );
 

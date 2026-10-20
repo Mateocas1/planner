@@ -90,24 +90,37 @@ export function mondayOf(wallUtc: number): number {
   return wallUtc - ((new Date(wallUtc).getUTCDay() + 6) % 7) * dayMs;
 }
 
-/** The zone's offset at an instant, formatted +HH:MM / -HH:MM (from Intl). */
+/** The zone's offset at an instant, formatted +HH:MM / -HH:MM (from Intl).
+ * An instant's offset is its wall clock minus the instant itself: in
+ * America/Sao_Paulo 09:30 is 12:30Z, so the offset is -03:00. */
 function zoneOffset(stamp: number, timeZone: string): string {
-  const minutes = Math.round((stamp - wallAsUtc(new Date(stamp), timeZone)) / 60_000);
+  const minutes = Math.round((wallAsUtc(new Date(stamp), timeZone) - stamp) / 60_000);
   const sign = minutes < 0 ? "-" : "+";
   const abs = Math.abs(minutes);
   return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+/** The wall-clock value (YYYY-MM-DDTHH:MM) an instant reads as in a zone. */
+function wallValue(stamp: number, timeZone: string): string {
+  const parts = wallParts(new Date(stamp), timeZone);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
 /** Converts a datetime-local value (YYYY-MM-DDTHH:MM) into a zoned ISO instant
  * interpreted in the given zone. Two correction passes land the instant whose
- * wall clock in the zone equals the input, which also handles DST walls. */
+ * wall clock in the zone equals the input (stamp = wall - offset); a zone's own
+ * offset at the result is what the string carries.
+ *
+ * A wall clock a DST gap skips names no instant: the passes resolve to the
+ * first wall clock the zone shows after the gap, and the returned string names
+ * that clock, so the string never denotes an instant the zone reads differently. */
 export function toZonedInstant(value: string, timeZone: string): string {
   const guess = Date.parse(`${value}:00Z`);
   let stamp = guess;
   for (let pass = 0; pass < 2; pass += 1) {
-    stamp = guess - (guess - wallAsUtc(new Date(stamp), timeZone));
+    stamp = guess - (wallAsUtc(new Date(stamp), timeZone) - stamp);
   }
-  return `${value}:00${zoneOffset(stamp, timeZone)}`;
+  return `${wallValue(stamp, timeZone)}:00${zoneOffset(stamp, timeZone)}`;
 }
 
 /** A datetime-local value for a day key plus minutes since midnight. */

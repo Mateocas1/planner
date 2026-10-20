@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, setDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createWorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { trackRemoval } from "./pending.ts";
@@ -15,6 +15,16 @@ export async function addBlock(uid: string, start: string, end: string, taskId?:
     end: block.end,
     ...(block.taskId === undefined ? {} : { taskId: block.taskId }),
   });
+}
+
+/**
+ * Moves a block's edges (drag-resize, keyboard resize). The block is validated
+ * by the domain module before any write, so a rejected start/end never reaches
+ * Firestore; the task link is untouched.
+ */
+export async function setBlockTimes(uid: string, blockId: string, start: string, end: string) {
+  const block = createWorkBlock(blockId, start, end);
+  await updateDoc(doc(db, `users/${uid}/blocks/${blockId}`), { start: block.start, end: block.end });
 }
 
 export async function deleteBlock(uid: string, blockId: string) {

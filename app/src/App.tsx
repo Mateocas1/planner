@@ -8,6 +8,7 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
+import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
 import { CloseIcon, PersonIcon, PlusIcon } from "./ui/icons.tsx";
 import { easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
@@ -77,7 +78,8 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const newTask = (event: React.MouseEvent<HTMLButtonElement>) => setCreating(event.currentTarget);
 
   return (
-    <div className={`shell${phone ? " is-phone" : ""}`}>
+    <TaskDragProvider onNavigate={onNavigate}>
+      <div className={`shell${phone ? " is-phone" : ""}`}>
       {!phone && (
         <Sidebar
           email={user.email ?? ""}
@@ -170,7 +172,8 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       <AnimatePresence>
         {creating && <NewTaskSheet key="new-task" uid={user.uid} origin={creating} onClose={() => setCreating(null)} />}
       </AnimatePresence>
-    </div>
+      </div>
+    </TaskDragProvider>
   );
 }
 
@@ -180,7 +183,14 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
   return (
     <nav aria-label="Main" className="tabbar glass glass-control">
       {views.map(({ id, label, Icon }) => (
-        <button key={id} type="button" className="tab" aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}>
+        <button
+          key={id}
+          type="button"
+          className="tab"
+          aria-current={view === id ? "page" : undefined}
+          {...(id === "calendar" ? { "data-drop-nav": "calendar" } : {})}
+          onClick={() => onNavigate(id)}
+        >
           {view === id && (
             <motion.span
               layoutId="tab-pill"
