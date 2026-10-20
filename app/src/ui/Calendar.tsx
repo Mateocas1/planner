@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addBlock, deleteBlock } from "../data/blocks.ts";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
+import { addBlock, deleteBlock, setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import { useCalendarDropTarget, useTaskDrag, DragGrip } from "./drag.tsx";
+import { dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
+import "./Calendar.css";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
@@ -46,6 +49,12 @@ const planLength = 60;
 
 type Range = "week" | "day";
 type Laid = { block: BlockView; key: string; startMinutes: number; endMinutes: number; column: number; columns: number };
+
+/** A minute of the day as the grid writes it (midnight reads as 00:00). */
+function minutesLabel(minutes: number): string {
+  const whole = ((Math.round(minutes) % minutesPerDay) + minutesPerDay) % minutesPerDay;
+  return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}`;
+}
 
 export function Calendar({
   uid,
@@ -104,6 +113,15 @@ function CalendarView({
   const [creating, setCreating] = useState<{ start: string; end: string; origin: HTMLElement | null; draft: { key: string; minutes: number } | null } | null>(null);
   const [openBlock, setOpenBlock] = useState<{ id: string; origin: HTMLElement } | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  // Direct manipulation: the resize in flight (raw pointer position, snapped on
+  // release) and the last thing the grid changed, announced politely.
+  const [resize, setResize] = useState<{ id: string; edge: "start" | "end"; key: string; start: number; end: number } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const suppressClick = useRef(false);
+  const resizeToken = useRef(0);
+  const settleAnimation = useRef<{ stop: () => void } | null>(null);
+  const drag = useTaskDrag();
+  const drop = drag?.carrying?.drop ?? null;
   const draftRef = useRef<HTMLDivElement>(null);
   const newBlockRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -164,7 +182,7 @@ function CalendarView({
     if ((event.target as HTMLElement).closest(".calendar-block")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const minutes = ((event.clientY - rect.top) / hourHeight) * 60;
-    const snapped = Math.max(0, Math.min(minutesPerDay - 30, Math.round(minutes / 30) * 30));
+    const snapped = Math.max(0, Math.min(minutesPerDay - stepMinutes, Math.round(minutes / stepMinutes) * stepMinutes));
     openCreate(key, snapped, null);
   }
 
@@ -204,6 +222,161 @@ function CalendarView({
     } catch (cause) {
       setPlanError(cause instanceof Error ? cause.message : "The block could not be planned.");
     }
+  }
+
+  const fail = (cause: unknown) => {
+    setPlanError(cause instanceof Error ? cause.message : "The block could not be saved.");
+  };
+
+  /** Persists a block's edges in the profile zone. The local cache applies the
+   * write at once, so the grid keeps its position without waiting for the
+   * server; a rejected pair never reaches Firestore (the data helper validates
+   * before writing). */
+  function saveTimes(item: Laid, startMinutes: number, endMinutes: number): Promise<void> {
+    return settle(
+      setBlockTimes(
+        uid,
+        item.block.id,
+        instantForEdge(item.key, startMinutes, timeZone),
+        instantForEdge(item.key, endMinutes, timeZone),
+      ),
+    );
+  }
+
+  /** Where an edge sits while it is dragged: the pointer, clamped so the block
+   * never inverts or leaves the day but not yet snapped to the step. */
+  function rawEdge(edge: "start" | "end", deltaMinutes: number, base: { start: number; end: number }) {
+    if (edge === "start") {
+      return { start: Math.max(0, Math.min(base.start + deltaMinutes, base.end - stepMinutes)), end: base.end };
+    }
+    return { start: base.start, end: Math.min(minutesPerDay, Math.max(base.end + deltaMinutes, base.start + stepMinutes)) };
+  }
+
+  /** Where a carried task would land under the pointer. */
+  function resolveDrop(x: number, y: number) {
+    const under = document.elementFromPoint(x, y) as HTMLElement | null;
+    const day = under?.closest<HTMLElement>("[data-date]");
+    const body = day?.querySelector<HTMLElement>(".calendar-day-body");
+    const key = day?.dataset.date;
+    if (!body || !key) return null;
+    const rect = body.getBoundingClientRect();
+    return { key, minutes: dropStart(((y - rect.top) / hourHeight) * 60) };
+  }
+
+  /** A dropped task becomes a block on the snapped slot, linked to the task so
+   * the grid and the details sheet show its title. */
+  function commitDrop(task: TaskView, slot: { key: string; minutes: number }) {
+    setPlanError(null);
+    void settle(
+      addBlock(
+        uid,
+        instantForEdge(slot.key, slot.minutes, timeZone),
+        instantForEdge(slot.key, slot.minutes + dropLengthMinutes, timeZone),
+        task.id,
+      ),
+    )
+      .then(() => announce(`Planned ${task.title} at ${minutesLabel(slot.minutes)} on ${formatDateKey(slot.key, todayKey)}.`))
+      .catch(fail);
+  }
+
+  useCalendarDropTarget({ resolve: resolveDrop, commit: commitDrop });
+
+  function announce(text: string) {
+    setAnnouncement(text);
+  }
+
+  /** Dragging an edge: the block follows the pointer exactly (no lag, no text
+   * scaling), Escape reverts, and release snaps to the grid's step, persists,
+   * and lets the block settle onto its stored geometry with a spring. */
+  function beginResize(item: Laid, edge: "start" | "end", event: React.PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const block = event.currentTarget.closest<HTMLElement>(".calendar-block");
+    const originY = event.clientY;
+    const base = { start: item.startMinutes, end: item.endMinutes };
+    const token = resizeToken.current + 1;
+    resizeToken.current = token;
+    settleAnimation.current?.stop();
+    settleAnimation.current = null;
+    let delta = 0;
+    suppressClick.current = true;
+    // Mark the block as resizing from the press, not from the first move: the
+    // press-scale rule must not shrink the block while its edge is grabbed.
+    setResize({ id: item.block.id, edge, key: item.key, ...base });
+
+    const move = (moveEvent: PointerEvent) => {
+      delta = ((moveEvent.clientY - originY) / hourHeight) * 60;
+      setResize({ id: item.block.id, edge, key: item.key, ...rawEdge(edge, delta, base) });
+    };
+
+    const end = (commit: boolean) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+      if (!commit) {
+        setResize(null);
+        suppressClick.current = false;
+        return;
+      }
+      // The click that follows this pointerup must not open the details sheet.
+      window.setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      const snapped = movedEdge(edge, delta, base.start, base.end);
+      if (snapped.start === base.start && snapped.end === base.end) {
+        setResize(null);
+        return;
+      }
+      void saveTimes(item, snapped.start, snapped.end)
+        .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
+        .catch(fail);
+      const release = () => {
+        if (resizeToken.current === token) setResize(null);
+      };
+      if (block && !reduced) {
+        settleAnimation.current = animate(
+          block,
+          {
+            top: (snapped.start / 60) * hourHeight + 1,
+            height: Math.max(20, ((snapped.end - snapped.start) / 60) * hourHeight - 2),
+          },
+          { type: "spring", bounce: 0.12, duration: 0.3, onComplete: release },
+        );
+      } else {
+        release();
+      }
+    };
+
+    const onUp = () => end(true);
+    const onCancel = () => end(false);
+    const onKey = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key !== "Escape") return;
+      keyEvent.preventDefault();
+      end(false);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+  }
+
+  /** The keyboard path: Shift+ArrowDown grows the block by one grid step and
+   * Shift+ArrowUp shrinks it, with the start held still and the end never
+   * crossing one step past it. Focus stays on the block, so a run of presses is
+   * a run of resizes. */
+  function resizeByKeyboard(item: Laid, direction: 1 | -1) {
+    // A block already at (or below) one step has nothing left to give; without
+    // this, snapping a legacy short block up would grow it instead.
+    if (direction < 0 && item.endMinutes - item.startMinutes <= stepMinutes) return;
+    const snapped = movedEdge("end", direction * stepMinutes, item.startMinutes, item.endMinutes);
+    if (snapped.end === item.endMinutes) return;
+    setPlanError(null);
+    void saveTimes(item, snapped.start, snapped.end)
+      .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
+      .catch(fail);
   }
 
   const selectedBlock = openBlock ? blocks.find(block => block.id === openBlock.id) : undefined;
@@ -347,26 +520,58 @@ function CalendarView({
                       <div className="calendar-day-body" onClick={event => onSlotClick(key, event)}>
                         {visible.filter(item => item.key === key).map(item => {
                           const task = taskOf(item.block.taskId);
-                          const height = Math.max(20, ((item.endMinutes - item.startMinutes) / 60) * hourHeight - 2);
+                          const live = resize?.id === item.block.id ? resize : null;
+                          const startMinutes = live ? live.start : item.startMinutes;
+                          const endMinutes = live ? live.end : item.endMinutes;
+                          const height = Math.max(20, ((endMinutes - startMinutes) / 60) * hourHeight - 2);
                           const width = 100 / item.columns;
                           const past = Date.parse(item.block.end) <= nowMs;
+                          const range = live
+                            ? `${minutesLabel(startMinutes)}–${minutesLabel(endMinutes)}`
+                            : `${timeLabel(new Date(item.block.start), timeZone)}–${timeLabel(new Date(item.block.end), timeZone)}`;
                           return (
                             <button
                               key={item.block.id}
                               type="button"
                               className={`calendar-block ${task ? "cat-task" : "cat-focus"}${item.block.pending ? " calendar-block-pending" : ""}${height < 40 ? " is-short" : ""}${past ? " is-past" : ""}`}
+                              data-block={item.block.id}
                               data-start={item.block.start}
                               data-end={item.block.end}
+                              data-resizing={live ? live.edge : undefined}
+                              aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown"
                               style={{
-                                top: (item.startMinutes / 60) * hourHeight + 1,
+                                top: (startMinutes / 60) * hourHeight + 1,
                                 height,
                                 left: `calc(${item.column * width}% + 3px)`,
                                 width: `calc(${width}% - 6px)`,
                               }}
-                              onClick={event => setOpenBlock({ id: item.block.id, origin: event.currentTarget })}
+                              onClick={event => {
+                                if (suppressClick.current) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                setOpenBlock({ id: item.block.id, origin: event.currentTarget });
+                              }}
+                              onKeyDown={event => {
+                                if (!event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+                                event.preventDefault();
+                                resizeByKeyboard(item, event.key === "ArrowDown" ? 1 : -1);
+                              }}
                             >
                               <b>{task ? task.title : "Work block"}</b>
-                              <span>{timeLabel(new Date(item.block.start), timeZone)}–{timeLabel(new Date(item.block.end), timeZone)}</span>
+                              <span>{range}</span>
+                              <span
+                                className="block-handle block-handle-start"
+                                aria-hidden="true"
+                                data-edge="start"
+                                onPointerDown={event => beginResize(item, "start", event)}
+                              />
+                              <span
+                                className="block-handle block-handle-end"
+                                aria-hidden="true"
+                                data-edge="end"
+                                onPointerDown={event => beginResize(item, "end", event)}
+                              />
                             </button>
                           );
                         })}
@@ -376,6 +581,17 @@ function CalendarView({
                             className="calendar-draft"
                             aria-hidden="true"
                             style={{ top: (creating.draft.minutes / 60) * hourHeight + 1, height: hourHeight - 2 }}
+                          />
+                        )}
+                        {drop !== null && drop.key === key && (
+                          <div
+                            className="calendar-draft calendar-drop"
+                            data-drop-preview="true"
+                            aria-hidden="true"
+                            style={{
+                              top: (drop.minutes / 60) * hourHeight + 1,
+                              height: (dropLengthMinutes / 60) * hourHeight - 2,
+                            }}
                           />
                         )}
                         {showsToday && (
@@ -416,6 +632,7 @@ function CalendarView({
                         <span className={isPastDateKey(task.deadline, todayKey) ? "is-overdue" : ""}>due {formatDateKey(task.deadline, todayKey)}</span>
                       )}
                     </div>
+                    <DragGrip task={task} />
                     <button type="button" className="button small" onClick={() => void plan(task)}>Plan</button>
                   </motion.li>
                 ))}
@@ -459,6 +676,7 @@ function CalendarView({
           />
         )}
       </AnimatePresence>
+      <p className="sr-only" role="status" data-calendar-status="">{announcement}</p>
     </section>
   );
 }
