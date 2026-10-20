@@ -134,6 +134,27 @@ test("the completion wash plays once, on the row that lands in Completed", async
   expect((await washes()).starts).toBe(1);
 });
 
+test("a row landing under an open panel never takes the focus back", async ({ page }) => {
+  await signUp(page, newEmail("travel-focus-panel"));
+  await openTasks(page);
+  await addTask(page, "Beat focus task");
+
+  // Complete, then open the same row inside the beat: it is still where the
+  // check is, so the panel grows out of it while the completion is in flight.
+  await page.getByRole("checkbox", { name: "Complete: Beat focus task" }).click();
+  await page.getByRole("button", { name: "Beat focus task" }).click();
+
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+
+  // The row lands in Completed while the panel is open. The check that travelled
+  // must not pull the caret out of the field the user just opened.
+  await expect(groupOf(page, "Completed").locator("li.task", { hasText: "Beat focus task" })).toHaveCount(1);
+  await page.waitForTimeout(500);
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+});
+
 test.describe("with reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
 

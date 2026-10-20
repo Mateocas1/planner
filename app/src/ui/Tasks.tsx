@@ -103,9 +103,12 @@ export function Tasks({
   useEffect(() => {
     const id = restoreFocus.current;
     if (id === null || settling.has(id) || busy) return;
-    // the user has since moved to another check: never steal their focus
+    // Only a row that lost the caret to the node swap gets it back: replacing
+    // the row's node drops focus to <body>. Anything else holding focus (a
+    // panel opened mid-travel, a creation sheet, another row's check) is where
+    // the user deliberately is, and nothing here may take it away.
     const active = document.activeElement;
-    if (active instanceof HTMLInputElement && active.classList.contains("task-check")) return;
+    if (active !== null && active !== document.body) return;
     const check = document.querySelector<HTMLInputElement>(`li.task[data-task-id="${CSS.escape(id)}"] input.task-check`);
     if (!check || check.disabled) return;
     restoreFocus.current = null;
