@@ -16,6 +16,32 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${shotDir}/${name}.png` });
 }
 
+/** Decodes two PNG screenshots in the page and counts pixels whose largest channel delta exceeds `tolerance`. */
+async function changedPixels(page: Page, a: Buffer, b: Buffer, tolerance: number) {
+  return page.evaluate(
+    async ({ a, b, tolerance }) => {
+      const decode = async (base64: string) => {
+        const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = canvas.getContext("2d")!;
+        context.drawImage(bitmap, 0, 0);
+        return context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      };
+      const [pa, pb] = [await decode(a), await decode(b)];
+      let changed = 0;
+      let peak = 0;
+      for (let i = 0; i < pa.length; i += 4) {
+        const delta = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]));
+        peak = Math.max(peak, delta);
+        if (delta > tolerance) changed += 1;
+      }
+      return { changed, peak };
+    },
+    { a: a.toString("base64"), b: b.toString("base64"), tolerance },
+  );
+}
+
 function newEmail() {
   return `glass-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
 }
@@ -364,43 +390,107 @@ test("lens: displacement filter only where the map can render", async ({ page })
 
   await enterApp(page);
   const root = page.locator("html");
+
+  /* The pills sit in glass chrome, which is a backdrop root: none of them carries the lens. */
+  await expect(page.locator(".nav-pill")).toHaveCount(1);
+  await expect(page.locator(".nav-pill.glass-lens")).toHaveCount(0);
+
+  /* The floating button is the host. It renders only at phone widths, and the gate needs more than 390px, so 600px is where both hold. */
+  await page.setViewportSize({ width: 600, height: 900 });
   await expect(root).toHaveAttribute("data-lens", "");
+  const fab = page.locator(".fab");
+  await expect(fab).toHaveClass(/glass-lens/);
+  await expect(page.locator(".glass-lens")).toHaveCount(1);
 
-  /* Nothing readable sits inside the filtered layer: the label is a sibling. */
+  /* The host sits on the page: no ancestor is a backdrop root, so the lens samples live content. */
+  expect(
+    await fab.evaluate((element) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.backdropFilter !== "none" || style.filter !== "none" || style.opacity !== "1") return false;
+      }
+      return true;
+    }),
+  ).toBe(true);
+
+  /* The button floats in the viewport's bottom-right corner, not in the page's flow. */
+  const box = await fab.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(600);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(900);
+
+  /* Nothing readable sits inside the filtered layer. The icon is SVG art, painted above the backdrop. */
   const layers = await page.locator(".glass-lens").evaluateAll((elements) =>
-    elements.map((element) => ({ text: element.textContent?.trim() ?? "", children: element.childElementCount })),
+    elements.map((element) => ({
+      text: element.textContent?.trim() ?? "",
+      readable: [...element.querySelectorAll("*")].filter((child) => !(child instanceof SVGElement)).length,
+    })),
   );
-  expect(layers.length).toBeGreaterThan(0);
-  for (const layer of layers) {
-    expect(layer.text).toBe("");
-    expect(layer.children).toBe(0);
-  }
+  expect(layers).toHaveLength(1);
+  expect(layers[0].text).toBe("");
+  expect(layers[0].readable).toBe(0);
 
-  const filterOf = async (selector: string) =>
-    page.locator(selector).first().evaluate((element) => getComputedStyle(element).backdropFilter);
+  const filterOf = async () => fab.evaluate((element) => getComputedStyle(element).backdropFilter);
+  expect(await filterOf()).toContain("url(");
 
-  expect(await filterOf(".nav-pill.glass-lens")).toContain("url(");
+  /* A flat page refracts to itself, so put a high-contrast probe under the button (z 25, the button is 30). */
+  await fab.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const probe = document.createElement("div");
+    probe.id = "lens-probe";
+    probe.style.cssText = `position:fixed;z-index:25;left:${box.left - 40}px;top:${box.top - 40}px;width:${box.width + 80}px;height:${box.height + 80}px;background:repeating-linear-gradient(45deg,#000 0 6px,#fff 6px 12px);`;
+    document.body.append(probe);
+  });
+
+  /* Perceptible: lens on, lens removed, and the lens blur without its displacement. The displacement alone must change the pixels. */
+  /* The button is position: fixed, so an element screenshot can miss it; clip the viewport to its box instead. */
   mkdirSync(shotDir, { recursive: true });
-  await page.locator(".sidebar").screenshot({ path: `${shotDir}/light-lens.png` });
+  await page.mouse.move(0, 0);
+  const shotOf = async (name: string) =>
+    page.screenshot({
+      path: `${shotDir}/${name}.png`,
+      clip: (await fab.boundingBox()) ?? undefined,
+      animations: "disabled",
+      caret: "hide",
+    });
+  const lensOn = await shotOf("fab-lens");
+  await fab.evaluate((element) => {
+    element.style.setProperty("backdrop-filter", "blur(1px) saturate(160%)", "important");
+    element.style.setProperty("-webkit-backdrop-filter", "blur(1px) saturate(160%)", "important");
+  });
+  const blurOnly = await shotOf("fab-blur-only");
+  await fab.evaluate((element) => {
+    element.style.removeProperty("backdrop-filter");
+    element.style.removeProperty("-webkit-backdrop-filter");
+  });
+  await page.evaluate(() => document.documentElement.removeAttribute("data-lens"));
+  const lensOff = await shotOf("fab-lens-off");
+  expect(lensOn.equals(lensOff)).toBe(false);
+  expect(lensOn.equals(blurOnly)).toBe(false);
+  /* Measured at 2x: the displacement alone moves ~10k of 57.6k pixels (peak delta 79). The floor is a tenth of that. */
+  expect((await changedPixels(page, lensOn, blurOnly, 16)).changed).toBeGreaterThan(1000);
+  expect((await changedPixels(page, lensOn, lensOff, 16)).changed).toBeGreaterThan(1000);
+  await page.evaluate(() => document.getElementById("lens-probe")?.remove());
 
-  /* A phone width revokes the gate, and CSS agrees on the pill it can see. */
+  /* A phone width revokes the gate, and the button falls back to the plain material. */
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
-  expect(await filterOf(".tab-pill.glass-lens")).toBe("none");
+  expect(await filterOf()).not.toContain("url(");
 
-  /* Back to desktop, then each reduced preference closes the gate again. */
-  await page.setViewportSize({ width: 1280, height: 720 });
+  /* Back to 600px, then each reduced preference closes the gate again. */
+  await page.setViewportSize({ width: 600, height: 900 });
   await expect(root).toHaveAttribute("data-lens", "");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
-  expect(await filterOf(".nav-pill.glass-lens")).toBe("none");
+  expect(await filterOf()).not.toContain("url(");
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect(root).toHaveAttribute("data-lens", "");
 
   await emulateReducedTransparency(page, "reduce");
   await expect.poll(async () => root.getAttribute("data-lens")).toBeNull();
-  expect(await filterOf(".nav-pill.glass-lens")).toBe("none");
+  expect(await filterOf()).not.toContain("url(");
   await emulateReducedTransparency(page, "no-preference");
   await expect(root).toHaveAttribute("data-lens", "");
 });
@@ -410,10 +500,11 @@ test.describe("non-Blink engine", () => {
 
   test("lens: no displacement filter on a Firefox user agent", async ({ page }) => {
     await enterApp(page);
+    await page.setViewportSize({ width: 600, height: 900 });
     expect(await page.evaluate(() => navigator.userAgent)).toContain("Firefox");
     expect(await page.locator("html").getAttribute("data-lens")).toBeNull();
     expect(
-      await page.locator(".nav-pill.glass-lens").evaluate((element) => getComputedStyle(element).backdropFilter),
-    ).toBe("none");
+      await page.locator(".fab").evaluate((element) => getComputedStyle(element).backdropFilter),
+    ).not.toContain("url(");
   });
 });

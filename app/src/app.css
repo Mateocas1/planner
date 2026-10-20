@@ -1451,6 +1451,10 @@ select.form-control { text-align: left; cursor: pointer; }
 
 .fab svg { width: 24px; height: 24px; }
 
+/* `.glass` sets position: relative for its rim, and glass.css loads after this
+   file, so the floating button needs a higher-specificity rule to stay fixed. */
+.glass.fab { position: fixed; }
+
 .account-menu { position: relative; }
 
 .popover {

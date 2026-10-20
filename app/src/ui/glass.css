@@ -383,11 +383,15 @@ body::before {
 
 /* ---------- lens (G5) ---------- */
 
-/* The pill element itself carries the displacement filter, and it carries no
-   text: the backdrop bends, the label above it never moves. `.glass-lens` alone
-   is inert; `html[data-lens]` (set by ui/lens.ts only for a wide Chromium
-   pointer with motion and transparency allowed) is what turns the map on.
-   Below that gate the pill keeps the material from the controls block. */
+/* The lens lives on the floating action button only. Its parent is `.shell`,
+   which has no backdrop-filter, so the button samples the live page. The nav
+   and tab pills sit inside `.glass` chrome, a backdrop root, so a filter there
+   samples an already-flat surface and is not perceptible (G4/G5 probe).
+   `backdrop-filter` bends only what is behind the element; the icon, a child,
+   is painted above it and never moves. `.glass-lens` alone is inert;
+   `html[data-lens]` (set by ui/lens.ts only for a wide Chromium pointer with
+   motion and transparency allowed) is what turns the map on. Below that gate
+   the button keeps the material from the controls block. */
 
 html[data-lens] .glass-lens {
   background-color: var(--glass-lens-tint);

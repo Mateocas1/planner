@@ -85,7 +85,7 @@ export function Sidebar({
             data-sheen={view === id ? "" : undefined}
             onClick={() => onNavigate(id)}
           >
-            {view === id && <motion.span layoutId="nav-pill" className="nav-pill glass-lens" transition={spring.snappy} aria-hidden="true" />}
+            {view === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={spring.snappy} aria-hidden="true" />}
             <Icon className="nav-icon" />
             <span className="nav-label">{label}</span>
             {id === "tasks" && openCount > 0 && (

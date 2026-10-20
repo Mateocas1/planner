@@ -152,7 +152,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       {phone && (
         <>
           <TabBar view={view} onNavigate={onNavigate} />
-          <button type="button" className="fab glass glass-control" aria-label="New task" onClick={newTask}>
+          <button type="button" className="fab glass glass-control glass-lens" aria-label="New task" onClick={newTask}>
             <PlusIcon />
           </button>
         </>
@@ -174,7 +174,7 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
           {view === id && (
             <motion.span
               layoutId="tab-pill"
-              className="tab-pill glass-lens"
+              className="tab-pill"
               aria-hidden="true"
               transition={spring.smooth}
               animate={{ scaleX: [1.18, 1], scaleY: [0.9, 1] }}
