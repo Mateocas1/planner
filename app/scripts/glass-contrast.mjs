@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Contrast proof for glass materials (G1 acceptance, extended by M2c to the
- * palette's filled rows and the toast's own fill).
+ * palette's filled rows and the toast's own fill, and by C2b to the solid
+ * surfaces: opaque backdrops, accent fills, category tints, selection and the
+ * semantic state colours, all of which carry text somewhere in the app).
  *
  * Reads the real tokens out of `src/app.css` and `src/ui/glass.css`, composites
  * every glass tint over the backdrops the app actually puts behind chrome, and
@@ -417,6 +419,71 @@ for (const scheme of ["light", "dark"]) {
       surface: toHex(graphic.base),
       value,
       floor: graphic.floor,
+      enforced: true,
+      pass,
+    });
+  }
+}
+
+/* ---------- solid surfaces (C2b) ----------
+ *
+ * Everything above proves glass. Most text in the app does not sit on glass: it
+ * sits on the opaque page and card backdrops, or inside a filled control. These
+ * rows hold the same ceiling on the surfaces the tokens are painted on directly.
+ *
+ * `--now` also appears as *text* (the today marker in the mini calendar, the day
+ * header and the agenda's now line), so the state rows prove it per backdrop
+ * rather than only as a fill behind `--on-now`.
+ */
+for (const scheme of ["light", "dark"]) {
+  const tokens = new Map([
+    ...app.light,
+    ...glass.light,
+    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
+  ]);
+  const get = (name) => parseColor(tokens.get(name), tokens);
+  const pairs = [];
+  for (const base of ["--bg-top", "--bg", "--surface", "--surface-2"]) {
+    for (const label of LABELS) pairs.push({ name: "solid", backdrop: base, label, bg: get(base), floor: AA });
+    pairs.push({ name: "accent-text", backdrop: base, label: "--accent", bg: get(base), floor: AA });
+    /* The focus ring is a graphic object, so it is held to 1.4.11 instead. */
+    pairs.push({ name: "accent-ring", backdrop: base, label: "--accent", bg: get(base), floor: NON_TEXT });
+  }
+  for (const [name, bgToken, label] of [
+    ["accent-fill", "--accent", "--on-accent"],
+    ["accent-hover-fill", "--accent-hover", "--on-accent"],
+    ["now-fill", "--now", "--on-now"],
+  ])
+    pairs.push({ name, backdrop: bgToken, label, bg: get(bgToken), floor: AA });
+  /* A category block is a translucent fill over the page, its ink on top. */
+  for (const cat of ["focus", "task"])
+    for (const base of ["--surface", "--bg-top"])
+      pairs.push({
+        name: `cat-${cat}`,
+        backdrop: base,
+        label: `--cat-${cat}-ink`,
+        bg: over(get(`--cat-${cat}-bg`), get(base)),
+        floor: AA,
+      });
+  /* `::selection` paints `--label` on the accent wash. */
+  for (const base of ["--surface", "--bg-top"])
+    pairs.push({ name: "selection", backdrop: base, label: "--label", bg: over(get("--accent-soft"), get(base)), floor: AA });
+  /* Semantic state text, proven on every solid it is printed on. */
+  for (const state of ["--red", "--orange", "--green", "--now"])
+    for (const base of ["--surface", "--bg-top", "--surface-2"])
+      pairs.push({ name: "state", backdrop: base, label: state, bg: get(base), floor: AA });
+  for (const p of pairs) {
+    const value = ratio(get(p.label), p.bg);
+    const pass = value >= p.floor;
+    if (!pass) failures += 1;
+    rows.push({
+      scheme,
+      material: p.name,
+      backdrop: p.backdrop,
+      label: p.label,
+      surface: toHex(p.bg),
+      value,
+      floor: p.floor,
       enforced: true,
       pass,
     });

@@ -40,7 +40,7 @@
   --accent-hover: #0059B3;
   --accent-soft: rgb(0 102 204 / 0.10);
   --on-accent: #FFFFFF;
-  --now: #D92D20;
+  --now: #CB1E21;
   --on-now: #FFFFFF;
   --red: #C8102E;
   --orange: #A34A00;
@@ -101,7 +101,9 @@
     --accent-hover: #6FA8EA;
     --accent-soft: rgb(91 155 230 / 0.16);
     --on-accent: #0B1522;
-    --now: #D33A2F;
+    --now: #F66D62;
+    /* dark --now is a light red, so its ink flips to the page colour */
+    --on-now: #0B0E15;
     --red: #F07A70;
     --orange: #E7A45C;
     --green: #6CC488;
