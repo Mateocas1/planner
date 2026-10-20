@@ -1588,19 +1588,20 @@ select.form-control { text-align: left; cursor: pointer; }
 :root {
   --morph-dur: 340ms;
   /* The view-transition tree is not a descendant of :root, so the direction is
-     handed to it through inherited properties rather than a selector. */
-  --morph-ease: var(--ease-out);
+     handed to it through inherited properties rather than a selector. The box
+     is moving across the screen rather than entering from nowhere, so its curve
+     is an ease-in-out: the fade-in covers the slow first frames and the growth
+     stays legible to the end. The sides fade on the UI ease-out. */
+  --morph-ease: cubic-bezier(0.65, 0, 0.35, 1);
   --morph-old: morph-absent var(--morph-dur) linear both;
   --morph-new: morph-in var(--morph-dur) var(--ease-out) both;
 }
 
-/* A dismissal travels less ground, and on a steadier curve: the panel has to
-   stay legible while it collapses into the row, which a hard ease-out would
-   spend in its first frames. */
+/* A dismissal travels less ground on the same curve, so the panel stays
+   legible while it collapses into the row instead of spending its start. */
 :root[data-morph="out"] {
   --morph-dur: 240ms;
-  --morph-ease: cubic-bezier(0.32, 0, 0.24, 1);
-  --morph-old: morph-out var(--morph-dur) var(--morph-ease) both;
+  --morph-old: morph-out var(--morph-dur) var(--ease-out) both;
   --morph-new: morph-absent var(--morph-dur) linear both;
 }
 
