@@ -372,6 +372,116 @@ test("selecting a row opens the details panel, and it closes via Close and Escap
   await expect(panel).toHaveCount(0);
 });
 
+/** Records the view transitions the page starts, through the app's own code
+ * path: a morph is the only caller of document.startViewTransition. `ready`
+ * settles only once the snapshots were taken, so an abort (a duplicate shared
+ * name, an invalid state) shows up as `aborted` instead of a silent pass. */
+async function recordViewTransitions(page: Page) {
+  await page.addInitScript(() => {
+    const scope = globalThis as { __vtStarted?: number; __vtReady?: number; __vtAborted?: number };
+    scope.__vtStarted = 0;
+    scope.__vtReady = 0;
+    scope.__vtAborted = 0;
+    const start = document.startViewTransition?.bind(document);
+    if (!start) return;
+    document.startViewTransition = callback => {
+      scope.__vtStarted = (scope.__vtStarted ?? 0) + 1;
+      const transition = start(callback);
+      transition.ready.then(
+        () => { scope.__vtReady = (scope.__vtReady ?? 0) + 1; },
+        () => { scope.__vtAborted = (scope.__vtAborted ?? 0) + 1; },
+      );
+      return transition;
+    };
+  });
+}
+
+function viewTransitions(page: Page) {
+  return page.evaluate(() => {
+    const scope = globalThis as { __vtStarted?: number; __vtReady?: number; __vtAborted?: number };
+    return { started: scope.__vtStarted ?? 0, ready: scope.__vtReady ?? 0, aborted: scope.__vtAborted ?? 0 };
+  });
+}
+
+test("the row morphs into the details panel and focus returns to the row", async ({ page }) => {
+  await recordViewTransitions(page);
+  const email = newEmail("morph");
+  await signUp(page, email);
+  await openTasks(page);
+  await addTaskThroughForm(page, "Morph task");
+
+  const opener = page.getByRole("button", { name: "Morph task" });
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  // only the details panel morphs: the creation sheet keeps its own entry
+  expect((await viewTransitions(page)).started).toBe(0);
+
+  await opener.click();
+  await expect(panel).toBeVisible();
+  // the caret lands in the panel, and the row grew into it rather than popped
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+  await expect.poll(async () => (await viewTransitions(page)).ready).toBe(1);
+  // the morph drops the blur from the captured box only (app.css); the panel on
+  // screen keeps the glass material glass.css gives it
+  const material = await panel.evaluate(element => getComputedStyle(element).backdropFilter);
+  expect(material).toContain("blur");
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect.poll(async () => (await viewTransitions(page)).ready).toBe(2);
+
+  // opening another task right after a close lands on a settled page, not on
+  // two stacked transitions
+  await opener.click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect.poll(async () => (await viewTransitions(page)).ready).toBe(4);
+  expect((await viewTransitions(page)).aborted).toBe(0);
+});
+
+// A sheet whose exit is still playing finishes after the user moved on, and it
+// must not take the caret back when it unmounts: the row opened meanwhile keeps
+// its details field focused, and the creation sheet's origin is left alone.
+test("a sheet still animating out never takes the caret back from the panel opened meanwhile", async ({ page }) => {
+  const email = newEmail("focus-handoff");
+  await signUp(page, email);
+  await openTasks(page);
+  // the row is visible before the creation sheet has finished leaving, so the
+  // panel is opened inside that window
+  await addTaskThroughForm(page, "Handoff");
+
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await page.getByRole("button", { name: "Handoff" }).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+  // and it is still there once the creation sheet is gone for good
+  await expect(page.getByRole("complementary", { name: "New task" })).toHaveCount(0);
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+});
+
+test("reduced motion opens the details panel without a view transition", async ({ page }) => {
+  await recordViewTransitions(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const email = newEmail("morph-reduced");
+  await signUp(page, email);
+  await openTasks(page);
+  await addTaskThroughForm(page, "Calm task");
+
+  const opener = page.getByRole("button", { name: "Calm task" });
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await opener.click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+  expect((await viewTransitions(page)).started).toBe(0);
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  expect((await viewTransitions(page)).started).toBe(0);
+});
+
 test("the list groups open and completed tasks under counted headings", async ({ page }) => {
   const email = newEmail("groups");
   await signUp(page, email);

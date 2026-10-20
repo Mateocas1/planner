@@ -282,7 +282,10 @@ test("a second delete replaces the toast, and undo then restores only the newest
   await page.getByRole("button", { name: "First" }).click();
   await page.getByRole("button", { name: "Delete task" }).click();
   await expectToastSentence(page, "Task deleted");
+  // `data-offer` names the offer on screen. The first delete's is what is
+  // showing right now; the second delete's replaces it once its write lands.
   const firstOffer = await undoToast(page).getAttribute("data-offer");
+  if (firstOffer === null) throw new Error("the first delete left no offer on screen");
 
   // a sheet plays its return animation before it leaves the DOM, so the next
   // panel is only opened once the previous one is really gone
@@ -299,8 +302,10 @@ test("a second delete replaces the toast, and undo then restores only the newest
       return offer !== null && offer !== firstOffer;
     })
     .toBe(true);
-  // one offer, not two: the newest delete owns it
+  // one offer, not two: the newest delete owns it, and it is not the one the
+  // first delete left behind
   await expect(undoToast(page)).toHaveCount(1);
+  await expect(undoToast(page)).not.toHaveAttribute("data-offer", firstOffer);
   await expectToastSentence(page, "Task deleted");
 
   await undoToast(page).getByRole("button", { name: "Undo" }).click();
