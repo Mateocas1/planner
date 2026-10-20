@@ -1,7 +1,7 @@
 import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createTask } from "../domain/model.ts";
 import { db } from "./client.ts";
-import { trackRemoval } from "./pending.ts";
+import { forgetRemoval, trackRemoval } from "./pending.ts";
 
 /**
  * Task write helpers against `users/{uid}/tasks`. Each helper validates through
@@ -44,7 +44,7 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 }
 
 export async function deleteTask(uid: string, taskId: string) {
-  await trackRemoval(deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
+  await trackRemoval(`users/${uid}/tasks/${taskId}`, deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
 }
 
 /** A task exactly as it was stored, captured before it is deleted. */
@@ -60,9 +60,14 @@ export type DeletedTask = { id: string; title: string; completed: boolean; deadl
 export async function restoreTask(uid: string, task: DeletedTask) {
   const validated = createTask(task.id, task.title, task.deadline);
   if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
-  await setDoc(doc(db, `users/${uid}/tasks/${task.id}`), {
+  const path = `users/${uid}/tasks/${task.id}`;
+  const write = setDoc(doc(db, path), {
     title: validated.title,
     completed: task.completed,
     ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
   });
+  // The restore is the pending write now: the delete it undoes no longer counts
+  // on its own (see forgetRemoval), so one document is one pending change.
+  forgetRemoval(path);
+  await write;
 }

@@ -1,7 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createWorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
-import { trackRemoval } from "./pending.ts";
+import { forgetRemoval, trackRemoval } from "./pending.ts";
 
 /**
  * Work block write helpers against `users/{uid}/blocks`. Input is validated by
@@ -28,7 +28,7 @@ export async function setBlockTimes(uid: string, blockId: string, start: string,
 }
 
 export async function deleteBlock(uid: string, blockId: string) {
-  await trackRemoval(deleteDoc(doc(db, `users/${uid}/blocks/${blockId}`)));
+  await trackRemoval(`users/${uid}/blocks/${blockId}`, deleteDoc(doc(db, `users/${uid}/blocks/${blockId}`)));
 }
 
 /** A work block exactly as it was stored, captured before it is deleted. */
@@ -43,9 +43,14 @@ export type DeletedBlock = { id: string; start: string; end: string; taskId?: st
 export async function restoreBlock(uid: string, block: DeletedBlock) {
   const validated = createWorkBlock(block.id, block.start, block.end, block.taskId);
   if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
-  await setDoc(doc(db, `users/${uid}/blocks/${block.id}`), {
+  const path = `users/${uid}/blocks/${block.id}`;
+  const write = setDoc(doc(db, path), {
     start: validated.start,
     end: validated.end,
     ...(validated.taskId === undefined ? {} : { taskId: validated.taskId }),
   });
+  // The restore is the pending write now: the delete it undoes no longer counts
+  // on its own (see forgetRemoval), so one document is one pending change.
+  forgetRemoval(path);
+  await write;
 }
