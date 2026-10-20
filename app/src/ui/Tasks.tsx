@@ -65,6 +65,8 @@ export function Tasks({
   loading,
   today,
   onDeleted,
+  openTaskId = null,
+  onOpenTaskHandled,
 }: {
   uid: string;
   tasks: TaskView[];
@@ -73,10 +75,14 @@ export function Tasks({
   loading: boolean;
   today: string;
   onDeleted: (item: UndoableDelete) => void;
+  /** A task the shell asked this surface to reveal, e.g. one the command
+   * palette found. Null when nothing is pending. */
+  openTaskId?: string | null;
+  onOpenTaskHandled?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement } | null>(null);
+  const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement | null } | null>(null);
   // Rows whose completion the user just performed: the wash plays only on
   // these, never on mount for rows that were already completed.
   const [washIds, setWashIds] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -85,6 +91,20 @@ export function Tasks({
   const timers = useRef(new Map<string, number>());
 
   useEffect(() => () => timers.current.forEach(id => window.clearTimeout(id)), []);
+
+  /* A request from the shell (the command palette) opens one task's details.
+     It waits for the store to deliver the task, then clears itself; a request
+     for a task that is not there is dropped once loading has finished. */
+  useEffect(() => {
+    if (!openTaskId) return;
+    const task = tasks.find(entry => entry.id === openTaskId);
+    if (!task) {
+      if (!loading) onOpenTaskHandled?.();
+      return;
+    }
+    setSelected({ kind: "task", id: task.id, origin: null });
+    onOpenTaskHandled?.();
+  }, [openTaskId, tasks, loading, onOpenTaskHandled]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
