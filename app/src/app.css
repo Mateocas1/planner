@@ -615,18 +615,6 @@ time,
   padding: 8px 10px 4px;
 }
 
-.sync {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: var(--text-caption);
-  color: var(--label-3);
-}
-
-.sync svg { width: 16px; height: 16px; flex: none; color: var(--green); }
-.sync.is-pending svg { color: var(--accent); }
-.sync.is-offline svg { color: var(--orange); }
-
 .account {
   display: flex;
   align-items: baseline;

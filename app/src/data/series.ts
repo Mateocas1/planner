@@ -1,6 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createOccurrenceCompletion, createTask, expandOccurrences, occurrenceId, type Recurrence } from "../domain/model.ts";
 import { db } from "./client.ts";
+import { trackRemoval } from "./pending.ts";
 
 /** Frequency of a recurring series, exactly as the domain defines it. */
 export type Frequency = Recurrence["frequency"];
@@ -76,7 +77,7 @@ export async function setSeriesAnchor(uid: string, seriesId: string, frequency: 
  */
 export async function deleteSeries(uid: string, seriesId: string) {
   if (!seriesId || seriesId.includes("/")) throw new Error("series ID is invalid");
-  await deleteDoc(doc(db, `users/${uid}/series/${seriesId}`));
+  await trackRemoval(deleteDoc(doc(db, `users/${uid}/series/${seriesId}`)));
 }
 
 /**

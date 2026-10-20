@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, type QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
 import type { Recurrence, Task, WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
+import { usePendingRemovals } from "./pending.ts";
 
 /** View type for a stored task: the domain Task plus its completion state. */
 export type TaskView = Task & { completed: boolean; pending: boolean };
@@ -23,6 +24,8 @@ export type SeriesView = {
   deadline?: string;
 };
 
+type Collection = "tasks" | "blocks" | "series" | "completions";
+
 export type Store = {
   loading: boolean;
   tasks: TaskView[];
@@ -30,6 +33,11 @@ export type Store = {
   series: SeriesView[];
   /** Completion records keyed by occurrenceId, valued by completedAt. */
   completions: Record<string, string>;
+  /**
+   * Writes the server has not acknowledged: documents still flagged by their
+   * metadata, plus deletes (see trackRemoval), across every collection.
+   */
+  pendingWrites: number;
 };
 
 function toTask(doc: QueryDocumentSnapshot): TaskView {
@@ -72,17 +80,25 @@ function toCompletions(docs: QueryDocumentSnapshot[]): Record<string, string> {
 }
 
 export function useStore(uid: string | null): Store {
-  const [store, setStore] = useState<Store>({ loading: true, tasks: [], blocks: [], series: [], completions: {} });
+  const [store, setStore] = useState<Store>({ loading: true, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
 
   useEffect(() => {
     if (!uid) {
-      setStore({ loading: false, tasks: [], blocks: [], series: [], completions: {} });
+      setStore({ loading: false, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
       return;
     }
-    setStore({ loading: true, tasks: [], blocks: [], series: [], completions: {} });
+    setStore({ loading: true, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
 
-    const outstanding = new Set(["tasks", "blocks", "series", "completions"]);
-    const delivered = (collection: "tasks" | "blocks" | "series" | "completions") => {
+    // Documents still flagged as pending, per collection. Deletes are counted
+    // separately, from their own writes, because a removal is never flagged.
+    const flagged: Record<Collection, number> = { tasks: 0, blocks: 0, series: 0, completions: 0 };
+    const track = (name: Collection, snapshot: QuerySnapshot) => {
+      flagged[name] = snapshot.docs.filter(doc => doc.metadata.hasPendingWrites).length;
+      return Object.values(flagged).reduce((sum, count) => sum + count, 0);
+    };
+
+    const outstanding = new Set<Collection>(["tasks", "blocks", "series", "completions"]);
+    const delivered = (collection: Collection) => {
       outstanding.delete(collection);
       if (outstanding.size === 0) setStore(previous => ({ ...previous, loading: false }));
     };
@@ -94,7 +110,8 @@ export function useStore(uid: string | null): Store {
       collection(db, `users/${uid}/tasks`),
       { includeMetadataChanges: true },
       snapshot => {
-        setStore(previous => ({ ...previous, tasks: snapshot.docs.map(toTask) }));
+        const pendingWrites = track("tasks", snapshot);
+        setStore(previous => ({ ...previous, tasks: snapshot.docs.map(toTask), pendingWrites }));
         delivered("tasks");
       },
       onError,
@@ -103,7 +120,8 @@ export function useStore(uid: string | null): Store {
       collection(db, `users/${uid}/blocks`),
       { includeMetadataChanges: true },
       snapshot => {
-        setStore(previous => ({ ...previous, blocks: snapshot.docs.map(toBlock) }));
+        const pendingWrites = track("blocks", snapshot);
+        setStore(previous => ({ ...previous, blocks: snapshot.docs.map(toBlock), pendingWrites }));
         delivered("blocks");
       },
       onError,
@@ -112,7 +130,8 @@ export function useStore(uid: string | null): Store {
       collection(db, `users/${uid}/series`),
       { includeMetadataChanges: true },
       snapshot => {
-        setStore(previous => ({ ...previous, series: snapshot.docs.map(toSeries) }));
+        const pendingWrites = track("series", snapshot);
+        setStore(previous => ({ ...previous, series: snapshot.docs.map(toSeries), pendingWrites }));
         delivered("series");
       },
       onError,
@@ -121,7 +140,8 @@ export function useStore(uid: string | null): Store {
       collection(db, `users/${uid}/completions`),
       { includeMetadataChanges: true },
       snapshot => {
-        setStore(previous => ({ ...previous, completions: toCompletions(snapshot.docs) }));
+        const pendingWrites = track("completions", snapshot);
+        setStore(previous => ({ ...previous, completions: toCompletions(snapshot.docs), pendingWrites }));
         delivered("completions");
       },
       onError,
@@ -134,5 +154,6 @@ export function useStore(uid: string | null): Store {
     };
   }, [uid]);
 
-  return store;
+  const removals = usePendingRemovals();
+  return removals === 0 ? store : { ...store, pendingWrites: store.pendingWrites + removals };
 }
