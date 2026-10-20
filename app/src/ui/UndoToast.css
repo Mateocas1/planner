@@ -41,11 +41,12 @@
   color: var(--toast-label);
   font-size: var(--text-sub);
 
-  /* The closed state is also the exit target: 160 ms out. */
+  /* The closed state is also the exit target: 160 ms out. No `will-change`: the
+     offer is on screen for a few seconds, so a permanent compositor layer would
+     be held by an element that is idle almost all of the time. */
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out);
-  will-change: opacity, transform;
 }
 
 /* Open: 200 ms in. @starting-style supplies the frame to travel from, so the
@@ -86,7 +87,14 @@
   transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
 }
 
-.undo-toast-action:hover { background: var(--accent-hover); }
+/* Hover belongs to a fine pointer: a touch tap fires a false hover on both
+   controls, and the button's fill is the only feedback it needs. Press
+   feedback stays ungated, because it is the answer to the tap itself. */
+@media (hover: hover) and (pointer: fine) {
+  .undo-toast-action:hover { background: var(--accent-hover); }
+  .undo-toast-close:hover { color: var(--toast-label); }
+}
+
 .undo-toast-action:active { transform: scale(0.96); }
 
 .undo-toast-close {
@@ -100,7 +108,6 @@
   transition: transform var(--dur-press) var(--ease-out), color var(--dur-hover) ease;
 }
 
-.undo-toast-close:hover { color: var(--toast-label); }
 .undo-toast-close:active { transform: scale(0.94); }
 .undo-toast-close svg { width: 14px; height: 14px; }
 

@@ -2,14 +2,18 @@
  * Glass lens gate (glass-direction §2 refraction, §5 G5).
  *
  * The lens is a `feDisplacementMap` (`#glass-lens`, defined in index.html) used
- * as a `backdrop-filter` on the pill that slides between tabs. It is a delight
- * layer on a Chromium-only rendering path, so it ships under a gate rather than
- * as a fallback we have to detect in CSS:
+ * as a `backdrop-filter` on the floating compose button — the one `.fab.glass-lens`
+ * host, rendered only at phone widths (App.tsx). The tab and nav pills never
+ * carry it: they sit inside `.glass` chrome, a backdrop root, so the map would
+ * sample an already-flat surface and never be perceptible (glass.css). It is a
+ * delight layer on a Chromium-only rendering path, so it ships under a gate
+ * rather than as a fallback we have to detect in CSS:
  *
  * - Blink only. Gecko and WebKit get the thin blur they already have.
  * - Fine pointer with hover. A phone never pays for a filter it cannot see follow.
  * - No reduced motion, no reduced transparency, no data saver.
- * - Wide viewport only: the filter is off at phone widths (≤ 390px).
+ * - Wide viewport only: the filter is off at phone widths (≤ 390px). With the
+ *   FAB capped at 760px, both conditions hold only in the 391–760px window.
  *
  * The predicate is pure so the whole matrix is tested without simulating engines.
  */

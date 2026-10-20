@@ -329,3 +329,41 @@ test("a tray neighbour reflows in the 250 ms spring, not the 400 ms one", async 
   expect(span).toBeLessThanOrEqual(360);
   expect(samples[samples.length - 1].transforms.every(transform => RESTING.has(transform))).toBe(true);
 });
+test("the undo toast holds no compositor layer and hovers only on a fine pointer", async ({ page }) => {
+  await signUp(page, newEmail("motion-toast"));
+  await openTasks(page);
+  await addTask(page, "Toast target");
+  await page.getByRole("button", { name: "Toast target" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  const toast = page.locator(".undo-toast");
+  await expect(toast).toBeVisible();
+
+  // the offer is idle almost all of the time, so it must not hold a layer
+  expect(await toast.evaluate(node => getComputedStyle(node).willChange)).toBe("auto");
+
+  // hover belongs behind a fine pointer: a touch tap fires a false hover
+  const gated = await page.evaluate(() => {
+    const found: Array<{ selector: string; media: string }> = [];
+    const walk = (rules: CSSRuleList, media: string) => {
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSMediaRule) walk(rule.cssRules, rule.conditionText);
+        else if (rule instanceof CSSStyleRule && /^\.undo-toast-(action|close):hover$/.test(rule.selectorText)) found.push({ selector: rule.selectorText, media });
+      }
+    };
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        walk(sheet.cssRules, "");
+      } catch {
+        // a cross-origin sheet cannot be inspected; the app's own CSS is local
+      }
+    }
+    return found;
+  });
+  expect(gated.map(rule => rule.selector).sort()).toEqual([".undo-toast-action:hover", ".undo-toast-close:hover"]);
+  for (const rule of gated) {
+    expect(rule.media).toMatch(/hover\s*:\s*hover/);
+    expect(rule.media).toMatch(/pointer\s*:\s*fine/);
+  }
+  // press feedback stays available on every pointer: it answers the tap itself
+  expect(await page.locator(".undo-toast-action").evaluate(node => getComputedStyle(node).transitionProperty)).toContain("transform");
+});
