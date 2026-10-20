@@ -51,11 +51,13 @@
   --green-fill: #2E9B4F;
   --wash: rgb(46 155 79 / 0.10);
 
-  /* calendar categories: a tinted fill plus an ink of the same hue */
+  /* calendar categories: a tinted fill plus an ink of the same hue. Focus is
+     the brand itself; task sits on plum (OKLCH hue 320), 52° away from 268, so
+     a task block never reads as a focus block and never as a state colour */
   --cat-focus-bg: rgb(60 92 217 / 0.10);
   --cat-focus-ink: var(--brand-800);
-  --cat-task-bg: rgb(104 76 196 / 0.11);
-  --cat-task-ink: #4E3597;
+  --cat-task-bg: rgb(146 64 164 / 0.11);
+  --cat-task-ink: #672675; /* plum 320, L .399 */
 
   /* glass tokens live in ui/glass.css (imported after this file) */
 
@@ -114,8 +116,8 @@
     --wash: rgb(108 196 136 / 0.10);
     --cat-focus-bg: rgb(117 152 255 / 0.15);
     --cat-focus-ink: var(--brand-400);
-    --cat-task-bg: rgb(150 130 230 / 0.15);
-    --cat-task-ink: #CEC3F4;
+    --cat-task-bg: rgb(194 130 208 / 0.15);
+    --cat-task-ink: #E0C2E7; /* plum 320, L .851 */
     color-scheme: dark;
   }
 }
