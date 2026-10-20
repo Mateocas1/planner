@@ -16,17 +16,30 @@ export const spring = {
 export const easeOut = [0.23, 1, 0.32, 1] as const;
 
 /**
- * Sheet tempos, in seconds for Motion. They extend the --dur-* ladder in app.css
- * past its interaction tokens: a surface appears in 150 ms, its content lands a
- * beat later, and a dismissal is gone in 180 ms. A sheet is opened a handful of
- * times an hour, so it sits at the fast end of the modal budget: the panel morph,
- * not the duration, is what makes it legible.
+ * The same curve as `easeOut`, spelled for CSS and WAAPI, which take a string.
+ * One curve in the product, one place to change it.
+ */
+export const easeOutCss = `cubic-bezier(${easeOut.join(", ")})`;
+
+/**
+ * The app's timing tokens, in seconds for Motion (WAAPI takes the same tokens
+ * millisecond by millisecond through `ms` below). They extend the --dur-* ladder
+ * in app.css past its interaction tokens: a page lands in 120 ms (the press
+ * budget, nothing held back for an exit), a surface appears in 150 ms, its
+ * content lands a beat later, its composited flight runs the modal budget, and
+ * a dismissal is gone in 180 ms. A sheet is opened a handful of times an hour,
+ * so the panel morph, not the duration, is what makes it legible.
  */
 export const dur = {
+  page: 0.12,
   pop: 0.15,
   enter: 0.16,
   exit: 0.18,
+  flight: 0.4,
 } as const;
+
+/** The same token in milliseconds, which is what WAAPI's `duration` takes. */
+export const ms = (seconds: number) => Math.round(seconds * 1000);
 
 /** True while a media query matches; follows changes. */
 export function useMediaQuery(query: string): boolean {

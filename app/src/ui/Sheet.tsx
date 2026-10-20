@@ -1,7 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { animate, usePresence, useReducedMotion } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
-import { dur, easeOut, spring } from "./motion.ts";
+import { dur, easeOut, easeOutCss, ms } from "./motion.ts";
+
+/** The resting transform every flight ends on: one string, never four props. */
+const restTransform = "translate(0px, 0px) scale(1, 1)";
+
+/** One composited transform for a sheet laid over a box `scale` times its size. */
+const flightTransform = (x: number, y: number, scaleX: number, scaleY: number) =>
+  `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})`;
 
 /**
  * The glass sheet (DESIGN.md §3, "Details"): a floating panel that grows out
@@ -19,11 +26,16 @@ import { dur, easeOut, spring } from "./motion.ts";
  * then the fallback path: no View Transition API, or reduced motion.
  *
  * The fallback entry is a FLIP on transform only: the sheet is laid out at
- * rest, then starts scaled and offset onto the source's rectangle and springs
- * home. The content fades in a beat later and never scales, so the field the
- * sheet focuses keeps its geometry. Without a measurable source (or with
- * reduced motion) the panel pops from its top-left corner over 150 ms and the
- * content rises the last 4 px.
+ * rest, then starts scaled and offset onto the source's rectangle and flies home
+ * on one composited `transform` string (WAAPI, 400 ms ease-out) while its
+ * opacity comes up behind it. One string, not x/y/scaleX/scaleY: those
+ * shorthands are written by script every frame, while a single transform runs
+ * off the main thread. No filter either: a blur on a backdrop-filter surface
+ * makes the glass behind it repaint flat, which is the material the sheet is
+ * made of. The content fades in a beat later and never gets a scale of its own,
+ * so the field the sheet focuses keeps its geometry. Without a measurable source
+ * (or with reduced motion) the panel pops from its top-left corner over 150 ms
+ * and the content rises the last 4 px.
  *
  * The fallback exit covers less ground than the entry: a dismissal says "gone",
  * not "back where it came from", so it travels 45% of the way to the source in
@@ -93,11 +105,17 @@ export function Sheet({
     if (!from) {
       // No measurable source, or reduced motion: the panel pops from its own
       // top-left corner and the content rises the last 4 px behind it. This is
-      // the one path where a rise is not the same motion twice.
-      animate(sheet, { opacity: [0, 1], scale: reduced ? 1 : [0.97, 1] }, { duration: dur.pop, ease: easeOut });
+      // the one path where a rise is not the same motion twice. With reduced
+      // motion neither scale nor rise is handed to Motion at all, so the only
+      // animation left is the fade.
+      animate(
+        sheet,
+        reduced ? { opacity: [0, 1] } : { opacity: [0, 1], scale: [0.97, 1] },
+        { duration: dur.pop, ease: easeOut },
+      );
       animate(
         body,
-        { opacity: [0, 1], y: reduced ? 0 : [4, 0] },
+        reduced ? { opacity: [0, 1] } : { opacity: [0, 1], y: [4, 0] },
         {
           duration: dur.enter,
           ease: easeOut,
@@ -110,17 +128,17 @@ export function Sheet({
       );
       return unregister;
     }
-    animate(
-      sheet,
-      {
-        x: [from.x, 0],
-        y: [from.y, 0],
-        scaleX: [from.scaleX, 1],
-        scaleY: [from.scaleY, 1],
-        opacity: [0.4, 1],
-        filter: ["blur(6px)", "blur(0px)"],
-      },
-      spring.smooth,
+    // The flight is native WAAPI with one transform string, so the browser owns
+    // it on the compositor even while the form it carries is still settling.
+    sheet.animate(
+      [
+        {
+          transform: flightTransform(from.x, from.y, from.scaleX, from.scaleY),
+          opacity: 0.4,
+        },
+        { transform: restTransform, opacity: 1 },
+      ],
+      { duration: ms(dur.flight), easing: easeOutCss },
     );
     // The panel already carries the movement, so the content only fades in: a
     // rise here would be the same motion twice, and the panel never scales the
@@ -155,18 +173,27 @@ export function Sheet({
     }
     animate(body, { opacity: 0 }, { duration: 0.1, ease: easeOut });
     const away = 0.45;
-    animate(
-      sheet,
-      {
-        x: to.x * away,
-        y: to.y * away,
-        scaleX: 1 + (to.scaleX - 1) * away,
-        scaleY: 1 + (to.scaleY - 1) * away,
-        opacity: 0,
-        filter: "blur(4px)",
-      },
-      { duration: dur.exit, ease: easeOut },
-    ).then(done);
+    // One keyframe: WAAPI takes the start from whatever the sheet is showing,
+    // so a dismissal fired mid-entry continues from there instead of snapping
+    // back to rest first. `forwards` holds the last frame until the unmount --
+    // with fill:none the removed animation would flash the panel back for a
+    // frame.
+    sheet
+      .animate(
+        [
+          {
+            transform: flightTransform(
+              to.x * away,
+              to.y * away,
+              1 + (to.scaleX - 1) * away,
+              1 + (to.scaleY - 1) * away,
+            ),
+            opacity: 0,
+          },
+        ],
+        { duration: ms(dur.exit), easing: easeOutCss, fill: "forwards" },
+      )
+      .finished.then(done, done);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPresent]);
 

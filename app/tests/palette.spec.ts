@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { password, readRemoteTasks, seedTaskAndBlock } from "./browser-helpers.ts";
 
@@ -153,18 +154,21 @@ test("a task found by title opens in its details panel from any view", async ({ 
   await expect(panel.getByLabel("Rename task")).toHaveValue("Pay the rent");
 });
 
-test("the palette enters in one 120 ms fade and scale, animates nothing per keystroke, and respects reduced motion", async ({ page }) => {
+test("the palette is painted at rest with no entrance at all, animates nothing per keystroke, and respects reduced motion", async ({ page }) => {
   const email = newEmail("palette-motion");
   await signUp(page, email);
 
+  // A keyboard shortcut used hundreds of times a day gets no animation, not a
+  // short one: the dialog is at rest on the frame it opens, with no transition,
+  // no keyframes and no @starting-style left to replay on the next Cmd+K.
+  const css = readFileSync(new URL("../src/ui/CommandPalette.css", import.meta.url), "utf8");
+  expect(css).not.toContain("@starting-style");
   await page.keyboard.press("Control+k");
   await expect(dialog(page)).toBeVisible();
-  // one transition, on transform and opacity only, inside the press budget,
-  // and no keyframes anywhere: nothing restarts from zero when it reopens
-  await expect(dialog(page)).toHaveCSS("transition-property", "opacity, transform");
-  await expect(dialog(page)).toHaveCSS("transition-duration", "0.12s, 0.12s");
+  await expect(dialog(page)).toHaveCSS("opacity", "1");
+  await expect(dialog(page)).toHaveCSS("transform", "none");
+  await expect(dialog(page)).toHaveCSS("transition-duration", "0s");
   await expect(dialog(page)).toHaveCSS("animation-name", "none");
-  await expect(dialog(page)).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
 
   // selecting or filtering rows while typing is never animated
   await field(page).fill("water the plants");
@@ -173,15 +177,16 @@ test("the palette enters in one 120 ms fade and scale, animates nothing per keys
   await expect(options(page).first()).toHaveCSS("animation-name", "none");
   await expect(field(page)).toHaveCSS("transition-duration", "0s");
 
-  // the OS preference collapses the entrance to the app's reduce duration
+  // the OS preference changes nothing here: there was never an entrance to
+  // collapse, so the reopening palette is also at rest immediately
   await page.keyboard.press("Escape");
   await expect(dialog(page)).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.keyboard.press("Control+k");
   await expect(dialog(page)).toBeVisible();
-  // the app's single reduce rule collapses every transition to one 1 ms value
-  await expect(dialog(page)).toHaveCSS("transition-duration", "0.001s");
-  await expect(dialog(page)).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  await expect(dialog(page)).toHaveCSS("opacity", "1");
+  await expect(dialog(page)).toHaveCSS("transform", "none");
+  await expect(dialog(page)).toHaveCSS("animation-name", "none");
 });
 
 test("the top bar trigger opens it, arrows wrap, Enter runs a destination, and a backdrop click closes it", async ({ page }) => {

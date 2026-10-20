@@ -19,9 +19,8 @@ const focusableSelector = 'button:not([disabled]), input:not([disabled]), [tabin
 
 /**
  * Command palette (Cmd/Ctrl+K). A keyboard surface opened hundreds of times a
- * day, so the whole thing is built to be instant: the only motion is the
- * 120 ms opacity/scale entrance (the press-feedback budget), closing never
- * waits for an animation, and no row animates while the user types.
+ * day, so the whole thing is built to be instant: it opens and closes with no
+ * animation at all, and no row animates while the user types.
  *
  * It is a native modal <dialog>, so the browser owns the backdrop, the top
  * layer and the inert page; Tab wrapping is wired explicitly because a dialog

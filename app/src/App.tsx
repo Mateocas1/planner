@@ -12,7 +12,7 @@ import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
-import { easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
+import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
 import { Sidebar, views } from "./ui/Sidebar.tsx";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
@@ -143,13 +143,17 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           </div>
         )}
         <main className="content">
-          <AnimatePresence mode="wait" initial={false}>
+          {/* The page lands where it lands: opacity only, one 120 ms beat, and
+              no exit at all. mode="wait" made every navigation pay the old
+              view's departure first (280 ms in total, including the palette's
+              Enter); now the new view mounts at once and is legible long before
+              its fade ends. */}
+          <AnimatePresence initial={false}>
             <motion.div
               key={view}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, transition: { duration: 0.08 } }}
-              transition={{ duration: 0.2, ease: easeOut }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: dur.page, ease: easeOut }}
             >
               {view === "home" && (
                 <Home
@@ -225,8 +229,10 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   );
 }
 
-/** The phone's floating tab bar. The selection pill slides between tabs and
- * stretches along the way, like a droplet, then settles. */
+/** The phone's floating tab bar. The selection pill slides between tabs on the
+ * app's snappy spring -- the same tempo the desktop nav pill already uses. It
+ * used to squash along the way (scaleX 1.18 / scaleY 0.9); two overshooting
+ * springs on a 22 px glyph read as a wobble, so the pill now only travels. */
 function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => void }) {
   return (
     <nav aria-label="Main" className="tabbar glass glass-float">
@@ -245,8 +251,7 @@ function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => 
               layoutId="tab-pill"
               className="tab-pill"
               aria-hidden="true"
-              transition={spring.smooth}
-              animate={{ scaleX: [1.18, 1], scaleY: [0.9, 1] }}
+              transition={spring.snappy}
             />
           )}
           <Icon className="tab-icon" />
@@ -271,8 +276,8 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
         {open && (
           <motion.div
             className="popover glass glass-thick"
-            initial={{ opacity: 0, scale: 0.94, filter: "blur(4px)" }}
-            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
             transition={spring.snappy}
           >
