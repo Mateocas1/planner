@@ -221,7 +221,7 @@ export function Sheet({
       />
       <aside
         ref={sheetRef}
-        className={`sheet glass glass-sheet ${className}`}
+        className={`sheet glass glass-thick ${className}`}
         aria-label={label}
         data-state={isPresent ? "open" : "closing"}
         style={{ pointerEvents: isPresent ? "auto" : "none", display: gone ? "none" : undefined }}

@@ -126,12 +126,14 @@ test("materials: tint, blur and specular rim in light and dark", async ({ page }
   await page.emulateMedia({ colorScheme: "light" });
   const tabbar = page.locator(".tabbar");
   await expect(tabbar).toBeVisible();
-  const thin = await tabbar.evaluate((element) => {
+  const floating = await tabbar.evaluate((element) => {
     const style = getComputedStyle(element);
     return { backdropFilter: style.backdropFilter, background: style.backgroundColor };
   });
-  expect(thin.backdropFilter).toContain("blur(12px)");
-  expect(alphaOf(thin.background)).toBeCloseTo(0.5, 2);
+  expect(floating.backdropFilter).toContain("blur(12px)");
+  /* The float material is thin with a tint floor (spec §3): the tab bar carries
+     an 11px label over live content, so it may not use the control tint. */
+  expect(alphaOf(floating.background)).toBeCloseTo(0.62, 2);
   await shot(page, "light-phone-tabbar");
 });
 
@@ -256,6 +258,167 @@ function parseDuration(value: string) {
   const [amount, unit] = value.split(/(?=[a-z]+$)/);
   return unit === "s" ? Number(amount) * 1000 : Number(amount);
 }
+
+/**
+ * Placement (G2): every surface gets the material its role asks for, by class
+ * name, and nothing borrows the retired aliases the foundation left behind.
+ *
+ * - Persistent chrome is regular: the sidebar and the scrolled top bar.
+ * - Floating chrome is thin with a tint floor: the phone's tab bar and FAB.
+ * - Anything carrying text is thick: the sheet, the account popover, the palette.
+ * - Chips take the rim and no backdrop at all.
+ */
+test("placement: each surface gets the material its role asks for", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterApp(page);
+
+  const sidebar = page.locator(".sidebar");
+  await expect(sidebar).toHaveClass(/glass-regular/);
+  expect((await readMaterial(sidebar)).backdropFilter).toContain("blur(20px)");
+
+  /* A panel carries forms and helper text, so it is the thick material. */
+  await page.getByRole("button", { name: "New task" }).click();
+  const sheet = page.locator(".sheet");
+  await expect(sheet).toHaveClass(/glass-thick/);
+  const sheetMaterial = await readMaterial(sheet);
+  expect(sheetMaterial.backdropFilter).toContain("blur(32px)");
+  expect(alphaOf(sheetMaterial.background)).toBeCloseTo(0.88, 2);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".sheet")).toHaveCount(0);
+
+  /* The aliases the foundation kept for this slice are gone from the markup. */
+  await expect(page.locator(".glass-chrome, .glass-sheet, .glass-control")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tabbar = page.locator(".tabbar");
+  const fab = page.locator(".fab");
+  await expect(tabbar).toHaveClass(/glass-float/);
+  await expect(fab).toHaveClass(/glass-float/);
+  for (const floating of [tabbar, fab]) {
+    const material = await readMaterial(floating);
+    expect(material.backdropFilter).toContain("blur(12px)");
+    /* The floor, not the control tint: these two sit on live content. */
+    expect(alphaOf(material.background)).toBeGreaterThanOrEqual(0.62);
+  }
+
+  /* The account popover hangs over the page under the phone's top bar: thick. */
+  await page.getByRole("button", { name: "Account" }).click();
+  const popover = page.locator(".popover");
+  await expect(popover).toHaveClass(/glass-thick/);
+  expect((await readMaterial(popover)).backdropFilter).toContain("blur(32px)");
+  await page.getByRole("button", { name: "Account" }).click();
+
+  /* A chip is opaque and gets the rim only: a backdrop per chip would blow the
+     layer budget. Proven on the class, because the rule is the class. */
+  const chip = await page.evaluate(() => {
+    const element = document.createElement("span");
+    element.className = "due-chip";
+    element.textContent = "Today";
+    document.body.append(element);
+    const style = getComputedStyle(element);
+    const rim = getComputedStyle(element, "::before");
+    return {
+      backdropFilter: style.backdropFilter,
+      background: style.backgroundColor,
+      rimImage: rim.backgroundImage,
+      rimMask: rim.maskImage,
+    };
+  });
+  expect(chip.backdropFilter).toBe("none");
+  expect(alphaOf(chip.background)).toBe(1);
+  expect(chip.rimImage).toContain("linear-gradient");
+  expect(chip.rimMask).not.toBe("none");
+});
+
+/**
+ * Every painted backdrop filter in the document, by owner. The top bar draws
+ * its material on a masked `::before` (a pseudo-element no DOM query can see),
+ * and it is counted from the moment it declares the filter: the audit in the
+ * direction doc counts it as a surface, and a scroll offset is not a budget
+ * argument. The undo toast is a transient with its own recipe and its own tests,
+ * so it is out of this count; the count is chrome plus an open panel.
+ */
+async function backdropLayers(page: Page) {
+  return page.evaluate(() => {
+    const layers: string[] = [];
+    for (const node of document.querySelectorAll<HTMLElement>("body *")) {
+      if (getComputedStyle(node).backdropFilter !== "none") layers.push(`.${node.classList[0] ?? node.tagName}`);
+    }
+    const bar = document.querySelector(".topbar");
+    if (bar && getComputedStyle(bar, "::before").backdropFilter !== "none") layers.push(".topbar::before");
+    return layers;
+  });
+}
+
+/**
+ * Layer budget (G2 acceptance, spec §2): at most three simultaneous backdrop
+ * filters on desktop and on phone, in the main views and with any panel open.
+ * The phone's top bar is the fourth layer today, so it gives its glass up while
+ * a panel is open (the `body:has(.glass-thick)` rule in glass.css).
+ */
+test("budget: at most three backdrop layers on desktop and on phone", async ({ page }) => {
+  const stack = async (label: string) => {
+    const layers = await backdropLayers(page);
+    expect(layers.length, `${label}: ${layers.join(" + ")}`).toBeLessThanOrEqual(3);
+    return layers.join(" ");
+  };
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterApp(page);
+
+  /* Desktop: sidebar plus top bar; a panel makes three. */
+  const desktop = await stack("desktop main view");
+  expect(desktop).toContain(".sidebar");
+  expect(desktop).toContain(".topbar::before");
+
+  await page.keyboard.press("Control+k");
+  await expect(page.locator("dialog.palette")).toBeVisible();
+  expect(await stack("desktop with the palette open")).toContain(".palette");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog.palette")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "New task" }).click();
+  await expect(page.locator(".sheet")).toBeVisible();
+  expect(await stack("desktop with a sheet open")).toContain(".sheet");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".sheet")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".tabbar")).toBeVisible();
+
+  /* Phone: tab bar, FAB and top bar are exactly the budget. */
+  const phone = await stack("phone main view");
+  expect(phone).toContain(".tabbar");
+  expect(phone).toContain(".fab");
+
+  /* A panel makes four, so the top bar drops its glass instead. */
+  await page.getByRole("button", { name: "New task" }).click();
+  await expect(page.locator(".sheet")).toBeVisible();
+  const panel = await stack("phone with a sheet open");
+  expect(panel).toContain(".sheet");
+  expect(panel).not.toContain(".topbar");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".sheet")).toHaveCount(0);
+
+  await page.keyboard.press("Control+k");
+  await expect(page.locator("dialog.palette")).toBeVisible();
+  const palette = await stack("phone with the palette open");
+  expect(palette).toContain(".palette");
+  expect(palette).not.toContain(".topbar");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog.palette")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Account" }).click();
+  await expect(page.locator(".popover")).toBeVisible();
+  const popover = await stack("phone with the account popover open");
+  expect(popover).toContain(".popover");
+  expect(popover).not.toContain(".topbar");
+  await page.getByRole("button", { name: "Account" }).click();
+  await expect(page.locator(".popover")).toHaveCount(0);
+
+  /* With the panel gone the top bar gets its material back. */
+  expect(await stack("phone main view again")).toContain(".topbar::before");
+});
 
 /**
  * The sheen is state held in two custom properties on the hovered element and

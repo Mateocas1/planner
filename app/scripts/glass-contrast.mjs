@@ -164,6 +164,9 @@ function backdrops(tokens) {
 
 const materials = [
   { name: "thin", token: "--glass-tint-thin" },
+  /* Floating chrome (G2) has a floor, not just a tint: below 0.62 the tab bar's
+     11px label leaks too much of the page scrolling under it (spec §3). */
+  { name: "float", token: "--glass-tint-float", minAlpha: 0.62 },
   { name: "regular", token: "--glass-tint-regular" },
   { name: "thick", token: "--glass-tint-thick" },
 ];
@@ -182,6 +185,10 @@ for (const scheme of ["light", "dark"]) {
     const tint = parseColor(tokens.get(material.token), tokens);
     if (!(tint[3] > 0 && tint[3] < 1))
       throw new Error(`${material.token} (${scheme}) is not a translucent tint: ${tokens.get(material.token)}`);
+    if (material.minAlpha && tint[3] < material.minAlpha)
+      throw new Error(
+        `${material.token} (${scheme}) is below its ${material.minAlpha} opacity floor: ${tokens.get(material.token)}`,
+      );
     for (const backdrop of backgrounds) {
       const surface = over(tint, backdrop.color);
       for (const label of LABELS) {
@@ -209,22 +216,23 @@ for (const scheme of ["light", "dark"]) {
 
 /**
  * The sliding pill is its own thin layer over the chrome that holds it: the nav
- * pill over the regular sidebar, the tab pill over the thin tab bar. Each fill
- * gets its own proof against the label the pill actually carries.
+ * pill over the regular sidebar, the tab pill over the floating tab bar. Each
+ * fill gets its own proof against the label the pill actually carries.
  *
- * The floating action button is the lens host (G5). It sits directly on the
- * page, so its fill is composited over the page, not over chrome. Its icon is
- * `--accent`, and both the lens fill and the plain thin fallback are proven.
+ * The floating action button is the lens host (G5) and shares the tab bar's
+ * float material (G2). It sits directly on the page, so its fill is composited
+ * over the page, not over chrome. Its icon is `--accent`, and both the lens fill
+ * and the plain float fallback are proven.
  */
 const pills = [
   { name: "nav", host: "--glass-tint-regular", label: "--label" },
-  { name: "tab", host: "--glass-tint-thin", label: "--accent" },
+  { name: "tab", host: "--glass-tint-float", label: "--accent" },
   { name: "fab", host: null, label: "--accent" },
 ];
 const pillFills = [
   { name: "pill", token: "--pill", materials: ["nav", "tab"] },
   { name: "lens", token: "--glass-lens-tint", materials: ["fab"] },
-  { name: "plain", token: "--glass-tint-thin", materials: ["fab"] },
+  { name: "plain", token: "--glass-tint-float", materials: ["fab"] },
 ];
 
 for (const scheme of ["light", "dark"]) {

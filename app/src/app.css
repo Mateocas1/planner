@@ -78,6 +78,8 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur-press: 120ms;
   --dur-hover: 140ms;
+  /* one state change: a check landing, a strike drawing, a switch flipping */
+  --dur-state: 200ms;
 
   color-scheme: light;
 }
@@ -332,7 +334,8 @@ time,
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--check-ring);
   cursor: pointer;
-  transition: background-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+  /* the fill and the tick are one gesture: both land on --dur-state */
+  transition: background-color var(--dur-state) var(--ease-out), box-shadow var(--dur-state) var(--ease-out);
 }
 
 .check::before {
@@ -350,10 +353,11 @@ time,
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.4 5.8 10 11 4.2'/%3E%3C/svg%3E") center / contain no-repeat;
   opacity: 0;
-  transform: scale(0.6);
-  /* Unchecking is a correction, so it snaps back at press speed with no
-     overshoot. The check itself lands on the spring: see :checked below. */
-  transition: opacity var(--dur-press) var(--ease-out), transform var(--dur-press) var(--ease-out);
+  /* Opacity only. The circle already pops on its own spring (check-pop below),
+     and a second scale spring on a 12 px glyph stacked two overshoots on top of
+     each other. Unchecking is a correction, so it snaps back at press speed;
+     the check itself fades in with the ring: see :checked below. */
+  transition: opacity var(--dur-press) var(--ease-out);
 }
 
 .check:checked {
@@ -363,11 +367,10 @@ time,
 
 .check:checked::after {
   opacity: 1;
-  transform: scale(1);
-  /* the transition is read from the state being entered, so the check lands on
-     --ease-spring over 200 ms while only the uncheck takes the press-speed
-     exit above; the overshoot peaks around 130 ms, inside the feedback budget */
-  transition: opacity var(--dur-press) var(--ease-out), transform 200ms var(--ease-spring);
+  /* the transition is read from the state being entered, so the tick fades in
+     with the ring over --dur-state while only the uncheck takes the press-speed
+     exit above; the circle's overshoot lives in check-pop, not here */
+  transition: opacity var(--dur-state) var(--ease-out);
 }
 
 .check:disabled { cursor: default; opacity: 0.55; }
@@ -389,7 +392,7 @@ time,
   background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--separator);
   cursor: pointer;
-  transition: background-color 200ms var(--ease-out);
+  transition: background-color var(--dur-state) var(--ease-out);
 }
 
 .switch::after {
@@ -603,7 +606,7 @@ time,
   -webkit-mask-image: linear-gradient(#000 64%, transparent);
   mask-image: linear-gradient(#000 64%, transparent);
   opacity: 0;
-  transition: opacity 200ms ease;
+  transition: opacity var(--dur-state) ease;
 }
 
 .topbar.is-scrolled::before { opacity: 1; }
@@ -807,9 +810,10 @@ time,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* the strike is drawn, not toggled: its width animates on completion */
+  /* the strike is drawn, not toggled: its width animates on completion, over
+     the same --dur-state the check it belongs to lands on */
   background: linear-gradient(currentColor, currentColor) 0 56% / 0 1.5px no-repeat;
-  transition: background-size 320ms var(--ease-out), color 200ms ease;
+  transition: background-size var(--dur-state) var(--ease-out), color var(--dur-state) ease;
 }
 
 .task.completed .task-title {
@@ -837,14 +841,16 @@ time,
 .row[data-pending="true"] .task-title,
 .row[data-pending="true"] .row-title { opacity: 0.7; }
 
-.task-wash { animation: task-wash 700ms var(--ease-out); }
+/* 400 ms: long enough to read the completion after the row has landed, short
+   enough that the row is not still washing while the eye moves on. */
+.task-wash { animation: task-wash 400ms var(--ease-out); }
 
 /* The glyph acknowledgment is scoped to the row that was toggled, not to the
    wash: the node that lands in the new group inherits the wash but never the
-   pop, so the check is never played twice. 200 ms with the overshoot at 70 %
-   lands the peak just before the row travels (Tasks.tsx settleMs). */
+   pop, so the check is never played twice. --dur-state with the overshoot at
+   70 % lands the peak just before the row travels (Tasks.tsx settleMs). */
 .task-pop .check:checked {
-  animation: check-pop 200ms var(--ease-spring);
+  animation: check-pop var(--dur-state) var(--ease-spring);
 }
 
 @keyframes task-wash {
@@ -901,7 +907,8 @@ time,
   background: var(--cat-focus-ink);
   opacity: 0.85;
   transform-origin: left;
-  transition: transform 600ms var(--ease-out);
+  /* 350 ms: the bar is a value settling, not a loading animation */
+  transition: transform 350ms var(--ease-out);
 }
 
 .progress.for-task i { background: var(--cat-task-ink); }
@@ -1149,7 +1156,9 @@ time,
   text-align: left;
   cursor: pointer;
   transition: filter var(--dur-hover) ease, transform var(--dur-press) var(--ease-out);
-  animation: block-in 260ms var(--ease-out);
+  /* 160 ms, opacity and scale only: every range change remounts all blocks, and
+     a blur on each of them reads as a smear rather than a bridge */
+  animation: block-in 160ms var(--ease-out);
 }
 
 .calendar-block b {
@@ -1177,7 +1186,7 @@ time,
 }
 
 @keyframes block-in {
-  from { opacity: 0; transform: scale(0.96); filter: blur(4px); }
+  from { opacity: 0; transform: scale(0.96); }
 }
 
 .calendar-draft {
@@ -1601,6 +1610,14 @@ select.form-control { text-align: left; cursor: pointer; }
   .topbar::before,
   .topbar-title {
     transition-duration: 150ms !important;
+  }
+  /* Completion is a colour cue, not movement: the strike and the wash still mark
+     it under reduced motion, just fast enough not to read as an animation. */
+  .task-title {
+    transition-duration: 150ms !important;
+  }
+  .task-wash {
+    animation-duration: 150ms !important;
   }
   /* The morph never starts under reduced motion (morph.ts); this covers a
      preference changed while a transition is already playing. */
