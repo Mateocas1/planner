@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { password } from "./browser-helpers.ts";
+import { submitAuthForm } from "./browser-helpers.ts";
 import { isBlink, shouldEnableLens, type LensEnv } from "../src/ui/lens.ts";
 
 // 2x so the 1px specular rim is actually legible in the saved screenshots.
@@ -49,12 +49,7 @@ function newEmail() {
 /** Signs a fresh account in through the UI: the cheapest way to reach the app shell. */
 async function enterApp(page: Page) {
   const email = newEmail();
-  await page.goto("/");
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await submitAuthForm(page, email, "sign up");
   // The shell renders before the planner loads; screenshots want the loaded page.
   await expect(page.getByText("Loading your planner…")).toHaveCount(0);
 }
