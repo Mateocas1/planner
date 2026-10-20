@@ -8,6 +8,7 @@ import { formatDateKey, isPastDateKey } from "./format.ts";
 import { DragGrip } from "./drag.tsx";
 import { RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
+import { morphClose, morphOpen } from "./morph.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
 import { type UndoableDelete } from "./UndoToast.tsx";
 import { settle } from "./write.ts";
@@ -163,7 +164,10 @@ export function Tasks({
         className="row-main task-open"
         onClick={event => {
           setError(null);
-          setSelected({ kind: "task", id: task.id, origin: event.currentTarget.closest("li") ?? event.currentTarget });
+          const row = event.currentTarget.closest("li") ?? event.currentTarget;
+          // The row grows into the panel; with no view transition (or reduced
+          // motion) this is a plain state update and Sheet keeps its own flight.
+          morphOpen(() => setSelected({ kind: "task", id: task.id, origin: row }), row);
         }}
       >
         <span className="task-title">{task.title}</span>
@@ -236,7 +240,8 @@ export function Tasks({
                           className="row-main task-open"
                           onClick={event => {
                             setError(null);
-                            setSelected({ kind: "series", id: seriesRow.id, origin: event.currentTarget.closest("li") ?? event.currentTarget });
+                            const row = event.currentTarget.closest("li") ?? event.currentTarget;
+                            morphOpen(() => setSelected({ kind: "series", id: seriesRow.id, origin: row }), row);
                           }}
                         >
                           <span className="task-title">{seriesRow.title}</span>
@@ -265,11 +270,12 @@ export function Tasks({
             key={selectedSeries.id}
             series={selectedSeries}
             origin={selected.origin}
+            shared
             occurrences={upcomingOccurrences(selectedSeries, completions, today)}
             today={today}
             busy={busy}
             hasHistory={Object.keys(completions).some(id => id.startsWith(`${selectedSeries.id}:`))}
-            onClose={() => setSelected(null)}
+            onClose={() => morphClose(() => setSelected(null), selected.origin)}
             onRename={next => void run(() => renameSeries(uid, selectedSeries.id, next))}
             onFrequencyChange={frequency => void run(() => setSeriesFrequency(uid, selectedSeries.id, frequency, selectedSeries.anchorDate))}
             onAnchorChange={anchorDate => void run(() => setSeriesAnchor(uid, selectedSeries.id, selectedSeries.frequency, anchorDate))}
@@ -290,8 +296,9 @@ export function Tasks({
             key={selectedTask.id}
             task={selectedTask}
             origin={selected.origin}
+            shared
             busy={busy}
-            onClose={() => setSelected(null)}
+            onClose={() => morphClose(() => setSelected(null), selected.origin)}
             onRename={next => void run(() => renameTask(uid, selectedTask.id, next))}
             onDeadlineChange={next =>
               void run(() => setTaskDeadline(uid, selectedTask.id, selectedTask.title, next === "" ? undefined : next))

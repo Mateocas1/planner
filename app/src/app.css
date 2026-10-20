@@ -1566,6 +1566,84 @@ select.form-control { text-align: left; cursor: pointer; }
 .gate-actions { display: flex; flex-direction: column; gap: 8px; }
 .gate-actions .button { height: 40px; }
 
+/* ---------- view transition: the row becomes the panel ---------- */
+
+/* AGENTS.md exception, approved 2026-10-20: a view-transition group animates the
+   box of captured snapshots, never the live layout. See morph.ts. Each snapshot
+   is fitted inside that box at its own proportions and only fades, so the row's
+   text is never stretched into the panel's shape nor the panel's into the row's. */
+
+:root {
+  --morph-dur: 340ms;
+  /* The view-transition tree is not a descendant of :root, so the direction is
+     handed to it through inherited properties rather than a selector. The box
+     is moving across the screen rather than entering from nowhere, so its curve
+     is an ease-in-out: the fade-in covers the slow first frames and the growth
+     stays legible to the end. The sides fade on the UI ease-out. */
+  --morph-ease: cubic-bezier(0.65, 0, 0.35, 1);
+  --morph-old: morph-absent var(--morph-dur) linear both;
+  --morph-new: morph-in var(--morph-dur) var(--ease-out) both;
+}
+
+/* A dismissal travels less ground on the same curve, so the panel stays
+   legible while it collapses into the row instead of spending its start. */
+:root[data-morph="out"] {
+  --morph-dur: 240ms;
+  --morph-old: morph-out var(--morph-dur) var(--ease-out) both;
+  --morph-new: morph-absent var(--morph-dur) linear both;
+}
+
+::view-transition-group(task-morph) {
+  animation-duration: var(--morph-dur);
+  animation-timing-function: var(--morph-ease);
+  /* The browser copies the panel's backdrop blur onto the group, which would
+     frost the whole morphing box -- a 500px square of blurred, saturated page
+     sliding across the list. The panel keeps its tint in the snapshot; the blur
+     returns with the live panel when the transition ends. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Each snapshot is fitted inside the morphing box at its own proportions, so a
+   row is never drawn at the panel's shape nor a panel at the row's: the panel
+   grows into place and shrinks back out of it, and nothing is stretched. The
+   page keeps painting the row itself, so the transition only borrows its box:
+   on the way in the panel grows out of the row, on the way out it collapses
+   into the row's box while it dissolves. */
+::view-transition-old(task-morph),
+::view-transition-new(task-morph) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The panel's right edge and the row's right edge are the same edge of the
+     page, so the panel is pinned there instead of drifting to the middle of the
+     morphing box. */
+  object-position: 100% 0;
+}
+
+::view-transition-image-pair(task-morph) { overflow: clip; }
+
+::view-transition-old(task-morph) { animation: var(--morph-old); }
+::view-transition-new(task-morph) { animation: var(--morph-new); }
+
+/* The panel is on screen almost immediately and grows with the box, at its own
+   proportions the whole way: the row is what visibly becomes the panel, rather
+   than a pause followed by an appearance. A dismissal is gone before it lands,
+   so the shrink reads without a shrunken copy of the text left to see. */
+@keyframes morph-in { 0% { opacity: 0 } 18%, 100% { opacity: 1 } }
+@keyframes morph-out { 0%, 42% { opacity: 1 } 84%, 100% { opacity: 0 } }
+@keyframes morph-absent { 0%, 100% { opacity: 0 } }
+
+/* The page behind never cross-fades: the list must not ghost under the morph. */
+::view-transition-old(root) { animation: none; opacity: 0; }
+::view-transition-new(root) { animation: none; opacity: 1; }
+
+/* The scrim only fades: it keeps its box in both states. */
+::view-transition-group(sheet-scrim) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out);
+}
+
 /* ---------- reduced motion: gentler, not zero ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1579,5 +1657,12 @@ select.form-control { text-align: left; cursor: pointer; }
   .topbar::before,
   .topbar-title {
     transition-duration: 150ms !important;
+  }
+  /* The morph never starts under reduced motion (morph.ts); this covers a
+     preference changed while a transition is already playing. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 1ms !important;
   }
 }
