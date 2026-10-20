@@ -528,6 +528,177 @@ test("the completion wash plays on a user completion and never for already-compl
   await expect(page.locator("li.task.task-wash")).toHaveCount(0);
 });
 
+/* ---------- state motion (S4): one gesture per state change ---------- */
+
+/** Seconds out of a computed duration list, so an assertion reads a number. */
+const durationSeconds = (value: string) =>
+  value.split(",").map(entry => (entry.trim().endsWith("ms") ? parseFloat(entry) / 1000 : parseFloat(entry)));
+
+/**
+ * Records every CSS animation the document starts, with the duration it was
+ * declared with. The new state animations are 160-400 ms long, so sampling a
+ * frame after a round trip to the test is a race; the event never is.
+ */
+async function recordAnimations(page: Page) {
+  await page.evaluate(() => {
+    const started: Array<{ name: string; duration: string }> = [];
+    (window as unknown as { startedAnimations: typeof started }).startedAnimations = started;
+    document.addEventListener(
+      "animationstart",
+      event => {
+        started.push({ name: event.animationName, duration: getComputedStyle(event.target as Element).animationDuration });
+      },
+      true,
+    );
+  });
+}
+
+async function startedAnimations(page: Page) {
+  return page.evaluate(
+    () => (window as unknown as { startedAnimations?: Array<{ name: string; duration: string }> }).startedAnimations ?? [],
+  );
+}
+
+/**
+ * Reads one @keyframes rule out of the built stylesheet. A finished animation
+ * is gone from getAnimations(), so this is the stable way to prove a property
+ * (a blur, say) is never animated at all.
+ */
+async function keyframesOf(page: Page, name: string) {
+  return page.evaluate(keyframesName => {
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue;
+      }
+      for (const rule of Array.from(rules)) {
+        if (!(rule instanceof CSSKeyframesRule) || rule.name !== keyframesName) continue;
+        return Array.from(rule.cssRules).map(frame => {
+          const keyframe = frame as CSSKeyframeRule;
+          const style: Record<string, string> = {};
+          for (let index = 0; index < keyframe.style.length; index += 1) {
+            const property = keyframe.style[index]!;
+            style[property] = keyframe.style.getPropertyValue(property);
+          }
+          return { key: keyframe.keyText, style };
+        });
+      }
+    }
+    return null;
+  }, name);
+}
+
+test("the check is one 200 ms state change and its tick only fades", async ({ page }) => {
+  const email = newEmail("state-check");
+  await signUp(page, email);
+  await openTasks(page);
+  await addTaskThroughForm(page, "State task");
+
+  const check = page.locator("li.task input.task-check");
+  // the ring fills on --dur-state, and so does the tick that lands on top of it
+  const ring = await check.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { properties: style.transitionProperty, durations: style.transitionDuration };
+  });
+  expect(ring.properties).toContain("background-color");
+  expect(ring.properties).toContain("box-shadow");
+  expect(durationSeconds(ring.durations).every(duration => duration === 0.2)).toBe(true);
+
+  // the tick fades in place: no second scale spring on the 12 px glyph
+  const tick = await check.evaluate(element => {
+    const style = getComputedStyle(element, "::after");
+    return { properties: style.transitionProperty, transform: style.transform, opacity: style.opacity };
+  });
+  expect(tick).toEqual({ properties: "opacity", transform: "none", opacity: "0" });
+
+  await recordAnimations(page);
+  await page.getByRole("checkbox", { name: "Complete: State task" }).click();
+  await expect(page.locator("li.task.completed", { hasText: "State task" })).toHaveCount(1);
+
+  // the circle keeps its pop at --dur-state and the wash reads at 400 ms, and the
+  // glyph runs no animation of its own beyond the circle it sits in
+  await expect
+    .poll(() => startedAnimations(page))
+    .toEqual(expect.arrayContaining([{ name: "check-pop", duration: "0.2s" }]));
+  await expect
+    .poll(() => startedAnimations(page))
+    .toEqual(expect.arrayContaining([{ name: "task-wash", duration: "0.4s" }]));
+  // the sync indicator swaps on the same write (its own suite pins that motion),
+  // so only the row's animations are counted here: the pop and the wash, and no
+  // third animation of the glyph's own
+  const names = (await startedAnimations(page)).map(entry => entry.name).filter(name => name !== "sync-swap");
+  expect([...new Set(names)].sort()).toEqual(["check-pop", "task-wash"]);
+
+  // the checked state reads its fade from the entering state: 200 ms, not the
+  // press-speed exit the uncheck keeps
+  expect(await check.evaluate(element => getComputedStyle(element, "::after").transitionDuration)).toBe("0.2s");
+});
+
+test("a block enters in 160 ms without a blur, and the now-bar settles in 350 ms", async ({ page }) => {
+  const email = newEmail("state-block");
+  await signUp(page, email);
+  await openCalendar(page);
+
+  // a block running right now, so Today can show its progress bar
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const start = new Date(Math.max(startOfDay.getTime(), now.getTime() - 10 * 60_000));
+  const wallClock = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  await recordAnimations(page);
+  await revealBlockForm(page);
+  await page.getByLabel("Start", { exact: true }).fill(wallClock(start));
+  await page.getByLabel("End", { exact: true }).fill(wallClock(new Date(now.getTime() + 30 * 60_000)));
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  const day = localDateKey(now);
+  await expect(page.locator(`[data-date="${day}"] .calendar-block`)).toHaveCount(1);
+  await expect
+    .poll(() => startedAnimations(page))
+    .toEqual(expect.arrayContaining([{ name: "block-in", duration: "0.16s" }]));
+
+  // opacity and scale only: every range change remounts the blocks, and a blur
+  // on each of them reads as a smear rather than a bridge
+  const frames = await keyframesOf(page, "block-in");
+  expect(frames).toHaveLength(1);
+  expect(frames![0]!.style.opacity).toBe("0");
+  expect(frames![0]!.style).not.toHaveProperty("filter");
+
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Today" }).click();
+  const bar = page.locator(".now-card .progress i");
+  await expect(bar).toHaveCount(1);
+  // the bar shows the elapsed share of the block, and settles in 350 ms
+  expect(await bar.evaluate(element => getComputedStyle(element).transform)).not.toBe("none");
+  expect(durationSeconds(await bar.evaluate(element => getComputedStyle(element).transitionDuration)).every(duration => duration === 0.35)).toBe(true);
+});
+
+test.describe("with reduced motion", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("the strike and the wash still mark a completion, at 150 ms", async ({ page }) => {
+    const email = newEmail("state-reduce");
+    await signUp(page, email);
+    await openTasks(page);
+    await addTaskThroughForm(page, "Reduced task");
+
+    // completion is a colour cue, not movement: it survives the 1 ms collapse
+    const title = page.locator(".task-title", { hasText: "Reduced task" });
+    expect(durationSeconds(await title.evaluate(element => getComputedStyle(element).transitionDuration)).every(duration => duration === 0.15)).toBe(true);
+
+    await recordAnimations(page);
+    await page.getByRole("checkbox", { name: "Complete: Reduced task" }).click();
+    await expect(page.locator("li.task.completed", { hasText: "Reduced task" })).toHaveCount(1);
+    await expect
+      .poll(() => startedAnimations(page))
+      .toEqual(expect.arrayContaining([{ name: "task-wash", duration: "0.15s" }]));
+  });
+});
+
 async function openCalendar(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
   // C2: creation is collapsed on arrival; openCalendar only lands the surface.

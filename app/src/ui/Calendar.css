@@ -3,6 +3,26 @@
  * preview shown where a dragged task would land. Tokens live in app.css.
  */
 
+/* The day column is a containment boundary. Its layout and its paint stop at
+ * its own box, so a range slide (a transform on the body above it), a resize in
+ * flight, or a block remounting can never invalidate the grid that holds the
+ * column: the shell, the header and the other six columns stay out of the
+ * work. Nothing is meant to leave the column — blocks are inset by 3px, the
+ * draft and the now line are pinned to its edges, and every sheet renders
+ * outside this subtree — so paint containment clips only overflow that would
+ * have been a bug. */
+.calendar-day {
+  contain: layout paint;
+}
+
+/* Containment clips to this column's paint box, so a focus ring drawn outside a
+ * block's own box would lose its outer edge against the column's border. The
+ * block keeps the ring fully painted by hugging its own box (3 px inside the
+ * column), which is also how the form controls already place theirs. */
+.calendar-block:focus-visible {
+  outline-offset: 0;
+}
+
 /* A block's two resize edges: pointer-only affordances (the block button keeps
  * the keyboard path), so they never take a tab stop. The hit area is taller
  * than the visible grip and owns the gesture: touch-action none keeps a touch

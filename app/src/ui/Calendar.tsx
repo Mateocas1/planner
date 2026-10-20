@@ -483,13 +483,17 @@ function CalendarView({
             })}
           </div>
           <div className="cal-scroll" ref={scrollRef}>
-            <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+            <AnimatePresence initial={false} mode="popLayout">
+              {/* The slide is one transform string, never the `x` shorthand:
+                  the shorthand writes the transform through Motion's own build
+                  path on the main thread, and this body is the heaviest subtree
+                  in the app. Reduced motion keeps the fade and drops the 24 px
+                  travel, so nothing moves and nothing is scaled. */}
               <motion.div
                 key={rangeKey}
                 className="cal-body"
-                custom={direction}
-                initial={reduced ? { opacity: 0 } : { opacity: 0, x: direction * 24 }}
-                animate={{ opacity: 1, x: 0 }}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, transform: `translateX(${direction * 24}px)` }}
+                animate={reduced ? { opacity: 1 } : { opacity: 1, transform: "translateX(0px)" }}
                 exit={{ opacity: 0, transition: { duration: 0.1 } }}
                 transition={reduced ? { duration: 0.15 } : spring.smooth}
               >
@@ -622,7 +626,10 @@ function CalendarView({
                     layout="position"
                     className="tray-item"
                     exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.16, ease: easeOut } }}
-                    transition={spring.smooth}
+                    /* A neighbour that moves up after a plan follows the same 250 ms
+                       snappy spring the task rows travel with, so a reflow reads as
+                       the same gesture wherever it happens. */
+                    transition={spring.snappy}
                   >
                     <div>
                       <b>{task.title}</b>
