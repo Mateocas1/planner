@@ -4,7 +4,8 @@ import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
 import { PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
 import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
-import { views } from "./Sidebar.tsx";
+import { ThemeIcon, views } from "./Sidebar.tsx";
+import { setThemePreference } from "./theme.ts";
 import { settle } from "./write.ts";
 import "./CommandPalette.css";
 
@@ -87,6 +88,12 @@ export function CommandPalette({
     if (command.kind === "task") {
       restoreFocus.current = false;
       onOpenTask(command.taskId);
+      onClose();
+      return;
+    }
+    if (command.kind === "theme") {
+      /* a repaint, not a navigation: the palette closes and the page stays */
+      setThemePreference(command.pref);
       onClose();
       return;
     }
@@ -217,6 +224,7 @@ function commandLabel(command: PaletteCommand): string {
 function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
+  if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }

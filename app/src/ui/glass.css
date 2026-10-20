@@ -59,34 +59,35 @@
   --scrim: rgb(11 14 21 / 0.16); /* ink-975 */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --glass-tint-thin: rgb(36 39 49 / 0.55); /* ink-900 */
-    --glass-tint-float: rgb(36 39 49 / 0.62); /* ink-900 */
-    --glass-tint-regular: rgb(27 30 38 / 0.72); /* ink-925 */
-    --glass-tint-thick: rgb(36 39 49 / 0.9); /* ink-900 */
-    --glass-sheen: rgb(255 255 255 / 0.06);
-    --glass-sheen-track: rgb(255 255 255 / 0.16);
-    /* thinner than the resting pill on purpose: the tab label is --accent,
-       which loses contrast as the fill lightens toward it */
-    --glass-lens-tint: rgb(255 255 255 / 0.06);
-    /* dark mode needs the rim to peak, or the edge disappears */
-    --glass-rim-lit: rgb(255 255 255 / 0.28);
-    --glass-rim-mid: rgb(255 255 255 / 0.1);
-    --glass-rim-glint: rgb(255 255 255 / 0.18);
-    --glass-thickness: rgb(11 14 21 / 0.4); /* ink-975 */
-    --glass-edge: rgb(244 247 252 / 0.09); /* ink-100 */
-    --glass-blob-1: rgb(117 152 255 / 0.16); /* brand-500 */
-    --glass-blob-2: rgb(177 136 223 / 0.12); /* plum 305 */
-    --glass-blob-3: rgb(92 184 218 / 0.07); /* cyan-blue 225 */
-    --glass-shadow: 0 8px 28px rgb(11 14 21 / 0.36), 0 1px 3px rgb(11 14 21 / 0.3);
-    --pill: rgb(244 247 252 / 0.09); /* ink-100 */
-    --pill-shadow: 0 0 0 0.5px rgb(244 247 252 / 0.06);
-    --card-shadow: 0 0 0 1px rgb(244 247 252 / 0.055);
-    /* a scrim over a dark page is near-black with the brand's trace of blue,
-       not ink-975: it has to weigh on the page it dims */
-    --scrim: rgb(2 3 7 / 0.42);
-  }
+/* The dark material, selected by the resolved theme (value roadmap §4): the
+   inline script in index.html and src/ui/theme.ts own `<html data-theme>`, so
+   System needs no second copy of these tokens behind a media query. */
+:root[data-theme="dark"] {
+  --glass-tint-thin: rgb(36 39 49 / 0.55); /* ink-900 */
+  --glass-tint-float: rgb(36 39 49 / 0.62); /* ink-900 */
+  --glass-tint-regular: rgb(27 30 38 / 0.72); /* ink-925 */
+  --glass-tint-thick: rgb(36 39 49 / 0.9); /* ink-900 */
+  --glass-sheen: rgb(255 255 255 / 0.06);
+  --glass-sheen-track: rgb(255 255 255 / 0.16);
+  /* thinner than the resting pill on purpose: the tab label is --accent,
+     which loses contrast as the fill lightens toward it */
+  --glass-lens-tint: rgb(255 255 255 / 0.06);
+  /* dark mode needs the rim to peak, or the edge disappears */
+  --glass-rim-lit: rgb(255 255 255 / 0.28);
+  --glass-rim-mid: rgb(255 255 255 / 0.1);
+  --glass-rim-glint: rgb(255 255 255 / 0.18);
+  --glass-thickness: rgb(11 14 21 / 0.4); /* ink-975 */
+  --glass-edge: rgb(244 247 252 / 0.09); /* ink-100 */
+  --glass-blob-1: rgb(117 152 255 / 0.16); /* brand-500 */
+  --glass-blob-2: rgb(177 136 223 / 0.12); /* plum 305 */
+  --glass-blob-3: rgb(92 184 218 / 0.07); /* cyan-blue 225 */
+  --glass-shadow: 0 8px 28px rgb(11 14 21 / 0.36), 0 1px 3px rgb(11 14 21 / 0.3);
+  --pill: rgb(244 247 252 / 0.09); /* ink-100 */
+  --pill-shadow: 0 0 0 0.5px rgb(244 247 252 / 0.06);
+  --card-shadow: 0 0 0 1px rgb(244 247 252 / 0.055);
+  /* a scrim over a dark page is near-black with the brand's trace of blue,
+     not ink-975: it has to weigh on the page it dims */
+  --scrim: rgb(2 3 7 / 0.42);
 }
 
 /* Ambient backdrop. Static, pointer-transparent, one layer: without something
@@ -279,7 +280,8 @@ body::before {
 
 .button,
 .icon-button,
-.segmented button {
+.segmented button,
+.theme-switch button {
   position: relative;
   isolation: isolate;
   --press: rgb(255 255 255 / 0.16);
@@ -287,7 +289,8 @@ body::before {
 
 .button,
 .button-danger,
-.segmented button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"],
+.theme-switch button[aria-checked="true"] {
   /* paper surface: darken a touch instead of brightening nothing */
   --press: rgb(11 14 21 / 0.06); /* ink-975 */
 }
@@ -298,21 +301,23 @@ body::before {
   --press: rgb(255 255 255 / 0.16);
 }
 
-@media (prefers-color-scheme: dark) {
-  .button,
-  .button-danger,
-  .segmented button[aria-pressed="true"] {
-    --press: rgb(255 255 255 / 0.1);
-  }
-  .button-accent,
-  .button-primary {
-    --press: rgb(255 255 255 / 0.16);
-  }
+/* The dark press overlays, by the same theme switch. */
+:root[data-theme="dark"] .button,
+:root[data-theme="dark"] .button-danger,
+:root[data-theme="dark"] .segmented button[aria-pressed="true"],
+:root[data-theme="dark"] .theme-switch button[aria-checked="true"] {
+  --press: rgb(255 255 255 / 0.1);
+}
+
+:root[data-theme="dark"] .button-accent,
+:root[data-theme="dark"] .button-primary {
+  --press: rgb(255 255 255 / 0.16);
 }
 
 .button::before,
 .icon-button::before,
-.segmented button::before {
+.segmented button::before,
+.theme-switch button::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -338,7 +343,8 @@ body::before {
 
 .button::after,
 .icon-button::after,
-.segmented button::after {
+.segmented button::after,
+.theme-switch button::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -353,7 +359,8 @@ body::before {
 
 .button:active:not(:disabled)::after,
 .icon-button:active:not(:disabled)::after,
-.segmented button:active::after {
+.segmented button:active::after,
+.theme-switch button:active::after {
   opacity: 1;
   transition-duration: 120ms;
 }
@@ -396,7 +403,8 @@ body::before {
   box-shadow: inset 0 1px 0 var(--glass-rim-mid), var(--pill-shadow);
 }
 
-.segmented button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"],
+.theme-switch button[aria-checked="true"] {
   background-image: linear-gradient(168deg, var(--glass-rim-mid), transparent 58%);
 }
 
