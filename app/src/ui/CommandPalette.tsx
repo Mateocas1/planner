@@ -3,9 +3,11 @@ import type { View } from "../App.tsx";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
 import { PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
-import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
+import { PlayIcon } from "./FocusWidget.tsx";
+import { buildCommands, focusCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
+import type { FocusControls } from "./useFocusTimer.ts";
 import { settle } from "./write.ts";
 import "./CommandPalette.css";
 
@@ -35,12 +37,16 @@ const focusableSelector = 'button:not([disabled]), input:not([disabled]), [tabin
 export function CommandPalette({
   uid,
   tasks,
+  focus,
   onClose,
   onNavigate,
   onOpenTask,
 }: {
   uid: string;
   tasks: TaskView[];
+  /* The timer's live state: the palette offers the focus rows that apply and
+     runs them itself, so a command never needs a second surface to work. */
+  focus: FocusControls | null;
   onClose: () => void;
   onNavigate: (view: View) => void;
   onOpenTask: (taskId: string) => void;
@@ -58,7 +64,16 @@ export function CommandPalette({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const commands = useMemo(() => buildCommands(query, tasks, destinations), [query, tasks]);
+  const commands = useMemo(
+    () =>
+      buildCommands(
+        query,
+        tasks,
+        destinations,
+        focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
+      ),
+    [query, tasks, focus?.canStart, focus?.status],
+  );
   const activeIndex = Math.max(0, commands.findIndex(command => command.id === activeId));
   const active = commands[activeIndex];
 
@@ -94,6 +109,16 @@ export function CommandPalette({
     if (command.kind === "theme") {
       /* a repaint, not a navigation: the palette closes and the page stays */
       setThemePreference(command.pref);
+      onClose();
+      return;
+    }
+    if (command.kind === "focus") {
+      /* The timer changes where it lives (the sidebar card); the palette's own
+         job is done, so it closes like every other command surface. */
+      if (command.verb === "start") focus?.startNext();
+      else if (command.verb === "pause") focus?.pause();
+      else if (command.verb === "resume") focus?.resume();
+      else focus?.stop();
       onClose();
       return;
     }
@@ -225,6 +250,7 @@ function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
+  if (command.kind === "focus") return <PlayIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }
