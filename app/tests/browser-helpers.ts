@@ -250,7 +250,9 @@ export async function submitAuthForm(page: Page, email: string, kind: "sign up" 
   await submit.click();
   const shell = page.getByText(`Signed in as ${email}`);
   const clockArtifact = page.getByRole("alert").filter({ hasText: "auth/user-token-expired" });
-  await expect(shell.or(clockArtifact)).toBeVisible();
+  // The emulator round trip plus the SDK's account lookup: a server wait, so it
+  // gets the same 15 s budget the remote-state assertions use, not a local one.
+  await expect(shell.or(clockArtifact)).toBeVisible({ timeout: 15_000 });
   if (await clockArtifact.isVisible()) {
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
   }
