@@ -14,6 +14,7 @@ import { Sheet } from "./Sheet.tsx";
 export function TaskDetails({
   task,
   origin,
+  shared = false,
   busy,
   onClose,
   onRename,
@@ -23,6 +24,8 @@ export function TaskDetails({
 }: {
   task: TaskView;
   origin: HTMLElement | null;
+  /** Opened through the row-to-panel view transition (see morph.ts). */
+  shared?: boolean;
   busy: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
@@ -42,7 +45,7 @@ export function TaskDetails({
   };
 
   return (
-    <Sheet label="Task details" className="task-details" origin={origin} onClose={onClose}>
+    <Sheet label="Task details" className="task-details" origin={origin} shared={shared} onClose={onClose}>
       <header className="sheet-head">
         <span className="sheet-kind">Task</span>
         <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
@@ -115,6 +118,7 @@ export type SeriesOccurrenceView = { id: string; date: string; completed: boolea
 export function SeriesDetails({
   series,
   origin,
+  shared = false,
   occurrences,
   today,
   busy,
@@ -128,6 +132,8 @@ export function SeriesDetails({
 }: {
   series: SeriesView;
   origin: HTMLElement | null;
+  /** Opened through the row-to-panel view transition (see morph.ts). */
+  shared?: boolean;
   occurrences: SeriesOccurrenceView[];
   today: string;
   busy: boolean;
@@ -147,7 +153,7 @@ export function SeriesDetails({
   };
 
   return (
-    <Sheet label="Series details" className="task-details" origin={origin} onClose={onClose}>
+    <Sheet label="Series details" className="task-details" origin={origin} shared={shared} onClose={onClose}>
       <header className="sheet-head">
         <span className="sheet-kind">Repeating task</span>
         <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
