@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
@@ -6,11 +6,13 @@ import { useProfileTimeZone } from "./data/profile.ts";
 import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
+import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
+import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
@@ -224,11 +226,14 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         <UndoToast key={undo.id} item={undo} onDismiss={() => setUndo(null)} onError={setLateError} />
       )}
       <AnimatePresence>
-        {creating && <NewTaskSheet key="new-task" uid={user.uid} origin={creating} onClose={() => setCreating(null)} />}
+        {creating && (
+          <NewTaskSheet key="new-task" uid={user.uid} timeZone={zone} origin={creating} onClose={() => setCreating(null)} />
+        )}
       </AnimatePresence>
       {paletteOpen && (
         <CommandPalette
           uid={user.uid}
+          timeZone={zone}
           tasks={tasks}
           onClose={() => setPaletteOpen(false)}
           onNavigate={onNavigate}
@@ -308,14 +313,53 @@ function AccountMenu({ email, pending, onSignOut }: { email: string; pending: nu
 }
 
 /** The New task sheet, reachable from every view. Enter in the title submits.
- * A repeating task needs a start date; the deadline is optional either way. */
-function NewTaskSheet({ uid, origin, onClose }: { uid: string; origin: HTMLElement; onClose: () => void }) {
+ * A repeating task needs a start date; the deadline is optional either way.
+ *
+ * The title line is read by the quick-add parser while it is typed. Recognized
+ * parts become chips and fill the Deadline, Repeat and Start controls; a part
+ * the model cannot hold (a time of day, an unsupported repeat) is not consumed,
+ * so the created task keeps the user's words. The field itself is never
+ * rewritten: the user's line stays as typed and the chips say what the sheet
+ * made of it. Once a control is edited by hand that control stops following the
+ * parse -- the user's choice outranks it, including an emptied field. */
+function NewTaskSheet({
+  uid,
+  timeZone,
+  origin,
+  onClose,
+}: {
+  uid: string;
+  timeZone: string;
+  origin: HTMLElement;
+  onClose: () => void;
+}) {
   const [title, setTitle] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [repeat, setRepeat] = useState<Frequency | "off">("off");
-  const [start, setStart] = useState("");
+  // null means "whatever the parse says"; a string (including "") is the user's
+  // own value for that control and wins over every later keystroke.
+  const [deadlineEdit, setDeadlineEdit] = useState<string | null>(null);
+  const [repeatEdit, setRepeatEdit] = useState<Frequency | "off" | null>(null);
+  const [startEdit, setStartEdit] = useState<string | null>(null);
+  // Undone chips, by the exact text they matched: that text stays in the title
+  // and is not consumed again, so one undo does not cancel every later parse.
+  const [undone, setUndone] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // The clock is read inside the parse, so every keystroke resolves "tomorrow"
+  // against the planner's day at that moment: a sheet can stay open past
+  // midnight, and the day is the profile zone's day (D3), never the browser's.
+  const parsed = useMemo(
+    () => parseQuickAdd(title, { now: new Date(), timeZone, ignore: undone }),
+    [title, timeZone, undone],
+  );
+  const deadline = deadlineEdit ?? parsed.deadline ?? "";
+  const repeat = repeatEdit ?? parsed.frequency ?? "off";
+  const start = startEdit ?? parsed.anchorDate ?? "";
+  // A chip that would no longer describe the control it stands for is dropped:
+  // the text it matched stays consumed, because the user replaced the value.
+  const chips = parsed.parts.filter(part =>
+    part.kind === "date" ? deadline === parsed.deadline : repeat !== "off" && repeat === parsed.frequency,
+  );
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -324,8 +368,8 @@ function NewTaskSheet({ uid, origin, onClose }: { uid: string; origin: HTMLEleme
     try {
       await settle(
         repeat === "off"
-          ? addTask(uid, title, deadline === "" ? undefined : deadline)
-          : addSeries(uid, title, repeat, start, deadline === "" ? undefined : deadline),
+          ? addTask(uid, parsed.title, deadline === "" ? undefined : deadline)
+          : addSeries(uid, parsed.title, repeat, start, deadline === "" ? undefined : deadline),
       );
       onClose();
     } catch (cause) {
@@ -355,14 +399,26 @@ function NewTaskSheet({ uid, origin, onClose }: { uid: string; origin: HTMLEleme
           value={title}
           onChange={event => setTitle(event.target.value)}
         />
+        <QuickAddChips parts={chips} today={parsed.today} onUndo={part => setUndone(list => [...list, part.text])} />
         <div className="form-group">
           <div className="form-row">
             <label htmlFor="task-deadline">Deadline</label>
-            <input id="task-deadline" className="form-control" type="date" value={deadline} onChange={event => setDeadline(event.target.value)} />
+            <input
+              id="task-deadline"
+              className="form-control"
+              type="date"
+              value={deadline}
+              onChange={event => setDeadlineEdit(event.target.value)}
+            />
           </div>
           <div className="form-row">
             <label htmlFor="task-repeat">Repeat</label>
-            <select id="task-repeat" className="form-control" value={repeat} onChange={event => setRepeat(event.target.value as Frequency | "off")}>
+            <select
+              id="task-repeat"
+              className="form-control"
+              value={repeat}
+              onChange={event => setRepeatEdit(event.target.value as Frequency | "off")}
+            >
               <option value="off">Never</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
@@ -372,7 +428,13 @@ function NewTaskSheet({ uid, origin, onClose }: { uid: string; origin: HTMLEleme
           {repeat !== "off" && (
             <div className="form-row">
               <label htmlFor="task-start">Start date</label>
-              <input id="task-start" className="form-control" type="date" value={start} onChange={event => setStart(event.target.value)} />
+              <input
+                id="task-start"
+                className="form-control"
+                type="date"
+                value={start}
+                onChange={event => setStartEdit(event.target.value)}
+              />
             </div>
           )}
         </div>

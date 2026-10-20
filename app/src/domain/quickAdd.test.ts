@@ -431,6 +431,7 @@ for (const item of cases) {
       ...(item.ignore === undefined ? {} : { ignore: item.ignore }),
     });
 
+    assert.equal(result.today, dateKey(new Date(item.now ?? wednesday), item.zone ?? buenosAires), "planner day");
     assert.equal(result.title, item.title, "title");
     assert.equal(result.deadline, item.deadline, "deadline");
     assert.equal(result.frequency, item.frequency, "frequency");

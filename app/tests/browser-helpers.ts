@@ -194,6 +194,16 @@ export async function seedProfileAndBlock(email: string, timeZone: string, start
   await addRemoteDoc(uid, "blocks", { start, end });
 }
 
+/**
+ * Seeds the account and its profile timezone, and nothing else, so a test that
+ * only reads `/` text (the quick-add grammar) still runs in a pinned zone.
+ */
+export async function seedProfile(email: string, timeZone: string): Promise<void> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  await setRemoteDoc(uid, "profile/main", { timeZone });
+}
+
 export async function updateRemoteProfile(email: string, timeZone: string): Promise<void> {
   const uid = await resolveRemoteUid(email);
   await setRemoteDoc(uid, "profile/main", { timeZone });

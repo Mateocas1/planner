@@ -69,6 +69,9 @@ export type QuickAdd = {
   /** The title with the recognized parts taken out, whitespace and stray
    * punctuation cleaned up. May be empty: the sheet decides what that means. */
   title: string;
+  /** The planner's day this text was parsed against, so a surface can print
+   * "today"/"tomorrow" against the same day the parser used. */
+  today: string;
   /** What was recognized, in the order it appears in the text. */
   parts: QuickAddPart[];
   /** The date part's day: what the Deadline control shows. */
@@ -438,6 +441,7 @@ export function parseQuickAdd(text: string, input: QuickAddInput): QuickAdd {
         (repeatPart.weekday === undefined ? today : upcomingWeekday(today, repeatPart.weekday, false));
   return {
     title: cleanTitle(text, parts),
+    today,
     parts,
     ...(datePart === undefined ? {} : { deadline: datePart.date }),
     ...(repeatPart === undefined ? {} : { frequency: repeatPart.frequency }),
