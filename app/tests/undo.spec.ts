@@ -148,22 +148,6 @@ async function expectToastSentence(page: Page, message: string) {
   expect(sentence).toMatch(new RegExp(`^${message}\\s*·\\s*Undo$`));
 }
 
-/**
- * Marks the offer on screen, so the next one replacing it can be observed
- * instead of assumed. The toast is keyed by the offer, so a newer delete mounts
- * a new node; a delete's offer is only made once its write is accepted (`settle`
- * has a 150 ms accept beat), which can land after the test's next click.
- */
-async function markToast(page: Page) {
-  await undoToast(page).evaluate(toast => toast.setAttribute("data-offer-marked", ""));
-}
-
-/** Waits until the marked offer is gone and exactly one offer is on screen. */
-async function expectToastReplaced(page: Page) {
-  await expect(page.locator(".undo-toast[data-offer-marked]")).toHaveCount(0);
-  await expect(undoToast(page)).toHaveCount(1);
-}
-
 test("deleting a task offers undo, and undo restores that task with its completion and deadline", async ({ page }) => {
   const email = newEmail("undo-task");
   await signUp(page, email);
@@ -298,17 +282,30 @@ test("a second delete replaces the toast, and undo then restores only the newest
   await page.getByRole("button", { name: "First" }).click();
   await page.getByRole("button", { name: "Delete task" }).click();
   await expectToastSentence(page, "Task deleted");
-  // the offer on screen is the first delete's: tag it, so the second delete's
-  // replacement is waited for below rather than assumed
-  await markToast(page);
+  // `data-offer` names the offer on screen. The first delete's is what is
+  // showing right now; the second delete's replaces it once its write lands.
+  const firstOffer = await undoToast(page).getAttribute("data-offer");
+  if (firstOffer === null) throw new Error("the first delete left no offer on screen");
 
   // a sheet plays its return animation before it leaves the DOM, so the next
   // panel is only opened once the previous one is really gone
   await expect(page.getByRole("complementary", { name: "Task details" })).toHaveCount(0);
   await page.getByRole("button", { name: "Second" }).click();
   await page.getByRole("button", { name: "Delete task" }).click();
-  // one offer, not two: the newest delete owns it
-  await expectToastReplaced(page);
+  // The delete is offered once it is acknowledged, so the first delete's toast
+  // is still the one on screen right here, with the same sentence. Take the
+  // offer only after the newest one has replaced it: clicking too early undoes
+  // "First" and then the real offer arrives behind it.
+  await expect
+    .poll(async () => {
+      const offer = await undoToast(page).getAttribute("data-offer").catch(() => null);
+      return offer !== null && offer !== firstOffer;
+    })
+    .toBe(true);
+  // one offer, not two: the newest delete owns it, and it is not the one the
+  // first delete left behind
+  await expect(undoToast(page)).toHaveCount(1);
+  await expect(undoToast(page)).not.toHaveAttribute("data-offer", firstOffer);
   await expectToastSentence(page, "Task deleted");
 
   await undoToast(page).getByRole("button", { name: "Undo" }).click();

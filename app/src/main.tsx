@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import "./app.css";
+// glass.css is imported after app.css on purpose: it owns the glass materials
+// and tokens that app.css used to define.
+import "./ui/glass.css";
 
 // Register the offline app-shell service worker only where the browser has one.
 // `registerSW` is wired to `registerType: "prompt"` in vite.config.ts, and no

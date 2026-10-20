@@ -68,6 +68,8 @@ export function Tasks({
   loading,
   today,
   onDeleted,
+  openTaskId = null,
+  onOpenTaskHandled,
 }: {
   uid: string;
   tasks: TaskView[];
@@ -76,10 +78,17 @@ export function Tasks({
   loading: boolean;
   today: string;
   onDeleted: (item: UndoableDelete) => void;
+  /** A task the shell asked this surface to reveal, e.g. one the command
+   * palette found. Null when nothing is pending. */
+  openTaskId?: string | null;
+  onOpenTaskHandled?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement } | null>(null);
+  // `origin` is the row a panel grows out of and returns to. A panel the shell
+  // asked for (the command palette) has no row of its own, so it is null and
+  // the morph is skipped: there is nothing to fly from or back to.
+  const [selected, setSelected] = useState<{ kind: "task" | "series"; id: string; origin: HTMLElement | null } | null>(null);
   // Rows whose completion the user just performed and that have landed in their
   // new group: the wash starts there, once, and never on mount for rows that were
   // already completed.
@@ -114,6 +123,24 @@ export function Tasks({
     restoreFocus.current = null;
     check.focus({ preventScroll: true });
   }, [settling, busy]);
+  /* A request from the shell (the command palette) opens one task's details.
+     It waits for the store to deliver the task, then clears itself; a request
+     for a task that is not there is dropped once loading has finished.
+     No row opened this panel, so there is no origin to morph from: the sheet
+     takes its own entrance. Borrowing the row would mean starting a view
+     transition in the frame the view itself is still animating in. */
+  useEffect(() => {
+    if (!openTaskId) return;
+    const task = tasks.find(entry => entry.id === openTaskId);
+    if (!task) {
+      if (!loading) onOpenTaskHandled?.();
+      return;
+    }
+    setSelected({ kind: "task", id: task.id, origin: null });
+    onOpenTaskHandled?.();
+    // Tasks read through `tasks` only; re-running on every render would reopen
+    // a panel the user just closed while the request is still pending.
+  }, [openTaskId, tasks, loading, onOpenTaskHandled]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);

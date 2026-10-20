@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
@@ -8,9 +8,10 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
+import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
-import { CloseIcon, PersonIcon, PlusIcon } from "./ui/icons.tsx";
+import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
 import { Sidebar, views } from "./ui/Sidebar.tsx";
@@ -55,8 +56,24 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const [undo, setUndo] = useState<PendingUndo | null>(null);
   const undoCursor = useRef(0);
   const offerUndo = (item: UndoableDelete) => setUndo({ ...item, id: ++undoCursor.current });
+  // Command palette: open/closed, and the task the palette asked the Tasks
+  // surface to reveal. The request survives the view change that mounts it.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
+  const clearPendingTask = useCallback(() => setPendingTask(null), []);
   const scrolled = useScrolled();
   const titleHidden = useTitleScrolledAway(view);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "k") return;
+      // Cmd/Ctrl+K is the palette's from anywhere, including inside a field.
+      event.preventDefault();
+      setPaletteOpen(true);
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -101,6 +118,15 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         <header className={`topbar${scrolled ? " is-scrolled" : ""}${titleHidden ? " is-titled" : ""}`}>
           <span className="topbar-title" aria-hidden="true">{titles[view]}</span>
           <div className="topbar-actions">
+            <button
+              type="button"
+              className="icon-button large"
+              aria-label="Command palette"
+              aria-keyshortcuts="Control+K Meta+K"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <SearchIcon />
+            </button>
             {phone ? (
               <AccountMenu email={user.email ?? ""} pending={pending} onSignOut={signOut} />
             ) : (
@@ -139,7 +165,17 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                 />
               )}
               {view === "tasks" && (
-                <Tasks uid={user.uid} loading={loading} tasks={tasks} series={series} completions={completions} today={today} onDeleted={offerUndo} />
+                <Tasks
+                  uid={user.uid}
+                  loading={loading}
+                  tasks={tasks}
+                  series={series}
+                  completions={completions}
+                  today={today}
+                  onDeleted={offerUndo}
+                  openTaskId={pendingTask}
+                  onOpenTaskHandled={clearPendingTask}
+                />
               )}
               {view === "calendar" && (
                 <Calendar
@@ -172,6 +208,18 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       <AnimatePresence>
         {creating && <NewTaskSheet key="new-task" uid={user.uid} origin={creating} onClose={() => setCreating(null)} />}
       </AnimatePresence>
+      {paletteOpen && (
+        <CommandPalette
+          uid={user.uid}
+          tasks={tasks}
+          onClose={() => setPaletteOpen(false)}
+          onNavigate={onNavigate}
+          onOpenTask={taskId => {
+            setPendingTask(taskId);
+            onNavigate("tasks");
+          }}
+        />
+      )}
       </div>
     </TaskDragProvider>
   );

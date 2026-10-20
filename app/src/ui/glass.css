@@ -1,0 +1,326 @@
+/* Glass materials — foundation (G1).
+
+   One recipe, three thicknesses. Every layer of a glass surface lives on the
+   element itself: backdrop filter, tint, sheen, rim, thickness and shadow.
+   Text never sits inside a filtered layer.
+
+   Load order matters: this file is imported after app.css, so it replaces the
+   old `.glass` recipe and owns the glass tokens. The legacy class names
+   (`.glass-chrome`, `.glass-sheet`, `.glass-control`) stay as aliases until
+   placement (G2) renames the surfaces; contrast figures live in
+   `app/scripts/glass-contrast.mjs`. */
+
+:root {
+  /* tints: cool paper in light mode, graphite-blue in dark */
+  --glass-tint-thin: rgb(248 248 250 / 0.5);
+  --glass-tint-regular: rgb(248 248 250 / 0.68);
+  --glass-tint-thick: rgb(250 250 252 / 0.88);
+  --glass-sheen: rgb(255 255 255 / 0.4);
+
+  /* specular rim: lit top-left, counter-glint bottom-right, plus thickness */
+  --glass-rim-lit: rgb(255 255 255 / 0.92);
+  --glass-rim-mid: rgb(255 255 255 / 0.3);
+  --glass-rim-glint: rgb(255 255 255 / 0.55);
+  --glass-thickness: rgb(20 20 40 / 0.1);
+  --glass-edge: rgb(20 20 40 / 0.08);
+
+  /* ambient backdrop: what the glass actually refracts */
+  --glass-blob-1: rgb(0 102 204 / 0.14);
+  --glass-blob-2: rgb(104 76 196 / 0.11);
+  --glass-blob-3: rgb(46 155 79 / 0.07);
+
+  /* tokens app.css already consumes (chrome, sheets, pills, cards) */
+  --tint-chrome: var(--glass-tint-regular);
+  --tint-sheet: var(--glass-tint-thick);
+  --tint-control: var(--glass-tint-thin);
+  --rim-hi: var(--glass-rim-lit);
+  --rim-lo: var(--glass-rim-mid);
+  --ring: var(--glass-edge);
+  --sheen: var(--glass-sheen);
+  --glass-shadow: 0 8px 28px rgb(20 20 40 / 0.08), 0 1px 3px rgb(20 20 40 / 0.05);
+  --pill: rgb(255 255 255 / 0.95);
+  --pill-shadow: 0 1px 2px rgb(20 20 40 / 0.1), 0 0 0 0.5px rgb(20 20 40 / 0.06);
+  --card-shadow: 0 0 0 1px rgb(20 20 40 / 0.045), 0 1px 2px -1px rgb(20 20 40 / 0.06),
+    0 3px 10px rgb(20 20 40 / 0.035);
+  --scrim: rgb(20 20 30 / 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-tint-thin: rgb(32 32 38 / 0.55);
+    --glass-tint-regular: rgb(30 30 34 / 0.72);
+    --glass-tint-thick: rgb(34 34 38 / 0.9);
+    --glass-sheen: rgb(255 255 255 / 0.06);
+    /* dark mode needs the rim to peak, or the edge disappears */
+    --glass-rim-lit: rgb(255 255 255 / 0.28);
+    --glass-rim-mid: rgb(255 255 255 / 0.1);
+    --glass-rim-glint: rgb(255 255 255 / 0.18);
+    --glass-thickness: rgb(0 0 0 / 0.4);
+    --glass-edge: rgb(255 255 255 / 0.09);
+    --glass-blob-1: rgb(91 155 230 / 0.16);
+    --glass-blob-2: rgb(150 130 230 / 0.12);
+    --glass-blob-3: rgb(108 196 136 / 0.07);
+    --glass-shadow: 0 8px 28px rgb(0 0 0 / 0.36), 0 1px 3px rgb(0 0 0 / 0.3);
+    --pill: rgb(255 255 255 / 0.09);
+    --pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.06);
+    --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.055);
+    --scrim: rgb(0 0 0 / 0.42);
+  }
+}
+
+/* Ambient backdrop. Static, pointer-transparent, one layer: without something
+   behind it, a backdrop blur is invisible and the glass reads as a white card. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42vw 32vw at 10% -8%, var(--glass-blob-1), transparent 70%),
+    radial-gradient(38vw 30vw at 94% 2%, var(--glass-blob-2), transparent 72%),
+    radial-gradient(52vw 38vw at 66% 106%, var(--glass-blob-3), transparent 74%);
+}
+
+/* ---------- materials ---------- */
+
+.glass {
+  --glass-blur: 20px;
+  --glass-sat: 170%;
+  --glass-tint: var(--glass-tint-regular);
+  isolation: isolate;
+  background-color: var(--glass-tint);
+  background-image: linear-gradient(160deg, var(--glass-sheen), transparent 46%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow:
+    inset 0 1px 0 -0.5px var(--glass-rim-mid),
+    inset 0 -10px 18px -12px var(--glass-thickness),
+    0 0 0 0.5px var(--glass-edge),
+    var(--glass-shadow);
+}
+
+/* A glass surface has to be a positioned box for its rim. This is the one rule
+   in this file that layout may overrule: the sidebar, the sheet, the tab bar,
+   the FAB, the popover and the palette all own their `position`, and this file
+   loads after app.css, so an unlayered `position: relative` here would turn the
+   fixed sidebar and the modal sheet into in-flow boxes. A layered rule loses to
+   every unlayered one whatever the file order, so surfaces that position
+   themselves keep their own, and a static glass surface still gets a box. */
+@layer glass-layout {
+  .glass {
+    position: relative;
+  }
+}
+
+/* The rim is a 1px gradient border: brightest at the top-left, a counter-glint
+   at the bottom-right, nothing across the middle. Negative z-index keeps it
+   above the tint and below the surface's own content. */
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    145deg,
+    var(--glass-rim-lit) 0%,
+    var(--glass-rim-mid) 26%,
+    transparent 56%,
+    var(--glass-rim-glint) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.glass-thin,
+.glass-control {
+  --glass-blur: 12px;
+  --glass-sat: 150%;
+  --glass-tint: var(--glass-tint-thin);
+}
+
+.glass-regular,
+.glass-chrome {
+  --glass-blur: 20px;
+  --glass-sat: 170%;
+  --glass-tint: var(--glass-tint-regular);
+}
+
+.glass-thick,
+.glass-sheet {
+  --glass-blur: 32px;
+  --glass-sat: 180%;
+  --glass-tint: var(--glass-tint-thick);
+}
+
+/* ---------- fallbacks ---------- */
+
+/* Scrolled top bar: the same regular material, drawn on its masked ::before. */
+.topbar::before {
+  background: var(--tint-chrome);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .topbar::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: var(--surface);
+    background-image: none;
+    box-shadow: 0 0 0 1px var(--separator), var(--glass-shadow);
+  }
+  .glass::after {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass,
+  .topbar::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: var(--surface);
+    background-image: none;
+    box-shadow: 0 0 0 1px var(--label-3);
+  }
+  .glass::after {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass,
+  .topbar::before {
+    background: Canvas;
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .glass::after,
+  body::before {
+    display: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .topbar::before {
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--separator);
+  }
+  .glass::after {
+    display: none;
+  }
+}
+
+/* ---------- controls (G3) ---------- */
+
+/* Controls get the rim of a glass surface without a backdrop of their own: a
+   backdrop filter per button would blow the layer budget (spec §3). Press is an
+   opacity-only overlay, so it never touches layout or paint of the label.
+   Deviation from §4.1: a white overlay over white paper is invisible, so paper
+   surfaces get a faint ink overlay and saturated fills keep the white one. */
+
+.button,
+.icon-button,
+.segmented button {
+  position: relative;
+  isolation: isolate;
+  --press: rgb(255 255 255 / 0.16);
+}
+
+.button,
+.button-danger,
+.segmented button[aria-pressed="true"] {
+  /* paper surface: darken a touch instead of brightening nothing */
+  --press: rgb(20 20 40 / 0.06);
+}
+
+/* A saturated fill still brightens: white is visible on it in both schemes. */
+.button-accent,
+.button-primary {
+  --press: rgb(255 255 255 / 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  .button,
+  .button-danger,
+  .segmented button[aria-pressed="true"] {
+    --press: rgb(255 255 255 / 0.1);
+  }
+  .button-accent,
+  .button-primary {
+    --press: rgb(255 255 255 / 0.16);
+  }
+}
+
+.button::before,
+.icon-button::before,
+.segmented button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    var(--glass-rim-lit) 0%,
+    var(--glass-rim-mid) 32%,
+    transparent 68%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.button::after,
+.icon-button::after,
+.segmented button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--press);
+  opacity: 0;
+  /* press in at press speed, release at hover speed (asymmetric on purpose) */
+  transition: opacity 200ms var(--ease-out);
+}
+
+.button:active:not(:disabled)::after,
+.icon-button:active:not(:disabled)::after,
+.segmented button:active::after {
+  opacity: 1;
+  transition-duration: 120ms;
+}
+
+/* Pills: the nav and tab indicators are the product's sliding glass slug. */
+.nav-pill,
+.tab .tab-pill {
+  background: linear-gradient(168deg, var(--glass-rim-mid), transparent 52%) var(--pill);
+  box-shadow: inset 0 1px 0 var(--glass-rim-mid), var(--pill-shadow);
+}
+
+.segmented button[aria-pressed="true"] {
+  background-image: linear-gradient(168deg, var(--glass-rim-mid), transparent 58%);
+}
