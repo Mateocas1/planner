@@ -173,13 +173,27 @@ export function Sheet({
   // Focus returns to what opened the sheet. The origin is the row (its box is
   // what the panel grew from), and a row is not focusable by itself: the control
   // inside it is the thing the user pressed, so that is where the caret goes.
-  useEffect(() => () => {
-    if (!origin?.isConnected) return;
-    // A row holds a check and its title button; the button is the control that
-    // opened the panel, so it is the one that gets the caret back.
-    const control = "button, [href], select, textarea";
-    const target = origin.matches(control) ? origin : origin.querySelector<HTMLElement>(control);
-    (target ?? origin).focus({ preventScroll: true });
+  //
+  // The sheet unmounts when its exit animation is over, which can be a beat
+  // after the user moved on: a creation sheet submitted and then a row opened
+  // while it was still animating out, or any other control pressed in that
+  // window. The caret comes back only if it is still loose -- removing the
+  // focused field drops it to <body>. Anything else holding focus is where the
+  // user (or the panel they opened next) already is, and this closing sheet has
+  // no claim on it.
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    return () => {
+      if (!origin?.isConnected) return;
+      const active = document.activeElement;
+      const loose = active === null || active === document.body || active === sheet || sheet?.contains(active) === true;
+      if (!loose) return;
+      // A row holds a check and its title button; the button is the control that
+      // opened the panel, so it is the one that gets the caret back.
+      const control = "button, [href], select, textarea";
+      const target = origin.matches(control) ? origin : origin.querySelector<HTMLElement>(control);
+      (target ?? origin).focus({ preventScroll: true });
+    };
   }, [origin]);
 
 

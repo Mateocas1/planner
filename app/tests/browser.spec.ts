@@ -437,6 +437,26 @@ test("the row morphs into the details panel and focus returns to the row", async
   expect((await viewTransitions(page)).aborted).toBe(0);
 });
 
+// A sheet whose exit is still playing finishes after the user moved on, and it
+// must not take the caret back when it unmounts: the row opened meanwhile keeps
+// its details field focused, and the creation sheet's origin is left alone.
+test("a sheet still animating out never takes the caret back from the panel opened meanwhile", async ({ page }) => {
+  const email = newEmail("focus-handoff");
+  await signUp(page, email);
+  await openTasks(page);
+  // the row is visible before the creation sheet has finished leaving, so the
+  // panel is opened inside that window
+  await addTaskThroughForm(page, "Handoff");
+
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await page.getByRole("button", { name: "Handoff" }).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+  // and it is still there once the creation sheet is gone for good
+  await expect(page.getByRole("complementary", { name: "New task" })).toHaveCount(0);
+  await expect(panel.getByLabel("Rename task")).toBeFocused();
+});
+
 test("reduced motion opens the details panel without a view transition", async ({ page }) => {
   await recordViewTransitions(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
