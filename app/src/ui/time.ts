@@ -100,17 +100,27 @@ function zoneOffset(stamp: number, timeZone: string): string {
   return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+/** The wall-clock value (YYYY-MM-DDTHH:MM) an instant reads as in a zone. */
+function wallValue(stamp: number, timeZone: string): string {
+  const parts = wallParts(new Date(stamp), timeZone);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
 /** Converts a datetime-local value (YYYY-MM-DDTHH:MM) into a zoned ISO instant
  * interpreted in the given zone. Two correction passes land the instant whose
- * wall clock in the zone equals the input (stamp = wall - offset), which also
- * handles DST walls. */
+ * wall clock in the zone equals the input (stamp = wall - offset); a zone's own
+ * offset at the result is what the string carries.
+ *
+ * A wall clock a DST gap skips names no instant: the passes resolve to the
+ * first wall clock the zone shows after the gap, and the returned string names
+ * that clock, so the string never denotes an instant the zone reads differently. */
 export function toZonedInstant(value: string, timeZone: string): string {
   const guess = Date.parse(`${value}:00Z`);
   let stamp = guess;
   for (let pass = 0; pass < 2; pass += 1) {
     stamp = guess - (wallAsUtc(new Date(stamp), timeZone) - stamp);
   }
-  return `${value}:00${zoneOffset(stamp, timeZone)}`;
+  return `${wallValue(stamp, timeZone)}:00${zoneOffset(stamp, timeZone)}`;
 }
 
 /** A datetime-local value for a day key plus minutes since midnight. */

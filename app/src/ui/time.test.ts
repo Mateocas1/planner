@@ -31,6 +31,17 @@ test("a wall time after a DST switch keeps the offset in force at that moment", 
   assert.equal(timeLabel(new Date(toZonedInstant("2026-03-28T09:30", "Europe/Madrid")), "Europe/Madrid"), "09:30");
 });
 
+test("a wall time a DST gap skips resolves to the clock the zone shows next", () => {
+  // Madrid jumps 02:00 → 03:00 on 2026-03-29; 02:30 never happens there. The
+  // string must name an instant the zone reads as it is written: 03:30 CEST.
+  const gap = toZonedInstant("2026-03-29T02:30", "Europe/Madrid");
+  assert.equal(gap, "2026-03-29T03:30:00+02:00");
+  assert.equal(ms(gap), Date.parse("2026-03-29T01:30:00Z"));
+  assert.equal(timeLabel(new Date(gap), "Europe/Madrid"), "03:30");
+  // The resolved instant's own wall clock is stable: re-resolving it is a no-op.
+  assert.equal(toZonedInstant("2026-03-29T03:30", "Europe/Madrid"), gap);
+});
+
 test("an instant's wall minutes are the input's minutes", () => {
   const instant = toZonedInstant("2026-03-02T23:45", "Asia/Tokyo");
   assert.equal(wallMinutes(new Date(instant), "Asia/Tokyo"), 23 * 60 + 45);
