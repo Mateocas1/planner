@@ -4,7 +4,7 @@ import { addSeries } from "../data/series.ts";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
 import { parseQuickAdd, type QuickAdd } from "../domain/quickAdd.ts";
-import { PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
+import { CalendarIcon, PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
 import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { quickAddPartLabel } from "./QuickAddChips.tsx";
 import { ThemeIcon, views } from "./Sidebar.tsx";
@@ -42,6 +42,7 @@ export function CommandPalette({
   onClose,
   onNavigate,
   onOpenTask,
+  onImport,
 }: {
   uid: string;
   /** The profile zone: the create row's date preview is a planner day. */
@@ -50,6 +51,8 @@ export function CommandPalette({
   onClose: () => void;
   onNavigate: (view: View) => void;
   onOpenTask: (taskId: string) => void;
+  /** Runs the "Import from Google Calendar" command (the sheet is the shell's). */
+  onImport: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +107,14 @@ export function CommandPalette({
     if (command.kind === "theme") {
       /* a repaint, not a navigation: the palette closes and the page stays */
       setThemePreference(command.pref);
+      onClose();
+      return;
+    }
+    if (command.kind === "action") {
+      /* The sheet that opens takes the focus; handing it back to the trigger
+         behind the dialog would fight the panel's own focus return. */
+      restoreFocus.current = false;
+      onImport();
       onClose();
       return;
     }
@@ -252,6 +263,7 @@ function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
+  if (command.kind === "action") return <CalendarIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }
