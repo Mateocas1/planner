@@ -1,0 +1,180 @@
+/* Command palette (CommandPalette.tsx). Co-located so the palette's material
+   and motion stay out of app.css.
+
+   Motion: the palette is opened by a keyboard shortcut hundreds of times a day,
+   the frequency tier where the skills say no animation at all. It is held to the
+   smallest step that can exist — a single press-feedback beat (--dur-press,
+   120 ms) of opacity and scale(0.98) on entry — and it leaves with no animation
+   whatsoever, because an exit animation would be felt as lag on the next
+   keystroke. Nothing inside transitions while the user types: the selected row
+   is painted by [aria-selected] with no transition on the row. Reduced motion
+   is covered by the app's single contract in app.css (prefers-reduced-motion
+   collapses every transition duration), not a second rule here. */
+
+dialog.palette {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(560px, calc(100vh - 32px));
+  padding: 6px;
+  border: 0;
+  border-radius: var(--r-sheet);
+  color: var(--label);
+  overflow: hidden;
+  transform-origin: center;
+  transition: opacity var(--dur-press) var(--ease-out), transform var(--dur-press) var(--ease-out);
+}
+
+/* The palette mounts closed and the effect below calls showModal(). Without
+   this rule the flex display above would beat the UA's dialog:not([open])
+   display:none and flash a centered empty panel for a frame before it opens. */
+dialog.palette:not([open]) {
+  display: none;
+}
+
+dialog.palette[open] {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@starting-style {
+  dialog.palette[open] {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+dialog.palette::backdrop {
+  background: var(--scrim);
+}
+
+.palette-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-group);
+}
+
+/* the field is the dialog's only input, so it carries the focus state: a quiet
+   inset fill, plus the app's 2 px accent ring (5:1 on the glass) drawn inside
+   the field's own radius instead of boxing the dialog */
+.palette-field:focus-within {
+  background: var(--fill-hover);
+}
+
+.palette-field:has(.palette-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.palette-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--label-3);
+}
+
+/* the field's own close control stays quiet: the glass carries the surface */
+.palette-field .icon-button {
+  flex: none;
+  background: transparent;
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-headline);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+.palette-input:focus-visible {
+  outline: none;
+}
+
+.palette-input::placeholder {
+  color: var(--label-3);
+  font-weight: 400;
+}
+
+.palette-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.palette-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: var(--r-control);
+  color: var(--label);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.palette-option[aria-selected="true"] {
+  background: var(--fill-press);
+}
+
+.palette-option-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--label-3);
+}
+
+.palette-option-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.palette-option[aria-selected="true"] .palette-option-icon {
+  color: var(--accent);
+}
+
+.palette-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-hint {
+  padding: 6px 12px 8px;
+  color: var(--label-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.palette-error {
+  margin: 0 6px 6px;
+  padding: 8px 12px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+  font-size: var(--text-sub);
+}
+
+@media (max-width: 760px) {
+  dialog.palette {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 96px);
+  }
+}
