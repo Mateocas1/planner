@@ -1,0 +1,392 @@
+import { expect, test, type Page } from "@playwright/test";
+import {
+  password,
+  readRemoteBlocks,
+  readRemoteCompletions,
+  readRemoteSeries,
+  readRemoteTasks,
+} from "./browser-helpers.ts";
+
+/**
+ * Undo for delete (F1 / spec S6).
+ *
+ * The delete is applied as soon as it is accepted, so the offer is a
+ * compensating write: undo rewrites the item under its original document id
+ * with the exact fields it held. Every test below drives the real UI and checks
+ * the consequences a user can observe: the row, the toast, and the stored
+ * document.
+ */
+
+test.setTimeout(60_000);
+
+const poll = { timeout: 15_000, intervals: [250, 500, 1_000] };
+
+function newEmail(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
+}
+
+async function signUp(page: Page, email: string) {
+  await page.goto("/");
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+}
+
+async function openTasks(page: Page) {
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+}
+
+/** Waits out a creation sheet that was just submitted, exactly as the flow
+ * suite does, so the next interaction never lands on a closing form. */
+async function settleSheet(page: Page, label: string) {
+  const sheet = page.getByRole("complementary", { name: label });
+  if ((await sheet.count()) === 0) return;
+  const closing = (await sheet.getAttribute("data-state")) === "closing";
+  const submitting = await sheet.getByRole("button", { name: /^Add (task|block)$/ }).isDisabled().catch(() => false);
+  if (closing || submitting) await expect(sheet).toHaveCount(0);
+}
+
+async function revealTaskForm(page: Page) {
+  await settleSheet(page, "New task");
+  const add = page.getByRole("button", { name: "Add task" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New task" }).click();
+  await expect(add).toBeVisible();
+}
+
+async function addTaskThroughForm(page: Page, title: string, deadline?: string) {
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill(title);
+  if (deadline) await page.getByLabel("Deadline").fill(deadline);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
+}
+
+async function openCalendar(page: Page) {
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
+  await expect(page.getByRole("button", { name: "New block" })).toBeVisible();
+}
+
+async function revealBlockForm(page: Page) {
+  await settleSheet(page, "New block");
+  const add = page.getByRole("button", { name: "Add block" });
+  if (await add.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "New block" }).click();
+  await expect(add).toBeVisible();
+}
+
+/** Local YYYY-MM-DD key, matching the grid's browser-local timezone. */
+function localDateKey(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function dayKey(daysFromNow: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  return localDateKey(date);
+}
+
+async function expectRemoteTasks(email: string, expected: unknown[]) {
+  await expect.poll(() => readRemoteTasks(email), poll).toEqual(expected);
+}
+
+async function expectRemoteBlocks(email: string, expected: unknown[]) {
+  await expect.poll(() => readRemoteBlocks(email), poll).toEqual(expected);
+}
+
+async function expectRemoteSeries(email: string, expected: unknown[]) {
+  await expect.poll(() => readRemoteSeries(email), poll).toEqual(expected);
+}
+
+/** Polls the forced-server read until one block exists, then returns it. */
+async function expectSingleRemoteBlock(email: string) {
+  let remote: Array<{ start: string; end: string; taskId?: string }> = [];
+  await expect
+    .poll(async () => {
+      remote = await readRemoteBlocks(email);
+      return remote.length;
+    }, poll)
+    .toBe(1);
+  return remote[0]!;
+}
+
+/** Polls the forced-server read until one series exists, then returns it. */
+async function expectSingleRemoteSeries(email: string) {
+  let remote: Array<{ id: string; data: Record<string, string> }> = [];
+  await expect
+    .poll(async () => {
+      remote = await readRemoteSeries(email);
+      return remote.length;
+    }, poll)
+    .toBe(1);
+  return remote[0]!;
+}
+
+const undoToast = (page: Page) => page.locator(".undo-toast");
+
+/** The offer reads as one sentence: "<what was deleted> · Undo". */
+async function expectToastSentence(page: Page, message: string) {
+  const toast = undoToast(page);
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveAttribute("role", "status");
+  const sentence = (await toast.innerText()).replace(/\s+/g, " ").trim();
+  expect(sentence).toMatch(new RegExp(`^${message}\\s*·\\s*Undo$`));
+}
+
+test("deleting a task offers undo, and undo restores that task with its completion and deadline", async ({ page }) => {
+  const email = newEmail("undo-task");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const deadline = dayKey(3);
+  await addTaskThroughForm(page, "Pack bags", deadline);
+  await page.getByRole("checkbox", { name: "Complete: Pack bags" }).click();
+  await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
+  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline }]);
+
+  await page.getByRole("button", { name: "Pack bags" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+
+  // the offer appears and the row is gone
+  await expectToastSentence(page, "Task deleted");
+  await expect(page.locator(".task-title", { hasText: "Pack bags" })).toHaveCount(0);
+  // the delete is really applied: the toast is a compensating write, not a
+  // deferral, so the server is already without the document
+  await expectRemoteTasks(email, []);
+
+  await undoToast(page).getByRole("button", { name: "Undo" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+
+  // same title, same completion, same deadline — in the completed group
+  await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
+  await expect(page.getByRole("checkbox", { name: "Reopen: Pack bags" })).toBeChecked();
+  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline }]);
+
+  // it is stored state, not a lingering local echo
+  await page.reload();
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await openTasks(page);
+  await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
+});
+
+test("deleting a series offers undo, and undo restores the same id, schedule and completion history", async ({ page }) => {
+  const email = newEmail("undo-series");
+  await signUp(page, email);
+  await openTasks(page);
+
+  // a daily habit whose first occurrence is today, then completed: the record
+  // is keyed "<seriesId>:<date>", so it only still matches a restored series
+  // that kept its document id
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Stretch");
+  await page.getByLabel("Repeat").selectOption({ label: "Daily" });
+  await page.getByLabel("Start date").fill(dayKey(0));
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".series-row", { hasText: "Stretch" })).toBeVisible();
+
+  const panel = page.getByRole("complementary", { name: "Series details" });
+  await page.getByRole("button", { name: "Stretch" }).click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole("checkbox", { name: `Complete: Stretch on ${dayKey(0)}` }).click();
+  await expect(panel.getByRole("checkbox", { name: `Completed: Stretch on ${dayKey(0)}` })).toBeChecked();
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toHaveCount(0);
+
+  const row = page.locator(".series-row", { hasText: "Stretch" });
+  await expect(row).toHaveAttribute("data-next-occurrence", dayKey(1));
+  const before = await expectSingleRemoteSeries(email);
+  const completionsBefore = await readRemoteCompletions(email);
+
+  await page.getByRole("button", { name: "Stretch" }).click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Delete series" }).click();
+
+  await expectToastSentence(page, "Series deleted");
+  await expect(row).toHaveCount(0);
+  await expectRemoteSeries(email, []);
+
+  await undoToast(page).getByRole("button", { name: "Undo" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+
+  // the restored row keeps its anchor and frequency, and today stays completed:
+  // the next occurrence is tomorrow only because the completion record still
+  // belongs to this series id
+  await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("data-next-occurrence", dayKey(1));
+  await expectRemoteSeries(email, [before]);
+  expect(await readRemoteCompletions(email)).toEqual(completionsBefore);
+
+  await page.getByRole("button", { name: "Stretch" }).click();
+  await expect(panel.getByRole("checkbox", { name: `Completed: Stretch on ${dayKey(0)}` })).toBeChecked();
+});
+
+test("deleting a block offers undo, and undo restores it at the same instants and task link", async ({ page }) => {
+  const email = newEmail("undo-block");
+  await signUp(page, email);
+  await openTasks(page);
+  await addTaskThroughForm(page, "Deep work");
+  await openCalendar(page);
+
+  const day = localDateKey(new Date());
+  await revealBlockForm(page);
+  await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
+  await page.getByLabel("Task").selectOption({ label: "Deep work" });
+  await page.getByRole("button", { name: "Add block" }).click();
+
+  const block = page.locator(`[data-date="${day}"] .calendar-block`);
+  await expect(block).toHaveCount(1);
+  const before = await expectSingleRemoteBlock(email);
+  expect(before.taskId).toBeTruthy();
+
+  await block.click();
+  await page.getByRole("button", { name: "Delete block" }).click();
+
+  await expectToastSentence(page, "Block deleted");
+  await expect(block).toHaveCount(0);
+  await expectRemoteBlocks(email, []);
+
+  await undoToast(page).getByRole("button", { name: "Undo" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+
+  // the same instants, and it is still for the same task
+  await expect(block).toHaveCount(1);
+  await expectRemoteBlocks(email, [before]);
+  await block.click();
+  await expect(page.getByRole("complementary", { name: "Block details" })).toContainText("Deep work");
+});
+
+test("a second delete replaces the toast, and undo then restores only the newest delete", async ({ page }) => {
+  const email = newEmail("undo-replace");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "First");
+  await addTaskThroughForm(page, "Second");
+
+  await page.getByRole("button", { name: "First" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  // a sheet plays its return animation before it leaves the DOM, so the next
+  // panel is only opened once the previous one is really gone
+  await expect(page.getByRole("complementary", { name: "Task details" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Second" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  // one offer, not two: the newest delete owns it
+  await expect(undoToast(page)).toHaveCount(1);
+  await expectToastSentence(page, "Task deleted");
+
+  await undoToast(page).getByRole("button", { name: "Undo" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+
+  await expect(page.locator(".task-title", { hasText: "Second" })).toHaveCount(1);
+  await expect(page.locator(".task-title", { hasText: "First" })).toHaveCount(0);
+  await expectRemoteTasks(email, [{ title: "Second", completed: false }]);
+});
+
+test("Escape and the close control both dismiss the offer, and the delete still stands", async ({ page }) => {
+  const email = newEmail("undo-dismiss");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Dismissed");
+  await page.getByRole("button", { name: "Dismissed" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  await page.keyboard.press("Escape");
+  await expect(undoToast(page)).toHaveCount(0);
+  await expect(page.locator(".task-title", { hasText: "Dismissed" })).toHaveCount(0);
+  await expectRemoteTasks(email, []);
+  await expect(page.getByRole("complementary", { name: "Task details" })).toHaveCount(0);
+
+  await addTaskThroughForm(page, "Closed");
+  await page.getByRole("button", { name: "Closed" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  await undoToast(page).getByRole("button", { name: "Dismiss" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+  await expectRemoteTasks(email, []);
+});
+
+test("the offer dismisses itself after about five seconds", async ({ page }) => {
+  const email = newEmail("undo-timeout");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Short-lived offer");
+  await page.getByRole("button", { name: "Short-lived offer" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  // still on screen well before the deadline, then gone on its own
+  await page.waitForTimeout(1_000);
+  await expect(undoToast(page)).toBeVisible();
+  await expect(undoToast(page)).toHaveCount(0, { timeout: 8_000 });
+  await expect(page.locator(".task-title", { hasText: "Short-lived offer" })).toHaveCount(0);
+  await expectRemoteTasks(email, []);
+});
+
+test("the toast is a transition on opacity and translateY, keeps focus, and only fades under reduced motion", async ({ page }) => {
+  const email = newEmail("undo-motion");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await addTaskThroughForm(page, "Motion task");
+  await page.getByRole("button", { name: "Motion task" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  const toast = undoToast(page);
+  const undo = toast.getByRole("button", { name: "Undo" });
+  // a real button, and the offer never takes focus
+  expect(await undo.evaluate(element => element.tagName)).toBe("BUTTON");
+  expect(await undo.evaluate(element => element === document.activeElement)).toBe(false);
+
+  const motion = await toast.evaluate(element => {
+    const style = getComputedStyle(element);
+    return {
+      animation: style.animationName,
+      properties: style.transitionProperty,
+      durations: style.transitionDuration.split(",").map(value => (value.trim().endsWith("ms") ? parseFloat(value) / 1000 : parseFloat(value))),
+    };
+  });
+  // a transition, never a keyframe animation: 200 ms in on opacity and the rise
+  expect(motion.animation).toBe("none");
+  expect(motion.properties).toContain("opacity");
+  expect(motion.properties).toContain("transform");
+  // the two identical durations are serialized once, so every entry is 200 ms
+  expect(motion.durations.length).toBeGreaterThan(0);
+  expect(motion.durations.every(duration => duration === 0.2)).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(toast).toHaveCount(0);
+
+  // with reduced motion the same offer still fades, and never rises
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await addTaskThroughForm(page, "Still motion task");
+  await page.getByRole("button", { name: "Still motion task" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+
+  const reduced = await undoToast(page).evaluate(element => {
+    const style = getComputedStyle(element);
+    return {
+      animation: style.animationName,
+      properties: style.transitionProperty,
+      durations: style.transitionDuration.split(",").map(value => (value.trim().endsWith("ms") ? parseFloat(value) / 1000 : parseFloat(value))),
+      transform: style.transform,
+    };
+  });
+  expect(reduced.animation).toBe("none");
+  expect(reduced.properties).toBe("opacity");
+  expect(reduced.durations.every(duration => duration === 0.2)).toBe(true);
+  expect(reduced.transform).toBe("none");
+});

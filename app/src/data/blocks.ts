@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { createWorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { trackRemoval } from "./pending.ts";
@@ -19,4 +19,23 @@ export async function addBlock(uid: string, start: string, end: string, taskId?:
 
 export async function deleteBlock(uid: string, blockId: string) {
   await trackRemoval(deleteDoc(doc(db, `users/${uid}/blocks/${blockId}`)));
+}
+
+/** A work block exactly as it was stored, captured before it is deleted. */
+export type DeletedBlock = { id: string; start: string; end: string; taskId?: string };
+
+/**
+ * Puts a deleted work block back under its original document id with the exact
+ * instants and task link it held. The block schema is closed (start, end,
+ * optional taskId), so setDoc reproduces the original document. The instants
+ * are validated through the domain module before any write.
+ */
+export async function restoreBlock(uid: string, block: DeletedBlock) {
+  const validated = createWorkBlock(block.id, block.start, block.end, block.taskId);
+  if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
+  await setDoc(doc(db, `users/${uid}/blocks/${block.id}`), {
+    start: validated.start,
+    end: validated.end,
+    ...(validated.taskId === undefined ? {} : { taskId: validated.taskId }),
+  });
 }
