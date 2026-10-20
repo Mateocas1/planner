@@ -1,10 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { hitArea, seedSidebarFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
  * The sidebar fill (value roadmap §3): the two blocks that answer "what comes
- * next" from the chrome the Tasks and Calendar surfaces already show, and the
- * dense footer row (account, sync, theme).
+ * next" from the chrome the Tasks and Calendar surfaces already show, the dense
+ * footer row (account, sync, theme), and the PWA update prompt that surfaces a
+ * waiting service worker instead of silently running a stale build (§2 row 1).
  *
  * Every assertion is what the user reads or measures: the section names, the
  * rows in their order, the times in the profile zone, the buttons, the hit
@@ -27,10 +33,15 @@ function newEmail(prefix: string) {
 }
 
 /** Seeds the fixture, then signs the (remotely created) account in. */
-async function enter(page: Page, prefix: string, fixture: Parameters<typeof seedSidebarFixture>[2] = {}) {
+async function enter(
+  page: Page,
+  prefix: string,
+  fixture: Parameters<typeof seedSidebarFixture>[2] = {},
+  options: { url?: string } = {},
+) {
   const email = newEmail(prefix);
   await seedSidebarFixture(email, ZONE, fixture);
-  await submitAuthForm(page, email, "sign in");
+  await submitAuthForm(page, email, "sign in", options);
   return email;
 }
 
@@ -172,6 +183,24 @@ test("Due soon is overdue-first, capped at five, checkable, and opens the task p
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" })).toHaveAttribute("aria-current", "page");
 });
 
+test("the footer is one row: the account, the sync line and the theme control", async ({ page }) => {
+  const email = await enter(page, "side-foot", { tasks: [{ title: "Anything" }] });
+
+  const foot = page.locator(".side-foot");
+  await expect(foot.getByText(`Signed in as ${email}`)).toBeVisible();
+  await expect(foot.getByText("Synced")).toBeVisible();
+  /* The theme control shares the row with the identity, not a row of its own. */
+  const row = page.locator(".side-foot-row");
+  await expect(row.getByRole("radiogroup", { name: "Theme" })).toBeVisible();
+  await expect(row.getByText(`Signed in as ${email}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+
+  /* It is still the same control: picking Dark paints the dark tokens. */
+  await row.getByRole("radio", { name: "Dark", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(row.getByRole("radio", { name: "Dark", exact: true })).toHaveAttribute("aria-checked", "true");
+});
+
 test("the sidebar makes room on a short screen instead of scrolling its chrome", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await enter(page, "side-height", {
@@ -263,4 +292,94 @@ test.describe("a thumb on a coarse pointer", () => {
     const row = await page.locator(".side-due-open").first().boundingBox();
     expect(row!.height, "the due row's opener is 44 px tall").toBeGreaterThanOrEqual(44);
   });
+});
+
+test("a waiting service worker offers Reload, and Reload activates it", async ({ page }) => {
+  /* The service worker script is fetched by the browser's worker machinery, not
+     by the page, so `page.route` cannot see it. The built app is therefore
+     served from a test-owned origin where `/sw.js` is ours: version "a" starts
+     active, version "b" is installed as the waiting update. */
+  const script = (version: string) => `
+    self.addEventListener('install', () => {});
+    self.addEventListener('activate', event => { event.waitUntil(self.clients.claim()); });
+    self.addEventListener('message', event => {
+      if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+      if (event.data?.type === 'version') event.ports[0]?.postMessage({ version: '${version}' });
+    });
+  `;
+  const worker = { body: script("a") };
+  const dist = fileURLToPath(new URL("../dist", import.meta.url));
+  const types: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".webmanifest": "application/manifest+json",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+  };
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path === "/sw.js") {
+      response.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" });
+      response.end(worker.body);
+      return;
+    }
+    const file = path === "/" ? "/index.html" : path;
+    try {
+      const body = readFileSync(join(dist, file));
+      response.writeHead(200, { "content-type": types[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream" });
+      response.end(body);
+    } catch {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const activeVersion = () =>
+    page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const active = registration?.active;
+      if (!active) return "no-active";
+      return await new Promise<string>(resolve => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = event => resolve(String(event.data?.version ?? "no-answer"));
+        active.postMessage({ type: "version" }, [channel.port2]);
+        setTimeout(() => resolve("timeout"), 5000);
+      });
+    });
+
+  try {
+    await enter(page, "update-prompt", {}, { url: origin });
+    await expect.poll(activeVersion, { timeout: 30_000 }).toBe("a");
+    await expect(page.locator(".update-prompt")).toHaveCount(0);
+
+    /* A new build lands: the waiting worker is a different script, so it waits
+       instead of taking over the tab. */
+    worker.body = script("b");
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect
+      .poll(
+        () => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting?.state ?? null),
+        { timeout: 30_000 },
+      )
+      .toBe("installed");
+
+    const prompt = page.locator(".update-prompt");
+    await expect(prompt).toBeVisible();
+    await expect(prompt.getByText("Update available")).toBeVisible();
+    await expect(prompt.getByText("Reload to use the new version.")).toBeVisible();
+
+    /* Reloading is the user's decision and activates that exact worker. */
+    await prompt.getByRole("button", { name: "Reload" }).click();
+    await expect(page.locator(".update-prompt")).toHaveCount(0, { timeout: 30_000 });
+    await expect.poll(activeVersion, { timeout: 30_000 }).toBe("b");
+    expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting ?? null)).toBeNull();
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
 });

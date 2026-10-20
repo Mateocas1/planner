@@ -1,12 +1,12 @@
 /* SB1 — the sidebar's own content (odd/research/value-roadmap.md §3).
  *
  * Two blocks that answer "what comes next" from the chrome Tasks and Calendar
- * actually show. Utility over decoration: these rows are the product's list
- * material (an opaque card on the glass), so every text pair here is one
- * `scripts/glass-contrast.mjs` already proves (--label, --label-2, --label-3,
- * --red and --now on --surface). Nothing animates: the blocks appear and
- * disappear with the data, and a sidebar that moves while the user is reading
- * is noise, not delight.
+ * actually show, and one dense footer row. Utility over decoration: these rows
+ * are the product's list material (an opaque card on the glass), so every text
+ * pair here is one `scripts/glass-contrast.mjs` already proves (--label,
+ * --label-2, --label-3, --red and --now on --surface). Nothing animates: the
+ * blocks appear and disappear with the data, and a sidebar that moves while the
+ * user is reading is noise, not delight.
  *
  * The sidebar is also a height container: a short window drops the less
  * important block first (never scrolls the chrome, §3).
@@ -140,6 +140,32 @@
 
 @media (hover: hover) and (pointer: fine) {
   .side-due-open:hover .side-due-title { color: var(--accent); }
+}
+
+/* ---------- footer row ---------- */
+
+.side-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.side-foot-row .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.side-foot-row .theme-switch { flex: none; }
+
+.side-signout {
+  align-self: flex-start;
+  font-size: var(--text-caption);
 }
 
 @media (pointer: coarse) {

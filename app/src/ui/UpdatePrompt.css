@@ -1,0 +1,47 @@
+/* SB1 — the PWA update prompt (odd/research/value-roadmap.md §2 row 1).
+ *
+ * A corner card on the float material: the same surface the phone's tab bar
+ * uses, so every label on it is already proven by `scripts/glass-contrast.mjs`
+ * (--label, --label-2 on the float tint), and its Reload button is the proven
+ * accent pair. It never animates: it appears once per session, above content
+ * the user did not ask to interrupt.
+ */
+
+.update-prompt {
+  position: fixed;
+  z-index: 70;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 12px 12px 16px;
+  border-radius: var(--r-card);
+}
+
+.update-prompt-text { min-width: 0; }
+
+.update-prompt-title {
+  margin: 0;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  color: var(--label);
+}
+
+.update-prompt-body {
+  margin: 2px 0 0;
+  font-size: var(--text-caption);
+  color: var(--label-2);
+}
+
+/* Above the phone's tab bar, which owns the bottom edge at those sizes (the two
+   queries are the shell's own phone rule). */
+@media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
+  .update-prompt {
+    left: max(16px, env(safe-area-inset-left, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+  }
+}
