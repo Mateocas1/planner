@@ -12,7 +12,8 @@ import { Home } from "./ui/Home.tsx";
 import { CloseIcon, PersonIcon, PlusIcon } from "./ui/icons.tsx";
 import { easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
-import { Sidebar, SyncStatus, views } from "./ui/Sidebar.tsx";
+import { Sidebar, views } from "./ui/Sidebar.tsx";
+import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
 import { settle, writeErrorEvent } from "./ui/write.ts";
@@ -41,7 +42,7 @@ export default function App() {
 const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar" };
 
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
-  const { loading, tasks, blocks, series, completions } = useStore(user.uid);
+  const { loading, tasks, blocks, series, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
   const phone = useMediaQuery(phoneQuery);
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
@@ -65,7 +66,6 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     void signOutUser();
   };
   const openCount = tasks.filter(task => !task.completed).length;
-  const pending = tasks.filter(task => task.pending).length + blocks.filter(block => block.pending).length;
   const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = dateKey(new Date(), zone);
   const newTask = (event: React.MouseEvent<HTMLButtonElement>) => setCreating(event.currentTarget);

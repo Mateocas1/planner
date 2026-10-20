@@ -1,6 +1,7 @@
 import { addDoc, collection, deleteDoc, doc } from "firebase/firestore";
 import { createWorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
+import { trackRemoval } from "./pending.ts";
 
 /**
  * Work block write helpers against `users/{uid}/blocks`. Input is validated by
@@ -17,5 +18,5 @@ export async function addBlock(uid: string, start: string, end: string, taskId?:
 }
 
 export async function deleteBlock(uid: string, blockId: string) {
-  await deleteDoc(doc(db, `users/${uid}/blocks/${blockId}`));
+  await trackRemoval(deleteDoc(doc(db, `users/${uid}/blocks/${blockId}`)));
 }

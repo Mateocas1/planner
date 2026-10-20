@@ -1,6 +1,7 @@
 import { addDoc, collection, deleteDoc, deleteField, doc, updateDoc } from "firebase/firestore";
 import { createTask } from "../domain/model.ts";
 import { db } from "./client.ts";
+import { trackRemoval } from "./pending.ts";
 
 /**
  * Task write helpers against `users/{uid}/tasks`. Each helper validates through
@@ -43,5 +44,5 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 }
 
 export async function deleteTask(uid: string, taskId: string) {
-  await deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`));
+  await trackRemoval(deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
 }

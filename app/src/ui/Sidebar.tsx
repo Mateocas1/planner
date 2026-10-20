@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import type { View } from "../App.tsx";
 import type { BlockView } from "../data/store.ts";
-import { CalendarIcon, ChevronLeft, ChevronRight, CloudIcon, CloudOffIcon, TasksIcon, TodayIcon } from "./icons.tsx";
+import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
+import { SyncStatus } from "./SyncStatus.tsx";
 import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey } from "./time.ts";
 
 export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
@@ -11,38 +12,6 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
   { id: "tasks", label: "Tasks", Icon: TasksIcon },
   { id: "calendar", label: "Calendar", Icon: CalendarIcon },
 ];
-
-/** Whether the browser reports a network connection; follows changes. */
-export function useOnline(): boolean {
-  const [online, setOnline] = useState(() => navigator.onLine);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
-  }, []);
-  return online;
-}
-
-/** Sync status in the product's own words: what is safe, and where. */
-export function SyncStatus({ pending }: { pending: number }) {
-  const online = useOnline();
-  const offline = !online;
-  const text = offline
-    ? "Offline · changes are kept on this device"
-    : pending > 0
-      ? `Syncing ${pending} ${pending === 1 ? "change" : "changes"}…`
-      : "Synced · works offline";
-  return (
-    <p className={`sync${offline ? " is-offline" : pending > 0 ? " is-pending" : ""}`} role="status">
-      {offline ? <CloudOffIcon /> : <CloudIcon />}
-      <span>{text}</span>
-    </p>
-  );
-}
 
 /**
  * The desktop sidebar: a quiet glass material holding the month, the view

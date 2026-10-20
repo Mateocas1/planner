@@ -1,0 +1,20 @@
+/* The sync line (SyncStatus.tsx). Static: the only motion is a 140ms opacity
+   swap when its wording changes, on the hover duration token. The global
+   reduced-motion rule in app.css collapses that swap to 1ms. */
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.sync svg { width: 16px; height: 16px; flex: none; color: var(--green); }
+.sync.is-pending svg { color: var(--accent); }
+.sync.is-offline svg { color: var(--orange); }
+
+.sync-text { animation: sync-swap var(--dur-hover) var(--ease-out); }
+
+@keyframes sync-swap {
+  from { opacity: 0; }
+}
