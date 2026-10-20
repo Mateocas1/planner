@@ -508,3 +508,148 @@ test.describe("non-Blink engine", () => {
     ).not.toContain("url(");
   });
 });
+
+/**
+ * Layout audit (M2c): a glass material must never take a surface's position
+ * away.
+ *
+ * `.glass` has to be a positioned box for its rim. That default lives in
+ * `@layer glass-layout` — a layered rule loses to every unlayered one whatever
+ * the file order — so a surface that declares `position: fixed`, `sticky` or
+ * `absolute` in app.css or in its own component sheet keeps it, and glass.css
+ * loading last stops being able to reflow the shell. This audit is the proof:
+ * every glass surface in the app, at the phone and desktop widths, computes the
+ * position it owns and lands inside the viewport instead of below the fold.
+ *
+ * The failure this guards is real and was shipped twice: an unlayered
+ * `position: relative` on `.glass` turned the sidebar and the sheet into in-flow
+ * boxes (the document grew ~740px and scrolled itself), and the FAB dropped out
+ * of `position: fixed` to (-16, 946) at 600x900.
+ */
+
+type Geometry = {
+  name: string;
+  position: string;
+  transform: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  viewport: { width: number; height: number };
+};
+
+/**
+ * Waits for a surface's entry motion to land, then reads the box it rests on.
+ * Entry is a transform (the sheet's FLIP, the palette's scale, the toast's
+ * rise), so the read waits for identity instead of racing the spring.
+ */
+async function restingGeometry(page: Page, selector: string, name: string): Promise<Geometry> {
+  const element = page.locator(selector);
+  await expect(element, `${name} is rendered once`).toHaveCount(1);
+  await expect(element, `${name} is visible`).toBeVisible();
+  let reading: Geometry | null = null;
+  await expect
+    .poll(
+      async () => {
+        const measured = await element.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const box = node.getBoundingClientRect();
+          const root = document.documentElement;
+          return {
+            position: style.position,
+            transform: style.transform,
+            left: box.left,
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+            viewport: { width: root.clientWidth, height: root.clientHeight },
+          };
+        });
+        reading = { name, ...measured };
+        return measured.transform === "none" || measured.transform === "matrix(1, 0, 0, 1, 0, 0)";
+      },
+      { message: `${name}: the entry motion never settled on a resting box` },
+    )
+    .toBe(true);
+  return reading!;
+}
+
+/** The audit's claim, in one place: this surface owns this position and sits inside the viewport. */
+async function expectInPlace(page: Page, selector: string, name: string, position: string) {
+  const geometry = await restingGeometry(page, selector, name);
+  expect(geometry.position, `${name} keeps its own position`).toBe(position);
+  expect(geometry.left, `${name} left edge`).toBeGreaterThanOrEqual(0);
+  expect(geometry.top, `${name} top edge`).toBeGreaterThanOrEqual(0);
+  expect(geometry.right, `${name} right edge`).toBeLessThanOrEqual(geometry.viewport.width);
+  expect(geometry.bottom, `${name} bottom edge`).toBeLessThanOrEqual(geometry.viewport.height);
+  return geometry;
+}
+
+/** Creates a task and deletes it: the only way the undo toast is on screen. */
+async function offerUndo(page: Page) {
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("Task title").fill("Pack bags");
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(".sheet")).toHaveCount(0);
+  await page.getByRole("button", { name: "Pack bags" }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expect(page.locator(".undo-toast")).toHaveAttribute("data-state", "open");
+}
+
+const AUDITED = [
+  { width: 390, height: 844, layout: "phone" },
+  { width: 1280, height: 800, layout: "desktop" },
+] as const;
+
+for (const { width, height, layout } of AUDITED) {
+  test(`layout: every glass surface keeps its own position at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await enterApp(page);
+
+    /* On screen as soon as the shell renders. The sidebar is desktop-only and
+       the tab bar and FAB are phone-only, so the missing pair is asserted
+       absent rather than skipped. */
+    if (layout === "desktop") {
+      await expectInPlace(page, ".sidebar.glass", "sidebar", "fixed");
+      await expect(page.locator(".tabbar")).toHaveCount(0);
+      await expect(page.locator(".fab")).toHaveCount(0);
+    } else {
+      await expect(page.locator(".sidebar")).toHaveCount(0);
+      await expectInPlace(page, ".tabbar.glass", "tab bar", "fixed");
+      await expectInPlace(page, ".fab.glass", "floating button", "fixed");
+    }
+    await expectInPlace(page, ".topbar", "top bar", "sticky");
+
+    /* The palette: a modal dialog, fixed and centred. */
+    await page.keyboard.press("Control+k");
+    const palette = await expectInPlace(page, "dialog.palette.glass", "command palette", "fixed");
+    expect(palette.left).toBeGreaterThan(0);
+    expect(palette.top).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("dialog.palette")).toHaveCount(0);
+
+    /* A sheet: fixed, and rooted at the control that opened it. */
+    await page.getByRole("button", { name: "New task" }).click();
+    await expectInPlace(page, ".sheet.glass", "new task sheet", "fixed");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".sheet")).toHaveCount(0);
+
+    /* The account popover: absolutely positioned under its trigger, and only
+       the phone's top bar renders it. */
+    if (layout === "phone") {
+      await page.getByRole("button", { name: "Account" }).click();
+      const popover = await expectInPlace(page, ".popover.glass", "account popover", "absolute");
+      expect(popover.top).toBeGreaterThan(0);
+      await page.getByRole("button", { name: "Account" }).click();
+      await expect(page.locator(".popover")).toHaveCount(0);
+    } else {
+      await expect(page.locator(".popover")).toHaveCount(0);
+    }
+
+    /* The undo toast: fixed to the bottom, above the phone's tab bar. */
+    await offerUndo(page);
+    const toast = await expectInPlace(page, ".undo-toast", "undo toast", "fixed");
+    expect(toast.bottom).toBeLessThan(toast.viewport.height);
+  });
+}
