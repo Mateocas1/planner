@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
 import { createTask } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { trackRemoval } from "./pending.ts";
@@ -45,4 +45,24 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 
 export async function deleteTask(uid: string, taskId: string) {
   await trackRemoval(deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
+}
+
+/** A task exactly as it was stored, captured before it is deleted. */
+export type DeletedTask = { id: string; title: string; completed: boolean; deadline?: string };
+
+/**
+ * Puts a deleted task back under its original document id and with the exact
+ * fields it held, which is what undo promises. The document schema for a task
+ * is closed (title, completed, optional deadline), so rewriting those fields
+ * with setDoc reproduces the original document rather than approximating it.
+ * The title and deadline are validated through the domain module first.
+ */
+export async function restoreTask(uid: string, task: DeletedTask) {
+  const validated = createTask(task.id, task.title, task.deadline);
+  if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
+  await setDoc(doc(db, `users/${uid}/tasks/${task.id}`), {
+    title: validated.title,
+    completed: task.completed,
+    ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
+  });
 }

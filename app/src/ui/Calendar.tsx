@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addBlock, deleteBlock } from "../data/blocks.ts";
+import { addBlock, deleteBlock, restoreBlock } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
 import { Sheet } from "./Sheet.tsx";
+import { type UndoableDelete } from "./UndoToast.tsx";
 import {
   dateKey,
   dayMs,
@@ -56,6 +57,7 @@ export function Calendar({
   profileError,
   day,
   onDayChange,
+  onDeleted,
 }: {
   uid: string;
   blocks: BlockView[];
@@ -65,6 +67,7 @@ export function Calendar({
   profileError: string | null;
   day: string | null;
   onDayChange: (key: string | null) => void;
+  onDeleted: (item: UndoableDelete) => void;
 }) {
   if (timeZone === null) {
     return (
@@ -76,7 +79,18 @@ export function Calendar({
       </section>
     );
   }
-  return <CalendarView uid={uid} blocks={blocks} tasks={tasks} loading={loading} timeZone={timeZone} day={day} onDayChange={onDayChange} />;
+  return (
+    <CalendarView
+      uid={uid}
+      blocks={blocks}
+      tasks={tasks}
+      loading={loading}
+      timeZone={timeZone}
+      day={day}
+      onDayChange={onDayChange}
+      onDeleted={onDeleted}
+    />
+  );
 }
 
 function CalendarView({
@@ -87,6 +101,7 @@ function CalendarView({
   timeZone,
   day,
   onDayChange,
+  onDeleted,
 }: {
   uid: string;
   blocks: BlockView[];
@@ -95,6 +110,7 @@ function CalendarView({
   timeZone: string;
   day: string | null;
   onDayChange: (key: string | null) => void;
+  onDeleted: (item: UndoableDelete) => void;
 }) {
   const now = useNow();
   const phone = useMediaQuery(phoneQuery);
@@ -453,8 +469,11 @@ function CalendarView({
             origin={openBlock.origin}
             onClose={() => setOpenBlock(null)}
             onDelete={() => {
+              const deleted = selectedBlock;
               setOpenBlock(null);
-              void settle(deleteBlock(uid, selectedBlock.id)).catch(() => undefined);
+              void settle(deleteBlock(uid, deleted.id))
+                .then(() => onDeleted({ message: "Block deleted", restore: () => restoreBlock(uid, deleted) }))
+                .catch(() => undefined);
             }}
           />
         )}

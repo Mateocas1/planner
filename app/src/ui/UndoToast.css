@@ -1,0 +1,133 @@
+/* Undo toast (F1).
+   A single offer pinned to the bottom of the shell. It borrows the sheet glass
+   recipe but at a far higher opacity, so the sentence clears AA contrast over
+   whatever scrolls behind it while it still reads as part of the chrome. The
+   motion is a transition on opacity and a short rise — never a keyframe, so it
+   can be interrupted and reversed by a second delete. */
+
+.undo-toast {
+  position: fixed;
+  z-index: 60;
+  inset-inline: 0;
+  bottom: 24px;
+  width: fit-content;
+  max-width: calc(100vw - 32px);
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 7px 7px 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 var(--rim-hi),
+    inset 0 -1px 0 var(--rim-lo),
+    0 0 0 0.5px var(--ring),
+    var(--glass-shadow);
+  color: var(--label);
+  font-size: var(--text-sub);
+
+  /* The closed state is also the exit target: 160 ms out. */
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out);
+  will-change: opacity, transform;
+}
+
+/* Open: 200 ms in. @starting-style supplies the frame to travel from, so the
+   entrance is a transition rather than an animation. */
+.undo-toast[data-state="open"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  .undo-toast[data-state="open"] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.undo-toast-label {
+  font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.undo-toast-separator { color: var(--label-3); }
+
+.undo-toast-action {
+  flex: none;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 999px;
+  /* the ink/accent pair the accent button already uses: AA on both themes */
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-sub);
+  font-weight: 600;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+}
+
+.undo-toast-action:hover { background: var(--accent-hover); }
+.undo-toast-action:active { transform: scale(0.96); }
+
+.undo-toast-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--label-3);
+  transition: transform var(--dur-press) var(--ease-out), color var(--dur-hover) ease;
+}
+
+.undo-toast-close:hover { color: var(--label); }
+.undo-toast-close:active { transform: scale(0.94); }
+.undo-toast-close svg { width: 14px; height: 14px; }
+
+/* Above the phone's tab bar, so the bar never covers the offer. */
+@media (max-width: 760px) {
+  .undo-toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* Transparency is a legibility risk, not a promise: drop the blur and go
+   solid when the reader asked for less transparency or more contrast. */
+@media (prefers-reduced-transparency: reduce) {
+  .undo-toast {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .undo-toast {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 0 0 1px var(--label-3), var(--glass-shadow);
+  }
+}
+
+/* Reduced motion keeps the fade and drops the rise: opacity only, and the
+   declared durations survive the global 1 ms reduce rule in app.css. The
+   entrance needs no starting-style here: an untransitioned transform paints at
+   its open value (0) from the first frame. */
+@media (prefers-reduced-motion: reduce) {
+  .undo-toast {
+    transform: none;
+    transition: opacity 160ms var(--ease-out) !important;
+  }
+
+  .undo-toast[data-state="open"] {
+    transform: none;
+    transition: opacity 200ms var(--ease-out) !important;
+  }
+}
