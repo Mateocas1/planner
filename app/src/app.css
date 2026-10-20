@@ -22,24 +22,27 @@
 }
 
 :root {
-  /* neutrals: one ramp with a trace of the accent blue */
-  --bg: #F2F2F5;
-  --bg-top: #F8F8FA;
-  --surface: #FFFFFF;
-  --surface-2: #EEEEF1;
-  --fill-hover: rgb(20 20 40 / 0.045);
-  --fill-press: rgb(20 20 40 / 0.08);
-  --label: #1B1B1F;
-  --label-2: #47474E;
-  --label-3: #6A6A73;
-  --separator: rgb(20 20 40 / 0.09);
-  --check-ring: rgb(20 20 40 / 0.32);
+  /* neutrals: the ink track of the brand scale (ui/brand.css), hue 268 at
+     chroma <= 0.022, so surfaces are a tint of the accent rather than grey */
+  --bg: var(--ink-200);
+  --bg-top: var(--ink-100);
+  --surface: var(--ink-50);
+  --surface-2: var(--ink-300);
+  /* the ink fills are alpha over the surface, so they keep an rgb() literal:
+     ink-950 #13161D, ink-100 #F4F7FC in dark */
+  --fill-hover: rgb(19 22 29 / 0.045);
+  --fill-press: rgb(19 22 29 / 0.08);
+  --label: var(--ink-950);
+  --label-2: var(--ink-800);
+  --label-3: var(--ink-700);
+  --separator: rgb(19 22 29 / 0.09);
+  --check-ring: rgb(19 22 29 / 0.32);
 
   /* one accent, and state colours for state only */
-  --accent: #0066CC;
-  --accent-hover: #0059B3;
-  --accent-soft: rgb(0 102 204 / 0.10);
-  --on-accent: #FFFFFF;
+  --accent: var(--brand-600);
+  --accent-hover: var(--brand-700);
+  --accent-soft: rgb(60 92 217 / 0.10);
+  --on-accent: var(--ink-50);
   --now: #CB1E21;
   --on-now: #FFFFFF;
   --red: #C8102E;
@@ -49,8 +52,8 @@
   --wash: rgb(46 155 79 / 0.10);
 
   /* calendar categories: a tinted fill plus an ink of the same hue */
-  --cat-focus-bg: rgb(0 102 204 / 0.10);
-  --cat-focus-ink: #0B4A8F;
+  --cat-focus-bg: rgb(60 92 217 / 0.10);
+  --cat-focus-ink: var(--brand-800);
   --cat-task-bg: rgb(104 76 196 / 0.11);
   --cat-task-ink: #4E3597;
 
@@ -86,31 +89,31 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111114;
-    --bg-top: #16161A;
-    --surface: #1B1B1F;
-    --surface-2: #26262B;
-    --fill-hover: rgb(255 255 255 / 0.045);
-    --fill-press: rgb(255 255 255 / 0.08);
-    --label: #EDEDF1;
-    --label-2: #BCBCC4;
-    --label-3: #8C8C96;
-    --separator: rgb(255 255 255 / 0.08);
-    --check-ring: rgb(255 255 255 / 0.3);
-    --accent: #5B9BE6;
-    --accent-hover: #6FA8EA;
-    --accent-soft: rgb(91 155 230 / 0.16);
-    --on-accent: #0B1522;
+    --bg: var(--ink-975);
+    --bg-top: var(--ink-950);
+    --surface: var(--ink-925);
+    --surface-2: var(--ink-900);
+    --fill-hover: rgb(244 247 252 / 0.045);
+    --fill-press: rgb(244 247 252 / 0.08);
+    --label: var(--ink-100);
+    --label-2: var(--ink-400);
+    --label-3: var(--ink-500);
+    --separator: rgb(244 247 252 / 0.08);
+    --check-ring: rgb(244 247 252 / 0.3);
+    --accent: var(--brand-500);
+    --accent-hover: var(--brand-450);
+    --accent-soft: rgb(117 152 255 / 0.16);
+    --on-accent: var(--ink-975);
     --now: #F66D62;
     /* dark --now is a light red, so its ink flips to the page colour */
-    --on-now: #0B0E15;
+    --on-now: var(--ink-975);
     --red: #F07A70;
     --orange: #E7A45C;
     --green: #6CC488;
     --green-fill: #3E9E5C;
     --wash: rgb(108 196 136 / 0.10);
-    --cat-focus-bg: rgb(91 155 230 / 0.15);
-    --cat-focus-ink: #B4D1F4;
+    --cat-focus-bg: rgb(117 152 255 / 0.15);
+    --cat-focus-ink: var(--brand-400);
     --cat-task-bg: rgb(150 130 230 / 0.15);
     --cat-task-ink: #CEC3F4;
     color-scheme: dark;

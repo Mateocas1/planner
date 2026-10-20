@@ -12,17 +12,21 @@
    live in `app/scripts/glass-contrast.mjs`. */
 
 :root {
-  /* tints: cool paper in light mode, graphite-blue in dark */
-  --glass-tint-thin: rgb(248 248 250 / 0.5);
+  /* tints: cool paper in light mode, graphite-blue in dark. Every value is an
+     alpha over the page, so it keeps an rgb() literal; the comment names the
+     step of the brand scale it is built from (ui/brand.css). */
+  --glass-tint-thin: rgb(244 247 252 / 0.5); /* ink-100 */
   /* Floating chrome: the thin blur, but tinted to the floor that keeps an 11px
      tab label legible over whatever scrolls under it (spec §3). */
-  --glass-tint-float: rgb(248 248 250 / 0.62);
-  --glass-tint-regular: rgb(248 248 250 / 0.68);
-  --glass-tint-thick: rgb(250 250 252 / 0.88);
+  --glass-tint-float: rgb(244 247 252 / 0.62); /* ink-100 */
+  --glass-tint-regular: rgb(244 247 252 / 0.68); /* ink-100 */
+  --glass-tint-thick: rgb(250 252 255 / 0.88); /* ink-50 */
+  /* specular light, not material: the sheen, the rims and the lens stay white
+     in both schemes */
   --glass-sheen: rgb(255 255 255 / 0.4);
   /* the highlight that follows the pointer: an accent wash, because white on a
      95%-white pill is invisible */
-  --glass-sheen-track: rgb(0 102 204 / 0.12);
+  --glass-sheen-track: rgb(60 92 217 / 0.12); /* brand-600 */
   /* the lens tint is thinner than the pill fill, so refraction has something
      to show through */
   --glass-lens-tint: rgb(255 255 255 / 0.5);
@@ -31,11 +35,11 @@
   --glass-rim-lit: rgb(255 255 255 / 0.92);
   --glass-rim-mid: rgb(255 255 255 / 0.3);
   --glass-rim-glint: rgb(255 255 255 / 0.55);
-  --glass-thickness: rgb(20 20 40 / 0.1);
-  --glass-edge: rgb(20 20 40 / 0.08);
+  --glass-thickness: rgb(11 14 21 / 0.1); /* ink-975 */
+  --glass-edge: rgb(11 14 21 / 0.08); /* ink-975 */
 
   /* ambient backdrop: what the glass actually refracts */
-  --glass-blob-1: rgb(0 102 204 / 0.14);
+  --glass-blob-1: rgb(60 92 217 / 0.14); /* brand-600 */
   --glass-blob-2: rgb(104 76 196 / 0.11);
   --glass-blob-3: rgb(46 155 79 / 0.07);
 
@@ -47,20 +51,20 @@
   --rim-lo: var(--glass-rim-mid);
   --ring: var(--glass-edge);
   --sheen: var(--glass-sheen);
-  --glass-shadow: 0 8px 28px rgb(20 20 40 / 0.08), 0 1px 3px rgb(20 20 40 / 0.05);
-  --pill: rgb(255 255 255 / 0.95);
-  --pill-shadow: 0 1px 2px rgb(20 20 40 / 0.1), 0 0 0 0.5px rgb(20 20 40 / 0.06);
-  --card-shadow: 0 0 0 1px rgb(20 20 40 / 0.045), 0 1px 2px -1px rgb(20 20 40 / 0.06),
-    0 3px 10px rgb(20 20 40 / 0.035);
-  --scrim: rgb(20 20 30 / 0.16);
+  --glass-shadow: 0 8px 28px rgb(11 14 21 / 0.08), 0 1px 3px rgb(11 14 21 / 0.05);
+  --pill: rgb(250 252 255 / 0.95); /* ink-50 */
+  --pill-shadow: 0 1px 2px rgb(11 14 21 / 0.1), 0 0 0 0.5px rgb(11 14 21 / 0.06);
+  --card-shadow: 0 0 0 1px rgb(11 14 21 / 0.045), 0 1px 2px -1px rgb(11 14 21 / 0.06),
+    0 3px 10px rgb(11 14 21 / 0.035);
+  --scrim: rgb(11 14 21 / 0.16); /* ink-975 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --glass-tint-thin: rgb(32 32 38 / 0.55);
-    --glass-tint-float: rgb(32 32 38 / 0.62);
-    --glass-tint-regular: rgb(30 30 34 / 0.72);
-    --glass-tint-thick: rgb(34 34 38 / 0.9);
+    --glass-tint-thin: rgb(36 39 49 / 0.55); /* ink-900 */
+    --glass-tint-float: rgb(36 39 49 / 0.62); /* ink-900 */
+    --glass-tint-regular: rgb(27 30 38 / 0.72); /* ink-925 */
+    --glass-tint-thick: rgb(36 39 49 / 0.9); /* ink-900 */
     --glass-sheen: rgb(255 255 255 / 0.06);
     --glass-sheen-track: rgb(255 255 255 / 0.16);
     /* thinner than the resting pill on purpose: the tab label is --accent,
@@ -70,16 +74,18 @@
     --glass-rim-lit: rgb(255 255 255 / 0.28);
     --glass-rim-mid: rgb(255 255 255 / 0.1);
     --glass-rim-glint: rgb(255 255 255 / 0.18);
-    --glass-thickness: rgb(0 0 0 / 0.4);
-    --glass-edge: rgb(255 255 255 / 0.09);
-    --glass-blob-1: rgb(91 155 230 / 0.16);
+    --glass-thickness: rgb(11 14 21 / 0.4); /* ink-975 */
+    --glass-edge: rgb(244 247 252 / 0.09); /* ink-100 */
+    --glass-blob-1: rgb(117 152 255 / 0.16); /* brand-500 */
     --glass-blob-2: rgb(150 130 230 / 0.12);
     --glass-blob-3: rgb(108 196 136 / 0.07);
-    --glass-shadow: 0 8px 28px rgb(0 0 0 / 0.36), 0 1px 3px rgb(0 0 0 / 0.3);
-    --pill: rgb(255 255 255 / 0.09);
-    --pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.06);
-    --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.055);
-    --scrim: rgb(0 0 0 / 0.42);
+    --glass-shadow: 0 8px 28px rgb(11 14 21 / 0.36), 0 1px 3px rgb(11 14 21 / 0.3);
+    --pill: rgb(244 247 252 / 0.09); /* ink-100 */
+    --pill-shadow: 0 0 0 0.5px rgb(244 247 252 / 0.06);
+    --card-shadow: 0 0 0 1px rgb(244 247 252 / 0.055);
+    /* a scrim over a dark page is near-black with the brand's trace of blue,
+       not ink-975: it has to weigh on the page it dims */
+    --scrim: rgb(2 3 7 / 0.42);
   }
 }
 
@@ -283,7 +289,7 @@ body::before {
 .button-danger,
 .segmented button[aria-pressed="true"] {
   /* paper surface: darken a touch instead of brightening nothing */
-  --press: rgb(20 20 40 / 0.06);
+  --press: rgb(11 14 21 / 0.06); /* ink-975 */
 }
 
 /* A saturated fill still brightens: white is visible on it in both schemes. */

@@ -5,9 +5,9 @@
  * surfaces: opaque backdrops, accent fills, category tints, selection and the
  * semantic state colours, all of which carry text somewhere in the app).
  *
- * Reads the real tokens out of `src/app.css` and `src/ui/glass.css`, composites
- * every glass tint over the backdrops the app actually puts behind chrome, and
- * asserts WCAG AA (>= 4.5:1) for each label token on each material, in light
+ * Reads the real tokens out of `src/ui/brand.css`, `src/app.css` and
+ * `src/ui/glass.css`, composites every glass tint over the backdrops the app
+ * actually puts behind chrome, and asserts WCAG AA (>= 4.5:1) for each label token on each material, in light
  * and dark mode. Fails loudly if a token pair is below the floor or if a token
  * the script depends on disappears.
  *
@@ -60,7 +60,6 @@ function readSchemeTokens(file) {
 }
 
 /* ---------- colour maths ---------- */
-
 const clamp = (n) => Math.min(255, Math.max(0, n));
 
 /** Parses `#rgb`, `#rrggbb`, `rgb(r g b)`, `rgb(r g b / a)` into [r,g,b,a]. */
@@ -127,6 +126,35 @@ function ratio(fg, bg) {
 const app = readSchemeTokens("src/app.css");
 const glass = readSchemeTokens("src/ui/glass.css");
 
+/**
+ * Reads every custom property a sheet declares, for a sheet that has no dark
+ * block because it needs none: the brand scale is scheme-independent (one
+ * `:root`, and light and dark pick different rungs of it). The scheme-aware
+ * loader above throws on such a file, so brand.css gets its own reader.
+ */
+function readRootTokens(file) {
+  const tokens = new Map();
+  for (const match of readFileSync(join(appDir, file), "utf8").matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+);/gi))
+    tokens.set(match[1], match[2].trim());
+  return tokens;
+}
+
+const brand = readRootTokens("src/ui/brand.css");
+
+/**
+ * Every token the browser would resolve for one scheme. The brand scale comes
+ * first so app.css and glass.css win any name they share, and a `var(--ink-N)`
+ * reference in either of them resolves through this map instead of failing.
+ */
+function tokensFor(scheme) {
+  return new Map([
+    ...brand,
+    ...app.light,
+    ...glass.light,
+    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
+  ]);
+}
+
 const LABELS = ["--label", "--label-2", "--label-3"];
 
 /**
@@ -177,11 +205,7 @@ let failures = 0;
 const rows = [];
 
 for (const scheme of ["light", "dark"]) {
-  const tokens = new Map([
-    ...app.light,
-    ...glass.light,
-    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
-  ]);
+  const tokens = tokensFor(scheme);
   const backgrounds = backdrops(tokens);
   for (const material of materials) {
     const tint = parseColor(tokens.get(material.token), tokens);
@@ -238,11 +262,7 @@ const pillFills = [
 ];
 
 for (const scheme of ["light", "dark"]) {
-  const tokens = new Map([
-    ...app.light,
-    ...glass.light,
-    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
-  ]);
+  const tokens = tokensFor(scheme);
   const page = parseColor(tokens.get("--bg-top"), tokens);
   for (const pill of pills) {
     const chrome = pill.host ? over(parseColor(tokens.get(pill.host), tokens), page) : page;
@@ -336,11 +356,7 @@ const paletteSelectedIcon = readToken(
 const NON_TEXT = 3;
 
 for (const scheme of ["light", "dark"]) {
-  const tokens = new Map([
-    ...app.light,
-    ...glass.light,
-    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
-  ]);
+  const tokens = tokensFor(scheme);
   const page = parseColor(tokens.get("--bg-top"), tokens);
   const scrim = over(parseColor(tokens.get("--scrim"), tokens), page);
   /* The palette is the thick sheet material over the dimmed page. */
@@ -436,11 +452,7 @@ for (const scheme of ["light", "dark"]) {
  * rather than only as a fill behind `--on-now`.
  */
 for (const scheme of ["light", "dark"]) {
-  const tokens = new Map([
-    ...app.light,
-    ...glass.light,
-    ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
-  ]);
+  const tokens = tokensFor(scheme);
   const get = (name) => parseColor(tokens.get(name), tokens);
   const pairs = [];
   for (const base of ["--bg-top", "--bg", "--surface", "--surface-2"]) {

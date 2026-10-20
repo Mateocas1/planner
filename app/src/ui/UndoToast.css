@@ -9,13 +9,14 @@
 
 .undo-toast {
   /* graphite at 0.86 (the spec floor is 0.82); the solid twin is the same
-     graphite, used when transparency is reduced */
-  --toast-tint: rgb(24 24 30 / 0.86);
-  --toast-solid: rgb(24 24 30);
+     graphite, used when transparency is reduced. Both are ink-950 #13161D at
+     an alpha, so they keep an rgb() literal. */
+  --toast-tint: rgb(19 22 29 / 0.86); /* ink-950 */
+  --toast-solid: rgb(19 22 29); /* ink-950 */
   /* light ink for the dark fill; quiet is the secondary tier (separator and
      close control) */
-  --toast-label: #FFFFFF;
-  --toast-quiet: rgb(255 255 255 / 0.72);
+  --toast-label: var(--ink-50);
+  --toast-quiet: rgb(250 252 255 / 0.72); /* ink-50 */
 
   position: fixed;
   z-index: 60;
