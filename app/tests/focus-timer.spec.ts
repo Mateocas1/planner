@@ -284,6 +284,9 @@ test("the card lands on a running clock and leaves on Stop", async ({ page }) =>
   });
 
   const up = upNext(page);
+  /* Assert before clicking: `click()` has no action timeout, so a ▶ that never
+     renders would spend the whole test budget instead of saying what is wrong. */
+  await expect(up.getByRole("button", { name: "Focus: Sketch the layout" })).toBeVisible();
   await up.getByRole("button", { name: "Focus: Sketch the layout" }).click();
   await expect(timer(page)).toBeVisible();
   await expect(timer(page).getByText("Sketch the layout")).toBeVisible();
@@ -295,6 +298,35 @@ test("the card lands on a running clock and leaves on Stop", async ({ page }) =>
   await expect(timer(page)).toHaveCount(0);
   await expect(page).toHaveTitle("Personal Planner");
   await expect(up.getByRole("button", { name: "Focus: Sketch the layout" })).toBeVisible();
+});
+
+test("a block that began before midnight is still up next after it", async ({ page }) => {
+  /* Up next answers "what is happening now", and a block does not stop happening
+     because the date changed: an evening block that runs past midnight must
+     keep its row, its ▶ and its countdown. The filter used to key rows by the
+     block's start day, so at 00:00 the running block vanished and the ▶ with it
+     -- which is exactly what this file's real-clock test tripped over. */
+  const base = new Date();
+  base.setUTCHours(0, 1, 0, 0);
+  base.setUTCDate(base.getUTCDate() + 1);
+  await page.clock.install({ time: base });
+  await enter(page, "focus-midnight", {
+    tasks: [{ title: "Close the day" }],
+    /* 23:55 yesterday to 00:30 today: running at 00:01, but not a block that
+       starts today. */
+    blocks: [{ ...block(base, -6, 29), task: "Close the day" }],
+  });
+
+  const up = upNext(page);
+  const start = up.getByRole("button", { name: "Focus: Close the day" });
+  await expect(up.getByText("Close the day")).toBeVisible();
+  await expect(start).toBeVisible();
+
+  /* 00:02 now, 00:30 end: the countdown is the block's, not the day's. */
+  await page.clock.pauseAt(new Date(base.getTime() + 60_000));
+  await start.click();
+  await expect(timer(page)).toBeVisible();
+  await expect(digits(page)).toHaveText("0:28");
 });
 
 test("a phone runs no timer: there is no Up next and no focus command", async ({ page }) => {

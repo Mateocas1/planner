@@ -87,16 +87,15 @@ function store(session: FocusSession | null): void {
 /**
  * The block "start focus on next block" means: the one running now, else the
  * next one still to start today, in the profile timezone -- exactly the first
- * row Up next offers.
+ * row Up next offers. Running is an instant, so a block that began before
+ * midnight still counts; only "next" is a question about today.
  */
 function focusCandidate(blocks: BlockView[], nowMs: number, timeZone: string): FocusCandidate | undefined {
   const today = dateKey(new Date(nowMs), timeZone);
-  const todays = blocks
-    .filter(block => dateKey(new Date(block.start), timeZone) === today)
-    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  const sorted = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
   const block =
-    todays.find(entry => Date.parse(entry.start) <= nowMs && nowMs < Date.parse(entry.end)) ??
-    todays.find(entry => Date.parse(entry.start) > nowMs);
+    sorted.find(entry => Date.parse(entry.start) <= nowMs && nowMs < Date.parse(entry.end)) ??
+    sorted.find(entry => Date.parse(entry.start) > nowMs && dateKey(new Date(entry.start), timeZone) === today);
   if (!block) return undefined;
   return { blockId: block.id, ...(block.taskId === undefined ? {} : { taskId: block.taskId }), endAt: Date.parse(block.end) };
 }

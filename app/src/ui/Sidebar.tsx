@@ -158,11 +158,15 @@ function UpNext({
   const now = useNow();
   const nowMs = now.getTime();
   const today = dateKey(now, timeZone);
-  const todayBlocks = blocks
-    .filter(block => dateKey(new Date(block.start), timeZone) === today)
-    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  const current = todayBlocks.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
-  const next = todayBlocks.find(block => Date.parse(block.start) > nowMs);
+  const sorted = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  /* What is running is a question about this instant, not about this date: a
+     block that began at 23:50 is still the block being worked on at 00:10, so it
+     keeps its row, its ▶ and its countdown across midnight. Only "next" is a
+     question about today. */
+  const current = sorted.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
+  const next = sorted.find(
+    block => Date.parse(block.start) > nowMs && dateKey(new Date(block.start), timeZone) === today,
+  );
   const rows = [
     ...(current ? [{ block: current, running: true }] : []),
     ...(next ? [{ block: next, running: false }] : []),
