@@ -16,6 +16,13 @@ import { readRemoteBlocks, seedRadarFixture, submitAuthForm } from "./browser-he
 
 test.setTimeout(150_000);
 
+/* A write is accepted locally up to 150 ms before the server acknowledges it
+   (`ui/write.ts`), so a remote read taken the instant a toast announces the
+   write can still miss it. Under load it did: `a second press plans nothing`
+   read zero blocks. Poll rather than weaken: the assertion still demands the
+   exact count, it just gives the emulator the beat it needs. */
+const poll = { timeout: 15_000, intervals: [250, 500, 1_000] };
+
 const ZONE = "UTC";
 const DAY_MS = 86_400_000;
 
@@ -154,7 +161,7 @@ test("the tray previews the blocks around what is already booked and applies the
   await expect(rows.nth(0)).toContainText("Report");
   await expect(rows.nth(1)).toContainText("09:00–09:30");
   await expect(rows.nth(1)).toContainText("Taxes");
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 
   await preview(page).getByRole("button", { name: "Apply 2 blocks" }).click();
 
@@ -207,7 +214,7 @@ test("a task that does not fit is named with the exact notice, due today first a
   await expect(names.nth(1)).not.toHaveClass(/is-overdue/);
   expect(await paintsIn(page, ".plan-notice .is-overdue", "--red")).toBe(true);
 
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 });
 
 test("a second press plans nothing and says so", async ({ page }) => {
@@ -220,12 +227,12 @@ test("a second press plans nothing and says so", async ({ page }) => {
   await planButton(page).click();
   await preview(page).getByRole("button", { name: "Apply 1 block" }).click();
   await expect(page.locator(".undo-toast")).toContainText("Planned 1 block.");
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 
   await planButton(page).click();
   await expect(page.getByRole("status").filter({ hasText: "Nothing to plan." })).toBeVisible();
   await expect(preview(page)).toHaveCount(0);
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 });
 
 test("nothing is planned into the past: at 14:07 the first block starts at 14:15", async ({ page }) => {
@@ -256,13 +263,13 @@ test("the keyboard alone can preview, cancel, reopen and apply the plan", async 
   await page.keyboard.press("Escape");
   await expect(preview(page)).toHaveCount(0);
   await expect(tray(page).getByRole("button", { name: "Plan my day" })).toBeFocused();
-  expect(await readRemoteBlocks(email)).toHaveLength(0);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(0);
 
   await page.keyboard.press("Enter");
   await expect(apply).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator(".undo-toast")).toContainText("Planned 1 block.");
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 });
 
 test("the proposed blocks enter as a stagger, and reduced motion fades them without one", async ({ page }) => {
@@ -335,7 +342,7 @@ test("Today offers the same plan, with its own undo", async ({ page }) => {
 
   const toast = page.locator(".undo-toast");
   await expect(toast).toContainText("Planned 2 blocks.");
-  expect(await readRemoteBlocks(email)).toHaveLength(2);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(2);
 
   await toast.getByRole("button", { name: "Undo" }).click();
   await expect
@@ -365,7 +372,7 @@ test("on a phone the tray sits below the grid and plans from the same button", a
   await expect(preview(page).locator(".plan-row").nth(0)).toContainText("08:00–09:00");
   await preview(page).getByRole("button", { name: "Apply 1 block" }).click();
   await expect(page.locator(".undo-toast")).toContainText("Planned 1 block.");
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 });
 
 test("Apply re-checks the proposal: a block added under an open plan is never overlapped, and the day is re-proposed", async ({ page }) => {
@@ -402,8 +409,8 @@ test("Apply re-checks the proposal: a block added under an open plan is never ov
   await expect(rows.nth(1)).toContainText("Taxes");
   await expect(preview(page).getByRole("button", { name: "Apply 2 blocks" })).toBeFocused();
   await expect(page.locator(".undo-toast")).toHaveCount(0);
-  expect((await readRemoteBlocks(email)).filter(block => block.taskId !== undefined)).toHaveLength(0);
-  expect(await readRemoteBlocks(email)).toHaveLength(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined).length, poll).toBe(0);
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(1);
 
   /* The updated proposal is an ordinary proposal: Apply writes it as one batch. */
   await preview(page).getByRole("button", { name: "Apply 2 blocks" }).click();
