@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "../domain/model.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
+import type { BiasSample } from "../planning/bias.ts";
+import { ActualSummary, BiasHint } from "./BiasHint.tsx";
 import { formatDateKey } from "./format.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -109,6 +111,7 @@ export function TaskDetails({
   origin,
   shared = false,
   busy,
+  biasSamples,
   onClose,
   onRename,
   onDeadlineChange,
@@ -121,6 +124,14 @@ export function TaskDetails({
   /** Opened through the row-to-panel view transition (see morph.ts). */
   shared?: boolean;
   busy: boolean;
+  /**
+   * Completed tasks the estimate learner may read (F2b). The sheet does not
+   * fetch them: a surface that already holds the store passes them, and a
+   * caller that does not gets only the tracked-minutes line. They are read
+   * through `planning/bias.ts`, which decides alone whether there is enough
+   * evidence for an offer.
+   */
+  biasSamples?: readonly BiasSample[];
   onClose: () => void;
   onRename: (title: string) => void;
   onDeadlineChange: (deadline: string) => void;
@@ -168,6 +179,9 @@ export function TaskDetails({
           }
         }}
       />
+      {/* What it really took, stated before the controls that can change the
+          plan: the fact outranks the guess. */}
+      <ActualSummary estimate={task.estimate} actualMinutes={task.actualMinutes} completed={task.completed} />
       <div className="form-group">
         <div className="form-row">
           <label htmlFor="task-details-deadline">Deadline</label>
@@ -185,6 +199,13 @@ export function TaskDetails({
           estimate={task.estimate}
           disabled={busy}
           onChange={onEstimateChange}
+        />
+        <BiasHint
+          samples={biasSamples ?? []}
+          title={task.title}
+          estimate={task.estimate}
+          disabled={busy}
+          onAccept={onEstimateChange}
         />
         <div className="form-row">
           <label htmlFor="task-details-completed">Completed</label>

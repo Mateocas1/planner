@@ -9,6 +9,7 @@ import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
+import { BiasHint, completedSamples, type TrackedTask } from "./ui/BiasHint.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
@@ -266,7 +267,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       )}
       <AnimatePresence>
         {creating && (
-          <NewTaskSheet key="new-task" uid={user.uid} timeZone={zone} origin={creating} onClose={() => setCreating(null)} />
+          <NewTaskSheet key="new-task" uid={user.uid} timeZone={zone} tasks={tasks} origin={creating} onClose={() => setCreating(null)} />
         )}
       </AnimatePresence>
       <AnimatePresence>
@@ -438,11 +439,14 @@ function AccountMenu({
 function NewTaskSheet({
   uid,
   timeZone,
+  tasks,
   origin,
   onClose,
 }: {
   uid: string;
   timeZone: string;
+  /** The stored tasks: the estimate lesson reads the completed ones (F2b). */
+  tasks: readonly TrackedTask[];
   origin: HTMLElement;
   onClose: () => void;
 }) {
@@ -472,6 +476,9 @@ function NewTaskSheet({
   const repeat = repeatEdit ?? parsed.frequency ?? "off";
   const start = startEdit ?? parsed.anchorDate ?? "";
   const estimate = estimateEdit === "" ? undefined : Number(estimateEdit);
+  // The lesson is only as good as its history: finished tasks with a recorded
+  // pace. Recomputed when the store changes, never while the sheet sits still.
+  const biasSamples = useMemo(() => completedSamples(tasks), [tasks]);
   // A chip that would no longer describe the control it stands for is dropped:
   // the text it matched stays consumed, because the user replaced the value.
   const chips = parsed.parts.filter(part =>
@@ -548,6 +555,16 @@ function NewTaskSheet({
             <p id="task-estimate-note" className="sheet-note estimate-note">
               {estimateNote(estimate)}
             </p>
+            {/* What tasks like this one usually take, offered rather than
+                applied: the field keeps the number its owner typed until the
+                offer is tapped (F2b, roadmap §5 question 3). */}
+            <BiasHint
+              samples={biasSamples}
+              title={parsed.title}
+              estimate={estimate}
+              showEmptyHint
+              onAccept={minutes => setEstimateEdit(String(minutes))}
+            />
           </div>
           <div className="form-row">
             <label htmlFor="task-repeat">Repeat</label>

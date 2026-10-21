@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
-import { connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc, terminate, type Firestore } from "firebase/firestore";
-import { createOccurrenceCompletion, occurrenceId } from "../src/domain/model.ts";
+import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
+import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
 const authHost = "127.0.0.1:9199";
@@ -73,6 +73,69 @@ async function close({ app, db }: { app: FirebaseApp; db: Firestore }): Promise<
   await terminate(db);
   await deleteApp(app);
 }
+
+/**
+ * Two offline increments must reach the server as a sum, not as two absolute
+ * writes racing each other.
+ *
+ * This is the guarantee `addActualMinutes` (src/data/tasks.ts) relies on, and
+ * the reason it writes an increment transform instead of reading a task and
+ * writing a value back: a read-then-write loses one of the two sessions no
+ * matter which device it runs on. The helper module itself cannot be loaded
+ * here -- it imports the app's client, which resolves its project from
+ * `window.location` -- so this test pins the storage semantics it depends on,
+ * against a real server, with the exact call shape the helper emits.
+ *
+ * The document starts without the field, which is also the "no read" promise:
+ * an increment on an absent field counts from zero.
+ */
+test("two offline increments accumulate on the server instead of overwriting each other", async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`increment-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `increment-${suffix}@example.invalid`, "password1");
+    const path = `users/${account.user.uid}/tasks/tracked`;
+    await setDoc(doc(owner.db, path), { title: "Tracked task", completed: false });
+
+    await disableNetwork(owner.db);
+    /* A write's promise settles on the *server's* answer (that is what makes a
+       denied write reject), and offline there is no answer yet. So both
+       sessions are started here -- each queued with its own transform -- and
+       awaited once the network returns. */
+    const firstSession = updateDoc(doc(owner.db, path), { actualMinutes: increment(20) });
+    const secondSession = updateDoc(doc(owner.db, path), { actualMinutes: increment(10) });
+    // The local cache already reads both, which is what makes the counter
+    // visible offline even though nothing has reached the server.
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 30);
+    await enableNetwork(owner.db);
+    await Promise.all([firstSession, secondSession]);
+
+    // The server, not the local cache: the two queued transforms arrive as an
+    // increment each, so the stored count is their sum. Polled because the
+    // queue drains asynchronously once the network returns.
+    let stored: number | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      stored = (await getDocFromServer(doc(owner.db, path))).data()?.actualMinutes;
+      if (stored === 30) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(stored, 30);
+  } finally {
+    await close(owner);
+  }
+});
+
+test("a recorded minute count is a whole number a document may hold or omit", () => {
+  // The stored field is an integer counter: the timer adds whole minutes and a
+  // hand-edited document may hold anything, so the domain rejects rather than
+  // rounds. Zero is a real value (a counter that has not moved yet).
+  assert.equal(requireActualMinutes(0), 0);
+  assert.equal(requireActualMinutes(20), 20);
+  assert.equal(requireActualMinutes(MAX_ACTUAL_MINUTES), MAX_ACTUAL_MINUTES);
+  for (const minutes of [-1, 4.5, MAX_ACTUAL_MINUTES + 1, Number.NaN]) {
+    assert.throws(() => requireActualMinutes(minutes), /actual/);
+  }
+});
 
 test("Firestore rules isolate authenticated owners and deny others", async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;

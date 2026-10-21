@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "../data/session.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import { addActualMinutes } from "../data/tasks.ts";
 import {
   focusStatus,
   focusedMs,
@@ -30,9 +32,12 @@ import { dateKey } from "./time.ts";
  *    ticks, so a throttled or suspended tab cannot drift the countdown.
  * 2. The interval exists only while it is needed: running, visible and enabled.
  *    Paused, done, or no session means no timer at all.
- * 3. Time is only *reported* on a stop, never written here. `onStop` is the
- *    extension point a later unit uses to record real minutes on a task; the
- *    hook itself stays free of Firestore.
+ * 3. Time is only *reported* on a stop, never written here -- except for the
+ *    one number F2b owns: a stopped session that was spent on a task adds its
+ *    whole minutes to that task's `actualMinutes` counter. The write is a
+ *    Firestore increment (offline-safe, no read) and it happens beside the
+ *    report rather than inside it, so the hook's own state never depends on a
+ *    network round trip and a failed counter never breaks the timer.
  *
  * One session at a time: starting another replaces it with stop semantics, so a
  * replaced session is reported exactly like a stopped one.
@@ -40,6 +45,27 @@ import { dateKey } from "./time.ts";
 
 /** The storage key, shared with the browser tests that assert a reload resumes. */
 export const focusStorageKey = "planner-focus";
+
+/**
+ * The shortest session worth recording, in whole minutes.
+ *
+ * Anything below this is a glance at the timer, not work: counting it would
+ * teach the bias learner (planning/bias.ts, same threshold) that every task
+ * takes four minutes. Whole completed minutes are recorded, so a 20:41 session
+ * adds 20 -- a stopwatch counts what finished, never a rounded-up guess.
+ */
+export const MIN_TRACKED_MINUTES = 5;
+
+/**
+ * What one stopped session adds to the task it was spent on. Returns null when
+ * the session contributes nothing: no linked task (a bare work block has
+ * nothing to accumulate on) or less than MIN_TRACKED_MINUTES of focus.
+ */
+export function trackedMinutes(report: FocusReport): { taskId: string; minutes: number } | null {
+  const minutes = Math.floor(report.focusedMs / 60_000);
+  if (report.taskId === undefined || minutes < MIN_TRACKED_MINUTES) return null;
+  return { taskId: report.taskId, minutes };
+}
 
 /** What the hook needs from a block to start focusing on it. */
 export type FocusCandidate = { blockId: string; taskId?: string; endAt: number };
@@ -116,6 +142,8 @@ export function useFocusTimer({
   onStop?: (report: FocusReport) => void;
 }): FocusControls {
   const zone = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const { user } = useSession();
+  const uid = user?.uid;
   const [session, setSession] = useState<FocusSession | null>(() => (enabled ? readStored() : null));
   const [now, setNow] = useState(() => Date.now());
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
@@ -127,8 +155,17 @@ export function useFocusTimer({
   }, [onStop]);
 
   const report = useCallback((ended: FocusSession, stamp: number) => {
-    onStopRef.current?.(stopFocus(ended, stamp));
-  }, []);
+    const stopped = stopFocus(ended, stamp);
+    onStopRef.current?.(stopped);
+    const tracked = trackedMinutes(stopped);
+    if (tracked === null || uid === undefined) return;
+    // The counter is a side effect of the session, never a gate on it: the
+    // timer has already stopped and cleared itself by the time this lands, so
+    // an unreachable server leaves the session recorded rather than repeated.
+    void addActualMinutes(uid, tracked.taskId, tracked.minutes).catch(cause => {
+      console.error("could not record actual minutes", cause);
+    });
+  }, [uid]);
 
   useEffect(() => {
     const onVisibility = () => {

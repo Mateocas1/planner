@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesEstimate, setSeriesFrequency } from "../data/series.ts";
@@ -6,6 +6,7 @@ import type { SeriesView, TaskView } from "../data/store.ts";
 import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { DragGrip } from "./drag.tsx";
+import { completedSamples } from "./BiasHint.tsx";
 import { RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { morphClose, morphOpen } from "./morph.ts";
@@ -106,6 +107,11 @@ export function Tasks({
   const restoreFocus = useRef<string | null>(null);
   const reduced = useReducedMotion();
   const travel = reduced ? 0 : settleMs;
+
+  /* The estimate lesson's history (F2b): the details sheet offers a learned
+     pace for the task it shows, exactly as the creation sheet does, so both
+     surfaces read one sample list (finished tasks with a recorded pace). */
+  const biasSamples = useMemo(() => completedSamples(tasks), [tasks]);
 
   useEffect(() => () => timers.current.forEach(id => window.clearTimeout(id)), []);
 
@@ -384,6 +390,7 @@ export function Tasks({
             origin={selected.origin}
             shared
             busy={busy}
+            biasSamples={biasSamples}
             onClose={() => morphClose(() => setSelected(null), selected.origin)}
             onRename={next => void run(() => renameTask(uid, selectedTask.id, next))}
             onDeadlineChange={next =>
