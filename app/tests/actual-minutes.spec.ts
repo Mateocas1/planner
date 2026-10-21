@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   readRemoteTasks,
   seedSidebarFixture,
@@ -109,6 +109,28 @@ async function revealTaskForm(page: Page) {
   await expect(add).toBeVisible();
 }
 
+/**
+ * Presses a row once it has stopped moving. A press is dispatched to whatever
+ * is under the pointer at release, and the Tasks list is still landing right
+ * after the view changes (the page's entrance plus the list's own settle), so
+ * a press inside that beat is dispatched to where the row used to be: its
+ * handler never runs and the panel never opens (traced: no view transition
+ * starts at all, and the row's box reads differently in two runs). Two reads a
+ * poll apart must name the same box before the press.
+ */
+async function pressAtRest(page: Page, row: Locator): Promise<void> {
+  let previous = await row.boundingBox();
+  await expect
+    .poll(async () => {
+      const current = await row.boundingBox();
+      const still = previous !== null && current !== null && Math.abs(current.y - previous.y) < 0.5 && Math.abs(current.x - previous.x) < 0.5;
+      previous = current;
+      return still;
+    }, { timeout: 10_000 })
+    .toBe(true);
+  await row.click();
+}
+
 const timer = (page: Page) => page.getByRole("group", { name: "Focus timer" });
 const details = (page: Page) => page.getByRole("complementary", { name: "Task details" });
 
@@ -139,7 +161,7 @@ test("a 20-minute focus session adds 20 minutes to its task, and Task details sh
   ]);
 
   await openTasks(page);
-  await page.getByRole("button", { name: "Write the brief" }).click();
+  await pressAtRest(page, page.getByRole("button", { name: "Write the brief" }));
   await expect(details(page)).toBeVisible();
   // An open task says what has been tracked so far, never a finished total.
   await expect(details(page).getByText("Tracked 20 min so far")).toBeVisible();
