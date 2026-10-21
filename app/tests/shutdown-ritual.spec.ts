@@ -57,6 +57,14 @@ const banner = (page: Page) => page.locator(".shutdown-banner");
 const turnPage = (page: Page) => ritual(page).locator(".page-turn-top");
 /** Today's own page turn, before the ritual is on screen. */
 const homePage = (page: Page) => page.locator(".page-turn-top").first();
+const nav = (page: Page) => page.getByRole("navigation", { name: "Main" });
+
+/** A day key as the sheet's date line writes it (en-US, read as UTC midnight). */
+function dayLabel(key: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" }).format(
+    new Date(`${key}T00:00:00Z`),
+  );
+}
 
 /** The sheet's named groups: the two lists criterion 1 is about. */
 const group = (page: Page, name: string) => ritual(page).getByRole("region", { name });
@@ -271,6 +279,91 @@ test.describe("on a desktop", () => {
     await ritual(page).getByRole("button", { name: "Cancel" }).click();
     await expect(ritual(page)).toHaveCount(0);
     await expect(banner(page).getByText("Time to close the day.")).toBeVisible();
+  });
+
+  test("Undo after the sheet closed reads live state: a later edit is skipped and the rest comes back", async ({ page }) => {
+    const base = at(18, 30);
+    const today = dayKey(base);
+    const edited = dayKey(base, 6);
+    const { email, taskIds } = await open(page, base, "ritual-undo-live", {
+      tasks: busyDay(base).tasks,
+      blocks: [{ ...blockOn(base, "09:00", "10:00"), task: "Fix the chart axis" }],
+    });
+    await openFromBanner(page);
+    await ritual(page).getByRole("button", { name: "Close day" }).click();
+    // The sheet goes away; the offer to undo the close outlives it.
+    await ritual(page).getByRole("button", { name: "Done" }).click();
+    await expect(ritual(page)).toHaveCount(0);
+
+    /* Somebody moves one of the rolled tasks once the sheet is gone. Undo runs
+       against the state the app holds *then*, so that edit wins and only the
+       other rolled deadline comes back (F3c review item 4). */
+    await nav(page).getByRole("button", { name: "Tasks" }).click();
+    // The row's own button: the sidebar lists the same task by name too.
+    await page.locator("li.task", { hasText: "Review the draft" }).getByRole("button").first().click();
+    const details = page.getByRole("complementary", { name: "Task details" });
+    await details.getByLabel("Deadline").fill(edited);
+    // The store takes the edit first and the server a moment later: this is the
+    // local state the undo must compare against.
+    await expect.poll(() => readRemoteTask(email, taskIds["Review the draft"]).then(task => task?.deadline)).toBe(edited);
+    await details.getByRole("button", { name: "Close" }).click();
+
+    await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
+
+    /* The two deadlines and the stamp as one final state: the undo's batch is a
+       compensating write, so it is read from the server once it lands. */
+    await expect
+      .poll(async () => {
+        const undoState = await readRemoteShutdown(email);
+        return [undoState.deadlines["Review the draft"], undoState.deadlines["Fix the chart axis"], undoState.lastShutdown];
+      })
+      .toEqual([edited, today, undefined]);
+  });
+
+  test("Undo puts back the stamp exactly as it was stored, hand-edited or not", async ({ page }) => {
+    const base = at(18, 30);
+    const today = dayKey(base);
+    /* A value this app would never write: every reader treats it as "open", but
+       the close and its undo carry the stored value instead of a guess (F3c
+       review item 6). */
+    const raw = "2026-5-4";
+    const { email } = await open(page, base, "ritual-raw-stamp", {
+      lastShutdown: raw,
+      tasks: [{ title: "Review the draft", deadline: today }],
+    });
+    await openFromBanner(page);
+    await ritual(page).getByRole("button", { name: "Close day" }).click();
+    await expect(ritual(page).getByRole("status")).toHaveText(/Day closed\./);
+    expect((await stored(email)).lastShutdown).toBe(today);
+
+    await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
+
+    await expect.poll(() => readRemoteShutdown(email).then(state => state.lastShutdown)).toBe(raw);
+    expect((await readRemoteShutdown(email)).deadlines["Review the draft"]).toBe(today);
+  });
+
+  test("a sheet left open past midnight closes nothing and re-reads the day", async ({ page }) => {
+    const base = at(23, 50);
+    const today = dayKey(base);
+    const nextDay = dayKey(base, 1);
+    const { email, taskIds } = await open(page, base, "ritual-midnight", {
+      tasks: [{ title: "Review the draft", deadline: today }],
+    });
+    await openFromBanner(page);
+    await expect(turnPage(page).getByText("0 done · 1 left over")).toBeVisible();
+
+    /* Midnight passes while the sheet is open: the page under it is no longer
+       the day the sheet is showing (F3c review item 2). */
+    await page.clock.setSystemTime(new Date(base.getTime() + 20 * 60_000));
+    await ritual(page).getByRole("button", { name: "Close day" }).click();
+
+    /* Nothing is written, and the sheet re-reads the day instead of rolling the
+       one it showed. */
+    await expect(turnPage(page).getByText("The day changed. Review it again.")).toBeVisible();
+    await expect(turnPage(page).locator(".shutdown-date")).toHaveText(dayLabel(nextDay));
+    await expect(turnPage(page).getByText("0 done · 1 left over")).toBeVisible();
+    expect((await readRemoteTask(email, taskIds["Review the draft"]))?.deadline).toBe(today);
+    expect((await readRemoteShutdown(email)).lastShutdown).toBeUndefined();
   });
 
   test("a day already closed on another device shows no banner", async ({ page }) => {

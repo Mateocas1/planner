@@ -484,6 +484,69 @@ test("a future or unreadable stamp is never rewritten and too many moves write n
 });
 
 /**
+ * The sheet's side of a later close (F3c review item 4): an undo of a close a
+ * later one has stamped away refuses, writes nothing, and owes the "later
+ * close" sentence the ritual shows -- never the rejected-close one (item 5).
+ * The sheet reads this state live (App.tsx keeps it), so the comparison pinned
+ * here is exactly the one the sheet makes.
+ */
+test("undo of an earlier close refuses once a later close owns the day, and says so", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { closeDay, undoCloseDay } = await import("../src/data/tasks.ts");
+  const { storedLastShutdown } = await import("../src/data/profile.ts");
+  const { undoMessage } = await import("../src/ui/shutdownRitual.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`shutdown-later-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `shutdown-later-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const zone = "America/Argentina/Buenos_Aires";
+    const today = "2026-05-04";
+    const tomorrow = "2026-05-05";
+    const local = localReader(owner.db, uid, storedLastShutdown);
+    const { taskPath, profilePath, read } = local;
+
+    await setDoc(doc(owner.db, profilePath), { timeZone: zone });
+    await setDoc(doc(owner.db, taskPath("late")), { title: "Late", completed: false, deadline: today });
+
+    const first = planCloseDay({
+      tasks: [{ id: "late", title: "Late", completed: false, deadline: today }],
+      blocks: [],
+      today,
+      timeZone: zone,
+      lastShutdown: storedLastShutdown(await read(profilePath)),
+    });
+    await closeDay(uid, first, owner.db);
+    assert.equal(storedLastShutdown(await read(profilePath)), today);
+
+    // The next day is closed too: this close owns the stamp now.
+    const second = planCloseDay({
+      tasks: [{ id: "late", title: "Late", completed: false, deadline: tomorrow }],
+      blocks: [],
+      today: tomorrow,
+      timeZone: zone,
+      lastShutdown: storedLastShutdown(await read(profilePath)),
+    });
+    await closeDay(uid, second, owner.db);
+    assert.equal(storedLastShutdown(await read(profilePath)), tomorrow);
+
+    const undo = await undoCloseDay(uid, first, await local.state(["late"]), owner.db);
+    assert.deepEqual(undo, { reverted: 0, skipped: 0, refused: "later-close" }, "the first close is not this one's to revert");
+    assert.equal(
+      undoMessage({ kind: "refused", refusal: undo.refused! }),
+      "The day was closed again, so nothing was undone.",
+      "and the sheet says why, instead of returning to Today silently",
+    );
+
+    // The refusal wrote nothing: the later close's roll and its stamp stand.
+    assert.deepEqual(await read(taskPath("late")), { title: "Late", completed: false, deadline: "2026-05-06" });
+    assert.equal(storedLastShutdown(await read(profilePath)), tomorrow);
+  } finally {
+    await close(owner);
+  }
+});
+
+/**
  * Plan my day (F4b) against real Firestore: one `writeBatch` writes every block
  * of a plan and returns exactly their document ids, and its undo deletes those
  * documents and nothing else — an older block on the same day and the tasks the

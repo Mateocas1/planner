@@ -8,6 +8,7 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
+import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { BiasHint, completedSamples, type TrackedTask } from "./ui/BiasHint.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
@@ -72,10 +73,25 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const [creating, setCreating] = useState<HTMLElement | null>(null);
   const [lateError, setLateError] = useState<string | null>(null);
   // One undo offer at a time, keyed so a new delete replaces the old toast and
-  // restarts its countdown instead of stacking a second one.
+  // restarts its countdown instead of stacking a second one. The id is returned
+  // because the shutdown ritual withdraws its own offer when the server rejects
+  // the close it announced, without touching an offer somebody else made.
   const [undo, setUndo] = useState<PendingUndo | null>(null);
   const undoCursor = useRef(0);
-  const offerUndo = (item: UndoableDelete) => setUndo({ ...item, id: ++undoCursor.current });
+  const offerUndo = (item: UndoableDelete) => {
+    const id = ++undoCursor.current;
+    setUndo({ ...item, id });
+    return id;
+  };
+  /* The ritual's undo runs from a toast that outlives the sheet, so what it
+     checks must be the state the shell holds *then*: the store's deadlines and
+     the profile's raw stamp, read through a getter at the moment Undo is
+     pressed (F3c review item 4). */
+  const liveShutdown = useRef<ShutdownState>({ tasks: [], lastShutdown: undefined });
+  liveShutdown.current = {
+    tasks: tasks.map(task => ({ id: task.id, deadline: task.deadline })),
+    lastShutdown: profile.storedLastShutdown,
+  };
   // Command palette: open/closed, and the task the palette asked the Tasks
   // surface to reveal. The request survives the view change that mounts it.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -338,10 +354,13 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
             timeZone={zone}
             workWindow={profile.workWindow}
             now={new Date()}
-            lastShutdown={profile.lastShutdown}
+            storedShutdown={profile.storedLastShutdown}
             origin={shutdownOrigin.current}
             onClose={() => setShutdownOpen(false)}
             onOfferUndo={offerUndo}
+            onWithdrawUndo={id => setUndo(current => (current?.id === id ? null : current))}
+            onProblem={setLateError}
+            getShutdownState={() => liveShutdown.current}
           />
         )}
       </AnimatePresence>

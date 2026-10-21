@@ -3,12 +3,19 @@ import test from "node:test";
 import {
   bannerVisible,
   briefVisible,
+  claimCloseDay,
   closeAnnouncement,
+  closeDayKey,
+  closeFailedMessage,
+  dayChangedMessage,
   firstFreeSlot,
+  lateCloseFailure,
   leftoverSummary,
   minutesLabel,
   morningBriefText,
+  releaseCloseDay,
   turnHint,
+  undoMessage,
 } from "./shutdownRitual.ts";
 
 /**
@@ -95,6 +102,100 @@ test("the first free slot is the first stretch of the day still ahead", () => {
     firstFreeSlot([{ startMinutes: 8 * 60, endMinutes: 10 * 60 + 50 }, { startMinutes: 11 * 60, endMinutes: 12 * 60 }], window, 8 * 60),
     12 * 60,
   );
+});
+
+/**
+ * The data-safety findings of the F3c review, pinned where the sheet gets its
+ * decisions from: what a rejected close says and takes back (S2), what undo
+ * says in every ending (S1/S2), and one close in flight per owner and day (S4).
+ * The sentences are the sheet's own copy, so they are asserted verbatim.
+ */
+
+test("a close the server rejected says nothing changed and withdraws its undo offer", () => {
+  // Criterion 5's sentence: one batch, so a rejected batch changed nothing.
+  assert.equal(closeFailedMessage, "Couldn't close the day. Nothing changed.");
+  assert.deepEqual(lateCloseFailure(), { message: closeFailedMessage, withdrawUndo: true });
+});
+
+test("the day a sheet outlived is re-read instead of closed", () => {
+  assert.equal(dayChangedMessage, "The day changed. Review it again.");
+});
+
+test("undo says what each ending means, and never blames a later close for a rejected one", () => {
+  // An undo that did its work has nothing to say.
+  assert.equal(undoMessage({ kind: "reverted" }), null);
+  // A roll that never happened is not a failure to revert.
+  assert.equal(undoMessage({ kind: "refused", refusal: "nothing-applied" }), null);
+  assert.equal(undoMessage({ kind: "refused", refusal: "later-close" }), "The day was closed again, so nothing was undone.");
+  // A write accepted locally and rejected by the server must not return to
+  // Today silently (S1).
+  assert.equal(undoMessage({ kind: "unsaved" }), "The undo could not be saved.");
+  /* S2: the close whose batch the server rejected never closed the day, so its
+     undo reports the failed close rather than a later close nobody made. */
+  assert.equal(undoMessage({ kind: "rejected" }), closeFailedMessage);
+  assert.notEqual(undoMessage({ kind: "rejected" }), undoMessage({ kind: "refused", refusal: "later-close" }));
+});
+
+/**
+ * The transport under the ritual's retraction (S2). `ui/write.ts` is the only
+ * place that knows a write can be accepted locally and rejected later, and the
+ * ritual's retraction hangs off exactly that: the closure that withdraws the
+ * undo offer must receive the rejection, and must receive nothing while the
+ * write may still land. A browser test cannot force the emulator to reject an
+ * owner's write, so this is pinned here, with the one global it needs.
+ */
+test("a write rejected after its local acceptance is reported to the closure that retracts it", async () => {
+  const { settleTracked } = await import("./write.ts");
+  const globals = globalThis as { window?: unknown };
+  const saved = globals.window;
+  globals.window = { setTimeout: (run: () => void, ms: number) => setTimeout(run, ms) };
+  try {
+    // Accepted, then refused: the close had already been announced by then.
+    let rejectWrite: (cause: unknown) => void = () => {};
+    const late = new Promise((_, fail) => {
+      rejectWrite = fail;
+    });
+    const tracked = settleTracked(late);
+    await tracked.accepted;
+    rejectWrite(new Error("Missing or insufficient permissions."));
+    assert.equal(await tracked.late, "Missing or insufficient permissions.");
+
+    // Refused before the accept beat: the caller has not closed yet, so the
+    // rejection is still its own to handle and the retraction stays quiet.
+    const early = new Promise((_, fail) => {
+      setTimeout(() => fail(new Error("invalid day")), 0);
+    });
+    await assert.rejects(settleTracked(early).accepted, /invalid day/);
+
+    // Landed: there is nothing to retract, so `late` never resolves.
+    const landed = settleTracked(Promise.resolve("written"));
+    await landed.accepted;
+    assert.equal(
+      await Promise.race([landed.late, new Promise(resolve => setTimeout(() => resolve("pending"), 20))]),
+      "pending",
+    );
+  } finally {
+    globals.window = saved;
+  }
+});
+
+test("one close of a day is in flight, and only one", () => {
+  assert.equal(claimCloseDay("ada", "2026-05-04"), true);
+  // A sheet reopened while the batch is pending cannot start a second close.
+  assert.equal(claimCloseDay("ada", "2026-05-04"), false);
+  // Another day, or another owner, is a different close.
+  assert.equal(claimCloseDay("ada", "2026-05-05"), true);
+  assert.equal(claimCloseDay("grace", "2026-05-04"), true);
+  // The claim is released when the batch is accepted or abandoned.
+  releaseCloseDay("ada", "2026-05-04");
+  assert.equal(claimCloseDay("ada", "2026-05-04"), true);
+  /* Keys cannot collide across an owner/day boundary: two fragments that read
+     the same joined with one character are different closes. */
+  assert.notEqual(closeDayKey("a/b", "c"), closeDayKey("a", "b/c"));
+  assert.notEqual(closeDayKey("a", "b/c"), closeDayKey("a/b", "c"));
+  for (const [uid, day] of [["ada", "2026-05-04"], ["ada", "2026-05-05"], ["grace", "2026-05-04"]] as const) {
+    releaseCloseDay(uid, day);
+  }
 });
 
 test("minutes read as a clock, and the hint follows the pointer", () => {

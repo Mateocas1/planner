@@ -1,5 +1,5 @@
 import { freeSlots, type Interval, type WorkWindow } from "../planning/window.ts";
-import { isDayKey } from "../planning/shutdown.ts";
+import { isDayKey, type UndoRefusal } from "../planning/shutdown.ts";
 import { formatWall, keyToWallUtc, pad } from "./time.ts";
 
 /**
@@ -10,7 +10,9 @@ import { formatWall, keyToWallUtc, pad } from "./time.ts";
  * This module owns every sentence they show and the two decisions that are
  * arithmetic rather than rendering -- is the banner up, and is the brief shown
  * -- so the copy of criteria 1, 2, 5 and 7 is pinned by unit tests and no
- * component invents a wording of its own.
+ * component invents a wording of its own. It also owns the two decisions the
+ * data-safety review of F3c added: what an undo says in each of its endings,
+ * and the fact that one owner's one day has at most one close in flight.
  *
  * Nothing here reads a clock, a document or the DOM: the caller hands in the
  * profile zone's today, the zone's wall-clock minutes, and what the store
@@ -24,6 +26,92 @@ export const closeFailedMessage = "Couldn't close the day. Nothing changed.";
 
 /** The toast's sentence; its `Undo` action is the undo toast's own button. */
 export const closeToastMessage = "Day closed.";
+
+/**
+ * The sheet outlived its own day: it stayed open past midnight, so committing
+ * would close the day the page under it used to be. Nothing is written and the
+ * sheet re-reads the day instead (F3c review item 2).
+ */
+export const dayChangedMessage = "The day changed. Review it again.";
+
+/** An undo whose write was accepted locally and then rejected by the server. */
+export const undoFailedMessage = "The undo could not be saved.";
+
+/** Undo found the profile stamped by a close that is not the one it reverts. */
+export const laterCloseMessage = "The day was closed again, so nothing was undone.";
+
+/**
+ * A close the server rejected after the sheet had already turned the page and
+ * announced it (F3c review item 5). The day is not closed, so the page returns
+ * to Today with criterion 5's sentence and the undo offer is withdrawn: it
+ * promised to revert a batch that never landed.
+ */
+export function lateCloseFailure(): { message: string; withdrawUndo: true } {
+  return { message: closeFailedMessage, withdrawUndo: true };
+}
+
+/**
+ * Why an undo ended where it did: it reverted, it refused (nothing was applied,
+ * or a later close owns the stamp), its write was accepted locally and rejected
+ * by the server, or the close it belongs to was itself rejected.
+ */
+export type UndoOutcome =
+  | { kind: "reverted" }
+  | { kind: "refused"; refusal: UndoRefusal }
+  | { kind: "unsaved" }
+  | { kind: "rejected" };
+
+/**
+ * The sentence an undo owes, or null when it did what it promised.
+ *
+ * A rejection is never a later close: the batch Undo would have reverted was
+ * refused by the server, so the day was never closed, and saying a later close
+ * took it would describe a write nobody made (F3c review items 4 and 5).
+ */
+export function undoMessage(outcome: UndoOutcome): string | null {
+  switch (outcome.kind) {
+    case "reverted":
+      return null;
+    case "refused":
+      return outcome.refusal === "later-close" ? laterCloseMessage : null;
+    case "unsaved":
+      return undoFailedMessage;
+    case "rejected":
+      return closeFailedMessage;
+  }
+}
+
+/**
+ * The closes in flight, keyed by owner and day (F3c review item 1).
+ *
+ * A close is in flight from the commit until Firestore accepts the batch
+ * locally, which is exactly the window in which the store does not hold the
+ * close yet. The sheet that committed can be dismissed and reopened inside it,
+ * and a second close would then plan against that older store. The guard is
+ * module-level because it must outlive the sheet instance that claimed it.
+ */
+const closesInFlight = new Set<string>();
+
+/** One key per owner and day; the NUL keeps two fragments from colliding. */
+export function closeDayKey(uid: string, today: string): string {
+  return `${uid}\u0000${today}`;
+}
+
+/**
+ * Claims the close of one day. False means another close of the same owner and
+ * day is still in flight, and this caller must not start a second batch.
+ */
+export function claimCloseDay(uid: string, today: string): boolean {
+  const key = closeDayKey(uid, today);
+  if (closesInFlight.has(key)) return false;
+  closesInFlight.add(key);
+  return true;
+}
+
+/** Releases the claim, once the batch is accepted locally or abandoned. */
+export function releaseCloseDay(uid: string, today: string): void {
+  closesInFlight.delete(closeDayKey(uid, today));
+}
 
 /**
  * Where the brief remembers that it was dismissed. Keyed by the profile zone's

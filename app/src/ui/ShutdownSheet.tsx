@@ -6,6 +6,7 @@ import {
   nextDayKey,
   planCloseDay,
   type ShutdownPlan,
+  type ShutdownState,
 } from "../planning/shutdown.ts";
 import { type WorkWindow } from "../planning/window.ts";
 import { formatDateKey } from "./format.ts";
@@ -14,17 +15,23 @@ import { useMediaQuery } from "./motion.ts";
 import { PageTurn } from "./PageTurn.tsx";
 import { Sheet } from "./Sheet.tsx";
 import {
+  claimCloseDay,
   closeAnnouncement,
   closeFailedMessage,
   closeToastMessage,
+  dayChangedMessage,
   firstFreeSlot,
+  lateCloseFailure,
   leftoverSummary,
   minutesLabel,
+  releaseCloseDay,
   turnHint,
+  undoMessage,
+  type UndoOutcome,
 } from "./shutdownRitual.ts";
 import { dateKey, formatWall, keyToWallUtc, wallMinutes } from "./time.ts";
 import type { UndoableDelete } from "./UndoToast.tsx";
-import { settle } from "./write.ts";
+import { settle, settleTracked } from "./write.ts";
 import "./ShutdownSheet.css";
 
 /**
@@ -45,6 +52,14 @@ import "./ShutdownSheet.css";
  *
  * Reduced motion keeps the gesture and drops the travel (PageTurn), and the
  * Tomorrow page arrives on an opacity fade instead of a page landing.
+ *
+ * Three rules keep the write honest, and none of them is the animation's job
+ * (F3c review): the commit re-reads the clock, so a sheet left open past
+ * midnight writes nothing; only one close of a day can be in flight, so a
+ * reopened sheet cannot start a second batch; and a close the server rejects
+ * after the local acceptance is taken back -- the page returns to Today, says
+ * nothing changed, and the undo offer goes with it. The undo compares against
+ * the state the *shell* holds at the moment it runs, which outlives this sheet.
  */
 
 /** How long the page's flight gets before the Tomorrow page replaces it, so the
@@ -58,10 +73,13 @@ export function ShutdownSheet({
   timeZone,
   workWindow,
   now,
-  lastShutdown,
+  storedShutdown,
   origin,
   onClose,
   onOfferUndo,
+  onWithdrawUndo,
+  onProblem,
+  getShutdownState,
 }: {
   uid: string;
   tasks: TaskView[];
@@ -70,19 +88,31 @@ export function ShutdownSheet({
   /** The profile's one working window, for tomorrow's first free slot (W1). */
   workWindow: WorkWindow;
   now: Date;
-  /** `profile.lastShutdown` as a day key: this day is already closed on some device. */
-  lastShutdown?: string;
+  /** `profile.storedLastShutdown` exactly as stored: the plan records it so the
+   *  undo puts a hand-edited value back instead of deleting it (F3c item 6). */
+  storedShutdown?: unknown;
   origin: HTMLElement | null;
   onClose: () => void;
-  /** The shell's single undo offer; the roll is undoable from wherever it ran. */
-  onOfferUndo: (item: UndoableDelete) => void;
+  /** The shell's single undo offer, and its withdrawal: the roll is undoable
+   *  from wherever it ran, and a rejected roll must stop offering. */
+  onOfferUndo: (item: UndoableDelete) => number;
+  onWithdrawUndo: (id: number) => void;
+  /** Where a failure goes once this sheet is off screen: the shell's toast. */
+  onProblem: (message: string) => void;
+  /** The state the app holds now -- the store's tasks and the profile's raw
+   *  stamp at the moment Undo runs, never the render that offered it. */
+  getShutdownState: () => ShutdownState;
 }) {
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   /* A phone reports a coarse pointer, and a touchscreen that also has a mouse
      reports fine: the hint names the gesture that works on the device in hand,
      so a device that can be touched gets the thumb's sentence. */
   const touch = useMediaQuery("(pointer: coarse)") || navigator.maxTouchPoints > 0;
-  const today = dateKey(now, timeZone);
+  /* The day this sheet is about. It is state, not a value read at every render:
+     the commit re-reads the clock and moves it forward when midnight has passed
+     (see commit), because a page that silently swapped days under an open sheet
+     would be the same bug it is guarding against. */
+  const [today, setToday] = useState(() => dateKey(now, timeZone));
   const tomorrow = nextDayKey(today);
   const groups = dayLeftovers({ tasks, blocks, today, timeZone });
   const summary = leftoverSummary({ done: groups.done.length, leftOver: groups.leftOver.length });
@@ -107,14 +137,19 @@ export function ShutdownSheet({
   const [error, setError] = useState<string | null>(null);
   const committing = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  /* The undo runs after the close, from a callback the shell kept: it must read
-     the state the app holds *then*, not the state of the render that offered it
-     (the profile stamp it is checked against arrives with the close's own
-     write). Refs, not the closed-over props, are what make the inverse exact. */
-  const liveTasks = useRef(tasks);
-  const liveStamp = useRef(lastShutdown);
-  liveTasks.current = tasks;
-  liveStamp.current = lastShutdown;
+  /* These two outlive the sheet, because the offer they describe does: the id of
+     the offer this close made (so a rejected batch can withdraw exactly it) and
+     whether the close's own batch was rejected -- a rejection is not a later
+     close, and must never be reported as one. */
+  const offeredUndo = useRef<number | null>(null);
+  const rejected = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   // The page has been turned to tomorrow: the heading is where the eye (and a
   // screen reader) must be, not the page that just left.
@@ -129,10 +164,27 @@ export function ShutdownSheet({
    */
   async function commit(): Promise<boolean> {
     if (committing.current || turned) return false;
+    /* The day is the day at the commit, never the day the sheet was mounted
+       with: past midnight, closing what is on screen would stamp yesterday.
+       Nothing is written; the sheet re-reads the day and shows it instead. */
+    const currentDay = dateKey(new Date(), timeZone);
+    if (currentDay !== today) {
+      setToday(currentDay);
+      setError(dayChangedMessage);
+      return false;
+    }
+    /* One close per owner and day, across sheet instances: a sheet reopened
+       while a batch is pending cannot start a second one. The claim is released
+       once the write is accepted locally, which is the window it guards. */
+    if (!claimCloseDay(uid, today)) return false;
     committing.current = true;
+    // A rejected close is history once a new one starts: this attempt's undo
+    // must not inherit the previous attempt's failure.
+    rejected.current = false;
+    offeredUndo.current = null;
     setError(null);
     try {
-      const plan = planCloseDay({ tasks, blocks, today, timeZone, lastShutdown });
+      const plan = planCloseDay({ tasks, blocks, today, timeZone, lastShutdown: storedShutdown });
       // A day closed on another device writes nothing and is already tomorrow's
       // starting point: the turn has nothing to roll, so it simply lands.
       if (plan.alreadyClosed) {
@@ -145,20 +197,28 @@ export function ShutdownSheet({
         setError(closeFailedMessage);
         return false;
       }
-      // `settle` accepts the write as soon as Firestore queues it locally, so a
-      // close works offline; a validation rejection still arrives before the
-      // turn lands and is thrown here.
-      await settle(closeDay(uid, plan));
+      /* `settleTracked` accepts the close as soon as Firestore queues it
+         locally, so a close works offline, and hands back the server's later
+         rejection: a validation rejection still arrives before the turn lands
+         and is thrown here.
+
+         A rejection after that point means the day was never closed, so the
+         page must come home and the offer to undo it must go -- at once, and
+         from wherever the user is by then. */
+      const write = settleTracked(closeDay(uid, plan));
+      await write.accepted;
       await land();
       setTurned(true);
       setAnnouncement(closeAnnouncement({ moved: plan.moves.length, tomorrowKey: tomorrow }));
-      onOfferUndo({ message: closeToastMessage, restore: () => reopen(plan) });
+      offeredUndo.current = onOfferUndo({ message: closeToastMessage, restore: () => reopen(plan) });
+      void write.late.then(() => retract());
       return true;
     } catch {
       setError(closeFailedMessage);
       return false;
     } finally {
       committing.current = false;
+      releaseCloseDay(uid, today);
     }
   }
 
@@ -169,24 +229,58 @@ export function ShutdownSheet({
   }
 
   /**
+   * The server rejected the close this sheet had already announced: the day is
+   * not closed, so the page returns to Today with the failed close's sentence
+   * and the undo offer is withdrawn. The offer promised to revert a batch that
+   * never landed, and reporting a later close would describe a write nobody
+   * made. This runs after the sheet may be gone, which is why the withdrawal is
+   * the shell's.
+   */
+  function retract(): void {
+    const failure = lateCloseFailure();
+    rejected.current = true;
+    if (failure.withdrawUndo && offeredUndo.current !== null) {
+      onWithdrawUndo(offeredUndo.current);
+      offeredUndo.current = null;
+    }
+    setAnnouncement("");
+    setTurned(false);
+    report(failure.message);
+  }
+
+  /** Says what went wrong where it is still visible: this sheet's own line while
+   *  it is on screen, the shell's toast once the offer has outlived it. */
+  function report(message: string | null): void {
+    setError(message);
+    if (message !== null && !alive.current) onProblem(message);
+  }
+
+  /**
    * Criterion 4's undo: the exact inverse, checked against the state the app
-   * holds now (`data/tasks.ts undoCloseDay`). A refused undo wrote nothing, so
-   * the sheet goes back to today either way instead of claiming a revert it
-   * could not make.
+   * holds now (`data/tasks.ts undoCloseDay`, `getShutdownState`). A refusal and
+   * a write the server rejected both say so instead of silently returning to
+   * Today, and the sheet goes back to Today either way.
    */
   async function reopen(plan: ShutdownPlan): Promise<void> {
+    let outcome: UndoOutcome = { kind: "unsaved" };
     try {
-      const undo = undoCloseDay(uid, plan, { tasks: liveTasks.current, lastShutdown: liveStamp.current });
+      const undo = undoCloseDay(uid, plan, getShutdownState());
       await settle(undo);
-      /* A refused undo wrote nothing: a later close owns the stamp, so this
-         close's deadlines are not this close's to put back any more. */
+      // A write accepted locally and rejected by the server: nothing was undone.
       const result = await undo.catch(() => undefined);
-      setError(result?.refused === "later-close" ? "The day was closed again, so nothing was undone." : null);
-      setAnnouncement("");
-      setTurned(false);
+      outcome = rejected.current
+        ? { kind: "rejected" }
+        : result === undefined
+          ? { kind: "unsaved" }
+          : result.refused === undefined
+            ? { kind: "reverted" }
+            : { kind: "refused", refusal: result.refused };
     } catch {
-      setError("The undo could not be saved.");
+      outcome = { kind: "unsaved" };
     }
+    report(undoMessage(outcome));
+    setAnnouncement("");
+    setTurned(false);
   }
 
   const tomorrowDate = formatWall(keyToWallUtc(tomorrow), { weekday: "long", month: "long", day: "numeric" });
