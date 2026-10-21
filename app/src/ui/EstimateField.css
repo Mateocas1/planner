@@ -1,0 +1,46 @@
+/* The estimate field in the task and series details sheets (E1).
+ *
+ * The field itself is the app's own stacked form row; the only new surface is
+ * the note under it, which says which estimate planning will use. The note
+ * cross-fades when its text changes after the sheet has been read once, so a
+ * committed estimate is noticed without the line jumping: 150 ms over opacity
+ * and a 2 px rise, on the shared --ease-out curve (DESIGN.md §4: one curve for
+ * fades, transform + opacity only, nothing animated on first paint).
+ *
+ * Reduced motion keeps the fade and drops the rise: gentler, not zero.
+ */
+
+.estimate-note {
+  margin: 2px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.estimate-note-changed {
+  animation: estimate-note-enter 150ms var(--ease-out) both;
+}
+
+@keyframes estimate-note-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .estimate-note-changed {
+    animation-name: estimate-note-fade;
+  }
+
+  @keyframes estimate-note-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

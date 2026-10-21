@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
-import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesFrequency } from "../data/series.ts";
+import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesEstimate, setSeriesFrequency } from "../data/series.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
-import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline } from "../data/tasks.ts";
+import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { DragGrip } from "./drag.tsx";
 import { RepeatIcon } from "./icons.tsx";
@@ -362,6 +362,7 @@ export function Tasks({
             hasHistory={Object.keys(completions).some(id => id.startsWith(`${selectedSeries.id}:`))}
             onClose={() => morphClose(() => setSelected(null), selected.origin)}
             onRename={next => void run(() => renameSeries(uid, selectedSeries.id, next))}
+            onEstimateChange={next => void run(() => setSeriesEstimate(uid, selectedSeries.id, next))}
             onFrequencyChange={frequency => void run(() => setSeriesFrequency(uid, selectedSeries.id, frequency, selectedSeries.anchorDate))}
             onAnchorChange={anchorDate => void run(() => setSeriesAnchor(uid, selectedSeries.id, selectedSeries.frequency, anchorDate))}
             onCompleteOccurrence={date => void run(() => completeOccurrence(uid, selectedSeries.id, date))}
@@ -389,6 +390,7 @@ export function Tasks({
               void run(() => setTaskDeadline(uid, selectedTask.id, selectedTask.title, next === "" ? undefined : next))
             }
             onToggleCompleted={() => completeTask(selectedTask, !selectedTask.completed)}
+            onEstimateChange={next => void run(() => setTaskEstimate(uid, selectedTask.id, next))}
             onDelete={() => {
               // The row's exact fields (title, completion, deadline) travel with
               // the offer: undo rewrites them under the same document id.

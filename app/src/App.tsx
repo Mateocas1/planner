@@ -7,6 +7,7 @@ import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
+import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
@@ -393,6 +394,9 @@ function NewTaskSheet({
   const [deadlineEdit, setDeadlineEdit] = useState<string | null>(null);
   const [repeatEdit, setRepeatEdit] = useState<Frequency | "off" | null>(null);
   const [startEdit, setStartEdit] = useState<string | null>(null);
+  // The estimate is minutes or nothing: an empty field means "no estimate",
+  // which planning reads as the 60-minute assumption (never as zero).
+  const [estimateEdit, setEstimateEdit] = useState("");
   // Undone chips, by the exact text they matched: that text stays in the title
   // and is not consumed again, so one undo does not cancel every later parse.
   const [undone, setUndone] = useState<string[]>([]);
@@ -409,6 +413,7 @@ function NewTaskSheet({
   const deadline = deadlineEdit ?? parsed.deadline ?? "";
   const repeat = repeatEdit ?? parsed.frequency ?? "off";
   const start = startEdit ?? parsed.anchorDate ?? "";
+  const estimate = estimateEdit === "" ? undefined : Number(estimateEdit);
   // A chip that would no longer describe the control it stands for is dropped:
   // the text it matched stays consumed, because the user replaced the value.
   const chips = parsed.parts.filter(part =>
@@ -422,8 +427,8 @@ function NewTaskSheet({
     try {
       await settle(
         repeat === "off"
-          ? addTask(uid, parsed.title, deadline === "" ? undefined : deadline)
-          : addSeries(uid, parsed.title, repeat, start, deadline === "" ? undefined : deadline),
+          ? addTask(uid, parsed.title, deadline === "" ? undefined : deadline, estimate)
+          : addSeries(uid, parsed.title, repeat, start, deadline === "" ? undefined : deadline, estimate),
       );
       onClose();
     } catch (cause) {
@@ -464,6 +469,27 @@ function NewTaskSheet({
               value={deadline}
               onChange={event => setDeadlineEdit(event.target.value)}
             />
+          </div>
+          <div className="form-row stacked">
+            <label htmlFor="task-estimate">Estimate</label>
+            <input
+              id="task-estimate"
+              className="form-control"
+              type="number"
+              inputMode="numeric"
+              min={MIN_ESTIMATE_MINUTES}
+              max={MAX_ESTIMATE_MINUTES}
+              step={5}
+              placeholder="Minutes"
+              value={estimateEdit}
+              aria-describedby="task-estimate-note"
+              onChange={event => setEstimateEdit(event.target.value)}
+            />
+            {/* An empty field is the assumption, stated rather than implied:
+                the created task stores no estimate and planning uses 60 min. */}
+            <p id="task-estimate-note" className="sheet-note estimate-note">
+              {estimateNote(estimate)}
+            </p>
           </div>
           <div className="form-row">
             <label htmlFor="task-repeat">Repeat</label>
