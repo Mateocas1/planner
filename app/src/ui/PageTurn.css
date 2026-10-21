@@ -1,0 +1,87 @@
+/**
+ * Turning the Today page to the next day (distinctive roadmap F3, "The
+ * page-turn gesture"): the page follows the pointer on one composited
+ * transform, the page beneath comes up behind it, and the lifted sheet shadows
+ * its own trailing edge. Nothing here animates layout, and the vertical axis
+ * stays the browser's: horizontal is the gesture, vertical is the scroll.
+ */
+
+.page-turn {
+  --page-turn-shade: rgb(11 14 21 / 0.16);
+  position: relative;
+  /* The page pans vertically; a horizontal drag is claimed in script. */
+  touch-action: pan-y;
+}
+
+:root[data-theme="dark"] .page-turn {
+  /* A dark shadow on a dark page is the same colour as the page: the lift has
+     to read as a deeper cut, not a lighter smudge. */
+  --page-turn-shade: rgb(2 3 7 / 0.55);
+}
+
+/* The page beneath -- F3c's Tomorrow. It rests scaled down and dimmed; the drag
+ * brings it up to rest as the page above leaves. It is inert until the turn
+ * commits, so nothing under the page is reachable before then. */
+.page-turn-under {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transform: scale(0.96);
+  transform-origin: 50% 50%;
+  opacity: 0.6;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* The page the user is on. Its transform is written by script while dragging
+ * (no transition: it must sit under the finger, not lag behind it). */
+.page-turn-top {
+  position: relative;
+  z-index: 1;
+  transform: translate3d(0px, 0px, 0px);
+}
+
+/* A page with another one beneath it has to hide it. Consumers set
+ * --page-turn-surface to the surface they are painted on; the default is the
+ * card surface every sheet already uses. On Today there is no next page yet, so
+ * the page stays transparent and no seam appears over the page gradient. */
+.page-turn[data-page-turn-next="true"] .page-turn-top {
+  background: var(--page-turn-surface, var(--surface));
+}
+
+/* The shadow the lifted sheet casts on its own trailing edge: one gradient,
+ * revealed by opacity alone, so a drag repaints nothing but a composited
+ * layer. It is driven by --page-turn-progress, written during the drag. */
+.page-turn-top::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  pointer-events: none;
+  opacity: calc(var(--page-turn-progress, 0) * 1);
+  background: linear-gradient(270deg, var(--page-turn-shade), transparent);
+  will-change: opacity;
+}
+
+/* Once the page is home again the shadow fades out instead of snapping off:
+ * opacity only, so the last 200 ms of a cancelled drag cost one composited
+ * layer. During the drag and the flight there is no transition -- the pointer
+ * owns the value. */
+.page-turn[data-page-turn-state="rest"] .page-turn-top::after {
+  transition: opacity var(--dur-state) var(--ease-out);
+}
+
+/* Only while the page can move: a permanent will-change would hold a layer for
+ * the whole session. */
+.page-turn[data-page-turn-state="drag"] .page-turn-top,
+.page-turn[data-page-turn-state="commit"] .page-turn-top {
+  will-change: transform;
+}
+
+/* A horizontal drag must not start a text selection under the finger. */
+.page-turn[data-page-turn-state="drag"] {
+  user-select: none;
+  -webkit-user-select: none;
+}
