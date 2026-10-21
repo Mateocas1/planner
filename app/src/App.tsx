@@ -23,7 +23,9 @@ import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { DaySettingsSheet } from "./ui/Settings.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
+import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
+import { createShortcutRouter, dialogOpen, publishShortcut, rowHasFocus } from "./ui/shortcuts.ts";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
@@ -125,6 +127,16 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     settingsOrigin.current = origin;
     setSettingsOpen(true);
   };
+  // The keyboard's reference sheet (F6): `?` opens it, Esc closes it.
+  const [helpOpen, setHelpOpen] = useState(false);
+  // One router for the shell, so the pending `g` of a sequence survives a
+  // re-render; the listener that feeds it is registered once below.
+  const shortcuts = useRef(createShortcutRouter());
+  // The controls a keyboard-created sheet grows out of. A pointer passes its own
+  // event target; a key press has no box, so it borrows the control a pointer
+  // would have pressed.
+  const newTaskRef = useRef<HTMLButtonElement>(null);
+  const newTaskFabRef = useRef<HTMLButtonElement>(null);
   const [pendingTask, setPendingTask] = useState<string | null>(null);
   const clearPendingTask = useCallback(() => setPendingTask(null), []);
   const scrolled = useScrolled();
@@ -140,6 +152,62 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
   }, []);
+
+  /* The keyboard (F6): one more listener, and the only one that reads letters.
+     ui/shortcuts.ts decides -- is this a field, a dialog, an IME, a browser
+     chord, a sequence that has waited too long -- and this effect only performs
+     the answer: navigation and the sheets the shell owns here, and the row
+     actions published to the surface that owns the focused row. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const route = shortcuts.current.route(event, {
+        dialogOpen: dialogOpen(),
+        enabled: profile.shortcutsEnabled,
+        rowFocused: rowHasFocus(),
+        now: performance.now(),
+      });
+      if (route.kind !== "action") return;
+      // An action was chosen: the arrow must not scroll the page, and Enter must
+      // not also activate the focused row natively (the row is clicked once,
+      // below).
+      event.preventDefault();
+      switch (route.action) {
+        case "next":
+        case "previous":
+        case "complete":
+        case "tomorrow":
+        case "newBlock":
+          // Only the mounted surface knows what its rows mean, which write to
+          // make and which undo to offer, so it performs the action.
+          publishShortcut(route.action);
+          return;
+        case "details": {
+          const row = document.activeElement;
+          if (row instanceof HTMLElement) row.click();
+          return;
+        }
+        case "newTask":
+          setCreating(keyboardOrigin(newTaskRef.current, newTaskFabRef.current));
+          return;
+        case "goToday":
+          onNavigate("home");
+          return;
+        case "goTasks":
+          onNavigate("tasks");
+          return;
+        case "goCalendar":
+          onNavigate("calendar");
+          return;
+        case "now":
+          setNowOpen(true);
+          return;
+        case "help":
+          setHelpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onNavigate, profile.shortcutsEnabled]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -211,7 +279,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                 onSettings={openSettings}
               />
             ) : (
-              <button type="button" className="button button-accent" onClick={newTask}>
+              <button ref={newTaskRef} type="button" className="button button-accent" onClick={newTask}>
                 <PlusIcon />New task
               </button>
             )}
@@ -287,7 +355,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       {phone && (
         <>
           <TabBar view={view} onNavigate={onNavigate} />
-          <button type="button" className="fab glass glass-float glass-lens" aria-label="New task" onClick={newTask}>
+          <button ref={newTaskFabRef} type="button" className="fab glass glass-float glass-lens" aria-label="New task" onClick={newTask}>
             <PlusIcon />
           </button>
         </>
@@ -364,6 +432,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           />
         )}
       </AnimatePresence>
+      {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       {nowOpen && (
         <NowMode
           uid={user.uid}
@@ -649,6 +718,15 @@ function NewTaskSheet({
       </form>
     </Sheet>
   );
+}
+
+/** Where a keyboard-created sheet grows from: the control the caret is on if it
+ * is on one, else the control a pointer would have pressed, else the page. */
+function keyboardOrigin(...candidates: Array<HTMLElement | null>): HTMLElement {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) return active;
+  for (const candidate of candidates) if (candidate !== null) return candidate;
+  return document.body;
 }
 
 /** True once the page has scrolled, so the top bar turns to glass only when
