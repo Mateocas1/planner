@@ -16,6 +16,19 @@ const FIRESTORE_REST =
 
 export const password = "local-emulator-password";
 
+/** The emulator's Identity Toolkit base: the SDK's requests, and this harness's. */
+const AUTH_EMULATOR_API = `${AUTH_EMULATOR}/identitytoolkit.googleapis.com/v1`;
+
+/**
+ * A budget for a wait on the emulator, not on the app.
+ *
+ * A sign-in, or restoring a session after a reload, is a request to the Auth
+ * emulator plus the SDK's account lookup. A loaded host measured both past the
+ * 10 s a default expectation gets -- this suite has failed exactly there -- so
+ * every server wait uses this budget and the assertion itself stays unchanged.
+ */
+const SERVER_WAIT = 15_000;
+
 /* ---------- Auth emulator REST (no sign-in) ---------- */
 
 /** email -> localId, cached per run; createRemoteAccount fills it directly. */
@@ -446,22 +459,72 @@ export async function readRemoteCompletions(email: string): Promise<Array<{ occu
 
 /* ---------- Signing in through the real form ---------- */
 
+/** The signed-in shell: the app's own signal that a session is established. */
+const signedInShell = (page: Page, email: string) => page.getByText(`Signed in as ${email}`);
+
+/**
+ * Waits for the signed-in shell with the emulator's budget, for the paths that
+ * establish a session without this harness' form: restoring it after a reload.
+ * See SERVER_WAIT.
+ */
+export async function expectSignedIn(page: Page, email: string) {
+  await expect(signedInShell(page, email)).toBeVisible({ timeout: SERVER_WAIT });
+}
+
+/**
+ * Whether the Auth emulator accepts an ID token it would mint right now.
+ *
+ * `accounts:signInWithPassword` mints a token stamped with the emulator's clock,
+ * and the `accounts:lookup` after it re-parses that token exactly as the failed
+ * sign-in did: `firebase-tools/lib/emulator/auth/operations.js` asserts
+ * `iat >= user.validSince` and reports `TOKEN_EXPIRED`. Both stamps are whole
+ * seconds (`utils.toUnixTimestamp`), which is what makes the artifact below
+ * possible and what makes this probe the exact check to wait on.
+ */
+async function emulatorAcceptsFreshToken(email: string): Promise<boolean> {
+  const minted = await fetch(`${AUTH_EMULATOR_API}/accounts:signInWithPassword?key=local-only`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: true }),
+  });
+  if (!minted.ok) {
+    throw new Error(`emulator signInWithPassword failed: ${minted.status} ${await minted.text()}`);
+  }
+  const { idToken } = (await minted.json()) as { idToken?: string };
+  if (!idToken) throw new Error(`emulator signInWithPassword returned no idToken for ${email}`);
+  const looked = await fetch(`${AUTH_EMULATOR_API}/accounts:lookup?key=local-only`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idToken }),
+  });
+  const body = (await looked.json()) as { error?: { message?: string } };
+  return looked.ok && body.error === undefined;
+}
+
 /**
  * Signs a fresh account up, or an existing one in, through the app's own form,
  * and waits for the signed-in shell.
  *
- * The retry covers one artifact of the local Auth emulator, never app
+ * The recovery below covers one artifact of the local Auth emulator, never app
  * behaviour. `firebase-tools/lib/emulator/auth/operations.js` asserts
  * `decoded.payload.iat >= user.validSince` and reports `TOKEN_EXPIRED`; the
  * emulator stamps `validSince` while it creates the account and `iat` when it
  * signs the token a moment later, so if the host clock steps *backwards*
  * between the two stamps it rejects the token it just issued and the SDK's
  * post-sign-in account lookup fails with `auth/user-token-expired`. WSL2 on this
- * host steps its clock back 0.7-1.3 s roughly every 15 s (measured with a 50 ms
- * `Date.now()` sampler), and a sign-up under load takes long enough for both
- * stamps to straddle a step. The account was created (signUp answered 200), so
- * re-submitting the same credentials signs it in; every other error still fails
- * the test, and so does a second artifact.
+ * host steps its clock back 0.25-1.3 s roughly every 15-30 s (measured with a
+ * 2 ms `Date.now()` sampler), and a sign-up under load takes long enough for
+ * both stamps to straddle a step.
+ *
+ * Re-submitting at once is *not* a recovery, and that was this suite's residual
+ * flake: after the step the host clock is still behind the instant `validSince`
+ * was stamped, so the token the second attempt mints is rejected the same way,
+ * the page keeps the artifact and the shell never arrives -- measured on this
+ * host as `quick-add`, `responsive`, `day-settings` and `sync-status` failures,
+ * all at this function, with `auth/user-token-expired` on screen. So the wait
+ * below asks the emulator whether a token minted *now* is accepted, and only
+ * then re-submits once: once the clock is past the step, any later token passes
+ * too. Every other error still fails the test.
  */
 export async function submitAuthForm(
   page: Page,
@@ -480,15 +543,22 @@ export async function submitAuthForm(
     exact: kind === "sign in",
   });
   await submit.click();
-  const shell = page.getByText(`Signed in as ${email}`);
+  const shell = signedInShell(page, email);
   const clockArtifact = page.getByRole("alert").filter({ hasText: "auth/user-token-expired" });
-  // The emulator round trip plus the SDK's account lookup: a server wait, so it
-  // gets the same 15 s budget the remote-state assertions use, not a local one.
-  await expect(shell.or(clockArtifact)).toBeVisible({ timeout: 15_000 });
+  await expect(shell.or(clockArtifact)).toBeVisible({ timeout: SERVER_WAIT });
   if (await clockArtifact.isVisible()) {
+    // The backwards step that caused the artifact is still in effect for as long
+    // as the host clock is behind the stamped second; wait it out observably.
+    await expect
+      .poll(() => emulatorAcceptsFreshToken(email), {
+        message: "the Auth emulator accepts a token minted now, so the retry cannot be rejected",
+        timeout: SERVER_WAIT,
+        intervals: [100, 200, 400, 800],
+      })
+      .toBe(true);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
   }
-  await expect(shell).toBeVisible();
+  await expect(shell).toBeVisible({ timeout: SERVER_WAIT });
 }
 
 /* ---------- Sidebar fixture (tests/sidebar.spec.ts) ---------- */
