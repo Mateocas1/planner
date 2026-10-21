@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { rowCursorSelector, shortcutEvent, type SurfaceAction } from "./shortcuts.ts";
 
 /**
@@ -15,11 +15,17 @@ import { rowCursorSelector, shortcutEvent, type SurfaceAction } from "./shortcut
  *
  * The scope is the surface's own container, so two surfaces can never fight
  * over the same event; only the mounted view answers.
+ *
+ * The listener is a layout effect on purpose: a surface is painted the moment
+ * its markup is, so a key pressed on it must find it already listening. A
+ * passive effect lands after that paint, and the shell publishes a shortcut
+ * synchronously from the key press -- a `j` on a view that has just been
+ * switched to used to fall into that gap.
  */
 export function useRowCursor(scope: RefObject<HTMLElement | null>) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const move = (step: 1 | -1) => {
       const rows = Array.from(scope.current?.querySelectorAll<HTMLElement>(rowCursorSelector) ?? []).filter(
         row => row.getClientRects().length > 0 && !(row as HTMLButtonElement).disabled,
@@ -53,13 +59,18 @@ export function useRowCursor(scope: RefObject<HTMLElement | null>) {
  * Runs the actions the shell publishes for the surface that owns the focused
  * row. The handler is read from a ref, so a re-render never leaves a stale
  * listener and a listener never has to be re-registered to see new state.
+ *
+ * Subscribing is a layout effect for the same reason the cursor's is: the
+ * shell publishes from the key press, and a surface that is on screen has to
+ * be listening already. Measured under load, the passive effect landed ~70 ms
+ * after the paint, and a `b` pressed in that window opened nothing.
  */
 export function useSurfaceShortcuts(handler: (action: SurfaceAction) => void) {
   const latest = useRef(handler);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = handler;
   }, [handler]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const listener = (event: Event) => latest.current((event as CustomEvent<SurfaceAction>).detail);
     window.addEventListener(shortcutEvent, listener);
     return () => window.removeEventListener(shortcutEvent, listener);

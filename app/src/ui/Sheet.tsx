@@ -307,7 +307,11 @@ export function Sheet({
   }, [origin]);
 
 
-  useEffect(() => {
+  /* Escape belongs to the sheet, and the sheet is painted the moment it is
+     mounted: this is a layout effect so a press that arrives on the first
+     frame already finds the listener. A passive effect lands after that paint,
+     and a sheet the user can see would then ignore its own dismissal key. */
+  useLayoutEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
