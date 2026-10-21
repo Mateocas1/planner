@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCommands, taskResultLimit, type PaletteDestination } from "./palette.ts";
+import { buildCommands, taskResultLimit, type PaletteContext, type PaletteDestination } from "./palette.ts";
+import { createShortcutRouter } from "./shortcuts.ts";
 
 const destinations: PaletteDestination[] = [
   { id: "home", label: "Go to Today" },
@@ -67,4 +68,68 @@ test("the palette offers the shutdown ritual for a query that names it, and nowh
   // something else never drags the ritual in.
   assert.equal(buildCommands("", [], destinations).some(command => command.kind === "action"), false);
   assert.equal(buildCommands("water", tasks, destinations).some(command => command.kind === "action"), false);
+});
+
+/* F6b (distinctive roadmap F6 criterion 5): the palette lists the keyboard's
+   actions with their key hints, and the hint is the key the router really
+   answers with. */
+
+const focusedTask = { shortcuts: true, focusedTask: true };
+
+/** The action rows of a query as [id, hint] pairs, so the assertions read the
+ * hint without narrowing every command by hand. */
+function actionHints(query: string, context: PaletteContext) {
+  return buildCommands(query, tasks, destinations, [], context).flatMap(command =>
+    command.kind === "action" ? [[command.id, "hint" in command ? command.hint : undefined]] : [],
+  );
+}
+
+test("the empty query is the same list whatever the focus or the shortcut setting", () => {
+  const navigate = [
+    { kind: "navigate", id: "navigate-home", view: "home", label: "Go to Today" },
+    { kind: "navigate", id: "navigate-tasks", view: "tasks", label: "Go to Tasks" },
+    { kind: "navigate", id: "navigate-calendar", view: "calendar", label: "Go to Calendar" },
+  ];
+  assert.deepEqual(buildCommands("", tasks, destinations, [], focusedTask), navigate);
+  assert.deepEqual(buildCommands("", tasks, destinations, [], { shortcuts: false, focusedTask: false }), navigate);
+});
+
+test("the actions carry the key the router answers with, and close the day has none", () => {
+  assert.deepEqual(actionHints("complete", focusedTask), [["action-complete-task", "x"]]);
+  assert.deepEqual(actionHints("tomorrow", focusedTask), [["action-move-tomorrow", "t"]]);
+  assert.deepEqual(actionHints("now", focusedTask), [["action-now-mode", "n"]]);
+  // the ritual has no key in the table, so its row is listed without a hint
+  assert.deepEqual(actionHints("close", focusedTask), [["action-close-day", undefined]]);
+});
+
+test("each hint is the key that performs its action in the router", () => {
+  const router = createShortcutRouter();
+  const expected: Record<string, string> = {
+    "action-complete-task": "complete",
+    "action-move-tomorrow": "tomorrow",
+    "action-now-mode": "now",
+  };
+  const hinted = ["complete", "tomorrow", "now"].flatMap(word => actionHints(word, focusedTask)).filter(([, hint]) => hint !== undefined);
+  // the loop below proves nothing unless all three hinted rows are really checked
+  assert.equal(hinted.length, Object.keys(expected).length);
+  for (const [id, hint] of hinted) {
+    const route = router.route({ key: String(hint) }, { dialogOpen: false, enabled: true, rowFocused: false, now: 0 });
+    assert.deepEqual(route, { kind: "action", action: expected[String(id)] }, `hint ${String(hint)} for ${String(id)}`);
+  }
+});
+
+test("the task actions are listed only while a task holds focus", () => {
+  assert.deepEqual(actionHints("complete", { shortcuts: true, focusedTask: false }), []);
+  assert.deepEqual(actionHints("tomorrow", { shortcuts: true, focusedTask: false }), []);
+  // the palette's own actions do not depend on focus
+  assert.deepEqual(actionHints("now", { shortcuts: true, focusedTask: false }), [["action-now-mode", "n"]]);
+});
+
+test("hints are absent when keyboard shortcuts are off, and the actions stay", () => {
+  const off = { shortcuts: false, focusedTask: true };
+  assert.deepEqual(actionHints("complete", off), [["action-complete-task", undefined]]);
+  assert.deepEqual(actionHints("now", off), [["action-now-mode", undefined]]);
+  for (const command of buildCommands("now", tasks, destinations, [], off)) {
+    assert.equal("hint" in command, false, `no hint key on ${command.id}`);
+  }
 });
