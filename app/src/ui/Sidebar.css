@@ -142,17 +142,28 @@
   .side-due-open:hover .side-due-title { color: var(--accent); }
 }
 
-/* ---------- footer row ---------- */
+/* ---------- footer rows ----------
+ *
+ * A 244 px column holds 204 px of footer. The gear and the theme control need
+ * 144 px of that (30 + 8 + 106), which used to leave the address 52 px -- room
+ * for "day-de…" and nothing else -- and the two links no room at all. So both
+ * rows wrap now: the identity keeps its line (166 px, an ordinary address
+ * whole) with the gear at the right edge, the theme control takes the next
+ * line, and the links wrap between themselves rather than being cut by the
+ * sidebar's edge. */
 
 .side-foot-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
 }
 
+/* The address is what the row is for. It still truncates (an address can be
+   longer than the column), and the full one is its title. */
 .side-foot-row .who {
-  flex: 1;
+  flex: 1 1 120px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -161,7 +172,24 @@
   color: var(--label-3);
 }
 
-.side-foot-row .theme-switch { flex: none; }
+/* The theme control keeps the column's right edge, as it always had: the gear
+   ends the identity's line and the control sits under it. */
+.side-foot-row .theme-switch {
+  flex: none;
+  margin-left: auto;
+}
+
+.side-foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 10px;
+  row-gap: 2px;
+  /* A label is one word-run: the row wraps between the two links rather than
+     breaking one of them in the middle. */
+  white-space: nowrap;
+}
 
 .side-signout {
   align-self: flex-start;
