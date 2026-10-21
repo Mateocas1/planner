@@ -305,6 +305,14 @@ test("reduced motion fades the surface in over 150 ms and drops the focus pull",
   await expect(overlay.locator(".now-content")).toHaveCSS("filter", "none");
   await expect(overlay.getByText("45 min left")).toBeVisible();
 
+  /* The capture waits for the fade to land: a screenshot taken the moment the
+     dialog is "visible" catches it at 20% opacity and shows the page through
+     it. `getAnimations` is real time even under a paused clock. */
+  await overlay.evaluate(element =>
+    Promise.all(
+      element.getAnimations({ subtree: true }).map(animation => animation.finished.then(() => undefined, () => undefined)),
+    ),
+  );
   await page.screenshot({ path: "../odd/runs/f5-now-mode-reduced.png" });
 });
 
