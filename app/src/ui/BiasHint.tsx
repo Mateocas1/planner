@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ASSUMED_ESTIMATE_MINUTES, formatEstimate } from "../domain/model.ts";
 import {
   MIN_ACTUAL_MINUTES,
@@ -7,6 +7,7 @@ import {
   suggestEstimate,
   type BiasSample,
 } from "../planning/bias.ts";
+import { keyboardInset } from "./viewport.ts";
 // The lesson's own paint ships beside it (AGENTS.md: co-located styles).
 import "./BiasHint.css";
 
@@ -36,6 +37,14 @@ import "./BiasHint.css";
  * keyboard surface at typing cadence rather than an occasional transition
  * (DESIGN.md §4, and the roadmap's own "the hint appears inline (instant)").
  * The accept button carries the app's shared press feedback, nothing more.
+ *
+ * It also yields to the on-screen keyboard. The create sheet on a phone has no
+ * vertical slack while the keyboard covers most of the screen -- its pinned
+ * layout tests put the title, the deadline and the submit action in the visible
+ * band -- so a line the sheet cannot afford would either be clipped or push the
+ * title out of view. The lesson waits for the keyboard to close and comes back
+ * with it; the focus timer that produces the history is a desktop surface, so
+ * nothing is being hidden from the person who can act on it.
  */
 
 /** A task as the learner reads it, plus the state that makes it a sample. */
@@ -57,6 +66,31 @@ function usableSamples(samples: readonly BiasSample[]): number {
   return samples.filter(
     sample => sample.estimate !== undefined && (sample.actualMinutes ?? 0) >= MIN_ACTUAL_MINUTES,
   ).length;
+}
+
+/**
+ * True while an on-screen keyboard covers a real part of the page.
+ *
+ * Read from the same measurement the sheets size themselves against
+ * (`ui/viewport.ts`), so "the keyboard is up" means here exactly what it means
+ * to the panel this line sits in. The listener is coalesced by the browser's
+ * own viewport events; the value only flips when a keyboard opens or closes.
+ */
+function useKeyboardUp(): boolean {
+  const [up, setUp] = useState(() => keyboardInset() > 0);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => setUp(keyboardInset() > 0);
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
+  }, []);
+  return up;
 }
 
 export function BiasHint({
@@ -81,6 +115,10 @@ export function BiasHint({
   const suggestion = useMemo(() => suggestEstimate(samples, { title, estimate }), [samples, title, estimate]);
   // The value the offer wrote, so it cannot keep climbing its own ladder.
   const [applied, setApplied] = useState<number | null>(null);
+  const keyboardUp = useKeyboardUp();
+
+  // No room while a keyboard covers the sheet (see the file header).
+  if (keyboardUp) return null;
 
   if (suggestion !== null) {
     if (applied === estimate) return null;
