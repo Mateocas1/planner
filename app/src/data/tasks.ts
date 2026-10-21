@@ -1,7 +1,9 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { createTask, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
+import { planUndo, type ShutdownPlan } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
+import { profileDocument } from "./profile.ts";
 
 /**
  * Task write helpers against `users/{uid}/tasks`. Each helper validates through
@@ -73,6 +75,53 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 
 export async function deleteTask(uid: string, taskId: string) {
   await trackRemoval(`users/${uid}/tasks/${taskId}`, deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
+}
+
+/**
+ * Applies the shutdown roll (F3a) as exactly one `writeBatch`: a deadline
+ * update per move, plus `profile.lastShutdown = plan.today`. The batch is
+ * atomic, so a rejected write changes nothing at all — the sheet can then say
+ * "Nothing changed" and mean it — and it is queued offline like any other
+ * write, so closing the day on a train does not lose the roll.
+ *
+ * The plan is pure and already validated (`planning/shutdown.ts`), and a plan
+ * for a day that is already closed writes nothing, which is what makes the
+ * ritual idempotent across devices rather than merely repeatable.
+ *
+ * The database is a parameter with the app's client as its default so the
+ * emulator suite can drive this real batch against its own authenticated
+ * client; every surface calls it with two arguments.
+ */
+export async function closeDay(uid: string, plan: ShutdownPlan, database: Firestore = db) {
+  if (plan.alreadyClosed) return;
+  const batch = writeBatch(database);
+  for (const move of plan.moves) {
+    batch.update(doc(database, `users/${uid}/tasks/${move.taskId}`), { deadline: move.after });
+  }
+  batch.set(profileDocument(uid, database), { lastShutdown: plan.today }, { merge: true });
+  await batch.commit();
+}
+
+/**
+ * Undoes a roll exactly, in one batch: every moved deadline returns to the
+ * value the plan recorded, and `lastShutdown` returns to the stamp that was
+ * there before — deleted when the close being undone was the first one,
+ * because "no stamp" is not any particular day. Nothing else in the profile
+ * document is touched (the write is a merge).
+ */
+export async function undoCloseDay(uid: string, plan: ShutdownPlan, database: Firestore = db) {
+  if (plan.alreadyClosed) return;
+  const undo = planUndo(plan);
+  const batch = writeBatch(database);
+  for (const write of undo.deadlines) {
+    batch.update(doc(database, `users/${uid}/tasks/${write.taskId}`), { deadline: write.deadline });
+  }
+  batch.set(
+    profileDocument(uid, database),
+    { lastShutdown: undo.lastShutdown === undefined ? deleteField() : undo.lastShutdown },
+    { merge: true },
+  );
+  await batch.commit();
 }
 
 /** A task exactly as it was stored, captured before it is deleted. */

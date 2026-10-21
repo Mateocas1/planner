@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc, type Firestore } from "firebase/firestore";
 import { db } from "./client.ts";
+import { isDayKey } from "../planning/shutdown.ts";
 import { defaultWorkWindow, parseWorkWindow, validateWorkWindow, type WorkWindow } from "../planning/window.ts";
 
 /**
  * The profile layer: a single document per user holding the planner's
- * timezone (D3) and the working window (W1). Recurrence and the planner's
- * calendar dates belong to this zone, not to the ambient browser zone.
+ * timezone (D3), the working window (W1) and the day the shutdown ritual was
+ * last closed (F3). Recurrence and the planner's calendar dates belong to this
+ * zone, not to the ambient browser zone.
  */
 
 export type ProfileState = { loading: boolean; timeZone: string | null; workWindow: WorkWindow; error: string | null };
@@ -15,9 +17,26 @@ export type ProfileState = { loading: boolean; timeZone: string | null; workWind
  * Firestore paths need an even number of segments, so the feature contract's
  * `users/{uid}/profile` is realized as the `main` document of the `profile`
  * collection. It is the only profile document the app reads or writes.
+ *
+ * Exported because the shutdown batch (`data/tasks.ts`) stamps its
+ * `lastShutdown` field in the same atomic write as the deadlines it rolls, so
+ * the batch and the profile layer must agree on one document reference. The
+ * database is a parameter for the emulator suite, which drives that batch
+ * through its own authenticated client.
  */
-function profileRef(uid: string) {
-  return doc(db, `users/${uid}/profile/main`);
+export function profileDocument(uid: string, database: Firestore = db) {
+  return doc(database, `users/${uid}/profile/main`);
+}
+
+/**
+ * Reads the day the ritual was last closed (F3). Anything that is not a real
+ * calendar day reads as absent, so a hand-edited document, or one written
+ * before the ritual existed, simply reads as "not closed today" rather than
+ * suppressing the banner forever.
+ */
+export function parseLastShutdown(data: Record<string, unknown> | undefined): string | undefined {
+  const value = data?.lastShutdown;
+  return isDayKey(value) ? value : undefined;
 }
 
 /** The browser's resolved IANA zone, used to initialize a missing profile. */
@@ -47,7 +66,7 @@ export function isValidTimeZone(zone: unknown): zone is string {
  * `{ merge: true }` both outcomes are equivalent and no field is lost.
  */
 export async function ensureProfileTimeZone(uid: string): Promise<string> {
-  const reference = profileRef(uid);
+  const reference = profileDocument(uid);
   const snapshot = await getDoc(reference);
   const stored = snapshot.data()?.timeZone;
   if (isValidTimeZone(stored)) return stored;
@@ -70,7 +89,7 @@ export async function ensureProfileTimeZone(uid: string): Promise<string> {
 /** Sets the profile timezone explicitly after validating it. */
 export async function setProfileTimeZone(uid: string, timeZone: string): Promise<void> {
   if (!isValidTimeZone(timeZone)) throw new Error(`not a valid IANA time zone: ${timeZone}`);
-  await setDoc(profileRef(uid), { timeZone }, { merge: true });
+  await setDoc(profileDocument(uid), { timeZone }, { merge: true });
 }
 
 /**
@@ -81,7 +100,7 @@ export async function setProfileTimeZone(uid: string, timeZone: string): Promise
  */
 export async function setProfileWorkWindow(uid: string, window: WorkWindow): Promise<void> {
   validateWorkWindow(window);
-  await setDoc(profileRef(uid), { workStart: window.startMinutes, workEnd: window.endMinutes }, { merge: true });
+  await setDoc(profileDocument(uid), { workStart: window.startMinutes, workEnd: window.endMinutes }, { merge: true });
 }
 
 /**
@@ -119,7 +138,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
         });
     };
     const unsubscribe = onSnapshot(
-      profileRef(uid),
+      profileDocument(uid),
       (snapshot) => {
         const data = snapshot.data();
         const stored = data?.timeZone;
