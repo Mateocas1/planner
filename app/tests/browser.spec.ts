@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -140,7 +140,7 @@ test("Today shows what is due, what is coming up and today's schedule from the p
   await expect(due.getByText("Nothing due today.")).toBeVisible();
   await expect
     .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Dental bill"), { timeout: 15_000 })
-    .toEqual({ title: "Dental bill", completed: true, deadline: today });
+    .toEqual({ title: "Dental bill", completed: true, deadline: today, completedAt: expect.any(String) });
 });
 
 test("creating a task with a deadline shows the row and persists it to the server", async ({ page }) => {
@@ -244,7 +244,7 @@ test("completing and uncompleting a task sets completed on the server", async ({
   // the completed task stays listed and is visually distinguished
   await expect(page.locator("li.task.completed", { hasText: "Solo task" })).toHaveCount(1);
   await expect(page.getByRole("checkbox", { name: "Reopen: Solo task" })).toBeChecked();
-  await expectRemoteTasks(email, [{ title: "Solo task", completed: true }]);
+  await expectRemoteTasks(email, [{ title: "Solo task", completed: true, completedAt: expect.any(String) }]);
 
   await page.getByRole("checkbox", { name: "Reopen: Solo task" }).click();
   await expect(page.getByRole("checkbox", { name: "Complete: Solo task" })).toBeVisible();
@@ -324,7 +324,7 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   // ...and the keys on the server stay ISO: the display changed, the data did not
   await expect
     .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Pay bill"), { timeout: 15_000 })
-    .toEqual({ title: "Pay bill", completed: true, deadline: yesterday });
+    .toEqual({ title: "Pay bill", completed: true, deadline: yesterday, completedAt: expect.any(String) });
   await expect
     .poll(async () => (await readRemoteTasks(email)).find(task => task.title === "Water plants"), { timeout: 15_000 })
     .toEqual({ title: "Water plants", completed: false, deadline: today });
@@ -742,7 +742,7 @@ async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
-let createdSeries: Array<{ id: string; data: Record<string, string> }> = [];
+let createdSeries: Array<{ id: string; data: RemoteData }> = [];
 
 /** Polls the forced-server read until exactly one series exists, then returns it. */
 async function expectSingleRemoteSeries(email: string) {
@@ -870,7 +870,7 @@ async function openSeriesPanel(page: Page, title: string) {
   return panel;
 }
 
-let panelSeries: Array<{ id: string; data: Record<string, string> }> = [];
+let panelSeries: Array<{ id: string; data: RemoteData }> = [];
 
 /** Polls the forced-server read until exactly one series exists, then returns it. */
 async function expectOneRemoteSeries(email: string) {
