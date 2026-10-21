@@ -11,6 +11,7 @@ import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, narrowQuery, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
 import { Sheet } from "./Sheet.tsx";
+import { PlanMyDay } from "./PlanMyDay.tsx";
 import { type UndoableDelete } from "./UndoToast.tsx";
 import {
   dateKey,
@@ -626,6 +627,17 @@ function CalendarView({
               Open tasks with no work block ahead. Plan sets aside an hour in the next free slot {planDayKey === todayKey ? "today" : `on ${formatDateKey(planDayKey, todayKey)}`}.
             </p>
           </div>
+          {/* Plan my day (F4): the day's open tasks proposed as blocks and
+              applied as one batch. The tray's own undo is the shell's, so the
+              app never shows two offers at once. */}
+          <PlanMyDay
+            uid={uid}
+            tasks={tasks}
+            blocks={blocks}
+            timeZone={timeZone}
+            now={now}
+            onOfferUndo={onDeleted}
+          />
           {unscheduled.length === 0 ? (
             <p className="tray-note">Every open task has time set aside.</p>
           ) : (

@@ -7,6 +7,7 @@ import { RepeatIcon } from "./icons.tsx";
 import { useNow } from "./motion.ts";
 import { PageTurn } from "./PageTurn.tsx";
 import { nextOccurrence } from "./Tasks.tsx";
+import { PlanMyDay } from "./PlanMyDay.tsx";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel } from "./time.ts";
 import { settle } from "./write.ts";
 
@@ -126,6 +127,18 @@ export function Home({
               task={current ? titleOf(current.taskId) : undefined}
               onComplete={complete}
               onOpenNow={onOpenNow}
+            />
+
+            {/* The brief's plan button (F4): the same proposal and the same
+                batch as the Calendar tray, with its own undo because Today
+                does not own the shell's offer. */}
+            <PlanMyDay
+              uid={uid}
+              tasks={tasks}
+              blocks={blocks}
+              timeZone={timeZone}
+              now={now}
+              variant="brief"
             />
 
             <WeekRadar

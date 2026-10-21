@@ -482,3 +482,71 @@ test("a future or unreadable stamp is never rewritten and too many moves write n
     await close(owner);
   }
 });
+
+/**
+ * Plan my day (F4b) against real Firestore: one `writeBatch` writes every block
+ * of a plan and returns exactly their document ids, and its undo deletes those
+ * documents and nothing else — an older block on the same day and the tasks the
+ * plan points at are untouched.
+ *
+ * `data/blocks.ts` binds the browser database when it loads (`data/client.ts`
+ * reads `window.location` and builds the persistent cache), so this test gives
+ * Node the one global that module needs and passes its own authenticated client
+ * to the batch; the app calls the same functions with the default database.
+ * What is exercised here is the real batch, not a copy of it.
+ */
+test("a plan is one batch of blocks, and its undo removes exactly those documents", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { addBlocks, removeBlocks } = await import("../src/data/blocks.ts");
+  const { collection, getDocs } = await import("firebase/firestore");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`plan-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `plan-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const blocksPath = `users/${uid}/blocks`;
+    const day = "2026-05-04";
+    const earlier = { start: `${day}T10:00:00+00:00`, end: `${day}T11:00:00+00:00` };
+    await setDoc(doc(owner.db, `${blocksPath}/earlier`), earlier);
+    await setDoc(doc(owner.db, `users/${uid}/tasks/report`), { title: "Report", completed: false });
+    const stored = async () => {
+      const snapshot = await getDocs(collection(owner.db, blocksPath));
+      return snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }));
+    };
+
+    /* One batch, two blocks, and the ids come back so the caller can offer the
+       exact undo without reading the collection. */
+    const plan = [
+      { start: `${day}T08:00:00+00:00`, end: `${day}T09:00:00+00:00`, taskId: "report" },
+      { start: `${day}T11:00:00+00:00`, end: `${day}T11:30:00+00:00`, taskId: "report" },
+    ];
+    const { ids, done } = addBlocks(uid, plan, owner.db);
+    assert.equal(ids.length, 2);
+    await done;
+
+    const afterPlan = await stored();
+    assert.equal(afterPlan.length, 3);
+    for (const [index, id] of ids.entries()) {
+      const document = afterPlan.find(entry => entry.id === id);
+      assert.deepEqual(document, { id, ...plan[index] }, "the block holds exactly the plan's instants and task link");
+    }
+    assert.deepEqual(afterPlan.find(entry => entry.id === "earlier"), { id: "earlier", ...earlier });
+
+    await removeBlocks(uid, ids, owner.db);
+    assert.deepEqual(await stored(), [{ id: "earlier", ...earlier }], "the undo removes the new blocks and nothing else");
+    assert.equal((await getDoc(doc(owner.db, `users/${uid}/tasks/report`))).data()?.title, "Report");
+
+    /* A rejected block never reaches Firestore: validation runs before the
+       batch is built, so an inverted range writes none of the plan. */
+    assert.throws(() => addBlocks(uid, [{ start: plan[0].end, end: plan[0].start }], owner.db));
+    assert.equal((await stored()).length, 1);
+
+    /* An empty plan is not a write. */
+    const nothing = addBlocks(uid, [], owner.db);
+    assert.deepEqual(nothing.ids, []);
+    await nothing.done;
+    assert.equal((await stored()).length, 1);
+  } finally {
+    await close(owner);
+  }
+});
