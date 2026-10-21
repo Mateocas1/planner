@@ -189,7 +189,8 @@ test("the footer is one row: the account, the sync line and the theme control", 
   const foot = page.locator(".side-foot");
   await expect(foot.getByText(`Signed in as ${email}`)).toBeVisible();
   await expect(foot.getByText("Synced")).toBeVisible();
-  /* The theme control shares the row with the identity, not a row of its own. */
+  /* The theme control lives in the identity's row (wrapping under it when the
+     column is too narrow for both), not in a row of its own. */
   const row = page.locator(".side-foot-row");
   await expect(row.getByRole("radiogroup", { name: "Theme" })).toBeVisible();
   await expect(row.getByText(`Signed in as ${email}`)).toBeVisible();
@@ -199,6 +200,100 @@ test("the footer is one row: the account, the sync line and the theme control", 
   await row.getByRole("radio", { name: "Dark", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(row.getByRole("radio", { name: "Dark", exact: true })).toHaveAttribute("aria-checked", "true");
+});
+
+/**
+ * The footer inside its own column (SB2). The sidebar is a fixed 244 px box, so
+ * a footer row that never wraps paints its last control past the edge: "Sign
+ * out" was cut at "Sign o" on every desktop width. Every footer control -- the
+ * account, Day settings, the theme switch and both links -- must sit inside the
+ * box the sidebar clips, and the links must be painted whole and clickable,
+ * while the import entry keeps the full name assistive tech and the tests use.
+ */
+test("nothing in the footer overflows the sidebar, at any desktop width", async ({ page }) => {
+  const email = await enter(page, "side-foot-box", { tasks: [{ title: "Anything" }] });
+  const foot = page.locator(".side-foot");
+  await expect(foot.getByText("Synced")).toBeVisible();
+
+  const sizes = [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 800 },
+    { width: 1024, height: 768 },
+  ];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await expect(foot.getByRole("button", { name: "Sign out" })).toBeVisible();
+    const where = `${size.width}x${size.height}`;
+
+    const report = await page.evaluate(() => {
+      const sidebar = document.querySelector<HTMLElement>(".sidebar")!;
+      const frame = document.querySelector<HTMLElement>(".side-foot")!;
+      const box = sidebar.getBoundingClientRect();
+      /* `overflow-y: auto` clips at the padding box: that is the visible edge. */
+      const clip = {
+        left: box.left + sidebar.clientLeft,
+        right: box.left + sidebar.clientLeft + sidebar.clientWidth,
+        top: box.top + sidebar.clientTop,
+        bottom: box.top + sidebar.clientTop + sidebar.clientHeight,
+      };
+      /* One entry per control: the theme radios are inside their radiogroup. */
+      const controls = [...frame.querySelectorAll<HTMLElement>("button, [role='radiogroup'], .who")]
+        .filter(el => !el.parentElement?.closest("button, [role='radiogroup'], .who"))
+        .map(el => {
+          const own = el.getBoundingClientRect();
+          const centre = document.elementFromPoint((own.left + own.right) / 2, (own.top + own.bottom) / 2);
+          return {
+            name: (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 40),
+            control: el.matches("button, [role='radiogroup']"),
+            left: own.left,
+            right: own.right,
+            top: own.top,
+            bottom: own.bottom,
+            hit: centre !== null && (centre === el || el.contains(centre)),
+          };
+        });
+      /* The address may elide, but the identity line must have room for an
+         ordinary one: measured in the row's own font, so this is not a guess. */
+      const who = frame.querySelector<HTMLElement>(".who")!;
+      const ink = getComputedStyle(who);
+      const canvas = document.createElement("canvas");
+      const pen = canvas.getContext("2d")!;
+      pen.font = `${ink.fontStyle} ${ink.fontWeight} ${ink.fontSize} ${ink.fontFamily}`;
+      const identity = { room: who.clientWidth, needs: Math.ceil(pen.measureText("first.last@example.com").width) };
+      return { clip, controls, identity };
+    });
+
+    /* The account, Day settings, the theme control and the two links. */
+    expect(report.controls.length, `${where}: the footer holds its controls`).toBe(5);
+    expect(
+      report.identity.room,
+      `${where}: an ordinary address (${report.identity.needs} px) is not elided`,
+    ).toBeGreaterThanOrEqual(report.identity.needs);
+    for (const control of report.controls) {
+      expect(control.left, `${where}: "${control.name}" starts inside the sidebar`).toBeGreaterThanOrEqual(report.clip.left - 0.5);
+      expect(control.right, `${where}: "${control.name}" ends inside the sidebar`).toBeLessThanOrEqual(report.clip.right + 0.5);
+      expect(control.top, `${where}: "${control.name}" starts inside the sidebar`).toBeGreaterThanOrEqual(report.clip.top - 0.5);
+      expect(control.bottom, `${where}: "${control.name}" ends inside the sidebar`).toBeLessThanOrEqual(report.clip.bottom + 0.5);
+      if (control.control) {
+        expect(control.hit, `${where}: "${control.name}" is clickable where it is drawn`).toBe(true);
+      }
+    }
+  }
+
+  /* The import entry keeps the full name -- for assistive tech and for the
+     commands that address it -- while the footer shows the shorter one that
+     fits; the address may truncate, but the full one is one hover away. */
+  const entry = page.getByRole("button", { name: "Import from Google Calendar" });
+  await expect(entry).toHaveText("Import from Google");
+  await expect(entry).toHaveAttribute("title", "Import from Google Calendar");
+  await expect(page.locator(".side-foot-row .who")).toHaveAttribute("title", email);
+
+  /* And it is still the same action: the sheet opens from the shorter label. */
+  await entry.click();
+  const sheet = page.getByRole("complementary", { name: "Import from Google Calendar" });
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
 });
 
 test("the sidebar makes room on a short screen instead of scrolling its chrome", async ({ page }) => {
