@@ -132,6 +132,24 @@ export function planDay({ day, now, timeZone, window: workWindow, tasks, blocks 
 }
 
 /**
+ * Whether two plans would write the same blocks: the same day and the same
+ * placements, task and clock range, in the same order. Apply compares the plan
+ * on screen with a fresh one before it writes (the day may have changed while
+ * the proposal stayed open). Titles and unplaced tasks are not compared: they
+ * never change what is written.
+ */
+export function samePlan(left: Plan, right: Plan): boolean {
+  return (
+    left.day === right.day &&
+    left.placements.length === right.placements.length &&
+    left.placements.every((placement, index) => {
+      const other = right.placements[index];
+      return placement.taskId === other.taskId && placement.startMinutes === other.startMinutes && placement.endMinutes === other.endMinutes;
+    })
+  );
+}
+
+/**
  * The sentence a surface shows for tasks that stayed in the tray, e.g.
  * `2 tasks didn't fit today: Report, Taxes. Plan tomorrow?`. Empty when every
  * candidate was placed; `when` lets a caller say the day it planned.

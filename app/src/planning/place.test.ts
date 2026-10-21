@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { toZonedInstant } from "../domain/instant.ts";
-import { MAX_CHUNKS, MIN_CHUNK_MINUTES, planDay, taskMinutes, unplacedNotice, type PlanBlock, type PlanTask } from "./place.ts";
+import { MAX_CHUNKS, MIN_CHUNK_MINUTES, planDay, samePlan, taskMinutes, unplacedNotice, type Plan, type PlanBlock, type PlanTask } from "./place.ts";
 import { defaultWorkWindow } from "./window.ts";
 
 /** Every fixture runs in the profile zone, never the runtime's own. */
@@ -341,4 +341,35 @@ test("invalid inputs fail before any placement is produced", () => {
   assert.throws(() => plan({ window: { startMinutes: 600, endMinutes: 300 }, tasks: [] }), {
     message: "work window end must be after start",
   });
+});
+
+test("samePlan: equal plans match; a different time, task, order, count or day does not", () => {
+  const tasks: PlanTask[] = [
+    { id: "a", title: "A", estimate: 60 },
+    { id: "b", title: "B", estimate: 30 },
+  ];
+  const shown = plan({ tasks });
+  assert.equal(shown.placements.length, 2);
+
+  // Re-planning the same inputs gives the same blocks.
+  assert.equal(samePlan(shown, plan({ tasks })), true);
+  // Titles are not compared: only what would be written.
+  assert.equal(samePlan(shown, plan({ tasks: [{ ...tasks[0], title: "Renamed" }, tasks[1]] })), true);
+
+  // A block added over the first slot moves every placement after it.
+  assert.equal(samePlan(shown, plan({ tasks, blocks: [range(monday, 480, 510)] })), false);
+  // Another task in the first slot.
+  assert.equal(samePlan(shown, plan({ tasks: [{ id: "c", title: "C", estimate: 60 }, tasks[1]] })), false);
+  // The same two placements in the other order.
+  assert.equal(samePlan(shown, { ...shown, placements: [...shown.placements].reverse() }), false);
+  // One placement fewer.
+  assert.equal(samePlan(shown, { ...shown, placements: shown.placements.slice(0, 1) }), false);
+  // The same placements on another day.
+  assert.equal(samePlan(shown, plan({ day: tuesday, tasks })), false);
+});
+
+test("samePlan: plans with no placements on the same day are equal", () => {
+  const empty: Plan = { day: monday, placements: [], unplaced: [] };
+  assert.equal(samePlan(empty, { ...empty, unplaced: [{ task: { id: "x", title: "X" }, reason: "day-over" }] }), true);
+  assert.equal(samePlan(empty, { ...empty, day: tuesday }), false);
 });

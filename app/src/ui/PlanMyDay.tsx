@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { addBlocks, removeBlocks } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { estimateNote } from "../domain/model.ts";
-import { planDay, unplacedNotice, type Plan, type PlanTask, type Unplaced } from "../planning/place.ts";
+import { planDay, samePlan, unplacedNotice, type Plan, type PlanTask, type Unplaced } from "../planning/place.ts";
 import { usePlannerWindow } from "./CapacityBar.tsx";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./UndoToast.tsx";
 import { dateKey, localValue, pad, toZonedInstant } from "./time.ts";
@@ -61,6 +61,9 @@ export function PlanMyDay({
   const trigger = useRef<HTMLButtonElement>(null);
   const applyRef = useRef<HTMLButtonElement>(null);
   const openCount = useRef(0);
+  /* Set synchronously, so a second press that lands before the first render
+     commits (`busy` is still false then) cannot write the same plan twice. */
+  const applying = useRef(false);
 
   // The proposal takes focus as it appears, so the day is one Enter away and
   // Escape hands the trigger back without a detour through the tray.
@@ -91,16 +94,26 @@ export function PlanMyDay({
   }
 
   async function apply() {
-    if (!plan || plan.placements.length === 0) return;
+    if (applying.current || !plan || plan.placements.length === 0) return;
+    applying.current = true;
     setBusy(true);
     setError(null);
-    const writes = plan.placements.map(placement => ({
-      start: toZonedInstant(localValue(today, placement.startMinutes), timeZone),
-      end: toZonedInstant(localValue(today, placement.endMinutes), timeZone),
-      taskId: placement.taskId,
-    }));
-    const count = writes.length;
     try {
+      // The shown plan was proposed a while ago: the day may have changed since
+      // (a block added elsewhere, or the clock passed a quarter hour). Write only
+      // what the current day still allows; otherwise show the fresh proposal.
+      const fresh = planDay({ day: today, now, timeZone, window: workWindow, tasks: tasks as PlanTask[], blocks });
+      if (!samePlan(fresh, plan)) {
+        setPlan(fresh.placements.length === 0 && fresh.unplaced.length === 0 ? null : fresh);
+        setMessage(fresh.placements.length === 0 ? "Nothing to plan." : "Your day changed. Review the updated plan.");
+        return;
+      }
+      const writes = plan.placements.map(placement => ({
+        start: toZonedInstant(localValue(today, placement.startMinutes), timeZone),
+        end: toZonedInstant(localValue(today, placement.endMinutes), timeZone),
+        taskId: placement.taskId,
+      }));
+      const count = writes.length;
       const { ids, done } = addBlocks(uid, writes);
       const offer: UndoableDelete = {
         message: `Planned ${count} ${count === 1 ? "block" : "blocks"}.`,
@@ -115,6 +128,7 @@ export function PlanMyDay({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The plan could not be saved.");
     } finally {
+      applying.current = false;
       setBusy(false);
     }
   }

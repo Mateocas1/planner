@@ -367,3 +367,50 @@ test("on a phone the tray sits below the grid and plans from the same button", a
   await expect(page.locator(".undo-toast")).toContainText("Planned 1 block.");
   expect(await readRemoteBlocks(email)).toHaveLength(1);
 });
+
+test("Apply re-checks the proposal: a block added under an open plan is never overlapped, and the day is re-proposed", async ({ page }) => {
+  const base = nextMonday();
+  /* Report (60) and Taxes (30) are proposed at 08:00-09:00 and 09:00-09:30.
+     A block then lands on the first slot through the calendar's own form, while
+     the proposal stays open: Apply must write nothing and show the new plan. */
+  const { email } = await open(page, base, "plan-recheck", {
+    tasks: [{ title: "Report", estimate: 60 }, { title: "Taxes", estimate: 30 }],
+  }, { width: 1440, height: 900 });
+
+  await openCalendar(page);
+  await planButton(page).click();
+  const rows = preview(page).locator(".plan-row");
+  await expect(rows.nth(0)).toContainText("08:00–09:00");
+
+  await page.getByRole("button", { name: "New block" }).click();
+  await expect(page.getByRole("button", { name: "Add block" })).toBeVisible();
+  await page.getByLabel("Start", { exact: true }).fill(`${dayKey(base)}T08:00`);
+  await page.getByLabel("End", { exact: true }).fill(`${dayKey(base)}T08:30`);
+  await page.getByRole("button", { name: "Add block" }).click();
+  await expect(page.locator(".calendar-block")).toHaveCount(1);
+  await expect.poll(() => readRemoteBlocks(email).then(blocks => blocks.length), { timeout: 15_000 }).toBe(1);
+
+  await preview(page).getByRole("button", { name: "Apply 2 blocks" }).click();
+
+  /* The day changed, so the shown plan is replaced and nothing is written: the
+     only stored block is the manual one, and no planned block sits on it. */
+  await expect(page.getByRole("status").filter({ hasText: "Your day changed. Review the updated plan." })).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("08:30–09:30");
+  await expect(rows.nth(0)).toContainText("Report");
+  await expect(rows.nth(1)).toContainText("09:30–10:00");
+  await expect(rows.nth(1)).toContainText("Taxes");
+  await expect(preview(page).getByRole("button", { name: "Apply 2 blocks" })).toBeFocused();
+  await expect(page.locator(".undo-toast")).toHaveCount(0);
+  expect((await readRemoteBlocks(email)).filter(block => block.taskId !== undefined)).toHaveLength(0);
+  expect(await readRemoteBlocks(email)).toHaveLength(1);
+
+  /* The updated proposal is an ordinary proposal: Apply writes it as one batch. */
+  await preview(page).getByRole("button", { name: "Apply 2 blocks" }).click();
+  await expect(page.locator(".undo-toast")).toContainText("Planned 2 blocks.");
+  const written = (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined);
+  expect(written.map(block => [block.start, block.end]).sort()).toEqual([
+    [instant(base, "08:30"), instant(base, "09:30")],
+    [instant(base, "09:30"), instant(base, "10:00")],
+  ]);
+});
