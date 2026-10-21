@@ -5,6 +5,7 @@ import { WeekRadar } from "./CapacityBar.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { RepeatIcon } from "./icons.tsx";
 import { useNow } from "./motion.ts";
+import { PageTurn } from "./PageTurn.tsx";
 import { nextOccurrence } from "./Tasks.tsx";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel } from "./time.ts";
 import { settle } from "./write.ts";
@@ -36,6 +37,7 @@ export function Home({
   profileError,
   onOpenCalendar,
   onOpenNow,
+  onTurnDay,
 }: {
   uid: string;
   loading: boolean;
@@ -48,6 +50,10 @@ export function Home({
   onOpenCalendar: () => void;
   /** Opens the full-screen glance surface on the current block (F5). */
   onOpenNow: () => void;
+  /** Carries the day to tomorrow when the page is turned (F3). Today has no
+   *  next-day navigation yet, so the default promises nothing: the page springs
+   *  back. F3c passes the shutdown roll here. */
+  onTurnDay?: () => boolean | void | Promise<boolean | void>;
 }) {
   const now = useNow();
 
@@ -91,6 +97,7 @@ export function Home({
   const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
   return (
+    <PageTurn onTurn={onTurnDay ?? (() => false)}>
     <section className="view" aria-labelledby="home-heading">
       <header className="page-head">
         <div>
@@ -203,6 +210,7 @@ export function Home({
         </div>
       )}
     </section>
+    </PageTurn>
   );
 }
 
