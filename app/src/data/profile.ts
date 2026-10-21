@@ -1,15 +1,45 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./client.ts";
-import { defaultWorkWindow, parseWorkWindow, validateWorkWindow, type WorkWindow } from "../planning/window.ts";
+import { defaultWorkWindow, minutesPerDay, parseWorkWindow, validateWorkWindow, type WorkWindow } from "../planning/window.ts";
 
 /**
  * The profile layer: a single document per user holding the planner's
- * timezone (D3) and the working window (W1). Recurrence and the planner's
- * calendar dates belong to this zone, not to the ambient browser zone.
+ * timezone (D3), the working window (W1) and the day settings that S1 edits:
+ * when the day shuts down (F3) and whether keyboard shortcuts are on (F6).
+ * Recurrence and the planner's calendar dates belong to this zone, not to the
+ * ambient browser zone.
+ *
+ * `useProfileTimeZone` keeps its name for the surfaces that already read it
+ * (the hook predates the day settings); it is the whole profile subscription.
  */
 
-export type ProfileState = { loading: boolean; timeZone: string | null; workWindow: WorkWindow; error: string | null };
+/** 18:00: the hour the day is meant to close (distinctive roadmap F3). */
+export const defaultShutdownTime = 18 * 60;
+
+/** Shortcuts start on; the Day settings toggle is the only thing that changes it. */
+export const defaultShortcutsEnabled = true;
+
+export type ProfileState = {
+  loading: boolean;
+  timeZone: string | null;
+  workWindow: WorkWindow;
+  /** Minutes after midnight in the profile zone; 1080 is 18:00. */
+  shutdownTime: number;
+  shortcutsEnabled: boolean;
+  error: string | null;
+};
+
+/** A value the app stored as minutes, whether it is a number (a write from
+ * this client) or a numeric string (the emulator harness, older clients). */
+function storedMinutes(value: unknown): number | undefined {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
 
 /**
  * Firestore paths need an even number of segments, so the feature contract's
@@ -45,25 +75,20 @@ export function isValidTimeZone(zone: unknown): zone is string {
  * connectivity would otherwise leave the surface stuck on an error. Two tabs
  * initializing concurrently may both write the browser zone, but with
  * `{ merge: true }` both outcomes are equivalent and no field is lost.
+ *
+ * It writes the zone and nothing else. An absent working window already reads
+ * as 08:00-21:00 (`parseWorkWindow`), and writing that default here raced the
+ * Day settings unit: a snapshot that was still the local echo of a merge write
+ * carries only the fields that write touched, so this initialization read "no
+ * timezone" and wrote 08:00-21:00 over a window the user had just set. A
+ * default that is never written cannot lose that race.
  */
 export async function ensureProfileTimeZone(uid: string): Promise<string> {
   const reference = profileRef(uid);
   const snapshot = await getDoc(reference);
   const stored = snapshot.data()?.timeZone;
   if (isValidTimeZone(stored)) return stored;
-  await setDoc(
-    reference,
-    {
-      timeZone: browserTimeZone,
-      // Strings keep the emulator REST harness (which only decodes string and
-      // boolean fields) able to read this document; parseWorkWindow accepts
-      // both encodings, so a later numeric write by setProfileWorkWindow is
-      // read the same way.
-      workStart: String(defaultWorkWindow.startMinutes),
-      workEnd: String(defaultWorkWindow.endMinutes),
-    },
-    { merge: true },
-  );
+  await setDoc(reference, { timeZone: browserTimeZone }, { merge: true });
   return browserTimeZone;
 }
 
@@ -85,8 +110,81 @@ export async function setProfileWorkWindow(uid: string, window: WorkWindow): Pro
 }
 
 /**
- * Subscribes to the profile document and exposes its timezone and work window,
- * initializing both on first use when absent. There is no permanent single-shot
+ * The shutdown time, read the same way as the working window: an absent,
+ * non-integer or out-of-day value falls back to 18:00, so an older profile (or
+ * none at all) still yields a usable hour. Readers never fail.
+ */
+export function parseShutdownTime(data: Record<string, unknown> | undefined): number {
+  const minutes = storedMinutes(data?.shutdownTime);
+  return minutes !== undefined && Number.isInteger(minutes) && minutes >= 0 && minutes <= minutesPerDay
+    ? minutes
+    : defaultShutdownTime;
+}
+
+/** The shortcuts toggle; absent means on (the product's default, F6). */
+export function parseShortcutsEnabled(data: Record<string, unknown> | undefined): boolean {
+  return typeof data?.shortcutsEnabled === "boolean" ? data.shortcutsEnabled : defaultShortcutsEnabled;
+}
+
+/**
+ * Rejects one minute value the reader would not read back: whole minutes inside
+ * the day. This is the guard W1's report asks for -- nothing is written that
+ * `parseWorkWindow` or `parseShutdownTime` would silently replace.
+ */
+function assertMinutesInDay(name: string, minutes: number): void {
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > minutesPerDay) {
+    throw new Error(`the ${name} is outside the day`);
+  }
+}
+
+/** The day-settings fields a caller changes; absent fields are left alone. */
+export type DaySettingsPatch = {
+  workWindow?: WorkWindow;
+  shutdownTime?: number;
+  shortcutsEnabled?: boolean;
+};
+
+/**
+ * Persists the changed day settings in one merged write, validating them first.
+ * Only the fields in the patch are written, so two controls editing the same
+ * document (a window and a toggle, or a second device) never write a stale copy
+ * of each other's value. `shutdownTime` is stored as minutes after midnight
+ * (1080 is 18:00) and the window as `workStart`/`workEnd`, the fields W1
+ * already reads, so a profile written here is read back unchanged.
+ */
+export async function setProfileDaySettings(uid: string, patch: DaySettingsPatch): Promise<void> {
+  const fields: Record<string, number | boolean> = {};
+  if (patch.workWindow) {
+    assertMinutesInDay("work start", patch.workWindow.startMinutes);
+    assertMinutesInDay("work end", patch.workWindow.endMinutes);
+    validateWorkWindow(patch.workWindow);
+    fields.workStart = patch.workWindow.startMinutes;
+    fields.workEnd = patch.workWindow.endMinutes;
+  }
+  if (patch.shutdownTime !== undefined) {
+    assertMinutesInDay("shutdown time", patch.shutdownTime);
+    fields.shutdownTime = patch.shutdownTime;
+  }
+  if (patch.shortcutsEnabled !== undefined) {
+    fields.shortcutsEnabled = patch.shortcutsEnabled;
+  }
+  if (Object.keys(fields).length === 0) return;
+  await setDoc(profileRef(uid), fields, { merge: true });
+}
+
+/** Everything a snapshot can fill in; the day settings default until it does. */
+const unloadedProfile: Omit<ProfileState, "loading"> = {
+  timeZone: null,
+  workWindow: defaultWorkWindow,
+  shutdownTime: defaultShutdownTime,
+  shortcutsEnabled: defaultShortcutsEnabled,
+  error: null,
+};
+
+/**
+ * Subscribes to the profile document and exposes its timezone, work window and
+ * day settings, initializing the timezone and the window on first use when
+ * absent. There is no permanent single-shot
  * guard: a later snapshot can retry a failed initialization (for example once
  * connectivity returns). Consecutive snapshots do not stack attempts — at
  * most one initialization is in flight, and a new one starts only when none
@@ -94,25 +192,33 @@ export async function setProfileWorkWindow(uid: string, window: WorkWindow): Pro
  * later change from another client.
  */
 export function useProfileTimeZone(uid: string | null): ProfileState {
-  const [state, setState] = useState<ProfileState>({
-    loading: true, timeZone: null, workWindow: defaultWorkWindow, error: null,
-  });
+  const [state, setState] = useState<ProfileState>({ ...unloadedProfile, loading: true });
   useEffect(() => {
     if (!uid) {
-      setState({ loading: false, timeZone: null, workWindow: defaultWorkWindow, error: null });
+      setState({ ...unloadedProfile, loading: false });
       return;
     }
-    setState({ loading: true, timeZone: null, workWindow: defaultWorkWindow, error: null });
+    setState({ ...unloadedProfile, loading: true });
     let attempt: Promise<void> | null = null;
-    const initialize = () => {
+    /* `data` is the snapshot that asked for the initialization: it is what the
+       state keeps while the write lands, so a profile that already holds a
+       window never flashes the default one. */
+    const initialize = (data: Record<string, unknown> | undefined) => {
       if (attempt) return;
       attempt = ensureProfileTimeZone(uid)
         .then((timeZone) =>
-          setState({ loading: false, timeZone, workWindow: defaultWorkWindow, error: null }),
+          setState({
+            ...unloadedProfile,
+            loading: false,
+            timeZone,
+            workWindow: parseWorkWindow(data),
+            shutdownTime: parseShutdownTime(data),
+            shortcutsEnabled: parseShortcutsEnabled(data),
+          }),
         )
         .catch((error: unknown) => {
           console.error("profile initialization failed", error);
-          setState({ loading: false, timeZone: null, workWindow: defaultWorkWindow, error: "Could not load your planner timezone." });
+          setState({ ...unloadedProfile, loading: false, error: "Could not load your planner timezone." });
         })
         .finally(() => {
           attempt = null;
@@ -124,14 +230,21 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
         const data = snapshot.data();
         const stored = data?.timeZone;
         if (isValidTimeZone(stored)) {
-          setState({ loading: false, timeZone: stored, workWindow: parseWorkWindow(data), error: null });
+          setState({
+            ...unloadedProfile,
+            loading: false,
+            timeZone: stored,
+            workWindow: parseWorkWindow(data),
+            shutdownTime: parseShutdownTime(data),
+            shortcutsEnabled: parseShortcutsEnabled(data),
+          });
         } else {
-          initialize();
+          initialize(data);
         }
       },
       (error) => {
         console.error("profile snapshot failed", error);
-        setState({ loading: false, timeZone: null, workWindow: defaultWorkWindow, error: "Could not load your planner timezone." });
+        setState({ ...unloadedProfile, loading: false, error: "Could not load your planner timezone." });
       },
     );
     return unsubscribe;

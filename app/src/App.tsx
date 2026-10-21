@@ -18,6 +18,7 @@ import { NowMode } from "./ui/NowMode.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
+import { DaySettingsSheet } from "./ui/Settings.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
@@ -89,6 +90,14 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     importOrigin.current = origin;
     setImportOpen(true);
   };
+  // Day settings (S1): the same panel from the sidebar's account row and from
+  // the phone's account menu, so it grows out of whichever control was pressed.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOrigin = useRef<HTMLElement | null>(null);
+  const openSettings = (origin: HTMLElement | null) => {
+    settingsOrigin.current = origin;
+    setSettingsOpen(true);
+  };
   const [pendingTask, setPendingTask] = useState<string | null>(null);
   const clearPendingTask = useCallback(() => setPendingTask(null), []);
   const scrolled = useScrolled();
@@ -150,6 +159,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           }}
           onSignOut={signOut}
           onImport={openImport}
+          onOpenSettings={openSettings}
         />
       )}
       <div className="main">
@@ -166,7 +176,13 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
               <SearchIcon />
             </button>
             {phone ? (
-              <AccountMenu email={user.email ?? ""} pending={pending} onSignOut={signOut} onImport={openImport} />
+              <AccountMenu
+                email={user.email ?? ""}
+                pending={pending}
+                onSignOut={signOut}
+                onImport={openImport}
+                onSettings={openSettings}
+              />
             ) : (
               <button type="button" className="button button-accent" onClick={newTask}>
                 <PlusIcon />New task
@@ -254,6 +270,19 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {settingsOpen && (
+          <DaySettingsSheet
+            key="day-settings"
+            uid={user.uid}
+            workWindow={profile.workWindow}
+            shutdownTime={profile.shutdownTime}
+            shortcutsEnabled={profile.shortcutsEnabled}
+            origin={settingsOrigin.current}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {importOpen && (
           <GcalImportSheet
             key="gcal-import"
@@ -338,11 +367,13 @@ function AccountMenu({
   pending,
   onSignOut,
   onImport,
+  onSettings,
 }: {
   email: string;
   pending: number;
   onSignOut: () => void;
   onImport: (origin: HTMLElement) => void;
+  onSettings: (origin: HTMLElement) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -366,6 +397,16 @@ function AccountMenu({
             <ThemeSwitch />
             {/* And so does the import entry: the same footer action, one tap
                 from the account the calendars belong to. */}
+            <button
+              type="button"
+              className="link-button"
+              onClick={event => {
+                setOpen(false);
+                onSettings(event.currentTarget);
+              }}
+            >
+              Day settings
+            </button>
             <button
               type="button"
               className="link-button"
