@@ -1,4 +1,16 @@
-export type Task = { id: string; title: string; deadline?: string };
+export type Task = { id: string; title: string; deadline?: string; estimate?: number };
+
+/**
+ * How long a task is expected to take, in whole minutes. An estimate is a
+ * plan, not a record: an absent one is not zero, it is an unstated guess, and
+ * every surface that shows an estimate says which of the two it is showing
+ * (see ASSUMED_ESTIMATE_MINUTES).
+ */
+export const MIN_ESTIMATE_MINUTES = 5;
+export const MAX_ESTIMATE_MINUTES = 1440;
+
+/** The number planning assumes for a task that carries no estimate. */
+export const ASSUMED_ESTIMATE_MINUTES = 60;
 
 /**
  * Where an imported block came from. A block that was not imported carries no
@@ -47,7 +59,12 @@ function requireDate(date: string): void {
   if (!validDate(date)) throw new Error("expected a valid ISO date-only value");
 }
 
-function requireInstant(instant: string): void {
+/**
+ * Validates a zoned ISO instant. Exported because a task's completion instant
+ * is written by the data layer and restored by undo, and both write the exact
+ * value they were given: a malformed one must fail before any document changes.
+ */
+export function requireInstant(instant: string): void {
   const match = zonedInstant.exec(instant);
   if (!match) throw new Error("expected a zoned ISO instant");
   const [, date, hours, minutes, seconds, , zone] = match;
@@ -59,11 +76,61 @@ function requireInstant(instant: string): void {
   }
 }
 
-export function createTask(id: string, title: string, deadline?: string): Task {
+/**
+ * Validates an estimate and returns it. The rule is one rule, shared by every
+ * write that sets an estimate (create, edit, series): whole minutes, 5 to 1440.
+ * A fractional, negative, non-numeric or out-of-range value is rejected rather
+ * than rounded, because a rounded estimate is a number nobody wrote.
+ */
+export function requireEstimate(minutes: number): number {
+  if (!Number.isInteger(minutes) || minutes < MIN_ESTIMATE_MINUTES || minutes > MAX_ESTIMATE_MINUTES) {
+    throw new Error(`estimate must be a whole number of minutes between ${MIN_ESTIMATE_MINUTES} and ${MAX_ESTIMATE_MINUTES}`);
+  }
+  return minutes;
+}
+
+/**
+ * Reads a stored estimate out of a document. A task or series written before
+ * estimates existed has none, and a hand-edited document may hold anything; in
+ * both cases the value reads as absent rather than crashing the surface.
+ */
+export function parseEstimate(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined;
+  try {
+    return requireEstimate(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** An estimate in the words a person uses: "45 min", "1h", "1h 30m". */
+export function formatEstimate(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * The words a surface uses for an estimate: the value itself, or the
+ * 60-minute assumption when the task carries none. One function, so every
+ * surface that shows an estimate (details, create sheet, the radar and the
+ * bias hint that follow) says the same thing about the same absence.
+ */
+export function estimateNote(estimate: number | undefined): string {
+  return estimate === undefined ? `Assumed ${formatEstimate(ASSUMED_ESTIMATE_MINUTES)}` : formatEstimate(estimate);
+}
+
+export function createTask(id: string, title: string, deadline?: string, estimate?: number): Task {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("task title is required");
   if (deadline !== undefined) requireDate(deadline);
-  return { id, title: trimmed, ...(deadline === undefined ? {} : { deadline }) };
+  return {
+    id,
+    title: trimmed,
+    ...(deadline === undefined ? {} : { deadline }),
+    ...(estimate === undefined ? {} : { estimate: requireEstimate(estimate) }),
+  };
 }
 
 /**

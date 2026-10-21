@@ -83,7 +83,7 @@ export async function createRemoteAccount(email: string): Promise<void> {
 /* ---------- Firestore emulator REST ---------- */
 
 /** The subset of Firestore REST typed values this harness writes and reads. */
-type RestValue = { stringValue: string } | { booleanValue: boolean };
+type RestValue = { stringValue: string } | { booleanValue: boolean } | { integerValue: string } | { doubleValue: number };
 type RestFields = Record<string, RestValue>;
 type RestDocument = { name: string; fields?: RestFields };
 
@@ -95,11 +95,15 @@ function encodeFields(data: Record<string, string | boolean>): RestFields {
   return fields;
 }
 
-function decodeDocument(document: RestDocument): { id: string; data: Record<string, string | boolean> } {
-  const data: Record<string, string | boolean> = {};
+function decodeDocument(document: RestDocument): { id: string; data: Record<string, string | boolean | number> } {
+  const data: Record<string, string | boolean | number> = {};
   for (const [key, value] of Object.entries(document.fields ?? {})) {
     if ("stringValue" in value) data[key] = value.stringValue;
     else if ("booleanValue" in value) data[key] = value.booleanValue;
+    // `estimate` is stored as an integer minute count; the harness reads it
+    // back as the number the domain wrote, not as a string.
+    else if ("integerValue" in value) data[key] = Number(value.integerValue);
+    else if ("doubleValue" in value) data[key] = value.doubleValue;
     else throw new Error(`unsupported Firestore REST value for ${key}: ${JSON.stringify(value)}`);
   }
   // The document id is the last segment of the full resource name.
@@ -267,10 +271,19 @@ export async function readRemoteProfile(email: string): Promise<{ timeZone?: str
 }
 
 /** Reads every series definition, keeping the generated id next to its fields. */
-export async function readRemoteSeries(email: string): Promise<Array<{ id: string; data: Record<string, string> }>> {
+/**
+ * Series definitions as the app stores them. Every field a series carried
+ * before estimates existed is a string; `estimate`, when present, is a number
+ * (see decodeDocument), so consumers that need it read it as the number the
+ * domain wrote rather than through this legacy string map.
+ */
+/** A stored document's fields as the emulator reports them. */
+export type RemoteData = Record<string, string | boolean | number>;
+
+export async function readRemoteSeries(email: string): Promise<Array<{ id: string; data: RemoteData }>> {
   const uid = await resolveRemoteUid(email);
   const series = await listRemoteDocs(uid, "series");
-  return series.map(doc => ({ id: doc.id, data: doc.data as Record<string, string> }));
+  return series.map(doc => ({ id: doc.id, data: doc.data }));
 }
 
 /** Reads every completion record exactly as the domain builds it. */

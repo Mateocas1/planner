@@ -1,5 +1,5 @@
-import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
-import { createOccurrenceCompletion, createTask, expandOccurrences, occurrenceId, type Recurrence } from "../domain/model.ts";
+import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
+import { createOccurrenceCompletion, createTask, expandOccurrences, occurrenceId, requireEstimate, type Recurrence } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 
@@ -28,15 +28,31 @@ function requireValidRecurrence(seriesId: string, frequency: Frequency, anchorDa
  * here). Per D1, occurrences are never persisted: only the series definition
  * and one completion record per occurrence, keyed by occurrenceId.
  */
-export async function addSeries(uid: string, title: string, frequency: Frequency, anchorDate: string, deadline?: string) {
-  const validated = createTask("pending-mint", title, deadline);
+export async function addSeries(uid: string, title: string, frequency: Frequency, anchorDate: string, deadline?: string, estimate?: number) {
+  const validated = createTask("pending-mint", title, deadline, estimate);
   const recurrence = requireValidRecurrence("pending-mint", frequency, anchorDate);
   await addDoc(collection(db, `users/${uid}/series`), {
     title: validated.title,
     frequency: recurrence.frequency,
     anchorDate: recurrence.anchorDate,
     ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
+    ...(validated.estimate === undefined ? {} : { estimate: validated.estimate }),
   });
+}
+
+/**
+ * Sets or clears the estimate on a series. The estimate is validated through
+ * the domain module (requireEstimate) before any write; a missing estimate
+ * removes the field from the document. Occurrence completion records are
+ * immutable history and are never touched here.
+ */
+export async function setSeriesEstimate(uid: string, seriesId: string, estimate?: number) {
+  if (estimate === undefined) {
+    await updateDoc(doc(db, `users/${uid}/series/${seriesId}`), { estimate: deleteField() });
+    return;
+  }
+  requireEstimate(estimate);
+  await updateDoc(doc(db, `users/${uid}/series/${seriesId}`), { estimate });
 }
 
 /**
@@ -87,18 +103,20 @@ export type DeletedSeries = {
   frequency: Frequency;
   anchorDate: string;
   deadline?: string;
+  estimate?: number;
 };
 
 /**
  * Puts a deleted series back under its original document id with the exact
- * anchor, frequency and deadline it held. Restoring the same id is what keeps
- * the series' immutable per-occurrence completion records (`seriesId:date`)
- * attached to it, so the plan reappears with its history intact rather than as
- * a copy. The definition is validated through the domain module first.
+ * anchor, frequency, deadline and estimate it held. Restoring the same id is
+ * what keeps the series' immutable per-occurrence completion records
+ * (`seriesId:date`) attached to it, so the plan reappears with its history
+ * intact rather than as a copy. The definition is validated through the domain
+ * module first.
  */
 export async function restoreSeries(uid: string, series: DeletedSeries) {
   if (!series.id || series.id.includes("/")) throw new Error("series ID is invalid");
-  const validated = createTask(series.id, series.title, series.deadline);
+  const validated = createTask(series.id, series.title, series.deadline, series.estimate);
   const recurrence = requireValidRecurrence(series.id, series.frequency, series.anchorDate);
   const path = `users/${uid}/series/${series.id}`;
   const write = setDoc(doc(db, path), {
@@ -106,6 +124,7 @@ export async function restoreSeries(uid: string, series: DeletedSeries) {
     frequency: recurrence.frequency,
     anchorDate: recurrence.anchorDate,
     ...(validated.deadline === undefined ? {} : { deadline: validated.deadline }),
+    ...(validated.estimate === undefined ? {} : { estimate: validated.estimate }),
   });
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.

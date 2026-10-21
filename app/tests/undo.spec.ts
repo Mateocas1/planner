@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
 
 /**
  * Undo for delete (F1 / spec S6).
@@ -122,7 +122,7 @@ async function expectSingleRemoteBlock(email: string) {
 
 /** Polls the forced-server read until one series exists, then returns it. */
 async function expectSingleRemoteSeries(email: string) {
-  let remote: Array<{ id: string; data: Record<string, string> }> = [];
+  let remote: Array<{ id: string; data: RemoteData }> = [];
   await expect
     .poll(async () => {
       remote = await readRemoteSeries(email);
@@ -152,7 +152,7 @@ test("deleting a task offers undo, and undo restores that task with its completi
   await addTaskThroughForm(page, "Pack bags", deadline);
   await page.getByRole("checkbox", { name: "Complete: Pack bags" }).click();
   await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
-  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline }]);
+  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline, completedAt: expect.any(String) }]);
 
   await page.getByRole("button", { name: "Pack bags" }).click();
   await page.getByRole("button", { name: "Delete task" }).click();
@@ -170,7 +170,7 @@ test("deleting a task offers undo, and undo restores that task with its completi
   // same title, same completion, same deadline — in the completed group
   await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
   await expect(page.getByRole("checkbox", { name: "Reopen: Pack bags" })).toBeChecked();
-  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline }]);
+  await expectRemoteTasks(email, [{ title: "Pack bags", completed: true, deadline, completedAt: expect.any(String) }]);
 
   // it is stored state, not a lingering local echo
   await page.reload();
