@@ -36,7 +36,7 @@ export type PaletteThemeCommand = { kind: "theme"; id: string; pref: ThemePrefer
 export type PaletteActionCommand = {
   kind: "action";
   id: string;
-  action: "gcal-import";
+  action: "gcal-import" | "now-mode";
   label: string;
   keywords: string[];
 };
@@ -92,8 +92,8 @@ export const themeCommands: PaletteThemeCommand[] = [
 ];
 
 /**
- * The actions the palette can run, in value-roadmap order: one entry today, the
- * Google Calendar import (value roadmap §1). They appear for a typed query that
+ * The actions the palette can run: the Google Calendar import (value roadmap
+ * §1) and Now mode (distinctive roadmap F5). They appear for a typed query that
  * names them, like the theme commands, so an empty palette still offers only the
  * places to go.
  */
@@ -104,6 +104,13 @@ export const actionCommands: PaletteActionCommand[] = [
     action: "gcal-import",
     label: "Import from Google Calendar",
     keywords: ["import", "google"],
+  },
+  {
+    kind: "action",
+    id: "action-now-mode",
+    action: "now-mode",
+    label: "Open Now mode",
+    keywords: ["now", "glance", "full screen"],
   },
 ];
 
