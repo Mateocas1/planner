@@ -223,3 +223,36 @@ test("undo puts the recorded minutes back exactly", async ({ page }) => {
   await page.getByRole("status").filter({ hasText: "Task deleted" }).getByRole("button", { name: "Undo" }).click();
   await expect.poll(() => readRemoteTasks(email), poll).toEqual([before]);
 });
+
+test("Task details offers the same learned pace as the creation sheet", async ({ page }) => {
+  const email = newEmail("actual-details-offer");
+  await seedTrackedTasks(email, "UTC", [
+    { title: "Send invoice now", estimate: 30, actualMinutes: 45, completed: true },
+    { title: "Send invoice later", estimate: 30, actualMinutes: 45, completed: true },
+    { title: "Send invoice again", estimate: 30, actualMinutes: 45, completed: true },
+    { title: "Send invoice draft", estimate: 30 },
+  ]);
+  await signIn(page, email);
+  await openTasks(page);
+
+  /* The details sheet reads the store's own sample list, so a task with a
+     recorded history is offered the learned pace there too -- never only in
+     the creation sheet, where the history is not yet the user's problem. */
+  await page.getByRole("button", { name: "Send invoice draft" }).click();
+  await expect(details(page)).toBeVisible();
+  await expect(details(page).getByText("Usually takes 45 min for tasks like this.")).toBeVisible();
+  await expect(details(page).getByRole("button", { name: "Use 45" })).toBeVisible();
+
+  /* Still an offer: the stored document keeps the estimate its owner wrote
+     until the tap, and then carries the accepted one. */
+  expect((await readRemoteTasks(email)).find(task => task.title === "Send invoice draft")).toEqual({
+    title: "Send invoice draft",
+    completed: false,
+    estimate: 30,
+  });
+  await details(page).getByRole("button", { name: "Use 45" }).click();
+  await expect.poll(
+    async () => (await readRemoteTasks(email)).find(task => task.title === "Send invoice draft"),
+    poll,
+  ).toEqual({ title: "Send invoice draft", completed: false, estimate: 45 });
+});
