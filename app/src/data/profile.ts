@@ -29,6 +29,9 @@ export type ProfileState = {
   /** Minutes after midnight in the profile zone; 1080 is 18:00. */
   shutdownTime: number;
   shortcutsEnabled: boolean;
+  /** The profile zone's day the shutdown ritual was last closed (F3c), read
+   *  through `parseLastShutdown`: absent means today is still open. */
+  lastShutdown?: string;
   error: string | null;
 };
 
@@ -243,6 +246,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             workWindow: parseWorkWindow(data),
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
+            lastShutdown: parseLastShutdown(data),
           }),
         )
         .catch((error: unknown) => {
@@ -266,6 +270,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             workWindow: parseWorkWindow(data),
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
+            lastShutdown: parseLastShutdown(data),
           });
         } else {
           initialize(data);

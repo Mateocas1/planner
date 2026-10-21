@@ -36,7 +36,7 @@ export type PaletteThemeCommand = { kind: "theme"; id: string; pref: ThemePrefer
 export type PaletteActionCommand = {
   kind: "action";
   id: string;
-  action: "gcal-import" | "now-mode";
+  action: "gcal-import" | "now-mode" | "close-day";
   label: string;
   keywords: string[];
 };
@@ -93,9 +93,9 @@ export const themeCommands: PaletteThemeCommand[] = [
 
 /**
  * The actions the palette can run: the Google Calendar import (value roadmap
- * §1) and Now mode (distinctive roadmap F5). They appear for a typed query that
- * names them, like the theme commands, so an empty palette still offers only the
- * places to go.
+ * §1), Now mode (distinctive roadmap F5) and the shutdown ritual (F3c). They
+ * appear for a typed query that names them, like the theme commands, so an
+ * empty palette still offers only the places to go.
  */
 export const actionCommands: PaletteActionCommand[] = [
   {
@@ -111,6 +111,16 @@ export const actionCommands: PaletteActionCommand[] = [
     action: "now-mode",
     label: "Open Now mode",
     keywords: ["now", "glance", "full screen"],
+  },
+  /* F3's second entry point (the banner is the first). It opens the ritual, it
+     does not close the day: the roll is the sheet's commit, so the summary is
+     on screen before anything is written. */
+  {
+    kind: "action",
+    id: "action-close-day",
+    action: "close-day",
+    label: "Close the day",
+    keywords: ["close", "shutdown", "day", "ritual"],
   },
 ];
 
