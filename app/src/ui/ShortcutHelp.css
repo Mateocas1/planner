@@ -1,0 +1,123 @@
+/* The shortcut sheet (ShortcutHelp.tsx). Co-located so its material stays out
+   of app.css.
+
+   Motion: none, on purpose. DESIGN.md §4 says a keyboard shortcut animates
+   nothing, and the reference a shortcut opens is part of the same gesture: the
+   painter's panel is legible on the very next frame, so `?` followed by another
+   key never waits for an entrance. The scrim fades in the sheet's own material
+   (glass.css) and nothing else moves.
+
+   Material: the thick sheet glass, on the same native modal `<dialog>` the
+   command palette uses. The card is centred in what the keyboard leaves, and on
+   a phone the groups stack into one column that scrolls. */
+
+dialog.shortcut-help {
+  position: fixed;
+  inset: 0;
+  /* Lifted off the keyboard's covered band, exactly like the palette. */
+  bottom: var(--kb-inset, 0px);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100% - 32px));
+  max-width: none;
+  max-height: min(560px, calc(100dvh - 32px - var(--kb-inset, 0px)));
+  padding: 6px;
+  border: 0;
+  border-radius: var(--r-sheet);
+  color: var(--label);
+  overflow: hidden;
+}
+
+/* Without this the flex display above would beat the UA's
+   dialog:not([open]) display:none and flash an empty panel before showModal(). */
+dialog.shortcut-help:not([open]) {
+  display: none;
+}
+
+dialog.shortcut-help::backdrop {
+  background: var(--scrim);
+}
+
+.shortcut-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 6px;
+}
+
+.shortcut-help-head h2 {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.shortcut-help-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
+  padding: 0 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.shortcut-help-group h3 {
+  margin: 10px 0 2px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label-2);
+}
+
+.shortcut-help-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shortcut-help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-radius: var(--r-group);
+}
+
+/* The keys lead, the sentence follows: the pair reads as one row either way,
+   and the chips stay in one line so two-key sequences stay together. */
+.shortcut-help-keys {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+}
+
+.shortcut-help-keys kbd {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--fill-hover);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.shortcut-help-label {
+  color: var(--label-2);
+  font-size: var(--text-sub);
+  text-align: right;
+}
+
+/* A narrow card is one column: two 150 px columns would wrap every sentence. */
+@media (max-width: 560px) {
+  .shortcut-help-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
