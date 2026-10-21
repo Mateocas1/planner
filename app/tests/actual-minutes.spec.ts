@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   readRemoteTasks,
   seedSidebarFixture,
@@ -22,8 +22,10 @@ import {
  *
  * The focus session is seeded as a stored one (see `storedFocusSession`), which
  * is what a desktop restores on load: the timer recomputes every number from
- * those instants, so "this session began twenty minutes ago" is an exact
- * statement instead of a race with the clock.
+ * those instants, so "this session began twenty minutes ago" is a statement
+ * about two instants instead of a wait. The twenty-minute session is the one
+ * whose credit sits on a whole-minute boundary, so it also holds the page's
+ * clock still (see `sessionAt`): the two instants and the stop are one read.
  */
 
 test.setTimeout(120_000);
@@ -44,6 +46,33 @@ async function signIn(page: Page, email: string) {
   await expect(async () => {
     await submitAuthForm(page, email, "sign in");
   }).toPass({ timeout: 60_000 });
+}
+
+/**
+ * A stored session whose instants are read off `now`, the same instant the page
+ * clock is then held at (`page.clock.setFixedTime`), so the stop reports exactly
+ * `startedMinutesAgo` of focused time.
+ *
+ * `storedFocusSession` states them from the *test's* clock instead, which is a
+ * different read of the host's wall clock, taken one to two seconds before the
+ * stop. This host's clock steps back up to ~1.3 s every 15-30 s
+ * (odd/runs/hf-flaky.md, the Auth artifact), so a step inside that window can
+ * leave 19:59.9 between the two reads and `Math.floor` the credit to 19. The
+ * product is right to trust the clock it is handed -- it computes
+ * `now - startedAt - pausedMs` and nothing else -- so the fixture is what has to
+ * stop asking two clocks what "now" is.
+ */
+function sessionAt(
+  now: number,
+  input: { blockId: string; taskId?: string; startedMinutesAgo: number; endsInMinutes: number },
+): string {
+  return JSON.stringify({
+    blockId: input.blockId,
+    ...(input.taskId === undefined ? {} : { taskId: input.taskId }),
+    endAt: now + input.endsInMinutes * 60_000,
+    startedAt: now - input.startedMinutesAgo * 60_000,
+    pausedMs: 0,
+  });
 }
 
 /** Puts a stored focus session in the tab before the app loads. */
@@ -80,13 +109,39 @@ async function revealTaskForm(page: Page) {
   await expect(add).toBeVisible();
 }
 
+/**
+ * Presses a row once it has stopped moving. A press is dispatched to whatever
+ * is under the pointer at release, and the Tasks list is still landing right
+ * after the view changes (the page's entrance plus the list's own settle), so
+ * a press inside that beat is dispatched to where the row used to be: its
+ * handler never runs and the panel never opens (traced: no view transition
+ * starts at all, and the row's box reads differently in two runs). Two reads a
+ * poll apart must name the same box before the press.
+ */
+async function pressAtRest(page: Page, row: Locator): Promise<void> {
+  let previous = await row.boundingBox();
+  await expect
+    .poll(async () => {
+      const current = await row.boundingBox();
+      const still = previous !== null && current !== null && Math.abs(current.y - previous.y) < 0.5 && Math.abs(current.x - previous.x) < 0.5;
+      previous = current;
+      return still;
+    }, { timeout: 10_000 })
+    .toBe(true);
+  await row.click();
+}
+
 const timer = (page: Page) => page.getByRole("group", { name: "Focus timer" });
 const details = (page: Page) => page.getByRole("complementary", { name: "Task details" });
 
 test("a 20-minute focus session adds 20 minutes to its task, and Task details shows what it took", async ({ page }) => {
   const email = newEmail("actual-twenty");
   const { taskIds } = await seedSidebarFixture(email, "UTC", { tasks: [{ title: "Write the brief" }] });
-  await seedFocusSession(page, storedFocusSession({
+  /* Twenty minutes before the instant the page reads as now, held there: the
+     Stop click reports exactly 20:00.000 whatever the host clock does meanwhile. */
+  const now = Date.now();
+  await page.clock.setFixedTime(now);
+  await seedFocusSession(page, sessionAt(now, {
     blockId: "seeded-block",
     taskId: taskIds["Write the brief"],
     startedMinutesAgo: 20,
@@ -106,7 +161,7 @@ test("a 20-minute focus session adds 20 minutes to its task, and Task details sh
   ]);
 
   await openTasks(page);
-  await page.getByRole("button", { name: "Write the brief" }).click();
+  await pressAtRest(page, page.getByRole("button", { name: "Write the brief" }));
   await expect(details(page)).toBeVisible();
   // An open task says what has been tracked so far, never a finished total.
   await expect(details(page).getByText("Tracked 20 min so far")).toBeVisible();

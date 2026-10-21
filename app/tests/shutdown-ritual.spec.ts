@@ -57,7 +57,6 @@ const banner = (page: Page) => page.locator(".shutdown-banner");
 const turnPage = (page: Page) => ritual(page).locator(".page-turn-top");
 /** Today's own page turn, before the ritual is on screen. */
 const homePage = (page: Page) => page.locator(".page-turn-top").first();
-const nav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 
 /** A day key as the sheet's date line writes it (en-US, read as UTC midnight). */
 function dayLabel(key: string): string {
@@ -66,8 +65,54 @@ function dayLabel(key: string): string {
   );
 }
 
+/** The same day as a list row writes it: the short date `formatDateKey` shows
+ *  for a day that is neither today nor tomorrow. */
+function rowLabel(key: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(
+    new Date(`${key}T00:00:00Z`),
+  );
+}
+
 /** The sheet's named groups: the two lists criterion 1 is about. */
 const group = (page: Page, name: string) => ritual(page).getByRole("region", { name });
+
+const FIRESTORE_REST =
+  "http://127.0.0.1:8187/v1/projects/demo-calendar-app/databases/(default)/documents";
+const AUTH_REST = "http://127.0.0.1:9199/identitytoolkit.googleapis.com/v1/projects/demo-calendar-app";
+
+/** The account's uid, read from the Auth emulator without signing anybody in
+ *  (the same route `tests/browser-helpers.ts` takes; this file owns only the
+ *  one write that belongs to the shutdown ritual's story). */
+async function remoteUid(email: string): Promise<string> {
+  const response = await fetch(`${AUTH_REST}/accounts:batchGet?key=local-only&maxResults=1000`, {
+    headers: { Authorization: "Bearer owner" },
+  });
+  if (!response.ok) throw new Error(`accounts:batchGet failed: ${response.status} ${await response.text()}`);
+  const body = (await response.json()) as { users?: Array<{ localId?: string; email?: string }> };
+  const uid = (body.users ?? []).find(user => user.email === email)?.localId;
+  if (uid === undefined) throw new Error(`no Auth emulator account found for ${email}`);
+  return uid;
+}
+
+/**
+ * Moves one task's deadline the way another device would: a server write the
+ * app never authored, delivered to the surface through its own listener.
+ *
+ * The document is written whole, because a Firestore REST PATCH replaces it:
+ * `title` and `completed` are the task's closed schema (`data/tasks.ts`), and
+ * the shutdown fixture's tasks start with no other field.
+ */
+async function moveTaskElsewhere(email: string, task: { id: string; title: string }, deadline: string): Promise<void> {
+  const uid = await remoteUid(email);
+  const response = await fetch(`${FIRESTORE_REST}/users/${uid}/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fields: { title: { stringValue: task.title }, completed: { booleanValue: false }, deadline: { stringValue: deadline } },
+    }),
+  });
+  if (!response.ok) throw new Error(`emulator set failed: ${response.status} ${await response.text()}`);
+}
 
 /** Signs a seeded account in under the fake clock, and waits for Today. */
 async function open(
@@ -134,11 +179,19 @@ async function swipe(page: Page, from: { x: number; y: number }, to: { x: number
   await cdp.detach();
 }
 
-/** Reads the server until the roll's writes have landed. */
-async function stored(email: string) {
+/**
+ * The server, once the roll it announced has landed there.
+ *
+ * The status line the sheet shows is a local acceptance: Firestore applies the
+ * batch to the cache first and acknowledges it a beat later, so reading the
+ * server the moment the announcement appears can still return the day before
+ * the roll. A batch commits whole, so one deadline that moved is the whole
+ * roll; the caller then reads every fact from that one state.
+ */
+async function stored(email: string, moved: { title: string; deadline: string | undefined }) {
   await expect
-    .poll(() => readRemoteShutdown(email).then(state => state.deadlines), { timeout: 15_000, intervals: [250, 500, 1_000] })
-    .toBeTruthy();
+    .poll(() => readRemoteShutdown(email).then(state => state.deadlines[moved.title]), { timeout: 15_000 })
+    .toBe(moved.deadline);
   return readRemoteShutdown(email);
 }
 
@@ -228,7 +281,7 @@ test.describe("on a desktop", () => {
 
     /* The roll: the two due deadlines moved to tomorrow, the future deadline and
        the completion instants did not, and the profile carries the stamp. */
-    const state = await stored(email);
+    const state = await stored(email, { title: "Review the draft", deadline: tomorrow });
     expect(state.deadlines["Review the draft"]).toBe(tomorrow);
     expect(state.deadlines["Fix the chart axis"]).toBe(tomorrow);
     expect(state.deadlines["Plan the quarter"]).toBe(dayKey(base, 3));
@@ -249,7 +302,7 @@ test.describe("on a desktop", () => {
     await ritual(page).getByRole("button", { name: "Close day" }).click();
 
     await expect(ritual(page).getByRole("status")).toHaveText(`Day closed. 2 tasks moved to ${weekday(tomorrow)}.`);
-    const state = await stored(email);
+    const state = await stored(email, { title: "Review the draft", deadline: tomorrow });
     expect(state.deadlines["Review the draft"]).toBe(tomorrow);
     expect(state.lastShutdown).toBe(dayKey(base));
   });
@@ -264,14 +317,16 @@ test.describe("on a desktop", () => {
     await openFromBanner(page);
     await ritual(page).getByRole("button", { name: "Close day" }).click();
     await expect(ritual(page).getByRole("status")).toHaveText(/Day closed\./);
-    expect((await stored(email)).lastShutdown).toBe(today);
+    // The roll moved it to tomorrow; a batch commits whole, so that is the mark.
+    const closed = await stored(email, { title: "Review the draft", deadline: dayKey(base, 1) });
+    expect(closed.lastShutdown).toBe(today);
 
     await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
 
     /* Criterion 4: the exact inverse -- the deadlines are today's again and the
        day is open, so the sheet is back on Today. */
     await expect(ritual(page).getByText("3 done · 2 left over")).toBeVisible();
-    const state = await stored(email);
+    const state = await stored(email, { title: "Review the draft", deadline: today });
     expect(state.deadlines["Review the draft"]).toBe(today);
     expect(state.deadlines["Fix the chart axis"]).toBe(today);
     expect(state.lastShutdown).toBeUndefined();
@@ -291,22 +346,27 @@ test.describe("on a desktop", () => {
     });
     await openFromBanner(page);
     await ritual(page).getByRole("button", { name: "Close day" }).click();
-    // The sheet goes away; the offer to undo the close outlives it.
+    // The roll reached the server, so the edit below is the only later write.
+    await expect.poll(() => readRemoteShutdown(email).then(state => state.lastShutdown)).toBe(today);
+    // The sheet goes away; the offer to undo the close outlives it -- for the
+    // five seconds its own toast promises, which is the whole budget the edit
+    // below has to fit in.
     await ritual(page).getByRole("button", { name: "Done" }).click();
     await expect(ritual(page)).toHaveCount(0);
 
-    /* Somebody moves one of the rolled tasks once the sheet is gone. Undo runs
+    /* Somebody moves one of the rolled tasks once the sheet is gone: another
+       device, written straight to the store this app listens to. Undo runs
        against the state the app holds *then*, so that edit wins and only the
-       other rolled deadline comes back (F3c review item 4). */
-    await nav(page).getByRole("button", { name: "Tasks" }).click();
-    // The row's own button: the sidebar lists the same task by name too.
-    await page.locator("li.task", { hasText: "Review the draft" }).getByRole("button").first().click();
-    const details = page.getByRole("complementary", { name: "Task details" });
-    await details.getByLabel("Deadline").fill(edited);
-    // The store takes the edit first and the server a moment later: this is the
-    // local state the undo must compare against.
-    await expect.poll(() => readRemoteTask(email, taskIds["Review the draft"]).then(task => task?.deadline)).toBe(edited);
-    await details.getByRole("button", { name: "Close" }).click();
+       other rolled deadline comes back (F3c review item 4).
+
+       The edit is a server write and the wait is the app's own row, not the
+       details sheet: that panel is four interactions (a row that is still
+       re-sorting under the pointer, a mount, a field, a close), and on a loaded
+       host they outlast the offer they were racing (odd/runs/su-undo-hang.md). */
+    await moveTaskElsewhere(email, { id: taskIds["Review the draft"], title: "Review the draft" }, edited);
+    await expect(
+      page.getByRole("region", { name: "Coming up" }).getByRole("listitem").filter({ hasText: "Review the draft" }),
+    ).toContainText(rowLabel(edited));
 
     await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
 
@@ -334,7 +394,9 @@ test.describe("on a desktop", () => {
     await openFromBanner(page);
     await ritual(page).getByRole("button", { name: "Close day" }).click();
     await expect(ritual(page).getByRole("status")).toHaveText(/Day closed\./);
-    expect((await stored(email)).lastShutdown).toBe(today);
+    // The roll moved it to tomorrow; a batch commits whole, so that is the mark.
+    const closed = await stored(email, { title: "Review the draft", deadline: dayKey(base, 1) });
+    expect(closed.lastShutdown).toBe(today);
 
     await page.locator(".undo-toast").getByRole("button", { name: "Undo" }).click();
 
@@ -440,7 +502,7 @@ test.describe("on a desktop", () => {
     await dragPageLeft(page, 0.55, homePage(page));
     await expect(ritual(page)).toBeVisible();
     await expect(ritual(page).getByText("0 done · 1 left over")).toBeVisible();
-    expect((await stored(email)).lastShutdown).toBeUndefined();
+    expect((await readRemoteShutdown(email)).lastShutdown).toBeUndefined();
   });
 });
 
@@ -474,7 +536,7 @@ test.describe("on a phone", () => {
     await swipe(page, { x: box.x + box.width * 0.6, y }, { x: box.x + 20, y });
 
     await expect(ritual(page).getByRole("status")).toHaveText(`Day closed. 2 tasks moved to ${weekday(tomorrow)}.`);
-    const state = await stored(email);
+    const state = await stored(email, { title: "Review the draft", deadline: tomorrow });
     expect(state.deadlines["Review the draft"]).toBe(tomorrow);
     expect(state.lastShutdown).toBe(dayKey(base));
   });

@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  expectSignedIn,
   readRemoteDaySettings,
   seedDaySettings,
   submitAuthForm,
@@ -161,7 +162,9 @@ test("the window, the shutdown time and the toggle survive a reload", async ({ p
   await expectRemote(email, stored);
 
   await page.reload();
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  // A reload restores the session with the same emulator round trip a sign-in
+  // makes, so it gets that server budget rather than a local assertion's.
+  await expectSignedIn(page, email);
   await openFromSidebar(page);
   await expect(page.getByLabel("Work starts")).toHaveValue("09:15");
   await expect(page.getByLabel("Work ends")).toHaveValue("17:45");
