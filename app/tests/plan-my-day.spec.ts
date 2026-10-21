@@ -64,6 +64,10 @@ const nav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 async function openCalendar(page: Page) {
   await nav(page).getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("button", { name: "New block" })).toBeVisible();
+  /* The outgoing page stays mounted for the turn's exit, and Today carries its
+     own plan trigger: wait until only the day view's is left, so a press
+     resolves to one button instead of two pages' worth. */
+  await expect(page.getByRole("button", { name: "Plan my day" })).toHaveCount(1);
 }
 
 async function openHome(page: Page) {
@@ -171,6 +175,9 @@ test("the tray previews the blocks around what is already booked and applies the
   await expect(page.locator(".calendar-block")).toHaveCount(3);
   await expect(page.locator(".tray-item")).toHaveCount(0);
 
+  /* The toast reports the local acceptance, so the server read is a wait, not
+     an instant: the batch becomes visible to a fresh query a beat later. */
+  await expect.poll(async () => (await readRemoteBlocks(email)).length, poll).toBe(3);
   const written = await readRemoteBlocks(email);
   expect(written).toHaveLength(3);
   expect(written.filter(block => block.taskId !== undefined).map(block => [block.start, block.end]).sort()).toEqual([
