@@ -1,0 +1,43 @@
+/* F3c -- the morning brief (odd/research/distinctive-roadmap.md §2 F3, 7).
+ *
+ * The same card material as the Plan my day card it sits on top of: `--surface`
+ * with the sheet's `.card` shadow, one sentence and a dismissal. The only
+ * motion is the arrival, and it is opacity alone: the brief lands while the page
+ * is already readable, so it is a fade-in rather than something that moves the
+ * content under the reader's eye.
+ */
+
+.brief {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  animation: brief-in var(--dur-state) var(--ease-out) both;
+}
+
+.brief-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.brief-text {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes brief-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brief {
+    animation: none;
+  }
+}

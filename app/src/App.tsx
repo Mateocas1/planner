@@ -16,6 +16,7 @@ import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
 import { NowMode } from "./ui/NowMode.tsx";
+import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
@@ -82,6 +83,15 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   // reads the shell's blocks, tasks and timer -- so the shell only tracks
   // whether it is on screen.
   const [nowOpen, setNowOpen] = useState(false);
+  // The shutdown ritual (F3c): the sheet that shows what the day left behind and
+  // turns Today to Tomorrow. Opened from Home's banner (or the page turn) and
+  // from the palette, which is why the origin of its entrance is recorded here.
+  const [shutdownOpen, setShutdownOpen] = useState(false);
+  const shutdownOrigin = useRef<HTMLElement | null>(null);
+  const openShutdown = (origin: HTMLElement | null) => {
+    shutdownOrigin.current = origin;
+    setShutdownOpen(true);
+  };
   // The Google Calendar import sheet: whether it is open, and the control that
   // opened it (its box is what the panel grows out of). The palette closes
   // before the sheet mounts, so that path has no origin and the panel pops.
@@ -219,9 +229,13 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   series={series}
                   completions={completions}
                   timeZone={profile.timeZone}
+                  workWindow={profile.workWindow}
+                  shutdownTime={profile.shutdownTime}
+                  lastShutdown={profile.lastShutdown}
                   profileError={profile.error}
                   onOpenCalendar={() => onNavigate("calendar")}
                   onOpenNow={() => setNowOpen(true)}
+                  onCloseDay={openShutdown}
                 />
               )}
               {view === "tasks" && (
@@ -307,12 +321,30 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           onNavigate={onNavigate}
           onImport={() => openImport(null)}
           onOpenNow={() => setNowOpen(true)}
+          onCloseDay={() => openShutdown(null)}
           onOpenTask={taskId => {
             setPendingTask(taskId);
             onNavigate("tasks");
           }}
         />
       )}
+      <AnimatePresence>
+        {shutdownOpen && (
+          <ShutdownSheet
+            key="shutdown"
+            uid={user.uid}
+            tasks={tasks}
+            blocks={blocks}
+            timeZone={zone}
+            workWindow={profile.workWindow}
+            now={new Date()}
+            lastShutdown={profile.lastShutdown}
+            origin={shutdownOrigin.current}
+            onClose={() => setShutdownOpen(false)}
+            onOfferUndo={offerUndo}
+          />
+        )}
+      </AnimatePresence>
       {nowOpen && (
         <NowMode
           uid={user.uid}
