@@ -139,6 +139,31 @@ async function addRemoteDoc(uid: string, kind: "tasks" | "blocks" | "series", da
   return decodeDocument(await response.json()).id;
 }
 
+/** A field the typed encoder above cannot write: integer minute counts. */
+type WriteValue = string | boolean | number;
+
+function encodeWriteFields(data: Record<string, WriteValue>): RestFields {
+  const fields: RestFields = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "number") fields[key] = { integerValue: String(value) };
+    else if (typeof value === "boolean") fields[key] = { booleanValue: value };
+    else fields[key] = { stringValue: value };
+  }
+  return fields;
+}
+
+/** Creates a task document that carries minute counts as well as text. */
+async function addRemoteTaskWithMinutes(uid: string, data: Record<string, WriteValue>): Promise<string> {
+  const response = await firestoreFetch(`users/${uid}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({ fields: encodeWriteFields(data) }),
+  });
+  if (!response.ok) {
+    throw new Error(`emulator add failed: ${response.status} ${await response.text()}`);
+  }
+  return decodeDocument(await response.json()).id;
+}
+
 /** Creates or replaces an explicitly-addressed document (setDoc semantics). */
 async function setRemoteDoc(uid: string, path: string, data: Record<string, string | boolean>) {
   const response = await firestoreFetch(`users/${uid}/${path}`, {
@@ -239,6 +264,52 @@ export async function readRemoteImport(email: string): Promise<{
   };
   const [blocks, tasks] = await Promise.all([read("blocks"), read("tasks")]);
   return { blocks, tasks };
+}
+
+/**
+ * Seeds the profile time zone and the tasks the estimate learner reads (F2b).
+ *
+ * Unlike `seedSidebarFixture`, these tasks carry numbers: the estimate and the
+ * minutes the focus timer recorded. Both are written as Firestore integers,
+ * which is the shape `addActualMinutes` increments, so the browser suite reads
+ * back what the app itself would have written.
+ */
+export async function seedTrackedTasks(
+  email: string,
+  timeZone: string,
+  tasks: Array<{ title: string; estimate?: number; actualMinutes?: number; completed?: boolean; deadline?: string }>,
+): Promise<{ taskIds: Record<string, string> }> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  await setRemoteDoc(uid, "profile/main", { timeZone });
+  const taskIds: Record<string, string> = {};
+  for (const task of tasks) {
+    taskIds[task.title] = await addRemoteTaskWithMinutes(uid, {
+      title: task.title,
+      completed: task.completed ?? false,
+      ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
+      ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
+      ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
+    });
+  }
+  return { taskIds };
+}
+
+/**
+ * The focus session a desktop restores on load (see useFocusTimer's
+ * `planner-focus`), so a test can state "this session began n minutes ago"
+ * instead of waiting for the clock or freezing it: the timer recomputes
+ * everything from these instants.
+ */
+export function storedFocusSession(input: { blockId: string; taskId?: string; startedMinutesAgo: number; endsInMinutes: number }): string {
+  const now = Date.now();
+  return JSON.stringify({
+    blockId: input.blockId,
+    ...(input.taskId === undefined ? {} : { taskId: input.taskId }),
+    endAt: now + input.endsInMinutes * 60_000,
+    startedAt: now - input.startedMinutesAgo * 60_000,
+    pausedMs: 0,
+  });
 }
 
 /** Seeds the profile timezone and one work block before the user is ever signed in. */

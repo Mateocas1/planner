@@ -1,0 +1,58 @@
+/* The estimate lesson and the tracked-minutes line (F2b).
+ *
+ * Both are quiet text lines that sit inside sheets the user is already reading,
+ * so they borrow the sheet's own type scale and colours rather than introducing
+ * a second voice: `--text-sub` on `--label-3` for the sentence, and the app's
+ * existing small button for the one tap that accepts it.
+ *
+ * No motion of its own. The hint changes while a title or an estimate is typed,
+ * which is typing cadence, and the roadmap says it appears inline (instant); the
+ * accept button reuses `.button`'s shared press feedback (transform only, 120 ms
+ * --dur-press, --ease-out, and the global reduced-motion rule shortens it).
+ * The tracked-minutes line is static content with nothing to transition.
+ *
+ * Touch: the accept button grows to the 44 px target under a coarse pointer,
+ * the same rule the quick-add chips follow.
+ */
+
+.bias-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+
+.bias-hint-text {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  /* The number is the point of the sentence, so it is the part that is read
+     last and remembered: tabular figures keep a two-line hint from jittering. */
+  font-variant-numeric: tabular-nums;
+}
+
+.bias-accept {
+  font-variant-numeric: tabular-nums;
+}
+
+.bias-hint-empty {
+  margin-top: 6px;
+}
+
+/* "Estimated 30 min · took 45 min" under the title in Task details: a fact, not
+   a control, so it carries no colour accent and no border of its own. */
+.actual-summary {
+  margin: -4px 0 10px;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .bias-accept {
+    /* 44 px is the touch floor; the sheet is where a thumb lands. */
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}

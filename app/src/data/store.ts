@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
-import { parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
+import { parseActualMinutes, parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
@@ -44,6 +44,7 @@ export type Store = {
 function toTask(doc: QueryDocumentSnapshot): TaskView {
   const data = doc.data();
   const estimate = parseEstimate(data.estimate);
+  const actualMinutes = parseActualMinutes(data.actualMinutes);
   return {
     id: doc.id,
     title: String(data.title),
@@ -51,6 +52,7 @@ function toTask(doc: QueryDocumentSnapshot): TaskView {
     pending: doc.metadata.hasPendingWrites,
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
     ...(estimate === undefined ? {} : { estimate }),
+    ...(actualMinutes === undefined ? {} : { actualMinutes }),
     ...(data.completedAt === undefined ? {} : { completedAt: String(data.completedAt) }),
   };
 }
