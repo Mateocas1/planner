@@ -1,7 +1,9 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { createTask, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
+import { planUndo, type ShutdownPlan, type ShutdownState, type UndoRefusal } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
+import { profileDocument } from "./profile.ts";
 
 /**
  * Task write helpers against `users/{uid}/tasks`. Each helper validates through
@@ -73,6 +75,90 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 
 export async function deleteTask(uid: string, taskId: string) {
   await trackRemoval(`users/${uid}/tasks/${taskId}`, deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
+}
+
+/**
+ * Applies the shutdown roll (F3a) as exactly one `writeBatch`: a deadline
+ * update per move, plus `profile.lastShutdown = plan.today`. The batch is
+ * atomic, so a rejected write changes nothing at all — the sheet can then say
+ * "Nothing changed" and mean it — and it is queued offline like any other
+ * write, so closing the day on a train does not lose the roll.
+ *
+ * Every write names one field: `deadline` through an update, the stamp through
+ * a merged set. A task keeps its estimate, its completion instant, its title
+ * and any field this version does not know about; the profile keeps every
+ * other setting.
+ *
+ * Offline replay is last-writer-wins, and that is deliberate. A queued batch
+ * replays the absolute `deadline: tomorrow` with no precondition, so if another
+ * device edited that deadline while this one was offline, the replay overwrites
+ * it. That is this app's rule for every field write (the last one to land
+ * wins), and a transaction could not replace it: Firestore transactions fail
+ * offline, and closing the day without connectivity has to keep working. Undo
+ * is where the rule is checked, against the local state the app holds.
+ *
+ * The plan is pure and already validated (`planning/shutdown.ts`), and a plan
+ * that wrote nothing — an already closed day, or a day with more due tasks than
+ * one batch can hold — commits nothing, which is what makes the ritual
+ * idempotent across devices rather than merely repeatable and keeps undo exact.
+ *
+ * The database is a parameter with the app's client as its default so the
+ * emulator suite can drive this real batch against its own authenticated
+ * client; every surface calls it with two arguments.
+ */
+export async function closeDay(uid: string, plan: ShutdownPlan, database: Firestore = db) {
+  if (plan.alreadyClosed || plan.refused !== undefined) return;
+  const batch = writeBatch(database);
+  for (const move of plan.moves) {
+    batch.update(doc(database, `users/${uid}/tasks/${move.taskId}`), { deadline: move.after });
+  }
+  batch.set(profileDocument(uid, database), { lastShutdown: plan.today }, { merge: true });
+  await batch.commit();
+}
+
+/** What an undo did: how many deadlines it put back, how many edits it left
+ * alone, and — when it refused — that it wrote nothing. */
+export type UndoCloseDayResult = { reverted: number; skipped: number; refused?: UndoRefusal };
+
+/**
+ * Undoes a roll, checked against the state the app holds now instead of
+ * replayed blind: `planUndo` refuses when the profile's stamp is no longer the
+ * one this close wrote (a later close owns it), and reverts only the tasks
+ * whose deadline is still the one the close wrote, counting the edits that came
+ * after it. A refusal returns before the batch is built, so it cannot write
+ * anything.
+ *
+ * The rest of the undo is one batch: every reverted deadline, and
+ * `lastShutdown` back to the raw value the plan recorded — the field is
+ * deleted only when the close being undone was the first one, because "no
+ * stamp" is not any particular day. Nothing else in a task or in the profile
+ * document is touched (each write is an update or a merged set).
+ *
+ * `state` is what `useStore` and the profile snapshot hold, so pending local
+ * writes are part of the comparison and undo works offline. A write landing
+ * between reading that state and committing this batch still wins, exactly as
+ * it does for every other write here. The batch fits by construction: an
+ * undoable plan carries at most `maxCloseDayMoves` moves, plus the stamp.
+ */
+export async function undoCloseDay(
+  uid: string,
+  plan: ShutdownPlan,
+  state: ShutdownState,
+  database: Firestore = db,
+): Promise<UndoCloseDayResult> {
+  const undo = planUndo(plan, state);
+  if (undo.refused !== undefined) return { reverted: 0, skipped: 0, refused: undo.refused };
+  const batch = writeBatch(database);
+  for (const write of undo.deadlines) {
+    batch.update(doc(database, `users/${uid}/tasks/${write.taskId}`), { deadline: write.deadline });
+  }
+  batch.set(
+    profileDocument(uid, database),
+    { lastShutdown: undo.lastShutdown === undefined ? deleteField() : undo.lastShutdown },
+    { merge: true },
+  );
+  await batch.commit();
+  return { reverted: undo.deadlines.length, skipped: undo.skipped };
 }
 
 /** A task exactly as it was stored, captured before it is deleted. */
