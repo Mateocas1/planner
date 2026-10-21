@@ -320,6 +320,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   onOpenCalendar={() => onNavigate("calendar")}
                   onOpenNow={() => setNowOpen(true)}
                   onCloseDay={openShutdown}
+                  onOfferUndo={offerUndo}
                 />
               )}
               {view === "tasks" && (
