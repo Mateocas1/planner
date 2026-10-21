@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockFields, createOccurrenceCompletion, createTask, createWorkBlock, expandOccurrences, occurrenceId, parseBlock, type Recurrence } from "./model.ts";
+import { ASSUMED_ESTIMATE_MINUTES, blockFields, createOccurrenceCompletion, createTask, createWorkBlock, estimateNote, expandOccurrences, formatEstimate, occurrenceId, parseBlock, parseEstimate, type Recurrence } from "./model.ts";
 
 test("occurrence identity is stable for a series and UTC date", () => {
   assert.equal(occurrenceId("series-a", "2026-02-03"), "series-a:2026-02-03");
@@ -12,6 +12,42 @@ test("tasks retain a trimmed title and independent date-only deadline", () => {
   });
   assert.throws(() => createTask("t1", " "));
   assert.throws(() => createTask("t1", "Plan", "2026-02-30"));
+});
+
+test("a task estimate is a whole number of minutes between 5 and 1440", () => {
+  // the boundaries are inclusive: five minutes is the shortest estimate the
+  // product accepts, a whole day the longest
+  assert.deepEqual(createTask("t1", "Plan", undefined, 5), { id: "t1", title: "Plan", estimate: 5 });
+  assert.deepEqual(createTask("t1", "Plan", "2026-02-03", 1440), { id: "t1", title: "Plan", deadline: "2026-02-03", estimate: 1440 });
+  // no estimate stays absent, which is what every document written before it existed looks like
+  assert.deepEqual(createTask("t1", "Plan"), { id: "t1", title: "Plan" });
+  assert.deepEqual(createTask("t1", "Plan", "2026-02-03"), { id: "t1", title: "Plan", deadline: "2026-02-03" });
+  for (const estimate of [0, 4, 1441, 4.5, -5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.throws(() => createTask("t1", "Plan", undefined, estimate), /estimate/);
+  }
+  // a numeric string is not coerced: the stored field is a number or it is absent
+  assert.throws(() => createTask("t1", "Plan", undefined, "60" as never), /estimate/);
+});
+
+test("a stored estimate reads back only when it is a valid whole number of minutes", () => {
+  assert.equal(parseEstimate(45), 45);
+  assert.equal(parseEstimate(5), 5);
+  assert.equal(parseEstimate(1440), 1440);
+  for (const value of [undefined, null, 0, 4, 1441, 4.5, "45", Number.NaN]) {
+    assert.equal(parseEstimate(value), undefined);
+  }
+});
+
+test("an estimate reads human, and a task without one shows the 60-minute assumption", () => {
+  assert.equal(formatEstimate(60), "1h");
+  assert.equal(formatEstimate(45), "45 min");
+  assert.equal(formatEstimate(90), "1h 30m");
+  assert.equal(formatEstimate(1440), "24h");
+  // the copy the product shows for a task with no estimate of its own
+  assert.equal(ASSUMED_ESTIMATE_MINUTES, 60);
+  assert.equal(estimateNote(undefined), "Assumed 1h");
+  assert.equal(estimateNote(45), "45 min");
+  assert.equal(estimateNote(90), "1h 30m");
 });
 
 test("work blocks require a positive explicit-zone ISO instant and may link a task", () => {
