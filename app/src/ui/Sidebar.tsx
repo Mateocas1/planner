@@ -27,8 +27,8 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
  * The desktop sidebar: a quiet glass material holding the month, the view
  * navigation (nav "Main", the name the browser tests address) with a pill that
  * slides to the active view, the two blocks that answer "what comes next"
- * (value roadmap §3), and one dense footer row with the sync line, the account
- * and the theme control.
+ * (value roadmap §3), and the dense footer: the sync line, the account with Day
+ * settings and the theme control, and the two footer actions.
  *
  * The content blocks exist only here: the sidebar is visible on Tasks and
  * Calendar, where Home's now-card and due list are not. Everything they show is
@@ -108,7 +108,9 @@ export function Sidebar({
         <SyncStatus pending={pending} />
         <div className="side-foot-row">
           {/* The address is what the row is for: "Signed in as" stays in the
-              accessible name only, so the email itself gets the width. */}
+              accessible name only, so the email itself gets the width. It takes
+              the line for itself when the column cannot hold it beside the
+              controls, which is every desktop width. */}
           <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
           {/* Day settings, one press from the account whose day it describes.
               The row is the account row, so the entry lives in it. */}
@@ -124,11 +126,18 @@ export function Sidebar({
         </div>
         {/* Two links on one row: the import entry is a footer action like Sign
             out, and it costs no height there, which is what keeps the chrome
-            inside a short window. The sidebar's stylesheet belongs to the
-            sidebar-fill unit, so this row is laid out inline. */}
-        <div style={{ display: "flex", gap: 10, justifyContent: "space-between", whiteSpace: "nowrap" }}>
-          <button type="button" className="link-button side-signout" onClick={event => onImport(event.currentTarget)}>
-            Import from Google Calendar
+            inside a short window. The label is the short one the column can
+            hold; the full name stays the accessible name and the tooltip, so
+            the command is still called "Import from Google Calendar". */}
+        <div className="side-foot-links">
+          <button
+            type="button"
+            className="link-button side-signout"
+            aria-label="Import from Google Calendar"
+            title="Import from Google Calendar"
+            onClick={event => onImport(event.currentTarget)}
+          >
+            Import from Google
           </button>
           <button type="button" className="link-button side-signout" onClick={onSignOut}>Sign out</button>
         </div>
