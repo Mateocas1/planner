@@ -93,7 +93,7 @@ export function Home({
   const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
   return (
-    <PageTurn onTurn={onTurnDay ?? (() => false)} surfaceLabel="Today">
+    <PageTurn onTurn={onTurnDay ?? (() => false)}>
     <section className="view" aria-labelledby="home-heading">
       <header className="page-head">
         <div>

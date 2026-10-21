@@ -97,7 +97,6 @@ export function PageTurn({
   children,
   nextPage,
   onTurn,
-  surfaceLabel,
   className,
 }: {
   /** The page the user is on. */
@@ -106,8 +105,6 @@ export function PageTurn({
   nextPage?: ReactNode;
   /** What turning the day means. See the file header. */
   onTurn: () => TurnOutcome | Promise<TurnOutcome>;
-  /** Names the page for assistive tech ("Today"), when the content does not. */
-  surfaceLabel?: string;
   className?: string;
 }) {
   const [phase, setPhase] = useState<"rest" | "drag" | "commit" | "cancel">("rest");
@@ -172,13 +169,16 @@ export function PageTurn({
     [reduced],
   );
 
-  /** Runs the page off, then asks what turning it means. */
+  /** Runs the page off while the turn's write runs with it. */
   const commit = useCallback(
     async (run: number, velocity: number) => {
       const page = pageRef.current;
       const under = underRef.current;
       const width = page?.offsetWidth ?? 0;
       setPhase("commit");
+      // The write starts at the commit moment, never after the motion: the
+      // animation is cosmetic and the write is the gate.
+      const turning = ask();
 
       if (reduced) {
         // Gentler, not zero: a 150 ms shutter on opacity, no travel at all.
@@ -187,9 +187,10 @@ export function PageTurn({
           flightRef.current = shutter;
           await shutter.finished.catch(() => undefined);
         }
+        const turned = await turning;
         if (run !== runRef.current || !liveRef.current) return;
-        const turned = await ask();
-        if (run !== runRef.current || !liveRef.current) return;
+        flightRef.current = null;
+        if (turned) return setPhase("commit");
         if (page) {
           const back: Flight = animate(page, { opacity: 1 }, { duration: dur.pop, ease: easeOut });
           flightRef.current = back;
@@ -197,7 +198,6 @@ export function PageTurn({
         }
         flightRef.current = null;
         if (run !== runRef.current || !liveRef.current) return;
-        if (turned) return setPhase("commit");
         setPhase("rest");
         return;
       }
@@ -215,9 +215,7 @@ export function PageTurn({
         await flight.finished.catch(() => undefined);
         flightRef.current = null;
       }
-      if (run !== runRef.current || !liveRef.current) return;
-
-      const turned = await ask();
+      const turned = await turning;
       if (run !== runRef.current || !liveRef.current) return;
       // The write outranks the animation: a refused turn never leaves the day off-screen.
       if (!turned) return void springBack(run);
@@ -289,7 +287,11 @@ export function PageTurn({
     if (!candidate || candidate.pointerId !== event.pointerId) return;
     candidateRef.current = null;
     release(event);
-    if (!candidate.active) return;
+    if (!candidate.active) {
+      // A tap that landed on a settling page froze it mid-flight: send it home.
+      if (Math.abs(candidate.base) > 0.5) void springBack(++runRef.current);
+      return;
+    }
     const page = pageRef.current;
     const dx = candidate.base + event.clientX - candidate.startX;
     const samples = [...candidate.samples, { t: event.timeStamp, x: event.clientX }];
@@ -305,7 +307,7 @@ export function PageTurn({
     if (!candidate || candidate.pointerId !== event.pointerId) return;
     candidateRef.current = null;
     release(event);
-    if (!candidate.active) return;
+    if (!candidate.active && Math.abs(candidate.base) <= 0.5) return;
     void springBack(++runRef.current);
   };
 
@@ -314,7 +316,6 @@ export function PageTurn({
       className={`page-turn${className ? ` ${className}` : ""}`}
       data-page-turn-state={phase}
       data-page-turn-next={nextPage === undefined ? "false" : "true"}
-      aria-label={surfaceLabel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

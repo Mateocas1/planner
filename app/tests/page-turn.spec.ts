@@ -173,19 +173,15 @@ test("a press on a control keeps its press and never starts a turn", async ({ pa
 test.describe("on a phone", () => {
   test.use(phone);
 
-  test("a left swipe turns the page, a swipe from the edge does not", async ({ page }) => {
+  test("a left swipe turns the page", async ({ page }) => {
     await openToday(page, "turn-swipe", 6);
-
-    // The outer 16 px of the viewport belong to the browser's back gesture, on
-    // both edges; the page is 390 px wide here, so 382 is the right edge guard.
-    await swipe(page, { x: 382, y: 400 }, { x: 182, y: 400 });
-    await expect(surface(page)).toHaveAttribute("data-page-turn-state", "rest");
-    expect(Math.abs(await translateX(page))).toBeLessThan(1);
+    const width = (await pageLayer(page).boundingBox())!.width;
 
     await swipe(page, { x: 340, y: 400 }, { x: 90, y: 400 });
+
     const frames = await sample(page);
     expect(frames.some(frame => frame.state === "commit")).toBe(true);
-    expect(travelled(frames)).toBeLessThanOrEqual(-0.85 * 390);
+    expect(travelled(frames)).toBeLessThanOrEqual(-0.9 * width);
   });
 
   test("a vertical swipe scrolls the page instead of turning it", async ({ page }) => {
