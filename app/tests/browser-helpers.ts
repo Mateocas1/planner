@@ -266,6 +266,74 @@ export async function readRemoteProfile(email: string): Promise<{ timeZone?: str
   return (data as { timeZone?: string } | undefined) ?? {};
 }
 
+/* ---------- day settings (tests/day-settings.spec.ts) ---------- */
+
+/** The day-settings fields of one profile document, as the server holds them. */
+export type RemoteDaySettings = {
+  timeZone: string | null;
+  workStart: number | null;
+  workEnd: number | null;
+  shutdownTime: number | null;
+  shortcutsEnabled: boolean | null;
+};
+
+const emptyDaySettings: RemoteDaySettings = { timeZone: null, workStart: null, workEnd: null, shutdownTime: null, shortcutsEnabled: null };
+
+/**
+ * Seeds the profile document with a day-settings fixture before the browser
+ * signs anything in. Times are written as strings because that is the encoding
+ * this harness can write and the app's readers accept both encodings; the app
+ * itself writes numbers, which is why the reader below decodes them too.
+ */
+export async function seedDaySettings(
+  email: string,
+  settings: { timeZone?: string; workStart?: number; workEnd?: number; shutdownTime?: number; shortcutsEnabled?: boolean } = {},
+): Promise<void> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  const fields: Record<string, string | boolean> = {};
+  if (settings.timeZone !== undefined) fields.timeZone = settings.timeZone;
+  if (settings.workStart !== undefined) fields.workStart = String(settings.workStart);
+  if (settings.workEnd !== undefined) fields.workEnd = String(settings.workEnd);
+  if (settings.shutdownTime !== undefined) fields.shutdownTime = String(settings.shutdownTime);
+  if (settings.shortcutsEnabled !== undefined) fields.shortcutsEnabled = settings.shortcutsEnabled;
+  await setRemoteDoc(uid, "profile/main", fields);
+}
+
+/**
+ * Reads the day settings back from the server, decoding both encodings: this
+ * harness seeds minutes as strings and the app writes them as integers.
+ */
+export async function readRemoteDaySettings(email: string): Promise<RemoteDaySettings> {
+  const uid = await resolveRemoteUid(email);
+  const response = await firestoreFetch(`users/${uid}/profile/main`);
+  if (response.status === 404) return { ...emptyDaySettings };
+  if (!response.ok) {
+    throw new Error(`emulator get failed: ${response.status} ${await response.text()}`);
+  }
+  type NumberField = { integerValue?: string; doubleValue?: number; stringValue?: string; booleanValue?: boolean };
+  const body = (await response.json()) as { fields?: Record<string, NumberField> };
+  const fields = body.fields ?? {};
+  const minutes = (key: string): number | null => {
+    const raw = fields[key];
+    if (!raw) return null;
+    if (raw.integerValue !== undefined) return Number(raw.integerValue);
+    if (raw.doubleValue !== undefined) return raw.doubleValue;
+    if (raw.stringValue !== undefined) {
+      const parsed = Number(raw.stringValue);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+  return {
+    timeZone: fields.timeZone?.stringValue ?? null,
+    workStart: minutes("workStart"),
+    workEnd: minutes("workEnd"),
+    shutdownTime: minutes("shutdownTime"),
+    shortcutsEnabled: fields.shortcutsEnabled?.booleanValue ?? null,
+  };
+}
+
 /** Reads every series definition, keeping the generated id next to its fields. */
 export async function readRemoteSeries(email: string): Promise<Array<{ id: string; data: Record<string, string> }>> {
   const uid = await resolveRemoteUid(email);
