@@ -1,4 +1,5 @@
 import type { View } from "../App.tsx";
+import type { FocusStatus } from "../domain/focus.ts";
 import type { ThemePreference } from "./theme.ts";
 
 /**
@@ -45,7 +46,39 @@ export type PaletteCommand =
   | { kind: "navigate"; id: string; view: View; label: string }
   | { kind: "task"; id: string; taskId: string; label: string }
   | PaletteThemeCommand
-  | PaletteActionCommand;
+  | PaletteActionCommand
+  | PaletteFocusCommand;
+
+/**
+ * The focus timer as a palette command: it changes the timer and navigates
+ * nowhere (value roadmap §3). `verb` is what the palette runs; `label` is what
+ * the user reads and what the query matches.
+ *
+ * It is deliberately not the general `action` kind F6 adds later: this is one
+ * concern's vocabulary, and widening the model is that unit's decision.
+ */
+export type PaletteFocusCommand = { kind: "focus"; id: string; verb: "start" | "pause" | "resume" | "stop"; label: string };
+
+/** What the palette needs to know about the timer to offer the right rows. */
+export type FocusCommandState = { canStart: boolean; status: FocusStatus | null };
+
+/**
+ * The focus rows that apply right now: a start command while a block can be
+ * focused, exactly one of pause/resume, and stop while any session lives. An
+ * empty list is the honest answer when nothing applies, so the palette never
+ * offers a command that would do nothing.
+ */
+export function focusCommands({ canStart, status }: FocusCommandState): PaletteFocusCommand[] {
+  if (status === null) {
+    return canStart ? [{ kind: "focus", id: "focus-start", verb: "start", label: "Start focus on next block" }] : [];
+  }
+  const rows: PaletteFocusCommand[] = [];
+  if (canStart) rows.push({ kind: "focus", id: "focus-start", verb: "start", label: "Start focus on next block" });
+  if (status === "paused") rows.push({ kind: "focus", id: "focus-resume", verb: "resume", label: "Resume focus" });
+  if (status === "running") rows.push({ kind: "focus", id: "focus-pause", verb: "pause", label: "Pause focus" });
+  rows.push({ kind: "focus", id: "focus-stop", verb: "stop", label: "Stop focus" });
+  return rows;
+}
 
 /**
  * The theme values as palette commands (value roadmap §4). They appear for a
@@ -81,6 +114,7 @@ export function buildCommands(
   rawQuery: string,
   tasks: PaletteTask[],
   destinations: PaletteDestination[],
+  focus: PaletteFocusCommand[] = [],
 ): PaletteCommand[] {
   const query = rawQuery.trim();
   if (query === "") {
@@ -97,7 +131,15 @@ export function buildCommands(
     .map(navigateCommand);
   const matchedThemes = themeCommands.filter(command => command.label.toLowerCase().includes(needle));
   const matchedActions = actionCommands.filter(command => command.keywords.some(keyword => keyword.includes(needle)));
-  return [{ kind: "create", id: "create", title: query }, ...matchedTasks, ...matchedDestinations, ...matchedThemes, ...matchedActions];
+  const matchedFocus = focus.filter(command => command.label.toLowerCase().includes(needle));
+  return [
+    { kind: "create", id: "create", title: query },
+    ...matchedTasks,
+    ...matchedDestinations,
+    ...matchedThemes,
+    ...matchedActions,
+    ...matchedFocus,
+  ];
 }
 
 function navigateCommand(destination: PaletteDestination): PaletteCommand {

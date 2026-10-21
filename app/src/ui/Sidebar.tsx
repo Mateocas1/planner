@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import type { View } from "../App.tsx";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
+import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
 import { spring, useNow } from "./motion.ts";
 import { SyncStatus } from "./SyncStatus.tsx";
 import { setThemePreference, useThemePreference, type ThemePreference } from "./theme.ts";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, mondayOf, timeLabel, wallDayKey } from "./time.ts";
+import type { FocusControls } from "./useFocusTimer.ts";
 import { settle } from "./write.ts";
 // The sidebar's own content (value roadmap §3) ships its styles beside it, so
 // this unit never edits the shared sheet it would collide with.
@@ -41,6 +43,7 @@ export function Sidebar({
   blocks,
   timeZone,
   selectedDay,
+  focus,
   onNavigate,
   onPickDay,
   onOpenTask,
@@ -56,6 +59,8 @@ export function Sidebar({
   blocks: BlockView[];
   timeZone: string | null;
   selectedDay: string | null;
+  /** The focus timer lives in this chrome: the widget and the ▶ on each row. */
+  focus: FocusControls;
   onNavigate: (view: View) => void;
   onPickDay: (key: string) => void;
   onOpenTask: (taskId: string) => void;
@@ -91,7 +96,7 @@ export function Sidebar({
       </nav>
       {timeZone && (
         <>
-          <UpNext blocks={blocks} tasks={tasks} timeZone={timeZone} />
+          <UpNext blocks={blocks} tasks={tasks} timeZone={timeZone} focus={focus} />
           <DueSoon uid={uid} tasks={tasks} timeZone={timeZone} onOpenTask={onOpenTask} />
         </>
       )}
@@ -133,41 +138,73 @@ function blockRange(block: BlockView, timeZone: string): string {
 
 /**
  * Up next: the block running at this minute, then the next one still to start
- * today. Two rows at most -- this is a hint about what comes next, not a
- * second agenda. Nothing to add a timer to here: the focus timer is its own
- * unit (value roadmap §5 row 5).
+ * today, and -- while a block is being focused on -- the live timer in place of
+ * that block's row. Two rows at most: this is a hint about what comes next, not
+ * a second agenda. The ▶ on a row starts the focus timer (value roadmap §5 row
+ * 5); a block that already ended has nothing left to count down to, so it has no
+ * ▶ at all.
  */
-function UpNext({ blocks, tasks, timeZone }: { blocks: BlockView[]; tasks: TaskView[]; timeZone: string }) {
+function UpNext({
+  blocks,
+  tasks,
+  timeZone,
+  focus,
+}: {
+  blocks: BlockView[];
+  tasks: TaskView[];
+  timeZone: string;
+  focus: FocusControls;
+}) {
   const now = useNow();
   const nowMs = now.getTime();
   const today = dateKey(now, timeZone);
-  const todayBlocks = blocks
-    .filter(block => dateKey(new Date(block.start), timeZone) === today)
-    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  const current = todayBlocks.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
-  const next = todayBlocks.find(block => Date.parse(block.start) > nowMs);
+  const sorted = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  /* What is running is a question about this instant, not about this date: a
+     block that began at 23:50 is still the block being worked on at 00:10, so it
+     keeps its row, its ▶ and its countdown across midnight. Only "next" is a
+     question about today. */
+  const current = sorted.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
+  const next = sorted.find(
+    block => Date.parse(block.start) > nowMs && dateKey(new Date(block.start), timeZone) === today,
+  );
   const rows = [
     ...(current ? [{ block: current, running: true }] : []),
     ...(next ? [{ block: next, running: false }] : []),
-  ];
+  ].filter(row => row.block.id !== focus.session?.blockId);
 
   return (
     <section className="side-block side-up-next" aria-labelledby="side-up-next-heading">
       <h3 id="side-up-next-heading" className="side-label">Up next</h3>
+      {/* The card takes the focused block's row: the countdown already names it. */}
+      <AnimatePresence initial={false}>
+        {focus.session && <FocusWidget key="focus" focus={focus} />}
+      </AnimatePresence>
       {rows.length === 0 ? (
         <p className="side-empty">Nothing else today.</p>
       ) : (
         <ul className="side-card">
-          {rows.map(({ block, running }) => (
-            <li key={block.id} className={`side-row${running ? " is-now" : ""}`}>
-              <p className="side-row-title" title={blockTitle(block, tasks)}>{blockTitle(block, tasks)}</p>
-              <p className="side-row-meta">
-                {running ? "now" : `in ${formatDuration((Date.parse(block.start) - nowMs) / 60_000)}`}
-                {" · "}
-                {blockRange(block, timeZone)}
-              </p>
-            </li>
-          ))}
+          {rows.map(({ block, running }) => {
+            const title = blockTitle(block, tasks);
+            const endAt = Date.parse(block.end);
+            return (
+              <li key={block.id} className={`side-row${running ? " is-now" : ""}`}>
+                <div className="side-row-body">
+                  <p className="side-row-title" title={title}>{title}</p>
+                  <p className="side-row-meta">
+                    {running ? "now" : `in ${formatDuration((Date.parse(block.start) - nowMs) / 60_000)}`}
+                    {" · "}
+                    {blockRange(block, timeZone)}
+                  </p>
+                </div>
+                {endAt > nowMs && (
+                  <FocusStartButton
+                    label={title}
+                    onClick={() => focus.start({ blockId: block.id, ...(block.taskId === undefined ? {} : { taskId: block.taskId }), endAt })}
+                  />
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

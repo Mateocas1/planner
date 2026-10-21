@@ -4,11 +4,13 @@ import { addSeries } from "../data/series.ts";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
 import { parseQuickAdd, type QuickAdd } from "../domain/quickAdd.ts";
+import { PlayIcon } from "./FocusWidget.tsx";
 import { CalendarIcon, PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
-import { buildCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
+import { buildCommands, focusCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { quickAddPartLabel } from "./QuickAddChips.tsx";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
+import type { FocusControls } from "./useFocusTimer.ts";
 import { settle } from "./write.ts";
 import "./CommandPalette.css";
 
@@ -39,6 +41,7 @@ export function CommandPalette({
   uid,
   timeZone,
   tasks,
+  focus,
   onClose,
   onNavigate,
   onOpenTask,
@@ -48,6 +51,9 @@ export function CommandPalette({
   /** The profile zone: the create row's date preview is a planner day. */
   timeZone: string;
   tasks: TaskView[];
+  /* The timer's live state: the palette offers the focus rows that apply and
+     runs them itself, so a command never needs a second surface to work. */
+  focus: FocusControls | null;
   onClose: () => void;
   onNavigate: (view: View) => void;
   onOpenTask: (taskId: string) => void;
@@ -67,7 +73,16 @@ export function CommandPalette({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const commands = useMemo(() => buildCommands(query, tasks, destinations), [query, tasks]);
+  const commands = useMemo(
+    () =>
+      buildCommands(
+        query,
+        tasks,
+        destinations,
+        focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
+      ),
+    [query, tasks, focus?.canStart, focus?.status],
+  );
   // The same parser the New task sheet uses, so one line creates the same task
   // from either place. The clock is read per keystroke: "tomorrow" follows the
   // planner's day, and a panel left open past midnight must not keep yesterday's.
@@ -115,6 +130,16 @@ export function CommandPalette({
          behind the dialog would fight the panel's own focus return. */
       restoreFocus.current = false;
       onImport();
+      onClose();
+      return;
+    }
+    if (command.kind === "focus") {
+      /* The timer changes where it lives (the sidebar card); the palette's own
+         job is done, so it closes like every other command surface. */
+      if (command.verb === "start") focus?.startNext();
+      else if (command.verb === "pause") focus?.pause();
+      else if (command.verb === "resume") focus?.resume();
+      else focus?.stop();
       onClose();
       return;
     }
@@ -264,6 +289,7 @@ function commandIcon(command: PaletteCommand) {
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
   if (command.kind === "action") return <CalendarIcon />;
+  if (command.kind === "focus") return <PlayIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }
