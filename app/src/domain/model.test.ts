@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ASSUMED_ESTIMATE_MINUTES, blockFields, createOccurrenceCompletion, createTask, createWorkBlock, estimateNote, expandOccurrences, formatEstimate, occurrenceId, parseBlock, parseEstimate, type Recurrence } from "./model.ts";
+import { ASSUMED_ESTIMATE_MINUTES, MAX_ACTUAL_MINUTES, blockFields, createOccurrenceCompletion, createTask, createWorkBlock, estimateNote, expandOccurrences, formatEstimate, occurrenceId, parseActualMinutes, parseBlock, parseEstimate, requireActualMinutes, type Recurrence } from "./model.ts";
 
 test("occurrence identity is stable for a series and UTC date", () => {
   assert.equal(occurrenceId("series-a", "2026-02-03"), "series-a:2026-02-03");
@@ -48,6 +48,27 @@ test("an estimate reads human, and a task without one shows the 60-minute assump
   assert.equal(estimateNote(undefined), "Assumed 1h");
   assert.equal(estimateNote(45), "45 min");
   assert.equal(estimateNote(90), "1h 30m");
+});
+
+test("recorded minutes are a whole, non-negative count that a document may omit", () => {
+  // what the focus timer accumulates: whole minutes only, because the stored
+  // field is an integer counter incremented by Firestore, never a fraction
+  assert.equal(requireActualMinutes(20), 20);
+  assert.equal(requireActualMinutes(0), 0);
+  assert.equal(requireActualMinutes(MAX_ACTUAL_MINUTES), MAX_ACTUAL_MINUTES);
+  for (const minutes of [-1, 4.5, 999_999_999, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => requireActualMinutes(minutes), /actual/);
+  }
+  // a numeric string is not coerced: the stored field is a number or it is absent
+  assert.throws(() => requireActualMinutes("20" as never), /actual/);
+
+  assert.equal(parseActualMinutes(20), 20);
+  assert.equal(parseActualMinutes(0), 0);
+  // a task written before tracking existed carries no count, and a hand-edited
+  // document holding junk reads as absent rather than breaking the surface
+  for (const value of [undefined, null, -5, 12.5, "20", Number.NaN, MAX_ACTUAL_MINUTES + 1]) {
+    assert.equal(parseActualMinutes(value), undefined);
+  }
 });
 
 test("work blocks require a positive explicit-zone ISO instant and may link a task", () => {

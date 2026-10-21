@@ -1,5 +1,5 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, setDoc, updateDoc } from "firebase/firestore";
-import { createTask, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
+import { addDoc, collection, deleteDoc, deleteField, doc, increment, setDoc, updateDoc } from "firebase/firestore";
+import { createTask, MAX_ACTUAL_MINUTES, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 
@@ -22,6 +22,7 @@ export function taskFields(task: Task, completed: boolean, completedAt?: string)
     completed,
     ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
     ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
+    ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
     ...(completedAt === undefined ? {} : { completedAt }),
   };
 }
@@ -50,6 +51,27 @@ export async function setTaskEstimate(uid: string, taskId: string, estimate?: nu
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { estimate });
 }
 
+/**
+ * Adds minutes of real work to a task (F2b), one focus session at a time.
+ *
+ * The write is a Firestore `increment()` transform, never a read-then-write:
+ * two devices may both be counting, and the counter must sum what each of them
+ * spent instead of one overwriting the other. It is also offline-safe by
+ * construction -- a transform is queued locally like any other write and is
+ * applied by the server when the connection returns, so no read is needed to
+ * record a session and nothing is lost while offline.
+ *
+ * Only whole positive minutes are accepted: the caller (the focus timer) is
+ * what decides whether a session is worth recording at all.
+ */
+export async function addActualMinutes(uid: string, taskId: string, minutes: number) {
+  if (typeof taskId !== "string" || taskId === "" || taskId.includes("/")) throw new Error("task ID is invalid");
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_ACTUAL_MINUTES) {
+    throw new Error(`actual minutes to add must be a whole minute count between 1 and ${MAX_ACTUAL_MINUTES}`);
+  }
+  await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { actualMinutes: increment(minutes) });
+}
+
 export async function setTaskCompleted(uid: string, taskId: string, completed: boolean) {
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), completed
     ? { completed: true, completedAt: new Date().toISOString() }
@@ -76,22 +98,34 @@ export async function deleteTask(uid: string, taskId: string) {
 }
 
 /** A task exactly as it was stored, captured before it is deleted. */
-export type DeletedTask = { id: string; title: string; completed: boolean; deadline?: string; estimate?: number; completedAt?: string };
+export type DeletedTask = {
+  id: string;
+  title: string;
+  completed: boolean;
+  deadline?: string;
+  estimate?: number;
+  /** The tracked minutes the focus timer accumulated; undo must not lose them. */
+  actualMinutes?: number;
+  completedAt?: string;
+};
 
 /**
  * Puts a deleted task back under its original document id and with the exact
  * fields it held, which is what undo promises. The document schema for a task
- * is closed (title, completed, optional deadline, estimate, completedAt), so
- * rewriting those fields with setDoc reproduces the original document rather
- * than approximating it. The title and deadline are validated through the
- * domain module first, and estimate is validated only when present.
+ * is closed (title, completed, optional deadline, estimate, actualMinutes,
+ * completedAt), so rewriting those fields with setDoc reproduces the original
+ * document rather than approximating it. The title and deadline are validated
+ * through the domain module first; estimate and actualMinutes are validated
+ * only when present.
  */
 export async function restoreTask(uid: string, task: DeletedTask) {
   if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
   const validated = createTask(task.id, task.title, task.deadline, task.estimate);
+  if (task.actualMinutes !== undefined) requireActualMinutes(task.actualMinutes);
   if (task.completedAt !== undefined) requireInstant(task.completedAt);
   const path = `users/${uid}/tasks/${task.id}`;
-  const write = setDoc(doc(db, path), taskFields(validated, task.completed, task.completedAt));
+  const restored: Task = task.actualMinutes === undefined ? validated : { ...validated, actualMinutes: task.actualMinutes };
+  const write = setDoc(doc(db, path), taskFields(restored, task.completed, task.completedAt));
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.
   forgetRemoval(path);

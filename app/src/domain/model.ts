@@ -1,4 +1,4 @@
-export type Task = { id: string; title: string; deadline?: string; estimate?: number };
+export type Task = { id: string; title: string; deadline?: string; estimate?: number; actualMinutes?: number };
 
 /**
  * How long a task is expected to take, in whole minutes. An estimate is a
@@ -11,6 +11,14 @@ export const MAX_ESTIMATE_MINUTES = 1440;
 
 /** The number planning assumes for a task that carries no estimate. */
 export const ASSUMED_ESTIMATE_MINUTES = 60;
+
+/**
+ * How many minutes a task can accumulate before the stored counter is treated
+ * as corrupt (F2b). The bound only rejects absurd hand-edited values: real
+ * tracked work is nowhere near it, and an accumulated counter is not an
+ * estimate, so it may legitimately exceed MAX_ESTIMATE_MINUTES.
+ */
+export const MAX_ACTUAL_MINUTES = 100_000;
 
 /**
  * Where an imported block came from. A block that was not imported carries no
@@ -90,6 +98,22 @@ export function requireEstimate(minutes: number): number {
 }
 
 /**
+ * Validates a recorded minute count and returns it.
+ *
+ * An actual count is not an estimate: it accumulates, so it has no upper rule
+ * of its own beyond MAX_ACTUAL_MINUTES, and zero is a real value (a counter that
+ * has not moved yet). Fractions are rejected rather than rounded: the stored
+ * field is an integer the focus timer adds whole minutes to, and caching a
+ * rounded amount would count time nobody spent.
+ */
+export function requireActualMinutes(minutes: number): number {
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > MAX_ACTUAL_MINUTES) {
+    throw new Error(`actual minutes must be a whole minute count between 0 and ${MAX_ACTUAL_MINUTES}`);
+  }
+  return minutes;
+}
+
+/**
  * Reads a stored estimate out of a document. A task or series written before
  * estimates existed has none, and a hand-edited document may hold anything; in
  * both cases the value reads as absent rather than crashing the surface.
@@ -98,6 +122,20 @@ export function parseEstimate(value: unknown): number | undefined {
   if (typeof value !== "number") return undefined;
   try {
     return requireEstimate(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reads a stored actual-minute count out of a document. A task nobody tracked
+ * has none, and a hand-edited document may hold anything; in both cases the
+ * value reads as absent rather than crashing the surface.
+ */
+export function parseActualMinutes(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined;
+  try {
+    return requireActualMinutes(value);
   } catch {
     return undefined;
   }
