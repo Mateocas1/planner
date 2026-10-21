@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
-import { parseBlock as parseStoredBlock, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
+import { parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
 /** View type for a stored task: the domain Task plus its completion state. */
-export type TaskView = Task & { completed: boolean; pending: boolean };
+export type TaskView = Task & { completed: boolean; completedAt?: string; pending: boolean };
 
 /**
  * View type for a stored work block: the domain WorkBlock plus whether the
@@ -22,6 +22,7 @@ export type SeriesView = {
   frequency: Recurrence["frequency"];
   anchorDate: string;
   deadline?: string;
+  estimate?: number;
 };
 
 type Collection = "tasks" | "blocks" | "series" | "completions";
@@ -42,12 +43,15 @@ export type Store = {
 
 function toTask(doc: QueryDocumentSnapshot): TaskView {
   const data = doc.data();
+  const estimate = parseEstimate(data.estimate);
   return {
     id: doc.id,
     title: String(data.title),
     completed: data.completed === true,
     pending: doc.metadata.hasPendingWrites,
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
+    ...(estimate === undefined ? {} : { estimate }),
+    ...(data.completedAt === undefined ? {} : { completedAt: String(data.completedAt) }),
   };
 }
 
@@ -58,12 +62,14 @@ function toBlock(doc: QueryDocumentSnapshot): BlockView {
 
 function toSeries(doc: QueryDocumentSnapshot): SeriesView {
   const data = doc.data();
+  const estimate = parseEstimate(data.estimate);
   return {
     id: doc.id,
     title: String(data.title),
     frequency: String(data.frequency) as SeriesView["frequency"],
     anchorDate: String(data.anchorDate),
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
+    ...(estimate === undefined ? {} : { estimate }),
   };
 }
 
