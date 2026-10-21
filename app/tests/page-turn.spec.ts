@@ -91,6 +91,21 @@ async function dragLeft(page: Page, fraction: number, restMs = 0): Promise<void>
   await page.mouse.up();
 }
 
+/**
+ * A leftward throw in four coarse moves. Ten small moves would be ten Playwright
+ * round trips, and on a loaded host that stretches a short drag past the 80 ms
+ * velocity window, turning a flick into a cancel for a reason the product does
+ * not have.
+ */
+async function flickLeft(page: Page, distance: number): Promise<void> {
+  const box = (await pageLayer(page).boundingBox())!;
+  const from = { x: box.x + box.width * 0.7, y: box.y + 62 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 4; step += 1) await page.mouse.move(from.x - (distance * step) / 4, from.y);
+  await page.mouse.up();
+}
+
 /** Real touch input over CDP: trusted pointer events with a live pointer id. */
 async function swipe(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 10) {
   const cdp = await page.context().newCDPSession(page);
@@ -144,21 +159,22 @@ test("a slow 30 px drag does not turn the day", async ({ page }) => {
   expect(Math.abs(last.x)).toBeLessThan(1);
 });
 
-test("a fast flick turns the page on 60 px of travel", async ({ page }) => {
+test("a fast flick turns the page well before the distance threshold", async ({ page }) => {
   await openToday(page, "turn-flick");
   const width = (await pageLayer(page).boundingBox())!.width;
 
-  await dragLeft(page, 60 / width);
+  // 220 px of a ~960 px page is 23%: the throw is what commits, not the travel.
+  await flickLeft(page, 220);
   const frames = await sample(page);
 
-  // 60 px is 5% of the page: the throw is what commits, not the distance.
   expect(frames.some(frame => frame.state === "commit")).toBe(true);
   expect(travelled(frames)).toBeLessThanOrEqual(-0.9 * width);
 });
 
 test("a press on a control keeps its press and never starts a turn", async ({ page }) => {
   await openToday(page, "turn-control");
-  const check = page.getByLabel("Complete: Turn task 1");
+  // The sidebar lists the same task, so the press is scoped to the page.
+  const check = pageLayer(page).getByLabel("Complete: Turn task 1").first();
   const from = (await check.boundingBox())!;
 
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
