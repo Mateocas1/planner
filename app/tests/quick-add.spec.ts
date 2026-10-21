@@ -73,11 +73,23 @@ async function signUpWithZone(page: Page, prefix: string, timeZone = zone): Prom
   return email;
 }
 
-/** Opens the New task sheet without touching the mouse. */
+/**
+ * Opens the New task sheet without touching the mouse.
+ *
+ * Every step of this spec is keyboard, so each press asserts the caret is where
+ * the press will land: a press that goes to the wrong control is otherwise
+ * silent until an assertion fails ten seconds later. The sheet focuses its title
+ * field on mount (`autoFocus`), which is the app's own signal that it is ready
+ * for the typist -- visibility alone is not.
+ */
 async function openTaskSheet(page: Page) {
-  await page.getByRole("button", { name: "New task" }).first().focus();
+  const trigger = page.getByRole("button", { name: "New task" }).first();
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Task title")).toBeVisible();
+  const title = page.getByLabel("Task title");
+  await expect(title).toBeVisible();
+  await expect(title).toBeFocused();
 }
 
 /** The chip row under the title field. */
@@ -85,13 +97,17 @@ const chips = (page: Page) => page.getByRole("list", { name: "Recognized from th
 
 /** Submits the New task sheet from the title field, with no pointer involved. */
 async function submitFromTitle(page: Page) {
-  await page.getByLabel("Task title").focus();
+  const title = page.getByLabel("Task title");
+  await title.focus();
+  await expect(title).toBeFocused();
   await page.keyboard.press("Enter");
 }
 
 /** Lands on Tasks with the keyboard, where a created row is listed. */
 async function openTasksByKeyboard(page: Page) {
-  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /^Tasks/ }).focus();
+  const tab = page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /^Tasks/ });
+  await tab.focus();
+  await expect(tab).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
 }
