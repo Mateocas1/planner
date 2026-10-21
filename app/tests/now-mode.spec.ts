@@ -263,6 +263,8 @@ test("Escape and the close button exit, and focus goes back where it came from",
   await page.keyboard.press("Escape");
   await expect(overlay).toHaveCount(0);
   await expect(fullScreen(page)).toBeFocused();
+  /* The page behind is the reader's again, scroll and all. */
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
 
   /* And the same exit by pointer: the close button. */
   await page.keyboard.press("Enter");
@@ -318,8 +320,13 @@ test("it fills the viewport at 1280x800 and at 390x844 without overflowing", asy
      The measurement waits for the entrance to land: Playwright reads the
      transformed box, and Materialize enters at scale(.96). */
   const desktop = await viewportBox(page);
+  /* The page behind is locked while the surface is up: a covered page must not
+     scroll under it. */
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
   await expect.poll(async () => (await overlay.boundingBox())?.width).toBe(desktop.width);
-  await expect(overlay).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  /* The entrance hands its transform back rather than holding scale(1) on a
+     full-screen element for the life of the surface. */
+  await expect(overlay).toHaveCSS("transform", "none");
   await expect(overlay.getByText("45 min left")).toBeVisible();
 
   /* The phone: the same surface, still one column, still no sideways scroll. */
@@ -333,6 +340,16 @@ test("it fills the viewport at 1280x800 and at 390x844 without overflowing", asy
   expect(overflow).toBeLessThanOrEqual(0);
   await expect(progressRing(page)).toBeVisible();
   await expect(overlay.getByText("45 min left")).toBeVisible();
+
+  /* Portrait tablet: wide enough for the desktop shell, far too narrow for a
+     week -- the surface has one column anyway. */
+  await page.setViewportSize({ width: 768, height: 1024 });
+  const tablet = await viewportBox(page);
+  expect(tablet).toMatchObject({ width: 768, height: 1024 });
+  await expect.poll(async () => (await overlay.boundingBox())?.width).toBe(tablet.width);
+  await expect(progressRing(page)).toBeVisible();
+  await expect(overlay.getByText("45 min left")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
 
 test("the palette offers Open Now mode and opens it", async ({ page }) => {

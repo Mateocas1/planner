@@ -180,6 +180,17 @@ export function NowMode({
     };
   }, [onClose]);
 
+  /* The page behind is covered, so it must not scroll under the surface: a
+     wheel over the overlay would otherwise leave the reader somewhere else on
+     the page they come back to. */
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
   /* Focus moves into the surface and goes back to the control that opened it. */
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;

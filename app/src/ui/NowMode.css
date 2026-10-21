@@ -28,8 +28,11 @@
   color: var(--label);
   /* 200 ms, ease-out, from scale(.96) — Materialize, the app's glass entrance,
      at the modal budget. A context switch is worth one beat; a keyboard-opened
-     one (the palette command) is not worth more, which is why it is short. */
-  animation: now-enter 200ms var(--ease-out) both;
+     one (the palette command) is not worth more, which is why it is short.
+     `backwards` and not `both`: the first frame is held before the animation
+     starts, and once it lands the element hands the transform back instead of
+     keeping a scale(1) layer for the life of the surface. */
+  animation: now-enter 200ms var(--ease-out) backwards;
 }
 
 @keyframes now-enter {
@@ -178,7 +181,7 @@
      transition in the app at 1 ms under reduced motion, and this surface is one
      of the places that keeps a real fade (like the completion check does). */
   .now-mode {
-    animation: now-fade 150ms var(--ease-out) both !important;
+    animation: now-fade 150ms var(--ease-out) backwards !important;
   }
 
   .now-content {
