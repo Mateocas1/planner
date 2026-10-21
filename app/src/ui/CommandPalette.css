@@ -215,6 +215,23 @@ dialog.palette::backdrop {
   font-weight: 500;
 }
 
+/* The key that runs the same action (F6b). It sits at the row's end in the
+   footer's tone, so the label stays the thing the eye reads first. */
+.palette-option-key {
+  flex: none;
+  min-width: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  color: var(--label-2);
+}
+
 .palette-error {
   margin: 0 6px 6px;
   padding: 8px 12px;
