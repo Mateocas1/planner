@@ -127,6 +127,14 @@ test("j and k walk the Tasks rows with real focus, and stop at the ends", async 
   // exactly one row is a tab stop: the one the cursor is on
   await expect(rowOf(page, "Charlie review")).toHaveAttribute("tabindex", "0");
   await expect(rowOf(page, "Alpha invoice")).toHaveAttribute("tabindex", "-1");
+
+  // Enter opens the focused row, and Escape puts the caret back on it
+  await page.keyboard.press("Enter");
+  const details = page.getByRole("complementary", { name: "Task details" });
+  await expect(details).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
+  await expect(rowOf(page, "Charlie review")).toBeFocused();
 });
 
 test("x completes the focused task, t moves its deadline, and a field keeps its keys", async ({ page }) => {
@@ -277,6 +285,14 @@ test("t moves the focused block a calendar day and undo puts it back", async ({ 
 
   const block = page.locator(`[data-date="${today}"] .calendar-block`);
   await expect(block).toHaveCount(1);
+
+  // b opens the New block sheet from the keyboard, and Escape closes it
+  await page.keyboard.press("b");
+  const newBlock = page.getByRole("complementary", { name: "New block" });
+  await expect(newBlock).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(newBlock).toHaveCount(0);
+
   // the block is the cursor's first row on this surface: j focuses it
   await focusPage(page);
   await page.keyboard.press("j");
