@@ -1,16 +1,25 @@
+import { useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { completeOccurrence } from "../data/series.ts";
+import { setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
-import { setTaskCompleted } from "../data/tasks.ts";
+import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
 import { WeekRadar } from "./CapacityBar.tsx";
+import { completedSamples } from "./BiasHint.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { RepeatIcon } from "./icons.tsx";
 import { phoneQuery, useMediaQuery, useNow } from "./motion.ts";
+import { morphClose, morphOpen } from "./morph.ts";
 import { PageTurn } from "./PageTurn.tsx";
 import { nextOccurrence } from "./Tasks.tsx";
+import { TaskDetails } from "./TaskDetails.tsx";
 import { MorningBrief } from "./MorningBrief.tsx";
 import { PlanMyDay } from "./PlanMyDay.tsx";
+import { blockTomorrow, rovingTabIndex, tomorrowKey } from "./shortcuts.ts";
 import { bannerVisible } from "./shutdownRitual.ts";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wallMinutes } from "./time.ts";
+import type { UndoableDelete } from "./UndoToast.tsx";
+import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import type { WorkWindow } from "../planning/window.ts";
 import { settle } from "./write.ts";
 
@@ -29,24 +38,29 @@ import { settle } from "./write.ts";
  *  - Coming up: deadlines in the next seven days.
  *  - Schedule: today's blocks with the free time between them and the now
  *    marker, so the gaps are visible as time that can still be planned.
+ *
+ * Every row on the page is a row-cursor stop (F6c): `j`/`k` walk them in the
+ * order they are painted, and `x`, `t` and Enter act on the focused row with
+ * the writes Tasks and Calendar use.
  */
-export function Home({
-  uid,
-  loading,
-  tasks,
-  blocks,
-  series,
-  completions,
-  timeZone,
-  workWindow,
-  shutdownTime,
-  lastShutdown,
-  profileError,
-  onOpenCalendar,
-  onOpenNow,
-  onCloseDay,
-  onTurnDay,
-}: {
+export function Home(props: HomeProps) {
+  const { timeZone, loading, profileError } = props;
+  // The page's hooks run only once the zone and the data are in, so the
+  // placeholder is a plain return with no state of its own.
+  if (timeZone === null || loading) {
+    return (
+      <section className="view" aria-labelledby="home-heading">
+        <header className="page-head">
+          <h2 id="home-heading" className="large-title">Today</h2>
+        </header>
+        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner…</p>}
+      </section>
+    );
+  }
+  return <TodayPage {...props} timeZone={timeZone} />;
+}
+
+type HomeProps = {
   uid: string;
   loading: boolean;
   tasks: TaskView[];
@@ -69,21 +83,28 @@ export function Home({
   /** Carries the day to tomorrow when the page is turned (F3). Defaults to
    *  opening the ritual: the page turn is the ritual's own first page. */
   onTurnDay?: () => boolean | void | Promise<boolean | void>;
-}) {
+  /** The shell's undo offer, for the moves the keyboard makes here (F6c). */
+  onOfferUndo?: (item: UndoableDelete) => void;
+};
+
+function TodayPage({
+  uid,
+  tasks,
+  blocks,
+  series,
+  completions,
+  timeZone,
+  workWindow,
+  shutdownTime,
+  lastShutdown,
+  onOpenCalendar,
+  onOpenNow,
+  onCloseDay,
+  onTurnDay,
+  onOfferUndo,
+}: HomeProps & { timeZone: string }) {
   const now = useNow();
   const phone = useMediaQuery(phoneQuery);
-
-  if (timeZone === null || loading) {
-    return (
-      <section className="view" aria-labelledby="home-heading">
-        <header className="page-head">
-          <h2 id="home-heading" className="large-title">Today</h2>
-        </header>
-        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner…</p>}
-      </section>
-    );
-  }
-
   const today = dateKey(now, timeZone);
   const todayUtc = keyToWallUtc(today);
   const weekAhead = formatWallKey(todayUtc + 7 * dayMs);
@@ -113,6 +134,73 @@ export function Home({
   const closing = bannerVisible({ today, wallMinutes: wallMinutes(now, timeZone), shutdownTime, lastShutdown });
   const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
+  /* The row cursor (F6c). `j`/`k` walk the rows below in the order they are
+     painted; the shell publishes x, t and Enter, and this page performs them
+     with the writes Tasks and Calendar use, so a row means the same thing on
+     every page. A move offers the shell's undo, as those pages do. */
+  const scope = useRef<HTMLElement>(null);
+  const { activeId, onRowFocus } = useRowCursor(scope);
+  const [selected, setSelected] = useState<{ id: string; origin: HTMLElement | null } | null>(null);
+  const biasSamples = useMemo(() => completedSamples(tasks), [tasks]);
+  const openTasks = [...dueTasks, ...upcoming];
+  const rowOrder = [
+    ...dueTasks.map(task => task.id),
+    ...dueSeries.map(item => item.entry.id),
+    ...upcoming.map(task => task.id),
+    ...todayBlocks.map(block => block.id),
+  ];
+
+  const openTask = (task: TaskView, row: HTMLElement) => morphOpen(() => setSelected({ id: task.id, origin: row }), row);
+
+  const moveTaskTomorrow = (task: TaskView) => {
+    // `t` is "move to tomorrow": a task due today, overdue or undated lands on
+    // tomorrow, and a later one moves a day ahead, never earlier (as on Tasks).
+    const deadline = task.deadline === undefined || task.deadline <= today ? tomorrowKey(today) : tomorrowKey(task.deadline);
+    void settle(setTaskDeadline(uid, task.id, task.title, deadline))
+      .then(() =>
+        onOfferUndo?.({
+          message: `Deadline moved to ${formatDateKey(deadline, today)}`,
+          restore: () => setTaskDeadline(uid, task.id, task.title, task.deadline),
+        }),
+      )
+      .catch(() => undefined);
+  };
+
+  const moveBlockTomorrow = (block: BlockView) => {
+    const next = blockTomorrow(block, timeZone);
+    const day = formatDateKey(dateKey(new Date(next.start), timeZone), today);
+    void settle(setBlockTimes(uid, block.id, next.start, next.end))
+      .then(() =>
+        onOfferUndo?.({
+          message: `Block moved to ${day}`,
+          restore: () => settle(setBlockTimes(uid, block.id, block.start, block.end)),
+        }),
+      )
+      .catch(() => undefined);
+  };
+
+  useSurfaceShortcuts(action => {
+    const id = focusedRowId();
+    if (id === null) return;
+    if (action === "complete") {
+      const task = openTasks.find(entry => entry.id === id);
+      if (task !== undefined) return complete(task);
+      // A repeating row completes the occurrence that is due next, as its check does.
+      const occurrence = dueSeries.find(item => item.entry.id === id);
+      if (occurrence !== undefined && occurrence.next !== null) {
+        void settle(completeOccurrence(uid, occurrence.entry.id, occurrence.next.date)).catch(() => undefined);
+      }
+      return;
+    }
+    if (action !== "tomorrow") return;
+    const task = openTasks.find(entry => entry.id === id);
+    if (task !== undefined) return moveTaskTomorrow(task);
+    const block = todayBlocks.find(entry => entry.id === id);
+    if (block !== undefined) moveBlockTomorrow(block);
+  });
+
+  const selectedTask = selected === null ? undefined : tasks.find(task => task.id === selected.id);
+
   return (
     <PageTurn
       onTurn={
@@ -126,7 +214,7 @@ export function Home({
         })
       }
     >
-    <section className="view" aria-labelledby="home-heading">
+    <section className="view" aria-labelledby="home-heading" ref={scope}>
       <header className="page-head">
         <div>
           <h2 id="home-heading" className="large-title">Today</h2>
@@ -208,12 +296,19 @@ export function Home({
                   {dueTasks.map(task => (
                     <li key={task.id} className="row" data-pending={task.pending ? "true" : "false"}>
                       <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
-                      <span className="row-main">
+                      <button
+                        type="button"
+                        className="row-main"
+                        data-row-cursor={task.id}
+                        tabIndex={rovingTabIndex(activeId, task.id, rowOrder)}
+                        onFocus={() => onRowFocus(task.id)}
+                        onClick={event => openTask(task, event.currentTarget.closest("li") ?? event.currentTarget)}
+                      >
                         <span className="row-title" title={task.title}>{task.title}</span>
                         <span className={`row-meta ${isPastDateKey(task.deadline!, today) ? "is-overdue" : "is-today"}`}>
                           {formatDateKey(task.deadline!, today)}
                         </span>
-                      </span>
+                      </button>
                     </li>
                   ))}
                   {dueSeries.map(({ entry, next: occurrence }) => (
@@ -225,10 +320,16 @@ export function Home({
                         aria-label={`Complete: ${entry.title} on ${occurrence!.date}`}
                         onChange={() => void settle(completeOccurrence(uid, entry.id, occurrence!.date)).catch(() => undefined)}
                       />
-                      <span className="row-main">
+                      <button
+                        type="button"
+                        className="row-main"
+                        data-row-cursor={entry.id}
+                        tabIndex={rovingTabIndex(activeId, entry.id, rowOrder)}
+                        onFocus={() => onRowFocus(entry.id)}
+                      >
                         <span className="row-title" title={entry.title}>{entry.title}</span>
                         <span className="row-meta is-today"><RepeatIcon className="meta-icon" />{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span>
-                      </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -247,10 +348,17 @@ export function Home({
                   {upcoming.map(task => (
                     <li key={task.id} className="row">
                       <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
-                      <span className="row-main">
+                      <button
+                        type="button"
+                        className="row-main"
+                        data-row-cursor={task.id}
+                        tabIndex={rovingTabIndex(activeId, task.id, rowOrder)}
+                        onFocus={() => onRowFocus(task.id)}
+                        onClick={event => openTask(task, event.currentTarget.closest("li") ?? event.currentTarget)}
+                      >
                         <span className="row-title" title={task.title}>{task.title}</span>
                         <span className="row-meta">{formatDateKey(task.deadline!, today)}</span>
-                      </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -263,13 +371,47 @@ export function Home({
               <h3 id="schedule-heading" className="section-title">Schedule</h3>
               <button type="button" className="link-button" onClick={onOpenCalendar}>Open calendar</button>
             </div>
-            <Agenda blocks={todayBlocks} now={now} timeZone={timeZone} name={blockName} />
+            <Agenda blocks={todayBlocks} now={now} timeZone={timeZone} name={blockName} activeId={activeId} order={rowOrder} onRowFocus={onRowFocus} />
           </section>
         </div>
       )}
+      <AnimatePresence>
+        {selectedTask && selected && (
+          <TaskDetails
+            key={selectedTask.id}
+            task={selectedTask}
+            origin={selected.origin}
+            shared
+            busy={false}
+            biasSamples={biasSamples}
+            onClose={() => morphClose(() => setSelected(null), selected.origin)}
+            onRename={next => void settle(renameTask(uid, selectedTask.id, next)).catch(() => undefined)}
+            onDeadlineChange={next =>
+              void settle(setTaskDeadline(uid, selectedTask.id, selectedTask.title, next === "" ? undefined : next)).catch(() => undefined)
+            }
+            onToggleCompleted={() => void settle(setTaskCompleted(uid, selectedTask.id, !selectedTask.completed)).catch(() => undefined)}
+            onEstimateChange={next => void settle(setTaskEstimate(uid, selectedTask.id, next)).catch(() => undefined)}
+            onDelete={() => {
+              // The row's exact fields travel with the offer, as on Tasks: undo
+              // rewrites them under the same document id.
+              const deleted = selectedTask;
+              setSelected(null);
+              void settle(deleteTask(uid, deleted.id))
+                .then(() => onOfferUndo?.({ message: "Task deleted", restore: () => restoreTask(uid, deleted) }))
+                .catch(() => undefined);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </section>
     </PageTurn>
   );
+}
+
+/** The row-cursor control the caret is on, by its marker (F6c). */
+function focusedRowId(): string | null {
+  const active = document.activeElement;
+  return active === null ? null : active.closest<HTMLElement>("[data-row-cursor]")?.dataset.rowCursor ?? null;
 }
 
 function formatWallKey(wallUtc: number): string {
@@ -353,7 +495,24 @@ function NowCard({
 
 /** Today's blocks in order, with the free gaps between upcoming ones and the
  * now marker placed where the current minute falls. */
-function Agenda({ blocks, now, timeZone, name }: { blocks: BlockView[]; now: Date; timeZone: string; name: (block: BlockView) => string }) {
+function Agenda({
+  blocks,
+  now,
+  timeZone,
+  name,
+  activeId,
+  order,
+  onRowFocus,
+}: {
+  blocks: BlockView[];
+  now: Date;
+  timeZone: string;
+  name: (block: BlockView) => string;
+  /** The row cursor's position and the page's row order (F6c). */
+  activeId: string | null;
+  order: readonly string[];
+  onRowFocus: (id: string) => void;
+}) {
   if (blocks.length === 0) return <p className="group group-empty">No work blocks today.</p>;
   const nowMs = now.getTime();
   const items: React.ReactNode[] = [];
@@ -379,10 +538,17 @@ function Agenda({ blocks, now, timeZone, name }: { blocks: BlockView[]; now: Dat
     items.push(
       <li key={block.id} className={`agenda-item${end <= nowMs ? " is-past" : ""}`}>
         <time>{timeLabel(new Date(block.start), timeZone)}</time>
-        <div className={`event ${block.taskId ? "cat-task" : "cat-focus"}${block.pending ? " is-pending" : ""}`}>
+        <button
+          type="button"
+          className={`event ${block.taskId ? "cat-task" : "cat-focus"}${block.pending ? " is-pending" : ""}`}
+          style={{ display: "block", width: "100%", textAlign: "start" }}
+          data-row-cursor={block.id}
+          tabIndex={rovingTabIndex(activeId, block.id, order)}
+          onFocus={() => onRowFocus(block.id)}
+        >
           <b>{name(block)}</b>
           <span>{timeLabel(new Date(block.start), timeZone)} – {timeLabel(new Date(block.end), timeZone)}</span>
-        </div>
+        </button>
       </li>,
     );
     cursor = Math.max(cursor ?? 0, end);
