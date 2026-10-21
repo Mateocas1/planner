@@ -31,6 +31,7 @@ export function Home({
   timeZone,
   profileError,
   onOpenCalendar,
+  onOpenNow,
 }: {
   uid: string;
   loading: boolean;
@@ -41,6 +42,8 @@ export function Home({
   timeZone: string | null;
   profileError: string | null;
   onOpenCalendar: () => void;
+  /** Opens the full-screen glance surface on the current block (F5). */
+  onOpenNow: () => void;
 }) {
   const now = useNow();
 
@@ -111,6 +114,7 @@ export function Home({
               name={blockName}
               task={current ? titleOf(current.taskId) : undefined}
               onComplete={complete}
+              onOpenNow={onOpenNow}
             />
 
             <section className="list-section" aria-labelledby="due-heading">
@@ -200,6 +204,7 @@ function NowCard({
   name,
   task,
   onComplete,
+  onOpenNow,
 }: {
   current: BlockView | undefined;
   next: BlockView | undefined;
@@ -208,6 +213,7 @@ function NowCard({
   name: (block: BlockView) => string;
   task: TaskView | undefined;
   onComplete: (task: TaskView) => void;
+  onOpenNow: () => void;
 }) {
   const range = (block: BlockView) => `${timeLabel(new Date(block.start), timeZone)} – ${timeLabel(new Date(block.end), timeZone)}`;
 
@@ -228,20 +234,19 @@ function NowCard({
           <span>{formatDuration(elapsed)} in</span>
           <span>{formatDuration(total - elapsed)} left</span>
         </div>
-        {(next || (task && !task.completed)) && (
-          <div className="now-foot">
-            {next && (
-              <p className="now-next">
-                Next <b>{name(next)}</b> at {timeLabel(new Date(next.start), timeZone)}
-              </p>
-            )}
-            {task && !task.completed && (
-              <button type="button" className="button" onClick={() => onComplete(task)}>
-                Mark task done
-              </button>
-            )}
-          </div>
-        )}
+        <div className="now-foot">
+          {next && (
+            <p className="now-next">
+              Next <b>{name(next)}</b> at {timeLabel(new Date(next.start), timeZone)}
+            </p>
+          )}
+          {task && !task.completed && (
+            <button type="button" className="button" onClick={() => onComplete(task)}>
+              Mark task done
+            </button>
+          )}
+          <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
+        </div>
       </article>
     );
   }
@@ -252,6 +257,7 @@ function NowCard({
         <p className="now-label is-free">Free now</p>
         <h3 id="now-title" className="now-title">{name(next)}</h3>
         <p className="now-when">Starts at {timeLabel(new Date(next.start), timeZone)}, in {formatDuration(minutes)}</p>
+        <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
       </article>
     );
   }
@@ -260,6 +266,7 @@ function NowCard({
       <p className="now-label is-free">Nothing scheduled</p>
       <h3 id="now-title" className="now-title">The rest of today is open</h3>
       <p className="now-when">Plan a work block from the calendar when you are ready.</p>
+      <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
     </article>
   );
 }

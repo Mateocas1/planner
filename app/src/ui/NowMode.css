@@ -1,0 +1,200 @@
+/* Now mode — the full-screen glance surface (distinctive roadmap F5).
+
+   A solid surface, not glass: it stands in front of everything the app draws,
+   so there is nothing behind it to refract (DESIGN.md §2, "glass shows what
+   passes beneath it"). It uses the page ground as its material and ink for its
+   chrome; the controls it carries are the app's own buttons.
+
+   The ring is the one progress ring in the product and it was allowed here on
+   purpose: it *is* the content of a glance surface — the answer to "how much of
+   this block is left" — not decoration standing in for content (the DESIGN.md
+   exception recorded in §3, Today).
+
+   Motion: one entrance (Materialize: opacity + scale 0.96→1, and a focus pull
+   on the content only) and one idle dissolve of the chrome. Both are CSS
+   animations/transitions, so they run on the compositor and never gate the
+   surface: the overlay is interactive on its first frame. */
+
+.now-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  color: var(--label);
+  /* 200 ms, ease-out, from scale(.96) — Materialize, the app's glass entrance,
+     at the modal budget. A context switch is worth one beat; a keyboard-opened
+     one (the palette command) is not worth more, which is why it is short. */
+  animation: now-enter 200ms var(--ease-out) both;
+}
+
+@keyframes now-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------- chrome ---------- */
+
+.now-mode.is-idle .now-chrome {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The idle dissolve is the one transition above the UI budget, and on purpose:
+   nothing is waiting on it, the surface is built to be left alone, and a slow
+   fade reads as the controls retreating rather than switching off. */
+.now-chrome {
+  transition: opacity 400ms var(--ease-out);
+}
+
+.now-chrome-top {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- the glance ---------- */
+
+.now-content {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(16px, 4vmin, 28px);
+  text-align: center;
+  /* Materialize's other half: the content comes into focus behind the surface.
+     It is a one-shot without fill, so the layer is handed back unfiltered --
+     text never keeps a filter (the rule glass.css states for sheets too). */
+  animation: now-focus-pull 240ms var(--ease-out);
+}
+
+@keyframes now-focus-pull {
+  from {
+    filter: blur(8px);
+  }
+  to {
+    filter: blur(0);
+  }
+}
+
+@keyframes now-focus-pull-soft {
+  from {
+    filter: blur(4px);
+  }
+  to {
+    filter: blur(0);
+  }
+}
+
+/* The phone and the tablet are the low-end GPUs: half the radius. */
+@media (pointer: coarse) {
+  .now-content {
+    animation-name: now-focus-pull-soft;
+  }
+}
+
+.now-kicker {
+  margin: 0;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  color: var(--label-3);
+}
+
+/* The ring: a conic-gradient driven by one custom property, repainted per tick
+   and never animated (a ring that eases between two values would lie about
+   time). The inner disc is the page ground, so the middle is a window, not a
+   second surface. */
+.now-ring {
+  --progress: 0;
+  position: relative;
+  width: min(62vmin, 340px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--progress) * 1turn), var(--surface-2) 0);
+  display: grid;
+  place-items: center;
+}
+
+.now-ring::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.now-remaining {
+  position: relative;
+  font-size: clamp(1.75rem, 8.5vmin, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  padding: 0 16px;
+}
+
+.now-headline {
+  margin: 0;
+  font-size: clamp(1.375rem, 4vmin, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+
+.now-headline.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.now-up-next {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.now-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Gentler, not zero: no scale and no focus pull, one 150 ms fade. Both
+     declarations are !important on purpose -- app.css caps every animation and
+     transition in the app at 1 ms under reduced motion, and this surface is one
+     of the places that keeps a real fade (like the completion check does). */
+  .now-mode {
+    animation: now-fade 150ms var(--ease-out) both !important;
+  }
+
+  .now-content {
+    animation: none;
+  }
+
+  .now-chrome {
+    transition-duration: 150ms !important;
+  }
+}
+
+@keyframes now-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
