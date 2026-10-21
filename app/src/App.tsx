@@ -13,6 +13,7 @@ import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
 import { Home } from "./ui/Home.tsx";
+import { NowMode } from "./ui/NowMode.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
@@ -74,6 +75,10 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   // Command palette: open/closed, and the task the palette asked the Tasks
   // surface to reveal. The request survives the view change that mounts it.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Now mode: the full-screen glance surface. It owns no data of its own -- it
+  // reads the shell's blocks, tasks and timer -- so the shell only tracks
+  // whether it is on screen.
+  const [nowOpen, setNowOpen] = useState(false);
   // The Google Calendar import sheet: whether it is open, and the control that
   // opened it (its box is what the panel grows out of). The palette closes
   // before the sheet mounts, so that path has no origin and the panel pops.
@@ -198,6 +203,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   timeZone={profile.timeZone}
                   profileError={profile.error}
                   onOpenCalendar={() => onNavigate("calendar")}
+                  onOpenNow={() => setNowOpen(true)}
                 />
               )}
               {view === "tasks" && (
@@ -269,10 +275,21 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           onClose={() => setPaletteOpen(false)}
           onNavigate={onNavigate}
           onImport={() => openImport(null)}
+          onOpenNow={() => setNowOpen(true)}
           onOpenTask={taskId => {
             setPendingTask(taskId);
             onNavigate("tasks");
           }}
+        />
+      )}
+      {nowOpen && (
+        <NowMode
+          uid={user.uid}
+          blocks={blocks}
+          tasks={tasks}
+          timeZone={zone}
+          focus={focus}
+          onClose={() => setNowOpen(false)}
         />
       )}
       </div>
