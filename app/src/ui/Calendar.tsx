@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent }
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { addBlock, deleteBlock, restoreBlock, setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import { defaultWorkWindow, freeSlots } from "../planning/window.ts";
 import { useCalendarDropTarget, useTaskDrag, DragGrip } from "./drag.tsx";
 import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
 import "./Calendar.css";
@@ -43,9 +44,6 @@ import { settle } from "./write.ts";
 
 /** px per hour; kept in sync with --hour in app.css. */
 const hourHeight = 52;
-/** The window Plan looks for free time in, in minutes after midnight. */
-const planFrom = 8 * 60;
-const planUntil = 21 * 60;
 const planLength = 60;
 
 type Range = "week" | "day";
@@ -213,7 +211,7 @@ function CalendarView({
   const nowMs = now.getTime();
   const unscheduled = tasks.filter(task => !task.completed && !blocks.some(block => block.taskId === task.id && Date.parse(block.end) > nowMs));
   const planDayKey = selectedKey < todayKey ? todayKey : selectedKey;
-  const free = freeSlots(laid.filter(item => item.key === planDayKey), planDayKey === todayKey ? nowMinutes : null);
+  const free = freeSlots(laid.filter(item => item.key === planDayKey), defaultWorkWindow, planDayKey === todayKey ? nowMinutes : null);
   const freeMinutes = free.reduce((total, [start, end]) => total + (end - start), 0);
 
   async function plan(task: TaskView) {
@@ -736,20 +734,10 @@ function layoutBlocks(blocks: BlockView[], timeZone: string): Laid[] {
   return out;
 }
 
-/** Free [start, end) minute ranges of a day inside the planning window,
- * starting no earlier than the next quarter hour after `fromMinutes`. */
-function freeSlots(items: Laid[], fromMinutes: number | null): [number, number][] {
-  let cursor = Math.max(planFrom, fromMinutes === null ? 0 : Math.ceil((fromMinutes + 5) / 15) * 15);
-  const slots: [number, number][] = [];
-  for (const item of [...items].sort((left, right) => left.startMinutes - right.startMinutes)) {
-    if (item.endMinutes <= cursor) continue;
-    if (item.startMinutes > cursor) slots.push([cursor, Math.min(item.startMinutes, planUntil)]);
-    cursor = Math.max(cursor, item.endMinutes);
-    if (cursor >= planUntil) break;
-  }
-  if (cursor < planUntil) slots.push([cursor, planUntil]);
-  return slots.filter(([start, end]) => end > start);
-}
+/** freeSlots was extracted to ../planning/window.ts (W1) so the capacity radar
+ * (F1a) and plan-my-day (F4a) can reuse the same logic. The import above
+ * carries the implementation; the parity tests in window.test.ts pin the old
+ * output fixture by fixture to guarantee the Plan feature is unchanged. */
 
 /** The creation sheet: Start, End and an optional task. Rejected input never
  * reaches Firestore (the data helper validates first) and the reason is shown
