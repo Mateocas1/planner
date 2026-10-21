@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   dayLeftovers,
+  maxCloseDayMoves,
   nextDayKey,
   planCloseDay,
   planUndo,
@@ -239,7 +240,23 @@ test("planCloseDay treats a stale lastShutdown as open", () => {
   assert.deepEqual(plan.lastShutdown, { before: "2026-05-01", after: "2026-05-04" });
 });
 
-test("planCloseDay reads a malformed stored lastShutdown as absent", () => {
+test("planCloseDay treats a stamp later than today as already closed and never moves it back", () => {
+  const plan = planCloseDay({
+    tasks: [task({ id: "due", deadline: "2026-05-04" })],
+    blocks: [],
+    today: "2026-05-04",
+    // A changed profile zone or a clock set back can leave a stamp from the
+    // future: the day it names is closed, and rewriting it with today would
+    // claim a close nobody made.
+    lastShutdown: "2026-05-06",
+    timeZone: buenosAires,
+  });
+  assert.equal(plan.alreadyClosed, true);
+  assert.deepEqual(plan.moves, [], "a closed day rolls nothing");
+  assert.deepEqual(plan.lastShutdown, { before: "2026-05-06", after: "2026-05-06" });
+});
+
+test("planCloseDay keeps a malformed stored stamp raw so undo restores it exactly", () => {
   const plan = planCloseDay({
     tasks: [],
     blocks: [],
@@ -248,7 +265,28 @@ test("planCloseDay reads a malformed stored lastShutdown as absent", () => {
     lastShutdown: "2026-5-4",
   });
   assert.equal(plan.alreadyClosed, false);
-  assert.deepEqual(plan.lastShutdown, { before: undefined, after: "2026-05-04" });
+  assert.deepEqual(plan.lastShutdown, { before: "2026-5-4", after: "2026-05-04" });
+});
+
+test("planCloseDay refuses a day with more due tasks than one batch can hold", () => {
+  const due = Array.from({ length: maxCloseDayMoves + 1 }, (_, index) =>
+    task({ id: `due-${index}`, deadline: "2026-05-04" }));
+  const refused = planCloseDay({ tasks: due, blocks: [], today: "2026-05-04", timeZone: buenosAires, lastShutdown: "2026-05-03" });
+  assert.equal(refused.alreadyClosed, false);
+  assert.equal(refused.refused, "too-many-moves");
+  assert.deepEqual(refused.moves, [], "a refused plan writes nothing at all, so undo stays exact");
+  assert.deepEqual(refused.lastShutdown, { before: "2026-05-03", after: "2026-05-04" });
+
+  // One move fewer fits: the profile stamp is the batch's 500th write.
+  const fits = planCloseDay({
+    tasks: due.slice(1),
+    blocks: [],
+    today: "2026-05-04",
+    timeZone: buenosAires,
+    lastShutdown: "2026-05-03",
+  });
+  assert.equal(fits.refused, undefined);
+  assert.equal(fits.moves.length, maxCloseDayMoves);
 });
 
 test("planCloseDay rejects a malformed today instead of guessing it", () => {
@@ -260,8 +298,12 @@ test("planCloseDay rejects a malformed today instead of guessing it", () => {
 
 /* ---------- planUndo ---------- */
 
-test("planUndo restores every previous deadline exactly", () => {
-  const plan = planCloseDay({
+/* Undo is a set of preconditions against the local state, not a blind replay:
+   the store it compares against is the one the app already holds, so it works
+   offline where a transaction would fail. */
+
+function rolledPlan() {
+  return planCloseDay({
     tasks: [
       task({ id: "overdue", deadline: "2026-05-02" }),
       task({ id: "due-today", deadline: "2026-05-04" }),
@@ -271,13 +313,50 @@ test("planUndo restores every previous deadline exactly", () => {
     timeZone: buenosAires,
     lastShutdown: "2026-05-03",
   });
-  assert.deepEqual(planUndo(plan), {
+}
+
+/** The local state right after a close: every deadline rolled to tomorrow,
+ * and the stamp this close wrote. */
+function afterClose(lastShutdown: unknown = "2026-05-04") {
+  return {
+    tasks: [
+      { id: "overdue", deadline: "2026-05-05" },
+      { id: "due-today", deadline: "2026-05-05" },
+    ],
+    lastShutdown,
+  };
+}
+
+test("planUndo restores every previous deadline exactly", () => {
+  assert.deepEqual(planUndo(rolledPlan(), afterClose()), {
     deadlines: [
       { taskId: "overdue", deadline: "2026-05-02" },
       { taskId: "due-today", deadline: "2026-05-04" },
     ],
+    skipped: 0,
     lastShutdown: "2026-05-03",
   });
+});
+
+test("planUndo skips and counts a task whose deadline changed after the close", () => {
+  const undo = planUndo(rolledPlan(), {
+    tasks: [
+      { id: "overdue", deadline: "2026-05-10" },
+      { id: "due-today", deadline: "2026-05-05" },
+      { id: "written-by-another-device", deadline: "2026-05-07" },
+    ],
+    lastShutdown: "2026-05-04",
+  });
+  assert.deepEqual(undo, {
+    deadlines: [{ taskId: "due-today", deadline: "2026-05-04" }],
+    skipped: 1,
+    lastShutdown: "2026-05-03",
+  });
+});
+
+test("planUndo skips a task deleted since the close instead of recreating it", () => {
+  const undo = planUndo(rolledPlan(), { tasks: [], lastShutdown: "2026-05-04" });
+  assert.deepEqual(undo, { deadlines: [], skipped: 2, lastShutdown: "2026-05-03" });
 });
 
 test("planUndo clears a lastShutdown the first close introduced", () => {
@@ -287,19 +366,53 @@ test("planUndo clears a lastShutdown the first close introduced", () => {
     today: "2026-05-04",
     timeZone: buenosAires,
   });
-  assert.deepEqual(planUndo(plan), {
+  assert.deepEqual(planUndo(plan, { tasks: [{ id: "due", deadline: "2026-05-05" }], lastShutdown: "2026-05-04" }), {
     deadlines: [{ taskId: "due", deadline: "2026-05-04" }],
+    skipped: 0,
     lastShutdown: undefined,
   });
 });
 
-test("planUndo of a closed day changes nothing", () => {
+test("planUndo restores a raw malformed stamp instead of deleting it", () => {
   const plan = planCloseDay({
+    tasks: [task({ id: "due", deadline: "2026-05-04" })],
+    blocks: [],
+    today: "2026-05-04",
+    timeZone: buenosAires,
+    lastShutdown: "2026-5-4",
+  });
+  assert.equal(planUndo(plan, { tasks: [{ id: "due", deadline: "2026-05-05" }], lastShutdown: "2026-05-04" }).lastShutdown, "2026-5-4");
+});
+
+test("planUndo refuses after a later close and writes nothing", () => {
+  const undo = planUndo(rolledPlan(), afterClose("2026-05-05"));
+  assert.equal(undo.refused, "later-close");
+  assert.deepEqual(undo.deadlines, []);
+  assert.equal(undo.skipped, 0);
+});
+
+test("planUndo refuses when the stamp it wrote is gone", () => {
+  const undo = planUndo(rolledPlan(), { tasks: afterClose().tasks });
+  assert.equal(undo.refused, "later-close");
+  assert.deepEqual(undo.deadlines, []);
+});
+
+test("planUndo of a plan that wrote nothing writes nothing", () => {
+  const closed = planCloseDay({
     tasks: [task({ id: "due", deadline: "2026-05-05" })],
     blocks: [],
     today: "2026-05-04",
     timeZone: buenosAires,
     lastShutdown: "2026-05-04",
   });
-  assert.deepEqual(planUndo(plan), { deadlines: [], lastShutdown: "2026-05-04" });
+  assert.equal(planUndo(closed, { tasks: [], lastShutdown: "2026-05-04" }).refused, "nothing-applied");
+
+  const tooMany = planCloseDay({
+    tasks: Array.from({ length: maxCloseDayMoves + 1 }, (_, index) => task({ id: `due-${index}`, deadline: "2026-05-04" })),
+    blocks: [],
+    today: "2026-05-04",
+    timeZone: buenosAires,
+    lastShutdown: "2026-05-03",
+  });
+  assert.equal(planUndo(tooMany, { tasks: [], lastShutdown: "2026-05-03" }).refused, "nothing-applied");
 });

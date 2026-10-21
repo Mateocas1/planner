@@ -69,6 +69,16 @@ export function parseLastShutdown(data: Record<string, unknown> | undefined): st
   return isDayKey(value) ? value : undefined;
 }
 
+/**
+ * The `lastShutdown` field exactly as stored, whatever it is (F3a2). Reading a
+ * day key is `parseLastShutdown`'s job; this one feeds the close plan and the
+ * undo, which put the raw value back instead of deleting a stamp they cannot
+ * read or overwriting it with a guess.
+ */
+export function storedLastShutdown(data: Record<string, unknown> | undefined): unknown {
+  return data?.lastShutdown;
+}
+
 /** The browser's resolved IANA zone, used to initialize a missing profile. */
 export const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 

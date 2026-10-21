@@ -36,20 +36,65 @@ export type DayGroups = { done: ShutdownTask[]; leftOver: ShutdownTask[] };
 export type DeadlineMove = { taskId: string; before: string; after: string };
 
 /**
+ * The `profile.lastShutdown` change of one close. `before` is the stored value
+ * exactly as it was, whatever it was: a day key, a hand-edited string, a
+ * number, or nothing at all. Undo writes it back raw instead of guessing a day
+ * or deleting a value somebody wrote.
+ */
+export type ShutdownStamp = { before?: unknown; after: string };
+
+/**
  * Everything one `writeBatch` does, computed once: the deadline moves, the
  * `lastShutdown` stamp, and the previous stamp the undo puts back. A day that
  * is already closed yields `alreadyClosed: true` and no moves, so a second
- * device renders the same state instead of rolling twice.
+ * device renders the same state instead of rolling twice; a day with more due
+ * tasks than one batch can hold yields `refused` and no moves, because a roll
+ * split across several commits could stop between them.
  */
 export type ShutdownPlan = {
   today: string;
   alreadyClosed: boolean;
+  refused?: "too-many-moves";
   moves: DeadlineMove[];
-  lastShutdown: { before?: string; after: string };
+  lastShutdown: ShutdownStamp;
 };
 
-/** The inverse writes: each rolled deadline back to its value, and the stamp back. */
-export type ShutdownUndo = { deadlines: { taskId: string; deadline: string }[]; lastShutdown?: string };
+/** One task's stored deadline: all undo compares against. */
+export type StoredDeadline = { id: string; deadline?: string };
+
+/**
+ * The local document state undo checks its preconditions against: the tasks and
+ * the profile stamp the app already holds in its store, which includes pending
+ * local writes. Comparing against it works offline, where the obvious
+ * alternative (a Firestore transaction) fails without connectivity.
+ */
+export type ShutdownState = { tasks: readonly StoredDeadline[]; lastShutdown?: unknown };
+
+/** Why undo wrote nothing: the roll never happened, or a later close owns the stamp. */
+export type UndoRefusal = "nothing-applied" | "later-close";
+
+/**
+ * The inverse writes and what could not be inverted. `skipped` counts rolled
+ * tasks whose local deadline is no longer the one the close wrote, because
+ * somebody edited them since; their edit wins. A refusal carries no writes at
+ * all, so a refused undo cannot partially revert a roll.
+ */
+export type UndoPlan = {
+  refused?: UndoRefusal;
+  deadlines: { taskId: string; deadline: string }[];
+  skipped: number;
+  /** The raw stamp to put back; `undefined` deletes the field. */
+  lastShutdown?: unknown;
+};
+
+/**
+ * How many deadline moves one close may commit. Firestore commits at most 500
+ * writes per batch and the profile stamp is one of them. A day with more due
+ * tasks than this is refused rather than split into chunks: the chunks would
+ * not be atomic, and a half-applied roll leaves undo reading deadlines it never
+ * wrote, where "skipped" and "lost" look the same.
+ */
+export const maxCloseDayMoves = 499;
 
 const dayKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -151,20 +196,27 @@ export function dayLeftovers(input: {
  *
  * The plan stamps `lastShutdown = today` in the same batch, which is what makes
  * the ritual idempotent across devices: the stored day is compared in the
- * profile zone, so two clocks in different zones still agree on "today".
+ * profile zone, so two clocks in different zones still agree on "today". A
+ * stamp later than today counts as closed too -- a profile zone change or a
+ * clock set back can leave one -- and is never moved backwards, because that
+ * would claim a close nobody made.
  */
 export function planCloseDay(input: {
   tasks: readonly ShutdownTask[];
   blocks: readonly ShutdownBlock[];
   today: string;
   timeZone: string;
-  lastShutdown?: string;
+  /** `profile.lastShutdown` as stored, whatever its type. */
+  lastShutdown?: unknown;
 }): ShutdownPlan {
   const today = requireDayKey(input.today, "today");
-  const previous = isDayKey(input.lastShutdown) ? input.lastShutdown : undefined;
-  if (previous === today) {
-    return { today, alreadyClosed: true, moves: [], lastShutdown: { before: today, after: today } };
+  const stored = input.lastShutdown;
+  const previous = isDayKey(stored) ? stored : undefined;
+  if (previous !== undefined && previous >= today) {
+    // Nothing is written, so `after` names the day the stamp already holds.
+    return { today, alreadyClosed: true, moves: [], lastShutdown: { before: stored, after: previous } };
   }
+  const stamp: ShutdownStamp = { before: stored, after: today };
   const tomorrow = nextDayKey(today);
   const { leftOver } = dayLeftovers({ tasks: input.tasks, blocks: input.blocks, today, timeZone: input.timeZone });
   const moves: DeadlineMove[] = [];
@@ -172,17 +224,40 @@ export function planCloseDay(input: {
     if (task.deadline === undefined || task.deadline > today) continue;
     moves.push({ taskId: task.id, before: task.deadline, after: tomorrow });
   }
-  return { today, alreadyClosed: false, moves, lastShutdown: { before: previous, after: today } };
+  if (moves.length > maxCloseDayMoves) {
+    return { today, alreadyClosed: false, refused: "too-many-moves", moves: [], lastShutdown: stamp };
+  }
+  return { today, alreadyClosed: false, moves, lastShutdown: stamp };
 }
 
 /**
- * The exact inverse of a plan: each move's previous deadline, and the previous
- * `lastShutdown` — `undefined` when the first close introduced it, which the
- * data layer writes as a deleted field rather than a guess.
+ * The exact inverse of a plan, checked against the state the app holds now.
+ *
+ * Two preconditions decide whether an undo may write at all: the plan must have
+ * written something (a closed day or a refused roll wrote nothing), and the
+ * profile's current stamp must still be the one this close wrote. If a later
+ * close has stamped the profile since, undoing this plan would revert deadlines
+ * that close rolled and rewrite its stamp, so it refuses and writes nothing.
+ *
+ * Each task is then reverted only when its local deadline is still the one the
+ * close wrote; a task edited since keeps its edit and is counted as skipped.
+ * The stamp goes back raw -- the value the plan recorded -- so an undo restores
+ * what was there rather than deleting what the undo does not understand.
  */
-export function planUndo(plan: ShutdownPlan): ShutdownUndo {
-  return {
-    deadlines: plan.moves.map(move => ({ taskId: move.taskId, deadline: move.before })),
-    lastShutdown: plan.lastShutdown.before,
-  };
+export function planUndo(plan: ShutdownPlan, state: ShutdownState): UndoPlan {
+  if (plan.alreadyClosed || plan.refused !== undefined) {
+    return { refused: "nothing-applied", deadlines: [], skipped: 0 };
+  }
+  if (state.lastShutdown !== plan.lastShutdown.after) {
+    return { refused: "later-close", deadlines: [], skipped: 0 };
+  }
+  const current = new Map<string, string | undefined>();
+  for (const task of state.tasks) current.set(task.id, task.deadline);
+  const deadlines: { taskId: string; deadline: string }[] = [];
+  let skipped = 0;
+  for (const move of plan.moves) {
+    if (current.get(move.taskId) === move.after) deadlines.push({ taskId: move.taskId, deadline: move.before });
+    else skipped += 1;
+  }
+  return { deadlines, skipped, lastShutdown: plan.lastShutdown.before };
 }
