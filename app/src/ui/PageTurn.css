@@ -30,7 +30,13 @@
   transform-origin: 50% 50%;
   opacity: 0.6;
   pointer-events: none;
-  will-change: transform, opacity;
+}
+
+/* Once the turn has committed the page beneath is the day the user is on: it
+   answers presses and takes focus from there on (inert is dropped in the
+   component at the same moment). */
+.page-turn[data-page-turn-state="commit"] .page-turn-under {
+  pointer-events: auto;
 }
 
 /* The page the user is on. Its transform is written by script while dragging
@@ -62,7 +68,6 @@
   pointer-events: none;
   opacity: calc(var(--page-turn-progress, 0) * 1);
   background: linear-gradient(270deg, var(--page-turn-shade), transparent);
-  will-change: opacity;
 }
 
 /* Once the page is home again the shadow fades out instead of snapping off:
@@ -73,11 +78,18 @@
   transition: opacity var(--dur-state) var(--ease-out);
 }
 
-/* Only while the page can move: a permanent will-change would hold a layer for
- * the whole session. */
+/* Only while a layer can move: a permanent will-change would hold a composited
+ * layer for the whole session. */
 .page-turn[data-page-turn-state="drag"] .page-turn-top,
 .page-turn[data-page-turn-state="commit"] .page-turn-top {
   will-change: transform;
+}
+
+.page-turn[data-page-turn-state="drag"] .page-turn-top::after,
+.page-turn[data-page-turn-state="commit"] .page-turn-top::after,
+.page-turn[data-page-turn-state="drag"] .page-turn-under,
+.page-turn[data-page-turn-state="commit"] .page-turn-under {
+  will-change: opacity, transform;
 }
 
 /* A horizontal drag must not start a text selection under the finger. */
