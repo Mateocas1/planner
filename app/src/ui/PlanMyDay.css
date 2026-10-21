@@ -1,0 +1,151 @@
+/* Plan my day (F4b): the proposal the button shows before it writes anything.
+
+   The trigger is a plain .button, stretched to the width of the surface it
+   heads — the tray's panel and the Today brief — because it is the action of
+   that whole block, not one control among several. On a phone it takes the
+   44 px row the rest of the shell's actions take.
+
+   The rows are the proposed blocks. They enter one after another (40 ms apart,
+   200 ms each, first six only, so the whole entrance is under 400 ms) as
+   opacity and a 6 px rise: transform and opacity only, never a height or a
+   layout property. The curve is the product's --ease-out, so the day arrives
+   with the same character as everything else. Reduced motion keeps the fact
+   that the rows appeared — a 150 ms opacity fade — and drops the sequence and
+   the movement.
+
+   Keyframes, not transitions, because this is a one-shot entrance of a list
+   that is not re-triggered in a rapid loop: the proposal opens on a deliberate
+   press and closes with the apply that follows it. */
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.plan-head { display: flex; flex-direction: column; gap: 3px; }
+
+.plan-lede {
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.plan-trigger {
+  width: 100%;
+  flex: none;
+}
+
+.plan-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  animation: plan-rise 200ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+.plan-time {
+  flex: none;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-est {
+  flex: none;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The leftovers, in place.ts's sentence. The names split out of it carry the
+   red only on the day they are due, which is the row a person has to act on. */
+.plan-notice {
+  font-size: var(--text-sub);
+  line-height: 1.4;
+  color: var(--label-2);
+}
+
+.plan-notice .is-overdue { color: var(--red); }
+
+.plan-status {
+  font-size: var(--text-sub);
+  color: var(--label-2);
+}
+
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-actions .button-primary {
+  flex: 1;
+  width: auto;
+}
+
+@keyframes plan-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes plan-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The shell resets every animation to 1 ms under reduced motion (app.css);
+     the roadmap asks this entrance to keep a short fade, so the rows join the
+     handful of elements that name their own reduced duration. The class beats
+     the reset's universal selector on importance, and the delay goes to zero:
+     no sequence, no travel, one gentle 150 ms opacity change. */
+  .plan-row {
+    animation-name: plan-fade;
+    animation-duration: 150ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+@media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
+  /* min-height, not height: the shell's .button fixes 32 px and the two rules
+     have the same specificity, so the phone row states the floor instead. */
+  .plan-trigger { min-height: 44px; }
+}
