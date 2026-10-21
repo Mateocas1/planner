@@ -1,10 +1,12 @@
 /* F3c -- the morning brief (odd/research/distinctive-roadmap.md §2 F3, 7).
  *
  * The same card material as the Plan my day card it sits on top of: `--surface`
- * with the sheet's `.card` shadow, one sentence and a dismissal. The only
- * motion is the arrival, and it is opacity alone: the brief lands while the page
- * is already readable, so it is a fade-in rather than something that moves the
- * content under the reader's eye.
+ * with the sheet's `.card` shadow, one sentence and a dismissal.
+ *
+ * It does not animate. The brief arrives with the page it belongs to (App fades
+ * a view in over 120 ms), so a fade of its own would be the same motion twice,
+ * and a rise would move the content under a reader who has just opened Today.
+ * Motion review: delete beats reduce (review-animations, remedial move 1).
  */
 
 .brief {
@@ -12,7 +14,6 @@
   flex-direction: column;
   gap: 6px;
   padding: 14px 16px;
-  animation: brief-in var(--dur-state) var(--ease-out) both;
 }
 
 .brief-head {
@@ -28,16 +29,4 @@
   font-size: var(--text-sub);
   color: var(--label-2);
   font-variant-numeric: tabular-nums;
-}
-
-@keyframes brief-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brief {
-    animation: none;
-  }
 }

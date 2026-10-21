@@ -78,7 +78,10 @@ export function ShutdownSheet({
   onOfferUndo: (item: UndoableDelete) => void;
 }) {
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const touch = useMediaQuery("(pointer: coarse)");
+  /* A phone reports a coarse pointer, and a touchscreen that also has a mouse
+     reports fine: the hint names the gesture that works on the device in hand,
+     so a device that can be touched gets the thumb's sentence. */
+  const touch = useMediaQuery("(pointer: coarse)") || navigator.maxTouchPoints > 0;
   const today = dateKey(now, timeZone);
   const tomorrow = nextDayKey(today);
   const groups = dayLeftovers({ tasks, blocks, today, timeZone });
@@ -202,7 +205,7 @@ export function ShutdownSheet({
         </button>
       </header>
       {tomorrowBlocks.length === 0 ? (
-        <p className="shutdown-empty">Tomorrow. Nothing planned yet.</p>
+        <p className="shutdown-empty">Nothing planned yet.</p>
       ) : (
         <ol className="group shutdown-list">
           {tomorrowBlocks.map(block => (

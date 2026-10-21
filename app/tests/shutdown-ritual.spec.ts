@@ -372,6 +372,8 @@ test.describe("on a phone", () => {
     await swipe(page, { x: bar.x + bar.width - 30, y: bar.y + bar.height / 2 }, { x: bar.x + 20, y: bar.y + bar.height / 2 });
     await panelSettled(page);
     await expect(ritual(page).getByText("3 done · 2 left over")).toBeVisible();
+    // The hint names the gesture the device actually has.
+    await expect(ritual(page).getByText("Swipe left to close the day")).toBeVisible();
 
     /* And the ritual's own page turns from its middle: text, never a control. */
     const box = (await turnPage(page).boundingBox())!;
