@@ -532,3 +532,78 @@ export async function seedResponsiveFixture(email: string, timeZone: string): Pr
     await addRemoteDoc(uid, "blocks", { start: block.start, end: block.end, ...(block.taskId ? { taskId: block.taskId } : {}) });
   }
 }
+
+/* ---------- Radar fixture (tests/radar.spec.ts) ---------- */
+
+/**
+ * Writes one document whose fields are already typed REST values.
+ *
+ * `addRemoteDoc` above encodes strings and booleans only, which is all the
+ * older fixtures needed. The radar reads `estimate`, which the domain stores as
+ * an integer minute count: writing it here as a string would make the app's own
+ * reader reject it (`parseEstimate` accepts numbers only) and the fixture would
+ * quietly test the absence of an estimate instead of its value.
+ */
+async function addRemoteTypedDoc(uid: string, kind: "tasks" | "blocks" | "series", fields: RestFields): Promise<string> {
+  const response = await firestoreFetch(`users/${uid}/${kind}`, {
+    method: "POST",
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) {
+    throw new Error(`emulator add failed: ${response.status} ${await response.text()}`);
+  }
+  return decodeDocument(await response.json()).id;
+}
+
+/**
+ * Seeds one planner week for the overcommit radar: the profile zone, open tasks
+ * with their deadlines and estimates, work blocks, and repeating series, all
+ * before the browser signs in.
+ *
+ * Unlike the sidebar fixture this one writes real integer estimates, because the
+ * radar's whole arithmetic is about them: an assumed 60 minutes and a stored
+ * value have to be distinguishable from the rendered surface. A block names its
+ * task by title so a test never has to seed twice.
+ */
+export async function seedRadarFixture(
+  email: string,
+  timeZone: string,
+  fixture: {
+    tasks?: Array<{ title: string; deadline?: string; completed?: boolean; estimate?: number }>;
+    blocks?: Array<{ start: string; end: string; task?: string }>;
+    series?: Array<{ title: string; frequency: "daily" | "weekly" | "monthly"; anchorDate: string; estimate?: number }>;
+  } = {},
+): Promise<{ taskIds: Record<string, string> }> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  await setRemoteDoc(uid, "profile/main", { timeZone });
+  const taskIds: Record<string, string> = {};
+  for (const task of fixture.tasks ?? []) {
+    taskIds[task.title] = await addRemoteTypedDoc(uid, "tasks", {
+      title: { stringValue: task.title },
+      completed: { booleanValue: task.completed ?? false },
+      ...(task.deadline === undefined ? {} : { deadline: { stringValue: task.deadline } }),
+      ...(task.estimate === undefined ? {} : { estimate: { integerValue: String(task.estimate) } }),
+    });
+  }
+  for (const block of fixture.blocks ?? []) {
+    const taskId = block.task === undefined ? undefined : taskIds[block.task];
+    if (block.task !== undefined && taskId === undefined) {
+      throw new Error(`seedRadarFixture: block names unknown task ${block.task}`);
+    }
+    await addRemoteTypedDoc(uid, "blocks", {
+      start: { stringValue: block.start },
+      end: { stringValue: block.end },
+      ...(taskId ? { taskId: { stringValue: taskId } } : {}),
+    });
+  }
+  for (const series of fixture.series ?? []) {
+    await addRemoteTypedDoc(uid, "series", {
+      title: { stringValue: series.title },
+      frequency: { stringValue: series.frequency },
+      anchorDate: { stringValue: series.anchorDate },
+      ...(series.estimate === undefined ? {} : { estimate: { integerValue: String(series.estimate) } }),
+    });
+  }
+  return { taskIds };
+}

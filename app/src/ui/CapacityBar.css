@@ -1,0 +1,147 @@
+/**
+ * The overcommit radar's own styles (F1b): the Today "This week" row, the load
+ * bar it shares with the Calendar header, and that header underline.
+ *
+ * Co-located with `CapacityBar.tsx` and not in `app.css`, so two units working
+ * on other surfaces never edit the same stylesheet. The header underline lives
+ * here for the same reason: it is this unit's element, even though the element
+ * is rendered inside the Calendar's header, and `Calendar.css` stays untouched.
+ */
+
+/* ---------- The bar ---------- */
+
+.capacity-bar {
+  position: relative;
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--separator);
+  overflow: hidden;
+}
+
+.capacity-bar-fill {
+  position: absolute;
+  inset: 0;
+  /* The fill grows from the left edge, which is where the day starts. */
+  transform-origin: left center;
+  border-radius: inherit;
+  background: var(--label-3);
+}
+
+.capacity-bar.is-packed .capacity-bar-fill { background: var(--orange); }
+
+/* The transition belongs to a value change, never to the first paint: the
+   component adds `is-armed` one frame after mounting (see `useArmed`). A
+   transform retargets from its current value, so a second block added mid-flight
+   extends the bar instead of restarting it from zero. */
+.capacity-bar.is-armed .capacity-bar-fill { transition: transform 250ms cubic-bezier(0.2, 0, 0, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The fill still changes, it just arrives at once: the value is the message,
+     the travel is not. */
+  .capacity-bar.is-armed .capacity-bar-fill { transition: none; }
+}
+
+/* ---------- Today: This week ---------- */
+
+.radar-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 12px 10px;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+}
+
+.radar-day { min-width: 0; }
+
+/* One segment: the weekday, the bar, the share. Sized to the 44 px target a
+   phone needs even though it is a reading, not a control -- a row of seven
+   targets is a row of seven places to put a finger. */
+.radar-day-box {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 3px;
+}
+
+.radar-day-name,
+.radar-day-value {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radar-day-name { color: var(--label-3); }
+
+.radar-day-value {
+  color: var(--label-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `Packed` is the words for the orange: the colour never carries the state
+   alone. */
+.radar-day-value.is-packed {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.radar-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+.radar-note {
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+/* A deadline that no longer fits is the one line in this section that asks for
+   action, so it is the one line that is not grey. */
+.radar-note.is-over { color: var(--red); }
+
+/* Below the phone breakpoint the seven segments still fit; at 320 px they are
+   41 px wide, so the row keeps its 44 px height and the labels stay legible
+   instead of the row scrolling sideways. */
+@media (max-width: 360px) {
+  .radar-day-name { font-size: var(--text-tiny); }
+  .radar-day-value { font-size: var(--text-tiny); }
+  .radar-week { padding: 10px 6px; }
+}
+
+/* ---------- Calendar: the day header underline ---------- */
+
+.cal-head .day-head {
+  /* The underline is positioned against its column, not against the row. */
+  position: relative;
+}
+
+.cal-head .day-load {
+  position: absolute;
+  right: 6px;
+  bottom: 0;
+  left: 6px;
+  height: 3px;
+}
+
+.capacity-bar-underline {
+  height: 3px;
+  border-radius: 1.5px;
+}
+
+/* A day nobody has booked stays quiet: the underline is the difference between
+   the window and what is already claimed, so an empty day draws no fill. */
+.cal-head .capacity-bar:not(.is-packed) .capacity-bar-fill { background: var(--label-2); }
