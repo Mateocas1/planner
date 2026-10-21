@@ -1,6 +1,7 @@
 import { completeOccurrence } from "../data/series.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
+import { WeekRadar } from "./CapacityBar.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { RepeatIcon } from "./icons.tsx";
 import { useNow } from "./motion.ts";
@@ -15,6 +16,9 @@ import { settle } from "./write.ts";
  *  - Now: the block running at this minute with its progress, what follows,
  *    and a way to finish the task it belongs to. When nothing is running it
  *    says when the next block starts, or that the day is open.
+ *  - This week: how full each day of the planner week already is, and which
+ *    deadlines no longer fit (F1), so "Friday is impossible" is visible on
+ *    Monday, while something can still be moved.
  *  - Due today: open tasks due today or already overdue, plus repeating
  *    tasks whose next occurrence is today; each can be completed in place.
  *  - Coming up: deadlines in the next seven days.
@@ -115,6 +119,16 @@ export function Home({
               task={current ? titleOf(current.taskId) : undefined}
               onComplete={complete}
               onOpenNow={onOpenNow}
+            />
+
+            <WeekRadar
+              uid={uid}
+              now={now}
+              timeZone={timeZone}
+              tasks={tasks}
+              blocks={blocks}
+              series={series}
+              completions={completions}
             />
 
             <section className="list-section" aria-labelledby="due-heading">

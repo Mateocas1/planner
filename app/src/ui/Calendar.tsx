@@ -6,6 +6,7 @@ import { defaultWorkWindow, freeSlots } from "../planning/window.ts";
 import { useCalendarDropTarget, useTaskDrag, DragGrip } from "./drag.tsx";
 import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
 import "./Calendar.css";
+import { DayLoad, useDayLoads } from "./CapacityBar.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, narrowQuery, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
@@ -147,6 +148,9 @@ function CalendarView({
   const weekUtc = useMemo(() => Array.from({ length: 7 }, (_, index) => mondayOf(selectedUtc) + index * dayMs), [selectedUtc]);
   const days = isDay ? [selectedUtc] : weekUtc;
   const dayKeys = days.map(wallDayKey);
+  /* The booked share of each day in view, for the header underline (F1): the
+     same capacity math the Today radar uses, so the two never disagree. */
+  const dayLoads = useDayLoads({ uid, now, timeZone, blocks, days: dayKeys });
   const visibleKeys = new Set(dayKeys);
   const rangeKey = `${isDay ? "d" : "w"}-${dayKeys[0]}`;
 
@@ -453,15 +457,21 @@ function CalendarView({
       <div className="calendar-layout">
         <div className="card cal" style={{ "--n": days.length } as React.CSSProperties}>
           {!phone && (
-            <div className="cal-head" aria-hidden="true">
+            /* The header states each day's load, so it is no longer decorative:
+               the weekday and the number stay out of the accessibility tree (the
+               underline's own name reads them back with the minutes), and the
+               underline itself carries "5 h booked, 8 h free". */
+            <div className="cal-head">
               <div />
               {days.map(utc => {
                 const key = wallDayKey(utc);
                 const weekday = new Date(utc).getUTCDay();
+                const load = dayLoads.get(key);
                 return (
                   <div key={key} className={`day-head${key === todayKey ? " is-today" : ""}${weekday % 6 === 0 ? " is-weekend" : ""}`}>
-                    <span>{formatWall(utc, { weekday: "short" })}</span>
-                    <span className="day-num">{formatWall(utc, { day: "numeric" })}</span>
+                    <span aria-hidden="true">{formatWall(utc, { weekday: "short" })}</span>
+                    <span className="day-num" aria-hidden="true">{formatWall(utc, { day: "numeric" })}</span>
+                    {load && <DayLoad day={load} />}
                   </div>
                 );
               })}
