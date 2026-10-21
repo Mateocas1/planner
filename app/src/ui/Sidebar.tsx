@@ -7,6 +7,7 @@ import { formatDateKey, isPastDateKey } from "./format.ts";
 import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
 import { spring, useNow } from "./motion.ts";
+import { SettingsIcon } from "./Settings.tsx";
 import { SyncStatus } from "./SyncStatus.tsx";
 import { setThemePreference, useThemePreference, type ThemePreference } from "./theme.ts";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, mondayOf, timeLabel, wallDayKey } from "./time.ts";
@@ -49,6 +50,7 @@ export function Sidebar({
   onOpenTask,
   onSignOut,
   onImport,
+  onOpenSettings,
 }: {
   email: string;
   uid: string;
@@ -67,6 +69,8 @@ export function Sidebar({
   onSignOut: () => void;
   /** Opens the Google Calendar import; the pressed control is its origin. */
   onImport: (origin: HTMLElement) => void;
+  /** Opens Day settings (S1) from the account row; same origin contract. */
+  onOpenSettings: (origin: HTMLElement) => void;
 }) {
   return (
     <aside className="sidebar glass glass-regular">
@@ -106,6 +110,16 @@ export function Sidebar({
           {/* The address is what the row is for: "Signed in as" stays in the
               accessible name only, so the email itself gets the width. */}
           <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
+          {/* Day settings, one press from the account whose day it describes.
+              The row is the account row, so the entry lives in it. */}
+          <button
+            type="button"
+            className="icon-button side-settings"
+            aria-label="Day settings"
+            onClick={event => onOpenSettings(event.currentTarget)}
+          >
+            <SettingsIcon />
+          </button>
           <ThemeSwitch />
         </div>
         {/* Two links on one row: the import entry is a footer action like Sign
