@@ -77,12 +77,16 @@ export type KeyEventLike = {
   altKey?: boolean;
   shiftKey?: boolean;
   isComposing?: boolean;
-  target?: KeyTarget;
+  /** Whatever the press landed on: a real EventTarget in the browser, a stub in
+   * a unit test. The router only asks whether it is a text field. */
+  target?: unknown;
 };
 
 /** Whatever the press landed on, as far as "is this a text field" goes. */
 export type KeyTarget = {
   tagName?: string;
+  /** An `<input>`'s type, which decides whether it is a place to type. */
+  type?: string;
   isContentEditable?: boolean;
   closest?: (selector: string) => unknown;
 } | null;
@@ -117,20 +121,37 @@ const sequences: Record<string, ShortcutAction> = {
   c: "goCalendar",
 };
 
-const editingTags = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const editingTags = new Set(["TEXTAREA", "SELECT"]);
 const editingSelector = "input, textarea, select, [contenteditable]";
+
+/**
+ * The `<input>` types that are not a place to type a word: a check, a radio, a
+ * button, a slider, a swatch, a file. Focused on one of those a letter is a
+ * shortcut again -- there is nothing to type into, and taking the keys away
+ * would strand the row cursor on a check (the Tasks row's own check is exactly
+ * where a completion leaves focus).
+ */
+const quietInputTypes = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
 
 /**
  * True when a press is really typing: the target is an editable control, its
  * content is editable, or it sits inside one (a rich-text child). A button, a
  * row or the page itself is not typing.
  */
-export function isTypingTarget(target: KeyTarget | undefined): boolean {
-  if (target === null || target === undefined) return false;
-  if (target.isContentEditable === true) return true;
-  const tag = target.tagName?.toUpperCase();
+export function isTypingTarget(target: unknown): boolean {
+  if (target === null || target === undefined || typeof target !== "object") return false;
+  const candidate = target as { tagName?: unknown; type?: unknown; isContentEditable?: unknown; closest?: unknown };
+  if (candidate.isContentEditable === true) return true;
+  const tag = typeof candidate.tagName === "string" ? candidate.tagName.toUpperCase() : undefined;
+  if (tag === "INPUT") {
+    const type = typeof candidate.type === "string" ? candidate.type.toLowerCase() : "";
+    return !quietInputTypes.has(type);
+  }
   if (tag !== undefined && editingTags.has(tag)) return true;
-  return typeof target.closest === "function" && target.closest(editingSelector) !== null;
+  if (typeof candidate.closest !== "function") return false;
+  // A rich-text child reports no tag of its own; the editable ancestor is what
+  // makes the press typing rather than a shortcut.
+  return (candidate.closest as (selector: string) => unknown)(editingSelector) !== null;
 }
 
 export type ShortcutRouter = {

@@ -121,8 +121,14 @@ test("typing is never a shortcut", () => {
   const insideField: KeyTarget = { tagName: "SPAN", closest: (selector: string) => (selector.includes("input") ? { tagName: "INPUT" } : null) };
   assert.equal(isTypingTarget(insideField), true);
   assert.deepEqual(press(router, "j", {}, { target: insideField }), { kind: "ignored", reason: "editable" });
-  // a plain button is not a field
+  // a plain button is not a field, and neither is a check: a letter typed on a
+  // checkbox is a shortcut, not text nobody can enter there
   assert.equal(isTypingTarget({ tagName: "BUTTON" }), false);
+  assert.equal(isTypingTarget({ tagName: "INPUT", type: "checkbox" }), false);
+  assert.equal(press(router, "x", {}, { target: { tagName: "INPUT", type: "checkbox" } }).kind, "action");
+  // ...while a text input, a date field and a slider's sibling number field are
+  assert.equal(isTypingTarget({ tagName: "INPUT", type: "date" }), true);
+  assert.equal(isTypingTarget({ tagName: "INPUT", type: "number" }), true);
 });
 
 test("an open dialog owns the keyboard", () => {

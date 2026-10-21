@@ -11,7 +11,9 @@ import { RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { morphClose, morphOpen } from "./morph.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
+import { rovingTabIndex, tomorrowKey } from "./shortcuts.ts";
 import { type UndoableDelete } from "./UndoToast.tsx";
+import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import { settle } from "./write.ts";
 
 function addDays(date: string, days: number): string {
@@ -46,6 +48,17 @@ function upcomingOccurrences(series: SeriesView, completions: Record<string, str
 }
 
 const frequencyLabel: Record<SeriesView["frequency"], string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+
+/** The row the caret is on, as the keyboard's actions read it: the cursor is
+ * real focus, so the row under it is the row to act on. */
+function focusedRow(): { kind: "task" | "series"; id: string } | null {
+  const active = document.activeElement;
+  if (active === null) return null;
+  const series = active.closest<HTMLElement>("[data-series-id]");
+  if (series !== null) return { kind: "series", id: series.dataset.seriesId ?? "" };
+  const task = active.closest<HTMLElement>("[data-task-id]");
+  return task === null ? null : { kind: "task", id: task.dataset.taskId ?? "" };
+}
 
 /** How long a just-toggled row stays in place before it travels to its new
  * group: long enough for the check to read, short enough to stay a beat and not
@@ -105,6 +118,11 @@ export function Tasks({
   // A row's own node is replaced when it changes group, so its focus is restored
   // once it lands. The id waits here until the row is in its final group.
   const restoreFocus = useRef<string | null>(null);
+  // The keyboard's cursor (F6): real DOM focus on a row's own control, with the
+  // list's single tab stop following it. The scope is the list itself, so only
+  // this surface answers while it is mounted.
+  const listRef = useRef<HTMLDivElement>(null);
+  const { activeId, onRowFocus } = useRowCursor(listRef);
   const reduced = useReducedMotion();
   const travel = reduced ? 0 : settleMs;
 
@@ -223,6 +241,42 @@ export function Tasks({
     .sort((left, right) => (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999"));
   const completed = tasks.filter(groupDone);
   const overdue = tasks.filter(task => !task.completed && task.deadline !== undefined && isPastDateKey(task.deadline, today)).length;
+  // One tab stop for the whole list: the row the cursor is on (see
+  // ui/shortcuts.ts). The order is the order the rows are rendered in.
+  const rowOrder = [...series.map(entry => entry.id), ...open.map(task => task.id), ...completed.map(task => task.id)];
+
+  /* The row actions the shell publishes (F6). Only this surface can perform
+     them: it owns the row's write and the offer that takes it back. */
+  useSurfaceShortcuts(action => {
+    const row = focusedRow();
+    if (row === null) return;
+    if (action === "complete") {
+      if (row.kind === "task") {
+        const task = tasks.find(entry => entry.id === row.id);
+        if (task !== undefined) completeTask(task, !task.completed);
+        return;
+      }
+      // A repeating task completes the occurrence that is due next, exactly as
+      // its own check does.
+      const entry = series.find(item => item.id === row.id);
+      const next = entry === undefined ? null : nextOccurrence(entry, completions, today);
+      if (entry !== undefined && next !== null) void run(() => completeOccurrence(uid, entry.id, next.date));
+      return;
+    }
+    if (action !== "tomorrow" || row.kind !== "task") return;
+    const task = tasks.find(entry => entry.id === row.id);
+    if (task === undefined) return;
+    // `t` is "move to tomorrow": a task that is due today, overdue or undated
+    // lands on tomorrow, and one that is already later moves a day ahead -- never
+    // earlier, so a press can always be undone by reading the toast.
+    const deadline = task.deadline === undefined || task.deadline <= today ? tomorrowKey(today) : tomorrowKey(task.deadline);
+    void run(() => setTaskDeadline(uid, task.id, task.title, deadline)).then(() =>
+      onDeleted({
+        message: `Deadline moved to ${formatDateKey(deadline, today)}`,
+        restore: () => setTaskDeadline(uid, task.id, task.title, task.deadline),
+      }),
+    );
+  });
 
   const taskRow = (task: TaskView) => (
     // layout="position": only the box moves, so no title is ever scaled on the
@@ -251,6 +305,9 @@ export function Tasks({
       <button
         type="button"
         className="row-main task-open"
+        data-row-cursor={task.id}
+        tabIndex={rovingTabIndex(activeId, task.id, rowOrder)}
+        onFocus={() => onRowFocus(task.id)}
         onClick={event => {
           setError(null);
           const row = event.currentTarget.closest("li") ?? event.currentTarget;
@@ -305,7 +362,7 @@ export function Tasks({
         </div>
       ) : (
         <LayoutGroup>
-          <div className="stack task-lists">
+          <div ref={listRef} className="stack task-lists">
             {series.length > 0 && (
               <section className="list-section task-group">
                 <h3 className="section-title">
@@ -315,7 +372,12 @@ export function Tasks({
                   {series.map(seriesRow => {
                     const next = nextOccurrence(seriesRow, completions, today);
                     return (
-                      <li key={seriesRow.id} className="row task series-row" data-next-occurrence={next?.date ?? ""}>
+                      <li
+                        key={seriesRow.id}
+                        className="row task series-row"
+                        data-series-id={seriesRow.id}
+                        data-next-occurrence={next?.date ?? ""}
+                      >
                         <input
                           type="checkbox"
                           className="check task-check"
@@ -329,6 +391,9 @@ export function Tasks({
                         <button
                           type="button"
                           className="row-main task-open"
+                          data-row-cursor={seriesRow.id}
+                          tabIndex={rovingTabIndex(activeId, seriesRow.id, rowOrder)}
+                          onFocus={() => onRowFocus(seriesRow.id)}
                           onClick={event => {
                             setError(null);
                             const row = event.currentTarget.closest("li") ?? event.currentTarget;
