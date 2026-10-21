@@ -97,12 +97,17 @@ test("two offline increments accumulate on the server instead of overwriting eac
     await setDoc(doc(owner.db, path), { title: "Tracked task", completed: false });
 
     await disableNetwork(owner.db);
-    // One write per finished focus session, exactly like addActualMinutes.
-    await updateDoc(doc(owner.db, path), { actualMinutes: increment(20) });
-    await updateDoc(doc(owner.db, path), { actualMinutes: increment(10) });
-    // Both resolved offline: the writes are queued locally, not reported done.
+    /* A write's promise settles on the *server's* answer (that is what makes a
+       denied write reject), and offline there is no answer yet. So both
+       sessions are started here -- each queued with its own transform -- and
+       awaited once the network returns. */
+    const firstSession = updateDoc(doc(owner.db, path), { actualMinutes: increment(20) });
+    const secondSession = updateDoc(doc(owner.db, path), { actualMinutes: increment(10) });
+    // The local cache already reads both, which is what makes the counter
+    // visible offline even though nothing has reached the server.
     assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 30);
     await enableNetwork(owner.db);
+    await Promise.all([firstSession, secondSession]);
 
     // The server, not the local cache: the two queued transforms arrive as an
     // increment each, so the stored count is their sum. Polled because the
