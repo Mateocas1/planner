@@ -28,6 +28,8 @@ import {
   wallDayKey,
   wallMinutes,
 } from "./time.ts";
+import { blockTomorrow, rovingTabIndex } from "./shortcuts.ts";
+import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import { settle } from "./write.ts";
 
 /**
@@ -141,6 +143,9 @@ function CalendarView({
   const draftRef = useRef<HTMLDivElement>(null);
   const newBlockRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The keyboard's cursor (F6) over the blocks in view: real DOM focus on the
+  // block itself, and one tab stop for the whole grid (see ui/shortcuts.ts).
+  const { activeId, onRowFocus } = useRowCursor(scrollRef);
 
   const todayKey = dateKey(now, timeZone);
   const selectedKey = day ?? todayKey;
@@ -157,6 +162,33 @@ function CalendarView({
 
   const laid = useMemo(() => layoutBlocks(blocks, timeZone), [blocks, timeZone]);
   const visible = laid.filter(item => visibleKeys.has(item.key));
+  // The tab stop's order is the order the grid paints the blocks in.
+  const blockOrder = visible.map(item => item.block.id);
+
+  /* `t` and `b` on the calendar (F6). A block moves one wall-clock day in the
+     profile zone -- the same hours tomorrow, 23 or 25 hours away across a DST
+     change -- and the move is offered back through the shell's undo toast, like
+     every other write this surface makes. */
+  useSurfaceShortcuts(action => {
+    if (action === "newBlock") {
+      openCreate(null, null, newBlockRef.current);
+      return;
+    }
+    if (action !== "tomorrow") return;
+    const active = document.activeElement;
+    const id = active instanceof HTMLElement ? active.closest<HTMLElement>("[data-block]")?.dataset.block : undefined;
+    const block = blocks.find(entry => entry.id === id);
+    if (block === undefined) return;
+    const next = blockTomorrow(block, timeZone);
+    const day = formatDateKey(dateKey(new Date(next.start), timeZone), todayKey);
+    setPlanError(null);
+    void settle(setBlockTimes(uid, block.id, next.start, next.end))
+      .then(() => {
+        announce(`Block moved to ${day}.`);
+        onDeleted({ message: `Block moved to ${day}`, restore: () => settle(setBlockTimes(uid, block.id, block.start, block.end)) });
+      })
+      .catch(fail);
+  });
   const taskOf = (id: string | undefined) => (id === undefined ? undefined : tasks.find(task => task.id === id));
   const nowMinutes = wallMinutes(now, timeZone);
   const showsToday = visibleKeys.has(todayKey);
@@ -551,6 +583,9 @@ function CalendarView({
                               type="button"
                               className={`calendar-block ${task ? "cat-task" : "cat-focus"}${item.block.pending ? " calendar-block-pending" : ""}${height < 40 ? " is-short" : ""}${past ? " is-past" : ""}`}
                               data-block={item.block.id}
+                              data-row-cursor={item.block.id}
+                              tabIndex={rovingTabIndex(activeId, item.block.id, blockOrder)}
+                              onFocus={() => onRowFocus(item.block.id)}
                               data-start={item.block.start}
                               data-end={item.block.end}
                               data-resizing={live ? live.edge : undefined}
