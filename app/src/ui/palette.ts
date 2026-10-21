@@ -1,5 +1,6 @@
 import type { View } from "../App.tsx";
 import type { FocusStatus } from "../domain/focus.ts";
+import { shortcutHelp, type ShortcutAction } from "./shortcuts.ts";
 import type { ThemePreference } from "./theme.ts";
 
 /**
@@ -28,17 +29,34 @@ export type PaletteTask = { id: string; title: string };
 export type PaletteThemeCommand = { kind: "theme"; id: string; pref: ThemePreference; label: string };
 
 /**
- * A one-shot command: it opens a surface of its own instead of navigating or
- * creating. It matches on `keywords` rather than on its label, so typing "cal"
- * still offers only the Calendar destination -- the label is a sentence, not a
- * search key.
+ * A one-shot command: it opens a surface of its own, or acts on the focused
+ * task, instead of navigating or creating. It matches on `keywords` rather than
+ * on its label, so typing "cal" still offers only the Calendar destination --
+ * the label is a sentence, not a search key.
+ *
+ * `hint` is the key that performs the same action, read from the keyboard's
+ * own table (shortcuts.ts). It is absent when the action has no key, and when
+ * the profile has keyboard shortcuts switched off.
  */
 export type PaletteActionCommand = {
   kind: "action";
   id: string;
-  action: "gcal-import" | "now-mode" | "close-day";
+  action: PaletteActionKind;
   label: string;
   keywords: string[];
+  hint?: string;
+};
+
+/** Every action the palette can run. The two task actions act on the row the
+ * palette was opened from; the others open a surface of their own. */
+export type PaletteActionKind = "gcal-import" | "now-mode" | "close-day" | "complete-task" | "move-tomorrow";
+
+/** The keyboard action each palette action performs, so its hint is the key
+ * the router already answers with. */
+const actionShortcut: Partial<Record<PaletteActionKind, ShortcutAction>> = {
+  "complete-task": "complete",
+  "move-tomorrow": "tomorrow",
+  "now-mode": "now",
 };
 
 export type PaletteCommand =
@@ -124,14 +142,47 @@ export const actionCommands: PaletteActionCommand[] = [
   },
 ];
 
+/**
+ * The task actions: they act on the focused row, so they are listed only while
+ * a task row holds focus when the palette opens. Without one they would do
+ * nothing, and the palette never offers a command that does nothing.
+ */
+export const taskActionCommands: PaletteActionCommand[] = [
+  {
+    kind: "action",
+    id: "action-complete-task",
+    action: "complete-task",
+    label: "Complete task",
+    keywords: ["complete", "check", "done", "finish"],
+  },
+  {
+    kind: "action",
+    id: "action-move-tomorrow",
+    action: "move-tomorrow",
+    label: "Move to tomorrow",
+    keywords: ["tomorrow", "move", "defer", "postpone"],
+  },
+];
+
 /** How many tasks a query may list, so a broad word cannot bury the rest. */
 export const taskResultLimit = 6;
+
+/** What the palette knows about the screen it opened over, beyond the query. */
+export type PaletteContext = {
+  /** The profile's keyboard shortcuts. Off leaves the key hints out. */
+  shortcuts: boolean;
+  /** A task row held focus when the palette opened, so the task actions apply. */
+  focusedTask: boolean;
+};
+
+const defaultPaletteContext: PaletteContext = { shortcuts: true, focusedTask: false };
 
 export function buildCommands(
   rawQuery: string,
   tasks: PaletteTask[],
   destinations: PaletteDestination[],
   focus: PaletteFocusCommand[] = [],
+  context: PaletteContext = defaultPaletteContext,
 ): PaletteCommand[] {
   const query = rawQuery.trim();
   if (query === "") {
@@ -147,7 +198,10 @@ export function buildCommands(
     .filter(destination => destination.label.toLowerCase().includes(needle))
     .map(navigateCommand);
   const matchedThemes = themeCommands.filter(command => command.label.toLowerCase().includes(needle));
-  const matchedActions = actionCommands.filter(command => command.keywords.some(keyword => keyword.includes(needle)));
+  const actions = context.focusedTask ? [...taskActionCommands, ...actionCommands] : actionCommands;
+  const matchedActions = actions
+    .filter(command => command.keywords.some(keyword => keyword.includes(needle)))
+    .map(command => withHint(command, context.shortcuts));
   const matchedFocus = focus.filter(command => command.label.toLowerCase().includes(needle));
   return [
     { kind: "create", id: "create", title: query },
@@ -157,6 +211,18 @@ export function buildCommands(
     ...matchedActions,
     ...matchedFocus,
   ];
+}
+
+/**
+ * The action with its key hint, when the shortcuts are on and the action has a
+ * key. The hint is read from the help sheet's table, which lists every key the
+ * router answers, so it cannot drift from what a press really does.
+ */
+function withHint(command: PaletteActionCommand, shortcuts: boolean): PaletteActionCommand {
+  const shortcut = actionShortcut[command.action];
+  if (!shortcuts || shortcut === undefined) return command;
+  const hint = shortcutHelp.flatMap(group => group.entries).find(entry => entry.action === shortcut)?.keys[0];
+  return hint === undefined ? command : { ...command, hint };
 }
 
 function navigateCommand(destination: PaletteDestination): PaletteCommand {

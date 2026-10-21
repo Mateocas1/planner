@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { flushSync } from "react-dom";
+import { onSnapshot } from "firebase/firestore";
 import type { View } from "../App.tsx";
+import { parseShortcutsEnabled, profileDocument } from "../data/profile.ts";
 import { addSeries } from "../data/series.ts";
 import type { TaskView } from "../data/store.ts";
 import { addTask } from "../data/tasks.ts";
 import { parseQuickAdd, type QuickAdd } from "../domain/quickAdd.ts";
 import { PlayIcon } from "./FocusWidget.tsx";
 import { CalendarIcon, PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
+import { useMediaQuery } from "./motion.ts";
 import { buildCommands, focusCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { quickAddPartLabel } from "./QuickAddChips.tsx";
+import { publishShortcut, type SurfaceAction } from "./shortcuts.ts";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
@@ -72,6 +77,13 @@ export function CommandPalette({
   const previousFocus = useRef<HTMLElement | null>(null);
   // A destination or a task moves focus itself; only a plain close gives it back.
   const restoreFocus = useRef(true);
+  // The keyboard setting is read here rather than passed in: the palette is
+  // open over one profile document, and the shell's App.tsx is not its owner.
+  const [shortcutsOn, setShortcutsOn] = useState(false);
+  // Whether a task row held focus when the palette opened: the task actions act
+  // on that row, so they are offered only then.
+  const [taskFocused, setTaskFocused] = useState(false);
+  const touch = useMediaQuery("(pointer: coarse)") || navigator.maxTouchPoints > 0;
   const [query, setQuery] = useState("");
   // The selected row is an id, not an index: when the list changes under it and
   // the row is gone, the first row is selected again.
@@ -79,6 +91,8 @@ export function CommandPalette({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Touch-only devices get no key hints: there is no keyboard to press them on.
+  const hints = shortcutsOn && !touch;
   const commands = useMemo(
     () =>
       buildCommands(
@@ -86,8 +100,9 @@ export function CommandPalette({
         tasks,
         destinations,
         focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
+        { shortcuts: hints, focusedTask: taskFocused },
       ),
-    [query, tasks, focus?.canStart, focus?.status],
+    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused],
   );
   // The same parser the New task sheet uses, so one line creates the same task
   // from either place. The clock is read per keystroke: "tomorrow" follows the
@@ -97,7 +112,16 @@ export function CommandPalette({
   const active = commands[activeIndex];
 
   useEffect(() => {
+    return onSnapshot(
+      profileDocument(uid),
+      snapshot => setShortcutsOn(parseShortcutsEnabled(snapshot.data())),
+      () => setShortcutsOn(false),
+    );
+  }, [uid]);
+
+  useEffect(() => {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setTaskFocused(previousFocus.current?.closest("[data-task-id]") != null);
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
     inputRef.current?.focus();
@@ -132,6 +156,14 @@ export function CommandPalette({
       return;
     }
     if (command.kind === "action") {
+      if (command.action === "complete-task") {
+        runOnRow("complete");
+        return;
+      }
+      if (command.action === "move-tomorrow") {
+        runOnRow("tomorrow");
+        return;
+      }
       /* The sheet or overlay that opens takes the focus; handing it back to the
          trigger behind the dialog would fight the panel's own focus return. */
       restoreFocus.current = false;
@@ -152,6 +184,22 @@ export function CommandPalette({
       return;
     }
     void create();
+  }
+
+  /**
+   * Runs a task action on the row the palette was opened from. The page under
+   * a modal dialog is inert, so the dialog closes first: flushSync commits the
+   * unmount now, which lifts the inert state. Focus then goes back to the row,
+   * and only then is the action published, because the surface reads the
+   * focused row when it handles the event. The unmount must not move focus a
+   * second time, so the restore is switched off here.
+   */
+  function runOnRow(action: SurfaceAction) {
+    const row = previousFocus.current;
+    restoreFocus.current = false;
+    flushSync(() => onClose());
+    if (row?.isConnected) row.focus({ preventScroll: true });
+    publishShortcut(action);
   }
 
   /**
@@ -266,11 +314,13 @@ export function CommandPalette({
             id={`palette-option-${command.id}`}
             role="option"
             aria-selected={index === activeIndex}
+            aria-keyshortcuts={commandHint(command)}
             className="palette-option"
             onClick={() => run(command)}
           >
             <span className="palette-option-icon" aria-hidden="true">{commandIcon(command)}</span>
             <span className="palette-option-label">{commandLabel(command, parsed)}</span>
+            {commandHint(command) !== undefined && <kbd className="palette-option-key">{commandHint(command)}</kbd>}
           </li>
         ))}
       </ul>
@@ -292,11 +342,19 @@ function commandLabel(command: PaletteCommand, parsed: QuickAdd): string {
   return detail === "" ? `Create “${title}”` : `Create “${title}” — ${detail}`;
 }
 
+/** The key that performs a row's action, when the row shows one. */
+function commandHint(command: PaletteCommand): string | undefined {
+  return command.kind === "action" ? command.hint : undefined;
+}
+
 function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
-  if (command.kind === "action") return command.action === "now-mode" ? <PlayIcon /> : <CalendarIcon />;
+  if (command.kind === "action") {
+    if (command.action === "now-mode") return <PlayIcon />;
+    return command.action === "complete-task" ? <TasksIcon /> : <CalendarIcon />;
+  }
   if (command.kind === "focus") return <PlayIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
