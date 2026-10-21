@@ -1,0 +1,153 @@
+/* F3c -- the shutdown ritual (odd/research/distinctive-roadmap.md §2 F3).
+ *
+ * Two pages inside one sheet. The Tomorrow page is pre-rendered beneath Today
+ * by ui/PageTurn.tsx, which is why the turning page has to be painted on an
+ * opaque surface: a see-through page would show tomorrow through today. The
+ * surface is the sheet's own `--surface` (the one the creation sheets use), so
+ * every text pair here is a pair scripts/glass-contrast.mjs already proves.
+ *
+ * Motion: nothing new is animated by this file except the arrival of tomorrow,
+ * and only opacity -- the page's own travel belongs to PageTurn (a transform on
+ * one composited layer). A turn is a one-off gesture, so 200 ms of fade is the
+ * whole choreography; with reduced motion the page is simply there.
+ */
+
+.shutdown-sheet {
+  --page-turn-surface: var(--surface);
+}
+
+.shutdown-turn {
+  /* The lifted page carries its own corners, so the sheet's radius is not
+     painted twice around a page that has left the panel. */
+  border-radius: 18px;
+}
+
+.shutdown-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shutdown-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.shutdown-kind {
+  margin: 0;
+  font-size: var(--text-sub);
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.shutdown-date {
+  margin: 2px 0 0;
+  font-size: var(--text-title);
+  font-weight: 700;
+  color: var(--label);
+}
+
+/* The day in one line: the two counts of criteria 1 and 2. Tabular figures, so
+   "3 done" and "12 left over" sit on the same digits. */
+.shutdown-summary {
+  margin: 0;
+  font-size: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-2);
+}
+
+.shutdown-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.shutdown-list .row {
+  min-height: 40px;
+}
+
+/* The wall clock of a block, in the same column whatever its digits. */
+.shutdown-time {
+  flex: none;
+  width: 52px;
+  font-size: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-3);
+}
+
+.shutdown-hint,
+.shutdown-note {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.shutdown-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.shutdown-actions > * {
+  flex: 1;
+}
+
+/* The live region is the announcement, not a decoration: it is visible text
+   under the page (criterion 3), and it stays in the layout only when it has
+   something to say. */
+.shutdown-live {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+}
+
+.shutdown-live:empty {
+  display: none;
+}
+
+/* Tomorrow, once the turn landed: the page arrives on its own word, not on the
+   travel that revealed it. */
+.shutdown-tomorrow {
+  animation: shutdown-arrive var(--dur-state) var(--ease-out) both;
+}
+
+@keyframes shutdown-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutdown-tomorrow {
+    animation: none;
+  }
+}
+
+/* The banner on Today (ui/Home.tsx): the quiet notice that the day is meant to
+   close, with the fine pointer's own action beside it. It owns no motion: it
+   appears when the minute arrives and the page it sits on is already readable. */
+.shutdown-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--label-3);
+}
+
+.shutdown-banner-text {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+}
+
+@media (max-width: 760px) {
+  .shutdown-banner {
+    margin-bottom: 12px;
+  }
+}

@@ -4,11 +4,14 @@ import { setTaskCompleted } from "../data/tasks.ts";
 import { WeekRadar } from "./CapacityBar.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { RepeatIcon } from "./icons.tsx";
-import { useNow } from "./motion.ts";
+import { phoneQuery, useMediaQuery, useNow } from "./motion.ts";
 import { PageTurn } from "./PageTurn.tsx";
 import { nextOccurrence } from "./Tasks.tsx";
+import { MorningBrief } from "./MorningBrief.tsx";
 import { PlanMyDay } from "./PlanMyDay.tsx";
-import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel } from "./time.ts";
+import { bannerVisible } from "./shutdownRitual.ts";
+import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wallMinutes } from "./time.ts";
+import type { WorkWindow } from "../planning/window.ts";
 import { settle } from "./write.ts";
 
 /**
@@ -35,9 +38,13 @@ export function Home({
   series,
   completions,
   timeZone,
+  workWindow,
+  shutdownTime,
+  lastShutdown,
   profileError,
   onOpenCalendar,
   onOpenNow,
+  onCloseDay,
   onTurnDay,
 }: {
   uid: string;
@@ -47,16 +54,24 @@ export function Home({
   series: SeriesView[];
   completions: Record<string, string>;
   timeZone: string | null;
+  /** The profile's one working window, read by the morning brief (W1). */
+  workWindow: WorkWindow;
+  /** Minutes after midnight in the profile zone: when the day is meant to close (F3). */
+  shutdownTime: number;
+  /** The profile zone's day the ritual was last closed, if it was (F3c). */
+  lastShutdown?: string;
   profileError: string | null;
   onOpenCalendar: () => void;
   /** Opens the full-screen glance surface on the current block (F5). */
   onOpenNow: () => void;
-  /** Carries the day to tomorrow when the page is turned (F3). Today has no
-   *  next-day navigation yet, so the default promises nothing: the page springs
-   *  back. F3c passes the shutdown roll here. */
+  /** Opens the shutdown ritual, from the banner or from a turned page (F3c). */
+  onCloseDay: (origin: HTMLElement | null) => void;
+  /** Carries the day to tomorrow when the page is turned (F3). Defaults to
+   *  opening the ritual: the page turn is the ritual's own first page. */
   onTurnDay?: () => boolean | void | Promise<boolean | void>;
 }) {
   const now = useNow();
+  const phone = useMediaQuery(phoneQuery);
 
   if (timeZone === null || loading) {
     return (
@@ -95,10 +110,22 @@ export function Home({
     .sort((left, right) => left.deadline!.localeCompare(right.deadline!));
 
   const empty = tasks.length === 0 && blocks.length === 0 && series.length === 0;
+  const closing = bannerVisible({ today, wallMinutes: wallMinutes(now, timeZone), shutdownTime, lastShutdown });
   const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
   return (
-    <PageTurn onTurn={onTurnDay ?? (() => false)}>
+    <PageTurn
+      onTurn={
+        onTurnDay ??
+        (() => {
+          // The turn opens the ritual rather than rolling on its own: what the
+          // day left behind is shown before anything is written, and the
+          // ritual's own page turn is the commit (F3, criteria 1-5).
+          onCloseDay(null);
+          return false;
+        })
+      }
+    >
     <section className="view" aria-labelledby="home-heading">
       <header className="page-head">
         <div>
@@ -109,6 +136,19 @@ export function Home({
           </p>
         </div>
       </header>
+
+      {closing && (
+        <section className="shutdown-banner" aria-labelledby="shutdown-banner-text">
+          <p id="shutdown-banner-text" className="shutdown-banner-text">Time to close the day.</p>
+          {/* Criterion 8: a fine pointer gets a visible action. A thumb turns the
+              page instead, which is the gesture the sheet teaches. */}
+          {!phone && (
+            <button type="button" className="button" onClick={event => onCloseDay(event.currentTarget)}>
+              Close day
+            </button>
+          )}
+        </section>
+      )}
 
       {empty ? (
         <div className="empty-state" role="status">
@@ -128,6 +168,11 @@ export function Home({
               onComplete={complete}
               onOpenNow={onOpenNow}
             />
+
+            {/* The first Home of a day says what the day holds (F3, criterion
+                7); the Plan my day card directly under it is where the brief's
+                action lives. */}
+            <MorningBrief blocks={blocks} timeZone={timeZone} workWindow={workWindow} now={now} />
 
             {/* The brief's plan button (F4): the same proposal and the same
                 batch as the Calendar tray, with its own undo because Today

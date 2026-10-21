@@ -51,3 +51,20 @@ test("a query names a destination after the tasks, never before the create row",
     ["create", "task-t1", "task-t2"],
   );
 });
+
+test("the palette offers the shutdown ritual for a query that names it, and nowhere else", () => {
+  // F3 criterion 3's other entry point: `Close the day`, matched on its own
+  // words rather than on the label, like every other one-shot command.
+  const close = buildCommands("close", [], destinations).filter(command => command.kind === "action");
+  assert.deepEqual(close, [
+    { kind: "action", id: "action-close-day", action: "close-day", label: "Close the day", keywords: ["close", "shutdown", "day", "ritual"] },
+  ]);
+  assert.deepEqual(
+    buildCommands("shutdown", [], destinations).filter(command => command.kind === "action").map(command => command.id),
+    ["action-close-day"],
+  );
+  // An empty palette still offers the destinations only, and a query that names
+  // something else never drags the ritual in.
+  assert.equal(buildCommands("", [], destinations).some(command => command.kind === "action"), false);
+  assert.equal(buildCommands("water", tasks, destinations).some(command => command.kind === "action"), false);
+});

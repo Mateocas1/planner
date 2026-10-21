@@ -47,6 +47,7 @@ export function CommandPalette({
   onOpenTask,
   onImport,
   onOpenNow,
+  onCloseDay,
 }: {
   uid: string;
   /** The profile zone: the create row's date preview is a planner day. */
@@ -62,6 +63,8 @@ export function CommandPalette({
   onImport: () => void;
   /** Runs the "Open Now mode" command (the overlay is the shell's). */
   onOpenNow: () => void;
+  /** Runs the "Close the day" command (the ritual is the shell's, F3c). */
+  onCloseDay: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -133,6 +136,7 @@ export function CommandPalette({
          trigger behind the dialog would fight the panel's own focus return. */
       restoreFocus.current = false;
       if (command.action === "now-mode") onOpenNow();
+      else if (command.action === "close-day") onCloseDay();
       else onImport();
       onClose();
       return;

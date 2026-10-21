@@ -678,3 +678,79 @@ export async function seedRadarFixture(
   }
   return { taskIds };
 }
+
+/* ---------- Shutdown ritual fixture (tests/shutdown-ritual.spec.ts) ---------- */
+
+/**
+ * Seeds one account for the shutdown ritual (F3c): the profile's zone, its
+ * shutdown time and the day it was last closed, plus the tasks and work blocks
+ * that make a day, all before the browser signs in.
+ *
+ * `shutdownTime` is written as a string because that is the encoding this
+ * harness can write; the app's own reader (`parseShutdownTime`) accepts both,
+ * and the app writes integers. A block names its task by title, so a test never
+ * has to seed twice.
+ */
+export async function seedShutdownFixture(
+  email: string,
+  timeZone: string,
+  fixture: {
+    shutdownTime?: number;
+    lastShutdown?: string;
+    tasks?: Array<{ title: string; deadline?: string; completed?: boolean; completedAt?: string }>;
+    blocks?: Array<{ start: string; end: string; task?: string }>;
+  } = {},
+): Promise<{ taskIds: Record<string, string> }> {
+  await createRemoteAccount(email);
+  const uid = await resolveRemoteUid(email);
+  const profile: Record<string, string> = { timeZone };
+  if (fixture.shutdownTime !== undefined) profile.shutdownTime = String(fixture.shutdownTime);
+  if (fixture.lastShutdown !== undefined) profile.lastShutdown = fixture.lastShutdown;
+  await setRemoteDoc(uid, "profile/main", profile);
+  const taskIds: Record<string, string> = {};
+  for (const task of fixture.tasks ?? []) {
+    taskIds[task.title] = await addRemoteDoc(uid, "tasks", {
+      title: task.title,
+      completed: task.completed ?? false,
+      ...(task.deadline ? { deadline: task.deadline } : {}),
+      ...(task.completedAt ? { completedAt: task.completedAt } : {}),
+    });
+  }
+  for (const block of fixture.blocks ?? []) {
+    const taskId = block.task === undefined ? undefined : taskIds[block.task];
+    if (block.task !== undefined && taskId === undefined) {
+      throw new Error(`seedShutdownFixture: block names unknown task ${block.task}`);
+    }
+    await addRemoteDoc(uid, "blocks", { start: block.start, end: block.end, ...(taskId ? { taskId } : {}) });
+  }
+  return { taskIds };
+}
+
+/**
+ * What the ritual's batch wrote, read from the server: each task's deadline by
+ * title, and the profile's `lastShutdown` stamp. This is the assertion the roll
+ * is about -- which deadlines moved, which did not, and whether the day is
+ * marked closed -- and it reads the server, never the app's own state.
+ */
+export async function readRemoteShutdown(
+  email: string,
+): Promise<{ deadlines: Record<string, string | undefined>; completedAt: Record<string, string | undefined>; lastShutdown?: string }> {
+  const uid = await resolveRemoteUid(email);
+  const [tasks, profile] = await Promise.all([listRemoteDocs(uid, "tasks"), getRemoteDoc(uid, "profile/main")]);
+  const deadlines: Record<string, string | undefined> = {};
+  const completedAt: Record<string, string | undefined> = {};
+  for (const doc of tasks) {
+    if (doc.data.title === undefined) continue;
+    const title = doc.data.title as string;
+    deadlines[title] = doc.data.deadline as string | undefined;
+    completedAt[title] = doc.data.completedAt as string | undefined;
+  }
+  return { deadlines, completedAt, lastShutdown: profile?.lastShutdown as string | undefined };
+}
+
+/** One task document by id, read directly: the list endpoint paginates, so a
+ *  fixture with hundreds of tasks cannot be read whole through it. */
+export async function readRemoteTask(email: string, taskId: string): Promise<Record<string, string | boolean | number> | undefined> {
+  const uid = await resolveRemoteUid(email);
+  return getRemoteDoc(uid, `tasks/${taskId}`);
+}
