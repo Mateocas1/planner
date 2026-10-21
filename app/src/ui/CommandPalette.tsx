@@ -46,6 +46,7 @@ export function CommandPalette({
   onNavigate,
   onOpenTask,
   onImport,
+  onOpenNow,
 }: {
   uid: string;
   /** The profile zone: the create row's date preview is a planner day. */
@@ -59,6 +60,8 @@ export function CommandPalette({
   onOpenTask: (taskId: string) => void;
   /** Runs the "Import from Google Calendar" command (the sheet is the shell's). */
   onImport: () => void;
+  /** Runs the "Open Now mode" command (the overlay is the shell's). */
+  onOpenNow: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -126,10 +129,11 @@ export function CommandPalette({
       return;
     }
     if (command.kind === "action") {
-      /* The sheet that opens takes the focus; handing it back to the trigger
-         behind the dialog would fight the panel's own focus return. */
+      /* The sheet or overlay that opens takes the focus; handing it back to the
+         trigger behind the dialog would fight the panel's own focus return. */
       restoreFocus.current = false;
-      onImport();
+      if (command.action === "now-mode") onOpenNow();
+      else onImport();
       onClose();
       return;
     }
@@ -288,7 +292,7 @@ function commandIcon(command: PaletteCommand) {
   if (command.kind === "create") return <PlusIcon />;
   if (command.kind === "task") return <TasksIcon />;
   if (command.kind === "theme") return <ThemeIcon preference={command.pref} />;
-  if (command.kind === "action") return <CalendarIcon />;
+  if (command.kind === "action") return command.action === "now-mode" ? <PlayIcon /> : <CalendarIcon />;
   if (command.kind === "focus") return <PlayIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;

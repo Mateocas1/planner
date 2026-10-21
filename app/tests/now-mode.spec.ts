@@ -335,6 +335,20 @@ test("it fills the viewport at 1280x800 and at 390x844 without overflowing", asy
   await expect(overlay.getByText("45 min left")).toBeVisible();
 });
 
+test("the palette offers Open Now mode and opens it", async ({ page }) => {
+  const base = futureAfternoon();
+  await page.clock.install({ time: base });
+  await enter(page, "now-palette", afternoonFixture(base));
+  await page.clock.pauseAt(new Date(base.getTime() + 15 * 60_000));
+
+  await runPaletteCommand(page, "now", "Open Now mode");
+  const overlay = nowMode(page);
+  await expect(overlay).toBeVisible();
+  await expect(overlay.getByRole("heading", { name: "Write the brief" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(overlay).toHaveCount(0);
+});
+
 /* ---------- helpers ---------- */
 
 type ApiCalls = { wakeRequests: number; wakeReleases: number; fullscreenRequests: number };
@@ -403,4 +417,21 @@ async function viewportBox(page: Page) {
     width: document.documentElement.clientWidth,
     height: document.documentElement.clientHeight,
   }));
+}
+
+/** Runs one palette command by keyboard: open, type, walk to the row, Enter. */
+async function runPaletteCommand(page: Page, query: string, command: string) {
+  await page.keyboard.press("Control+k");
+  const field = page.getByRole("combobox", { name: "Search tasks or run a command" });
+  await expect(field).toBeVisible();
+  await field.fill(query);
+  const option = page.getByRole("option", { name: command });
+  await expect(option).toBeVisible();
+  for (let press = 0; press < 8; press += 1) {
+    if ((await option.getAttribute("aria-selected")) === "true") break;
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(option).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
 }

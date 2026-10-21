@@ -275,6 +275,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           onClose={() => setPaletteOpen(false)}
           onNavigate={onNavigate}
           onImport={() => openImport(null)}
+          onOpenNow={() => setNowOpen(true)}
           onOpenTask={taskId => {
             setPendingTask(taskId);
             onNavigate("tasks");
