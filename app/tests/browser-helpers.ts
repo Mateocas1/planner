@@ -187,6 +187,18 @@ async function getRemoteDoc(uid: string, path: string) {
 
 /* ---------- Helpers (exported API unchanged) ---------- */
 
+/**
+ * Adds tasks to an account that already exists (the sign-up is what creates
+ * it), so a test that walks rows with the keyboard seeds them in one call
+ * instead of opening the creation sheet once per row.
+ */
+export async function seedTasks(email: string, tasks: Array<{ title: string; deadline?: string }>): Promise<void> {
+  const uid = await resolveRemoteUid(email);
+  for (const task of tasks) {
+    await addRemoteDoc(uid, "tasks", { title: task.title, ...(task.deadline === undefined ? {} : { deadline: task.deadline }) });
+  }
+}
+
 export async function seedTaskAndBlock(email: string, title: string, start: string, end: string) {
   const uid = await resolveRemoteUid(email);
   const taskId = await addRemoteDoc(uid, "tasks", { title });
