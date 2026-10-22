@@ -93,6 +93,8 @@ export function FocusPill() {
   const [entrance, setEntrance] = useState(0);
   const shownRef = useRef(false);
 
+  /* Rust lowers the WebView2 memory target while the pill is hidden. */
+  const syncMemory = () => invoke("pill_visibility_changed");
   const now = Date.now();
   const visible = pillVisibility({ enabled, hiddenByUser, mainFocused: mainFocused !== false, session: snapshot?.session ?? null, now });
   const paused = snapshot?.status === "paused";
@@ -106,10 +108,10 @@ export function FocusPill() {
         shownRef.current = true;
         setEntrance(tick => tick + 1);
       }
-      void pill.show().catch(() => undefined);
+      void pill.show().then(syncMemory).catch(() => undefined);
     } else {
       shownRef.current = false;
-      void pill.hide().catch(() => undefined);
+      void pill.hide().then(syncMemory).catch(() => undefined);
     }
   }, [visible]);
 

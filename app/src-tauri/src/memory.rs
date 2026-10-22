@@ -30,6 +30,7 @@ use tauri::{Runtime, WebviewWindow};
 /// makes repeated syncs (event + call site) free when nothing changed.
 static MAIN_HIDDEN: AtomicBool = AtomicBool::new(false);
 static QUICKADD_HIDDEN: AtomicBool = AtomicBool::new(false);
+static PILL_HIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// Applies the hidden/minimized rule to the main window.
 pub fn sync_main<R: Runtime>(window: &WebviewWindow<R>) {
@@ -40,6 +41,12 @@ pub fn sync_main<R: Runtime>(window: &WebviewWindow<R>) {
 /// not resizable and never shown maximized).
 pub fn sync_quickadd<R: Runtime>(window: &WebviewWindow<R>) {
     sync(window, &QUICKADD_HIDDEN);
+}
+
+/// Applies the hidden rule to the focus pill (T8): created hidden, shown only
+/// while a session is live and the planner is not in front.
+pub fn sync_pill<R: Runtime>(window: &WebviewWindow<R>) {
+    sync(window, &PILL_HIDDEN);
 }
 
 /// Reads the window's current state and moves the runtime to `LOW` when the

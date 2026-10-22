@@ -165,6 +165,8 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .initialization_script("window.__PILL__ = true;")
         .build()?;
     apply_position(app, &pill);
+    // Created hidden: aim low until the first session shows it.
+    crate::memory::sync_pill(&pill);
 
     let mover = app.clone();
     pill.on_window_event(move |event| {
@@ -199,4 +201,13 @@ pub fn pill_focus_main<R: Runtime>(app: AppHandle<R>) {
 #[tauri::command]
 pub fn pill_main_focused<R: Runtime>(app: AppHandle<R>) -> MainState {
     main_state(&app)
+}
+
+/// The page calls this right after it shows or hides the pill window, so the
+/// WebView2 memory target follows visibility (T12: LOW hidden, NORMAL shown).
+#[tauri::command]
+pub fn pill_visibility_changed<R: Runtime>(app: AppHandle<R>) {
+    if let Some(pill) = app.get_webview_window(PILL_LABEL) {
+        crate::memory::sync_pill(&pill);
+    }
 }

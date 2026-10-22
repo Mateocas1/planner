@@ -48,6 +48,7 @@ pub fn run() {
             autostart::desktop_show_main,
             pill::pill_focus_main,
             pill::pill_main_focused,
+            pill::pill_visibility_changed,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
