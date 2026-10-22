@@ -25,6 +25,7 @@ import { DaySettingsSheet } from "./ui/Settings.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
 import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
+import { DesktopShell } from "./ui/DesktopShell.tsx";
 import { createShortcutRouter, dialogOpen, publishShortcut, rowHasFocus } from "./ui/shortcuts.ts";
 import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
@@ -46,6 +47,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
+      <DesktopShell />
       {loading ? (
         <main className="gate" role="status">
           <p>Checking your session…</p>
@@ -258,8 +260,11 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         />
       )}
       <div className="main">
-        <header className={`topbar${scrolled ? " is-scrolled" : ""}${titleHidden ? " is-titled" : ""}`}>
-          <span className="topbar-title" aria-hidden="true">{titles[view]}</span>
+        <header
+          data-tauri-drag-region
+          className={`topbar${scrolled ? " is-scrolled" : ""}${titleHidden ? " is-titled" : ""}`}
+        >
+          <span className="topbar-title" data-tauri-drag-region aria-hidden="true">{titles[view]}</span>
           <div className="topbar-actions">
             <button
               type="button"
