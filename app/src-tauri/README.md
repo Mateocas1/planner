@@ -23,6 +23,13 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Window state.** `tauri-plugin-window-state` remembers size, position, maximized state and monitor; it only restores a saved position when some connected monitor contains it, so off-screen states are never restored.
 - **Drag region.** The app's top bar carries `data-tauri-drag-region` (header + title span only, so its buttons stay clickable); it is inert in the browser.
 
+## Tray and close-to-tray (T6)
+
+- **Close hides (L13).** The main window's close button saves the window state *while the window is still visible*, hides it, and leaves the app running for the hotkey, the timer and the tray. Quit lives in the tray menu and is the real exit (it writes the state first, then `app.exit`, and the window-state plugin saves once more on `RunEvent::Exit`).
+- **The tray icon** (left click) toggles the main window: it hides the window that is already in front, otherwise it unminimizes, shows and focuses it; a double click always opens. The right-click menu holds the disabled **Up next** line, the focus line while a session runs (`Focus: 18 min left`), **Open Planner** and **Quit**; the tooltip mirrors Up next, and signed out the line reads `Sign in to see Up next`.
+- **One notice per install.** The first close shows the toast "Planner is still running in the tray" (`tauri-plugin-notification`, Rust-side only, no JS permission). The shown flag is `tray-notice.shown` in the app config dir, written only after the toast was accepted.
+- **Data path.** `src/desktop-tray.ts` words the label from `src/domain/upNext.ts` (the same block pair the sidebar card and Now mode show) and `src/domain/focus.ts`, then pushes `{upNext, focus, progress}` to the `tray_sync` command in `src-tauri/src/tray.rs` — at most one push per 10 s, at least one per minute while focus runs. Rust owns the menu rows, the tooltip and `set_progress_bar` (`Normal` running, `Paused` paused, `None` without a session).
+
 ## Notes
 
 - **Unsigned.** There is no code-signing certificate. Files copied locally carry no Mark-of-the-Web, so SmartScreen normally stays quiet. If Defender flags a build, submit it to Microsoft for analysis.

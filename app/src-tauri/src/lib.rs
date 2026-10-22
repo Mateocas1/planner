@@ -1,5 +1,6 @@
 mod deeplink;
 mod google_oauth;
+mod tray;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -11,6 +12,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        // One-time close-to-tray notice (T6); Rust shows it, no JS permission.
+        .plugin(tauri_plugin_notification::init())
         .manage(deeplink::PendingRoute::default())
         .manage(google_oauth::OAuthFlow::default())
         .invoke_handler(tauri::generate_handler![
@@ -19,9 +22,11 @@ pub fn run() {
             google_oauth::google_oauth_revoke,
             google_oauth::google_oauth_cancel,
             window::desktop_backdrop,
+            tray::tray_sync,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
+            tray::setup(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())
