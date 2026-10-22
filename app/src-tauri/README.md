@@ -44,6 +44,30 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Firebase.** The release window origin is `http://tauri.localhost`, so it uses the production Firebase config. The dev exe origin is `localhost`, so it uses the emulators (`npm run emulators`).
 - `src/lib.rs` registers plugins one `.plugin(...)` per line to keep merges simple.
 
+## WebView2 browser args and memory pass (T12)
+
+- **`additionalBrowserArgs` is pinned to wry's default set**, identical on both
+  windows (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`).
+  Setting the key replaces wry's built-in default (`wry 0.57
+  `src/webview2/mod.rs``:303`), so the string restates it; the point is control,
+  not change — a future wry upgrade cannot silently add or drop process args,
+  and the two windows must carry the exact same string because WebView2 only
+  coalesces environments with identical options into one shared browser
+  process (differing args would spawn a second one).
+  - `msWebOOUI`: off — Edge's text-selection "mini menu" overlay (wry
+    [#535](https://github.com/tauri-apps/wry/issues/535)); the app never uses it.
+  - `msPdfOOUI`: off — Edge's PDF reader overlay UI; the shell never opens PDFs.
+  - `msSmartScreenProtection`: off — SmartScreen checks on webview downloads
+    (tauri-apps/tauri[#1345](https://github.com/tauri-apps/tauri/issues/1345));
+    the app downloads nothing (Google import goes through the system browser).
+- **Nothing else is added, on purpose.** GPU-affecting switches would break S3
+  motion smoothness; `--disable-component-update` would starve spellcheck
+  dictionaries of a feature the app's text fields use; other Edge feature
+  names are undocumented for WebView2. The memory lever is
+  `ICoreWebView2_19::SetMemoryUsageTargetLevel` (the documented WebView2 API,
+  `src/memory.rs`) applied while a window is hidden or minimized, not
+  command-line features.
+
 ## Content Security Policy
 
 Set in `tauri.conf.json` (`app.security.csp`); `devCsp` is `null` so the dev exe can reach Vite HMR and the emulators. Tauri adds a hash for the one inline theme script in `index.html` at build time. Not runtime-verified from WSL: if login, sync or import breaks on Windows, look for CSP violations in WebView2 DevTools first.
