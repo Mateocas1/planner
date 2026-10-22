@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
+import { parseHoliday, type Holiday } from "../domain/holidays.ts";
 import { parseActualMinutes, parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
@@ -25,13 +26,15 @@ export type SeriesView = {
   estimate?: number;
 };
 
-type Collection = "tasks" | "blocks" | "series" | "completions";
+type Collection = "tasks" | "blocks" | "series" | "completions" | "holidays";
 
 export type Store = {
   loading: boolean;
   tasks: TaskView[];
   blocks: BlockView[];
   series: SeriesView[];
+  /** Holiday labels from Google holiday calendars (day labels only). */
+  holidays: Holiday[];
   /** Completion records keyed by occurrenceId, valued by completedAt. */
   completions: Record<string, string>;
   /**
@@ -82,24 +85,24 @@ function toCompletions(docs: QueryDocumentSnapshot[]): Record<string, string> {
 }
 
 export function useStore(uid: string | null): Store {
-  const [store, setStore] = useState<Store>({ loading: true, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
+  const [store, setStore] = useState<Store>({ loading: true, tasks: [], blocks: [], series: [], holidays: [], completions: {}, pendingWrites: 0 });
 
   useEffect(() => {
     if (!uid) {
-      setStore({ loading: false, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
+      setStore({ loading: false, tasks: [], blocks: [], series: [], holidays: [], completions: {}, pendingWrites: 0 });
       return;
     }
-    setStore({ loading: true, tasks: [], blocks: [], series: [], completions: {}, pendingWrites: 0 });
+    setStore({ loading: true, tasks: [], blocks: [], series: [], holidays: [], completions: {}, pendingWrites: 0 });
 
     // Documents still flagged as pending, per collection. Deletes are counted
     // separately, from their own writes, because a removal is never flagged.
-    const flagged: Record<Collection, number> = { tasks: 0, blocks: 0, series: 0, completions: 0 };
+    const flagged: Record<Collection, number> = { tasks: 0, blocks: 0, series: 0, completions: 0, holidays: 0 };
     const track = (name: Collection, snapshot: QuerySnapshot) => {
       flagged[name] = snapshot.docs.filter(doc => doc.metadata.hasPendingWrites).length;
       return Object.values(flagged).reduce((sum, count) => sum + count, 0);
     };
 
-    const outstanding = new Set<Collection>(["tasks", "blocks", "series", "completions"]);
+    const outstanding = new Set<Collection>(["tasks", "blocks", "series", "completions", "holidays"]);
     const delivered = (collection: Collection) => {
       outstanding.delete(collection);
       if (outstanding.size === 0) setStore(previous => ({ ...previous, loading: false }));
@@ -148,7 +151,19 @@ export function useStore(uid: string | null): Store {
       },
       onError,
     );
+    const unsubscribeHolidays = onSnapshot(
+      collection(db, `users/${uid}/holidays`),
+      { includeMetadataChanges: true },
+      snapshot => {
+        const pendingWrites = track("holidays", snapshot);
+        const holidays = snapshot.docs.flatMap(doc => parseHoliday(doc.id, doc.data()) ?? []);
+        setStore(previous => ({ ...previous, holidays, pendingWrites }));
+        delivered("holidays");
+      },
+      onError,
+    );
     return () => {
+      unsubscribeHolidays();
       unsubscribeTasks();
       unsubscribeBlocks();
       unsubscribeSeries();

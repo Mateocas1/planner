@@ -2,6 +2,7 @@ import { doc, writeBatch } from "firebase/firestore";
 import { importedIds, type ImportedBlockRef, type ImportPlan } from "../domain/gcalImport.ts";
 import { blockFields } from "./blocks.ts";
 import { db } from "./client.ts";
+import { writeHolidays } from "./holidays.ts";
 import { trackRemoval } from "./pending.ts";
 import { taskFields } from "./tasks.ts";
 
@@ -26,7 +27,7 @@ function chunks<T>(values: T[], size: number): T[][] {
   return result;
 }
 
-export type ImportWriteCounts = { blocks: number; tasks: number };
+export type ImportWriteCounts = { blocks: number; tasks: number; holidays: number };
 
 /**
  * Writes every block and task in the plan under its deterministic id. An empty
@@ -35,6 +36,9 @@ export type ImportWriteCounts = { blocks: number; tasks: number };
  * re-importing the same window repairs -- the ids make the retry idempotent.
  */
 export async function writeImportPlan(uid: string, plan: ImportPlan): Promise<ImportWriteCounts> {
+  // Holiday labels first and merged, so a re-import refreshes Google's fields
+  // without ever touching the user's override or hidden flag.
+  const holidays = await writeHolidays(uid, plan.holidays);
   const writes: { path: string; data: Record<string, unknown> }[] = [
     ...plan.blocks.map(block => ({ path: `users/${uid}/blocks/${block.id}`, data: blockFields(block) })),
     ...plan.tasks.map(task => ({ path: `users/${uid}/tasks/${task.id}`, data: taskFields(task, false) })),
@@ -44,7 +48,7 @@ export async function writeImportPlan(uid: string, plan: ImportPlan): Promise<Im
     for (const write of chunk) batch.set(doc(db, write.path), write.data);
     await batch.commit();
   }
-  return { blocks: plan.blocks.length, tasks: plan.tasks.length };
+  return { blocks: plan.blocks.length, tasks: plan.tasks.length, holidays };
 }
 
 /**
@@ -74,5 +78,5 @@ export async function removeImported(
     for (const path of chunk) void trackRemoval(path, commit).catch(() => undefined);
     await commit;
   }
-  return { blocks: blockIds.length, tasks: taskIds.length };
+  return { blocks: blockIds.length, tasks: taskIds.length, holidays: 0 };
 }

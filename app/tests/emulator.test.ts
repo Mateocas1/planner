@@ -613,3 +613,46 @@ test("a plan is one batch of blocks, and its undo removes exactly those document
     await close(owner);
   }
 });
+
+/**
+ * Holiday labels (S11) against real Firestore: the owner reads and writes
+ * `users/{uid}/holidays`, nobody else does, and an import's merge write
+ * refreshes Google's fields without touching the user's override or hidden
+ * flag. The helpers take the test's authenticated database, as `addBlocks` does.
+ */
+test("holiday labels are owner-only and a re-import keeps the user's choices", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { setHolidayHidden, setHolidayKindOverride, writeHolidays } = await import("../src/data/holidays.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`holiday-owner-${suffix}`);
+  const other = client(`holiday-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `holiday-owner-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const source = { provider: "gcal" as const, calendarId: "es.ar#holiday@group.v.calendar.google.com", eventId: "20261207_a" };
+    const holiday = { id: "gcal_es-ar-holiday_20261207_a", date: "2026-12-07", title: "Puente turístico", kind: "nonWorking" as const, source };
+    const path = `users/${uid}/holidays/${holiday.id}`;
+
+    assert.equal(await writeHolidays(uid, [holiday], owner.db), 1);
+    assert.deepEqual((await getDoc(doc(owner.db, path))).data(), { date: "2026-12-07", title: "Puente turístico", kind: "nonWorking", source });
+
+    await setHolidayKindOverride(uid, holiday.id, "public", owner.db);
+    await setHolidayHidden(uid, holiday.id, true, owner.db);
+    // Google renames the event and reclassifies it; the user's choices stay.
+    await writeHolidays(uid, [{ ...holiday, title: "Feriado puente", kind: "observance" }], owner.db);
+    assert.deepEqual((await getDoc(doc(owner.db, path))).data(), {
+      date: "2026-12-07", title: "Feriado puente", kind: "observance", source, kindOverride: "public", hidden: true,
+    });
+    await setHolidayKindOverride(uid, holiday.id, undefined, owner.db);
+    await setHolidayHidden(uid, holiday.id, false, owner.db);
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.kindOverride, undefined);
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.hidden, undefined);
+    await assert.rejects(setHolidayKindOverride(uid, holiday.id, "bogus" as never, owner.db), /holiday kind is invalid/);
+
+    await createUserWithEmailAndPassword(other.auth, `holiday-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(getDoc(doc(other.db, path)), { code: "permission-denied" });
+    await assert.rejects(writeHolidays(uid, [holiday], other.db), { code: "permission-denied" });
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
