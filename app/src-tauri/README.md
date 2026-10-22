@@ -16,6 +16,13 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 
 `tauri dev` is not used: it tries to launch the built exe from Linux. The debug exe is not built with Tauri's `custom-protocol` feature, so it loads `build.devUrl` (the Vite server) instead of embedded assets.
 
+## Window chrome (T3)
+
+- **Native decorations stay on.** Windows 11 draws the caption buttons (system hovers, red close hover, snap-layouts flyout on maximize hover) and the caption strip (drag, double-click maximize). `tauri-plugin-decorum` was evaluated and rejected: its Windows snap-layout support is a synthetic `Win+Z` keystroke fired after a hover timer, and it injects a full-width drag strip that would swallow clicks on the app's top bar.
+- **Mica backdrop (Windows 11).** The main window ships `transparent: true`; `src/window.rs` applies `window-vibrancy` Mica through the `desktop_backdrop` command, re-applied on every theme change with the app's dark/light appearance. On Windows 10 the command errors and the frontend keeps the opaque web design. `src/ui/DesktopShell.tsx` + `DesktopShell.css` own the page-side classes (`desktop-shell`, `desktop-mica`).
+- **Window state.** `tauri-plugin-window-state` remembers size, position, maximized state and monitor; it only restores a saved position when some connected monitor contains it, so off-screen states are never restored.
+- **Drag region.** The app's top bar carries `data-tauri-drag-region` (header + title span only, so its buttons stay clickable); it is inert in the browser.
+
 ## Notes
 
 - **Unsigned.** There is no code-signing certificate. Files copied locally carry no Mark-of-the-Web, so SmartScreen normally stays quiet. If Defender flags a build, submit it to Microsoft for analysis.
