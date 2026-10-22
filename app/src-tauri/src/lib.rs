@@ -1,6 +1,7 @@
 mod deeplink;
 mod google_oauth;
 mod quickadd;
+mod idle;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +26,7 @@ pub fn run() {
             quickadd::quickadd_get_config,
             quickadd::quickadd_set_shortcut,
             quickadd::quickadd_focus_main,
+            idle::idle_seconds,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
