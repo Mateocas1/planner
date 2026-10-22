@@ -27,6 +27,8 @@ export const pillEnabledKey = "planner-pill-enabled";
 
 /** Events between the two windows (see ui/FocusPillBridge.tsx). */
 export const pillEvents = {
+  /** Rust → pill: the main window gained or lost the foreground. */
+  mainFocus: "pill://main-focus",
   /** main → pill: the session and its label changed. */
   state: "pill://state",
   /** pill → main: pause/resume the session the pill shares. */

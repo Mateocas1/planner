@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { isTauri } from "../desktop.ts";
 import { setProfileDaySettings, type DaySettingsPatch } from "../data/profile.ts";
+import { readPillEnabled, writePillEnabled } from "./focusPillState.ts";
 import { minutesPerDay, type WorkWindow } from "../planning/window.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -148,12 +150,16 @@ export function DaySettingsSheet({
   const [windowDraft, setWindowDraft] = useState<{ start: string; end: string } | null>(null);
   const [shutdownDraft, setShutdownDraft] = useState<string | null>(null);
   const [shortcutsDraft, setShortcutsDraft] = useState<boolean | null>(null);
+  // The desktop pill's toggle is per device (the pill reads the same entry),
+  // so it is a draft over localStorage, not the profile (S8.4, L15).
+  const [pillDraft, setPillDraft] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startText = windowDraft?.start ?? formatClock(workWindow.startMinutes);
   const endText = windowDraft?.end ?? formatClock(workWindow.endMinutes);
   const shutdownText = shutdownDraft ?? formatClock(shutdownTime);
   const enabled = shortcutsDraft ?? shortcutsEnabled;
+  const pillEnabled = pillDraft ?? readPillEnabled();
 
   const editWindow = (field: "start" | "end", value: string) => {
     const next = { start: startText, end: endText };
@@ -195,6 +201,12 @@ export function DaySettingsSheet({
     setShortcutsDraft(next);
     setError(null);
     save({ shortcutsEnabled: next });
+  };
+
+  const togglePill = () => {
+    const next = !pillEnabled;
+    setPillDraft(next);
+    writePillEnabled(next);
   };
 
   return (
@@ -251,6 +263,28 @@ export function DaySettingsSheet({
             </button>
           </div>
         </div>
+        {isTauri() && (
+          <div className="form-group">
+            <div className="form-row">
+              <span id="desktop-pill-label">Show floating timer</span>
+              <button
+                type="button"
+                role="switch"
+                className="day-switch"
+                aria-checked={pillEnabled}
+                aria-labelledby="desktop-pill-label"
+                onClick={togglePill}
+              >
+                <span className="day-switch-track" aria-hidden="true">
+                  <span className="day-switch-knob" />
+                </span>
+              </button>
+            </div>
+            <p className="day-settings-note">
+              A mini timer above other windows while a focus session runs.
+            </p>
+          </div>
+        )}
         {error && <p className="inline-error" role="alert">{error}</p>}
       </div>
     </Sheet>

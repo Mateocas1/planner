@@ -16,6 +16,7 @@ import { Calendar } from "./ui/Calendar.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
+import { FocusPillBridge } from "./ui/FocusPillBridge.tsx";
 import { Home } from "./ui/Home.tsx";
 import { NowMode } from "./ui/NowMode.tsx";
 import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
@@ -66,7 +67,6 @@ export default function App() {
 }
 
 const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar" };
-
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
   const { loading, tasks, blocks, series, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
@@ -242,6 +242,10 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
 
   return (
     <TaskDragProvider onNavigate={onNavigate}>
+      {/* The floating pill (desktop) mirrors this shell's one timer; a no-op
+          off Tauri. It renders nothing here — it only carries the session
+          across the window boundary. */}
+      <FocusPillBridge focus={focus} />
       <div className={`shell${phone ? " is-phone" : ""}`}>
       {!phone && (
         <Sidebar
