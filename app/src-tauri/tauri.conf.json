@@ -18,6 +18,20 @@
         "minWidth": 800,
         "minHeight": 560,
         "transparent": true
+      },
+      {
+        "label": "quickadd",
+        "title": "Quick add",
+        "url": "index.html#quickadd",
+        "width": 560,
+        "height": 150,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": true
       }
     ],
     "security": {
