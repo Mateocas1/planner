@@ -23,6 +23,12 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Window state.** `tauri-plugin-window-state` remembers size, position, maximized state and monitor; it only restores a saved position when some connected monitor contains it, so off-screen states are never restored.
 - **Drag region.** The app's top bar carries `data-tauri-drag-region` (header + title span only, so its buttons stay clickable); it is inert in the browser.
 
+## Start at sign-in (T10)
+
+- **Switch.** Day settings → "Open Planner when I sign in to Windows" (desktop only, off by default). It reads the real state from `tauri-plugin-autostart`, the per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry (no admin rights), which launches `Planner.exe --autostart`.
+- **Hidden launch.** The main window is created hidden (`visible: false` in `tauri.conf.json`). `src/autostart.rs` shows it for every launch except `--autostart`. `window-state` excludes visibility from its flags, so a saved state can never show a sign-in launch.
+- **Reveal rule.** Once the store and profile have loaded, `src/desktop-autostart.ts` (`shouldRevealAtSignIn`) shows the window only when the morning brief applies today: blocks start today and the brief was not dismissed on this device. Otherwise the process stays in the background; the tray (T6) is the way back to it.
+
 ## Notes
 
 - **Unsigned.** There is no code-signing certificate. Files copied locally carry no Mark-of-the-Web, so SmartScreen normally stays quiet. If Defender flags a build, submit it to Microsoft for analysis.
