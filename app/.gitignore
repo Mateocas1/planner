@@ -5,3 +5,13 @@ test-results/
 playwright-report/
 *.log
 firebase-debug.log
+
+# Tauri (desktop)
+src-tauri/target/
+src-tauri/gen/
+# unused mobile/mac icon output of `tauri icon`
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/*.icns
+src-tauri/icons/Square*.png
+src-tauri/icons/StoreLogo.png
