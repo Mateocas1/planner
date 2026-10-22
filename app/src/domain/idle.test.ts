@@ -130,16 +130,20 @@ test("nine minutes and fifty-nine seconds away is nine minutes", () => {
 /* ---------------------------- clamping ------------------------------ */
 
 test("the subtraction can never exceed what the session recorded", () => {
-  assert.equal(clampSubtraction(12, 9, undefined), 9);
-  assert.equal(clampSubtraction(12, 0, undefined), 0); // nothing recorded
+  assert.equal(clampSubtraction(12, 9, 40), 9);
+  assert.equal(clampSubtraction(12, 0, 40), 0); // nothing recorded
 });
 
 test("the subtraction can never drive the task's counter negative", () => {
   assert.equal(clampSubtraction(12, 30, 5), 5); // counter wins over the session
   assert.equal(clampSubtraction(12, 30, 0), 0); // clamp at zero
-  assert.equal(clampSubtraction(12, null, 4), 4); // session still running
-  assert.equal(clampSubtraction(12, null, undefined), 12); // only the span's own bound
-  assert.equal(clampSubtraction(4.9, null, undefined), 4); // whole minutes, floored
+  // Session still running: its minutes are not in the counter yet, so the
+  // span's own bound (clipped to the session's focus) is the limit; the stop
+  // write floors the result at zero.
+  assert.equal(clampSubtraction(12, null, 0), 12);
+  assert.equal(clampSubtraction(12, null, 4), 12);
+  assert.equal(clampSubtraction(4.9, null, 0), 4); // whole minutes, floored
+  assert.equal(clampSubtraction(40, 50, 3), 3); // larger than the counter: clamps
   assert.equal(clampSubtraction(-3, 30, 50), 0); // never negative itself
 });
 
@@ -178,8 +182,8 @@ test("the same spans always produce the same applied key", () => {
 test("a pending subtraction is consumed exactly once", () => {
   const storage = memoryStorage();
   savePendingSubtraction("b1@1", 12, storage);
-  savePendingSubtraction("b1@1", 12, storage); // a double click overwrites, never doubles
-  assert.equal(consumePendingSubtraction("b1@1", storage), 12);
+  savePendingSubtraction("b1@1", 5, storage); // a later, disjoint confirmation adds up
+  assert.equal(consumePendingSubtraction("b1@1", storage), 17);
   assert.equal(consumePendingSubtraction("b1@1", storage), 0); // gone
   savePendingSubtraction("b1@2", 7, storage); // other sessions are untouched
   assert.equal(consumePendingSubtraction("b1@2", storage), 7);

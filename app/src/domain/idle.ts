@@ -89,8 +89,9 @@ export function isIdle(idleSeconds: number, thresholdMinutes: number): boolean {
  * The last instant of a session that counts as focus: an open pause freezes
  * the clock (time after it is excluded from `focusedMs` by domain/focus.ts),
  * the block's end caps it, and it never runs before the session started. This
- * mirrors `focusClock` in domain/focus.ts — the poller can only observe spans
- * while the session is not paused, so a closed pause can never sit inside one.
+ * mirrors `focusClock` in domain/focus.ts. An open span is closed at
+ * `pausedAt` when the pause begins (`idleFlow.closeAway`), so paused time is
+ * never counted as away; this clip is the second line of defence.
  */
 function focusEnd(session: FocusSession, nowMs: number): number {
   return Math.max(Math.min(session.pausedAt ?? nowMs, session.endAt), session.startedAt);
@@ -126,21 +127,23 @@ export function awayMinutesOf(spans: AwaySpan[]): number {
 /**
  * The largest subtraction that is safe to write.
  *
- * `recordedMinutes` is what the session already added to the task (null while
- * it still runs: its own write has not happened, and the away span was already
- * clipped so it cannot exceed the session's focus). `taskActualMinutes` is the
- * counter snapshot the store holds — a decrement must not drive it below zero
- * even when the session's own minutes would allow it. Everything floors to a
- * whole minute count of at least 0.
+ * `recordedMinutes` is what the session already added to the task. While the
+ * session still runs it is null: its minutes are not in the counter yet, the
+ * away span was already clipped so it cannot exceed the session's focus, and
+ * the stop write floors `tracked − away` at zero, so `taskActualMinutes` does
+ * not apply. Once the session reported, `taskActualMinutes` (a required
+ * snapshot of the counter the store holds, 0 for a task with none) bounds the
+ * decrement so it can never drive the counter below zero even when the
+ * session's own minutes would allow it. Everything floors to a whole minute
+ * count of at least 0.
  */
 export function clampSubtraction(
   awayMinutes: number,
   recordedMinutes: number | null,
-  taskActualMinutes: number | undefined,
+  taskActualMinutes: number,
 ): number {
   let limit = awayMinutes;
-  if (recordedMinutes !== null) limit = Math.min(limit, recordedMinutes);
-  if (taskActualMinutes !== undefined) limit = Math.min(limit, taskActualMinutes);
+  if (recordedMinutes !== null) limit = Math.min(limit, recordedMinutes, taskActualMinutes);
   return Math.max(0, Math.floor(limit));
 }
 
@@ -186,8 +189,9 @@ function readPending(storage: KeyValueStorage): PendingMap {
 /**
  * Records a confirmed subtraction for a session that has not reported yet;
  * `useFocusTimer.report` consumes it when the session stops and subtracts the
- * minutes from what that stop writes. Keyed by session, so a second confirm
- * for the same session overwrites the same entry instead of doubling it.
+ * minutes from what that stop writes. Keyed by session; confirmations of one
+ * session cover disjoint spans (a confirmed span leaves the books), so they
+ * add up. Repeating the same confirmation is the applied ledger's job.
  */
 export function savePendingSubtraction(sessionKey: string, minutes: number, storage: KeyValueStorage): void {
   const pending = readPending(storage);
@@ -195,7 +199,7 @@ export function savePendingSubtraction(sessionKey: string, minutes: number, stor
   for (const [key, entry] of Object.entries(pending)) {
     if (Date.now() - entry.at < PENDING_TTL_MS) kept[key] = entry;
   }
-  kept[sessionKey] = { minutes, at: Date.now() };
+  kept[sessionKey] = { minutes: (kept[sessionKey]?.minutes ?? 0) + minutes, at: Date.now() };
   storage.setItem(pendingStorageKey, JSON.stringify(kept));
 }
 

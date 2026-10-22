@@ -6,16 +6,11 @@ import {
   appliedKeyOf,
   awayMinutesOf,
   awayStart,
-  clipAwaySpan,
-  clampSubtraction,
-  isApplied,
   isIdle,
-  markApplied,
   readIdleThreshold,
-  savePendingSubtraction,
   sessionKeyOf,
-  type AwaySpan,
 } from "../domain/idle.ts";
+import { closeAway, confirmAway, emptyBooks, keepAway, openAway, type AwayBooks } from "../domain/idleFlow.ts";
 import { subtractActualMinutes } from "../data/tasks.ts";
 import { isTauri } from "../desktop.ts";
 import { trackedMinutes } from "./useFocusTimer.ts";
@@ -87,8 +82,7 @@ export function useIdleAway({
 
   // The current session's away spans, plus one still open (the user has been
   // idle past the threshold but has not come back yet).
-  const spansRef = useRef<AwaySpan[]>([]);
-  const openFromRef = useRef<number | null>(null);
+  const booksRef = useRef<AwayBooks>(emptyBooks());
   // The last session this hook saw, so the transition can close an open span.
   const lastSessionRef = useRef<FocusSession | null>(null);
   // The latest stopped report per block, so a prompt created when the session
@@ -99,12 +93,9 @@ export function useIdleAway({
    * into (or updates) the one pending prompt. A total under a whole minute
    * stays silent. */
   const closeSpanAndPrompt = useCallback((ended: FocusSession, end: number) => {
-    if (openFromRef.current !== null) {
-      const clipped = clipAwaySpan({ from: openFromRef.current, to: end }, ended, end);
-      openFromRef.current = null;
-      if (clipped !== null) spansRef.current.push(clipped);
-    }
-    const minutes = awayMinutesOf(spansRef.current);
+    booksRef.current = closeAway(booksRef.current, ended, end);
+    const spans = booksRef.current.spans;
+    const minutes = awayMinutesOf(spans);
     if (minutes < 1) return;
     const recorded =
       recordedRef.current !== null && recordedRef.current.blockId === ended.blockId
@@ -112,7 +103,7 @@ export function useIdleAway({
         : null;
     const sessionKey = sessionKeyOf(ended);
     setPrompt({
-      key: appliedKeyOf(sessionKey, spansRef.current),
+      key: appliedKeyOf(sessionKey, spans),
       sessionKey,
       blockId: ended.blockId,
       ...(ended.taskId === undefined ? {} : { taskId: ended.taskId }),
@@ -136,8 +127,8 @@ export function useIdleAway({
           const threshold = readIdleThreshold(window.localStorage);
           if (isIdle(idleSeconds, threshold)) {
             // The span opens where the absence began, not where we noticed it.
-            if (openFromRef.current === null) openFromRef.current = awayStart(Date.now(), idleSeconds);
-          } else if (openFromRef.current !== null) {
+            booksRef.current = openAway(booksRef.current, awayStart(Date.now(), idleSeconds));
+          } else if (booksRef.current.openFrom !== null) {
             closeSpanAndPrompt(session, Date.now());
           }
         })
@@ -162,8 +153,16 @@ export function useIdleAway({
     lastSessionRef.current = session;
     if (previous === null) return;
     if (session !== null && sessionKeyOf(session) === sessionKeyOf(previous)) return;
-    if (openFromRef.current !== null) closeSpanAndPrompt(previous, Math.min(Date.now(), previous.endAt));
-    spansRef.current = [];
+    if (booksRef.current.openFrom !== null) closeSpanAndPrompt(previous, Math.min(Date.now(), previous.endAt));
+    booksRef.current = emptyBooks();
+  }, [session, closeSpanAndPrompt]);
+
+  /* A pause freezes the focus clock and stops the poller, so an absence still
+     open at that instant ends there: paused time is never counted as away,
+     however long the pause lasts. */
+  useEffect(() => {
+    if (session === null || session.pausedAt === undefined) return;
+    if (booksRef.current.openFrom !== null) closeSpanAndPrompt(session, session.pausedAt);
   }, [session, closeSpanAndPrompt]);
 
   /** Where a stopped session's report lands: the prompt learns what the
@@ -179,27 +178,26 @@ export function useIdleAway({
     );
   }, []);
 
-  /** Subtract, once. The clamp uses the counter snapshot the store holds; the
-   * ledger pins the decision so a second click, a re-render or a reconnect
-   * cannot repeat the write. */
+  /** Subtract, once. The clamp uses the counter snapshot the store holds (0
+   * for a task with none); the ledger pins the decision so a second click, a
+   * re-render or a reconnect cannot repeat the write. The confirmed spans
+   * leave the books, so a later stop cannot offer them again. */
   const confirm = useCallback(
-    (taskActualMinutes: number | undefined) => {
+    (taskActualMinutes: number) => {
       const current = promptRef.current;
       if (current === null) return;
-      const subtractable = clampSubtraction(current.minutes, current.recorded, taskActualMinutes);
       setPrompt(null);
-      if (subtractable < 1 || isApplied(current.key, window.localStorage)) return;
-      markApplied(current.key, window.localStorage);
-      if (current.recorded === null) {
-        // The session has not reported: fold the subtraction into its stop
-        // write (useFocusTimer consumes it exactly once).
-        savePendingSubtraction(current.sessionKey, subtractable, window.localStorage);
-        return;
-      }
-      if (uid === undefined || current.taskId === undefined) return; // nothing was ever written
-      void subtractActualMinutes(uid, current.taskId, subtractable).catch((cause: unknown) => {
-        onError?.(cause instanceof Error ? cause.message : "The subtraction could not be saved. Try again.");
-      });
+      booksRef.current = confirmAway(booksRef.current, current, taskActualMinutes, {
+        storage: window.localStorage,
+        write:
+          uid === undefined
+            ? undefined
+            : (taskId, minutes) => {
+                void subtractActualMinutes(uid, taskId, minutes).catch(() => {
+                  onError?.("The subtraction could not be saved.");
+                });
+              },
+      }).books;
     },
     [uid, onError],
   );
@@ -208,7 +206,7 @@ export function useIdleAway({
    * come back into a later prompt. */
   const keep = useCallback(() => {
     setPrompt(null);
-    spansRef.current = [];
+    booksRef.current = keepAway(booksRef.current);
   }, []);
 
   return { prompt, onFocusStopped, confirm, keep };

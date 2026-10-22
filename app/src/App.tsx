@@ -399,7 +399,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         <IdleToast
           prompt={idle.prompt}
           onSubtract={() =>
-            idle.confirm(tasks.find(task => task.id === idle.prompt?.taskId)?.actualMinutes)
+            idle.confirm(tasks.find(task => task.id === idle.prompt?.taskId)?.actualMinutes ?? 0)
           }
           onKeep={idle.keep}
         />

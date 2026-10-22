@@ -4,6 +4,7 @@ import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
+import { subtractActualMinutesIn } from "../src/data/actualMinutes.ts";
 import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
@@ -127,16 +128,13 @@ test("two offline increments accumulate on the server instead of overwriting eac
 
 /**
  * Idle away (T9, spec S8.5): a subtraction confirmed after the session's own
- * minutes already landed goes through the same increment transform as
- * `addActualMinutes`, with a negative value (src/data/tasks.ts
- * `subtractActualMinutes`). The helper module itself cannot be loaded here --
- * it imports the app's client, which resolves its project from
- * `window.location` -- so this test pins the storage semantics it depends on:
- * one queued negative transform, drained once, changes the counter by exactly
- * its minutes. The "Keep writes nothing" half is a property of the UI (the
- * confirm handler is the only caller of this call shape), which the domain
- * unit tests cover; what the server can prove is that nothing else in the
- * write path subtracts on its own.
+ * minutes already landed goes through the app's helper
+ * (`subtractActualMinutesIn`, which `tasks.ts` `subtractActualMinutes` calls
+ * with the app's database): one `increment()` transform with a negative
+ * value. This test calls that helper while offline and proves the queued
+ * write drains once and changes the counter by exactly its minutes. The
+ * "Keep writes nothing" half is a property of the confirm / keep functions in
+ * domain/idleFlow.ts, covered by their unit tests.
  */
 test("a queued offline subtraction lands once on the server", async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -147,9 +145,8 @@ test("a queued offline subtraction lands once on the server", async () => {
     await setDoc(doc(owner.db, path), { title: "Away task", completed: false, actualMinutes: 30 });
 
     await disableNetwork(owner.db);
-    // The one write a confirmed Subtract produces (the same call shape
-    // subtractActualMinutes emits), queued while offline.
-    const subtraction = updateDoc(doc(owner.db, path), { actualMinutes: increment(-12) });
+    // The one write a confirmed Subtract produces, queued while offline.
+    const subtraction = subtractActualMinutesIn(owner.db, account.user.uid, "away", 12);
     // The local cache applies the transform at once, which is what keeps the
     // visible counter honest while the app is offline.
     assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 18);
@@ -164,6 +161,10 @@ test("a queued offline subtraction lands once on the server", async () => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(stored, 18);
+
+    // The helper refuses what is not a whole positive minute count.
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "away", 0), /whole minute/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "a/b", 5), /task ID/);
 
     // Keep: the same offline cycle with no confirmed write changes nothing.
     await disableNetwork(owner.db);
