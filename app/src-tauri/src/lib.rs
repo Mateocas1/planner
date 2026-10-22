@@ -5,6 +5,7 @@ mod quickadd;
 mod idle;
 mod notify;
 mod tray;
+mod pill;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,7 +14,14 @@ pub fn run() {
         // One `.plugin(...)` per line, so feature branches union cleanly.
         // single-instance must be the first plugin registered.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| deeplink::on_second_instance(app)))
-        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(autostart::window_state_flags()).build())
+        // The pill window keeps its own position (src/pill.rs): the plugin's
+        // `visible` restore would re-show it on launch without a session.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(autostart::window_state_flags())
+                .with_filter(|label| label != "pill")
+                .build(),
+        )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
@@ -37,12 +45,15 @@ pub fn run() {
             tray::tray_sync,
             autostart::desktop_launched_at_sign_in,
             autostart::desktop_show_main,
+            pill::pill_focus_main,
+            pill::pill_main_focused,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
             quickadd::setup(app.handle())?;
             tray::setup(app.handle())?;
             autostart::setup(app.handle());
+            pill::setup(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())

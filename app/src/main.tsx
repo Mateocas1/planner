@@ -15,11 +15,17 @@ import { installLens } from "./ui/lens.ts";
 import { installSheen } from "./ui/sheen.ts";
 import { installUpdatePrompt } from "./pwa-update.ts";
 
+/** True only inside the pill window (its initialization script, set by
+ * `src-tauri/pill.rs`, marks the page before any app script runs). The pill
+ * renders the floating timer alone — no Firestore, no shortcuts, no document
+ * motion — so its dynamic import keeps those modules out of its chunk graph. */
+const isPillWindow = (globalThis as { __PILL__?: boolean }).__PILL__ === true;
+
 // Document-level motion is installed once, outside React: a StrictMode remount
 // must never stack a second pointer listener. The lens gate only sets an
 // attribute on <html>; CSS decides whether the filter is used.
-installSheen();
-installLens();
+if (!isPillWindow) installSheen();
+if (!isPillWindow) installLens();
 
 // Registers the offline app-shell service worker only where the browser has one.
 // `registerSW` is wired to `registerType: "prompt"` in vite.config.ts: a waiting
@@ -27,15 +33,25 @@ installLens();
 // which would interrupt unsent writes held in the Firestore persistent local
 // cache. `installUpdatePrompt` surfaces that waiting worker as a corner card
 // whose Reload button is the only way a new build takes over (SB1).
-installUpdatePrompt();
+const root = createRoot(document.getElementById("root")!);
 
-// One bundle, two surfaces: the quick-add window loads the same index.html with
-// the `#quickadd` route flag (tauri.conf.json) and renders only the
-// natural-language quick add. Everything else — theme bootstrap, brand tokens,
-// the lens and sheen attributes — is shared on purpose, so both windows read
-// identical materials.
 const route = parseWindowRoute(window.location.search, window.location.hash);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>{route === "quickadd" ? <QuickAddWindow /> : <App />}</StrictMode>,
-);
+if (isPillWindow) {
+  void import("./ui/FocusPill.tsx").then(({ FocusPill }) => {
+    root.render(
+      <StrictMode>
+        <FocusPill />
+      </StrictMode>,
+    );
+  });
+} else {
+  installUpdatePrompt();
+
+  // One bundle, two surfaces: the quick-add window loads the same index.html
+  // with the `#quickadd` route flag (tauri.conf.json) and renders only the
+  // natural-language quick add. Theme, brand tokens, lens and sheen are shared.
+  root.render(
+    <StrictMode>{route === "quickadd" ? <QuickAddWindow /> : <App />}</StrictMode>,
+  );
+}

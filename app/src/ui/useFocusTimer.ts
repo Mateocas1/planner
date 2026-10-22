@@ -13,6 +13,7 @@ import {
   serializeSession,
   startFocus,
   stopFocus,
+  focusStorageKey,
   type FocusReport,
   type FocusSession,
   type FocusStatus,
@@ -53,8 +54,10 @@ import { currentAndNext } from "../domain/upNext.ts";
  * replaced session is reported exactly like a stopped one.
  */
 
-/** The storage key, shared with the browser tests that assert a reload resumes. */
-export const focusStorageKey = "planner-focus";
+/** The session's storage key now lives beside the session in `domain/focus.ts`
+ * (the desktop pill window reads the same entry without importing this hook,
+ * which would drag the data layer into the pill's bundle). */
+export { focusStorageKey };
 
 /**
  * The shortest session worth recording, in whole minutes.
