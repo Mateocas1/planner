@@ -76,11 +76,25 @@ export function NowMode({
   /* One tick a second: the ring moves per minute for most of a block and per
      second in the last five, and the remaining time is the surface's content,
      so it is never inferred from a coarser clock (the shell's Now card ticks
-     every 30 s because it is one card among several). */
+     every 30 s because it is one card among several). The tick pauses while
+     the document is hidden (T12: the window went to the tray or is
+     minimized) — nothing on the surface can move unseen, and coming back
+     re-reads the clock at once so no stale number is ever shown. */
+  const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
   useEffect(() => {
+    const onVisibility = () => {
+      const next = document.visibilityState !== "hidden";
+      setVisible(next);
+      if (next) setNowMs(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  useEffect(() => {
+    if (!visible) return undefined;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [visible]);
 
   /* Idle chrome: after 30 s without input the buttons dissolve; any pointer,
      wheel or key brings them back. The timer restarts on every event, so the
