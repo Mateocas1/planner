@@ -1,5 +1,10 @@
 import { useState } from "react";
 import { isTauri } from "../desktop.ts";
+import {
+  notifySettingsStorageKey,
+  parseNotifySettings,
+  type NotifySettings,
+} from "../desktop-notify.ts";
 import { setProfileDaySettings, type DaySettingsPatch } from "../data/profile.ts";
 import { QuickAddShortcut } from "./QuickAddShortcut.tsx";
 import {
@@ -138,6 +143,23 @@ function TimeField({
   );
 }
 
+/** This device's notification toggles (T7, S8.3): desktop only, never synced. */
+function readNotifySettings(): NotifySettings {
+  try {
+    return parseNotifySettings(window.localStorage.getItem(notifySettingsStorageKey));
+  } catch {
+    return parseNotifySettings(null);
+  }
+}
+
+function writeNotifySettings(next: NotifySettings): void {
+  try {
+    window.localStorage.setItem(notifySettingsStorageKey, JSON.stringify(next));
+  } catch {
+    /* storage denied: the toggles then live only until the page closes */
+  }
+}
+
 export function DaySettingsSheet({
   uid,
   workWindow,
@@ -160,6 +182,7 @@ export function DaySettingsSheet({
   const [shutdownDraft, setShutdownDraft] = useState<string | null>(null);
   const [shortcutsDraft, setShortcutsDraft] = useState<boolean | null>(null);
   const [idleDraft, setIdleDraft] = useState<string | null>(null);
+  const [notify, setNotify] = useState<NotifySettings>(() => (isTauri() ? readNotifySettings() : { ...parseNotifySettings(null) }));
   const [error, setError] = useState<string | null>(null);
 
   const startText = windowDraft?.start ?? formatClock(workWindow.startMinutes);
@@ -224,6 +247,12 @@ export function DaySettingsSheet({
     setError(null);
     setIdleDraft(null);
     writeIdleThreshold(minutes, window.localStorage);
+  };
+
+  const toggleNotify = (field: keyof NotifySettings) => {
+    const next = { ...notify, [field]: !notify[field] };
+    setNotify(next);
+    writeNotifySettings(next);
   };
 
   return (
@@ -307,6 +336,44 @@ export function DaySettingsSheet({
             <p className="day-settings-note">
               Minutes of no input during focus before the app asks whether to subtract them. This device only.
             </p>
+          </div>
+        )}
+        {/* Desktop only (T7, S8.3): the toasts are a Windows shell feature, so
+            the web build never shows the section. Per-device on purpose: what
+            this computer reminds is not part of the synced profile. */}
+        {isTauri() && (
+          <div className="form-group">
+            <p className="day-settings-note">Windows notifications, on this computer.</p>
+            <div className="form-row">
+              <span id="notify-blocks-label">Block reminders</span>
+              <button
+                type="button"
+                role="switch"
+                className="day-switch"
+                aria-checked={notify.blockReminders}
+                aria-labelledby="notify-blocks-label"
+                onClick={() => toggleNotify("blockReminders")}
+              >
+                <span className="day-switch-track" aria-hidden="true">
+                  <span className="day-switch-knob" />
+                </span>
+              </button>
+            </div>
+            <div className="form-row">
+              <span id="notify-shutdown-label">Shutdown nudge</span>
+              <button
+                type="button"
+                role="switch"
+                className="day-switch"
+                aria-checked={notify.shutdownNudge}
+                aria-labelledby="notify-shutdown-label"
+                onClick={() => toggleNotify("shutdownNudge")}
+              >
+                <span className="day-switch-track" aria-hidden="true">
+                  <span className="day-switch-knob" />
+                </span>
+              </button>
+            </div>
           </div>
         )}
         {error && <p className="inline-error" role="alert">{error}</p>}

@@ -36,3 +36,4 @@ window-vibrancy = "0.8.1"
 # Idle probe (idle.rs): GetLastInputInfo + GetTickCount64. Version matches the
 # windows-core already in the lock file so no second copy is pulled in.
 windows = { version = "0.62", features = ["Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse"] }
+tauri-winrt-notification = "0.8"
