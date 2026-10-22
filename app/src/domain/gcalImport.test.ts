@@ -5,6 +5,7 @@ import {
   importDocId,
   importedIds,
   planImport,
+  selectHolidayTasks,
   type GcalEvent,
   type ImportPlanInput,
 } from "./gcalImport.ts";
@@ -262,4 +263,86 @@ test("imported ids are the gcal blocks and the gcal-prefixed tasks", () => {
     [{ id: "gcal_primary-1_a1" }, { id: "manual-2" }],
   );
   assert.deepEqual(ids, { blockIds: ["b1"], taskIds: ["gcal_primary-1_a1"] });
+});
+
+const holidayCalendar = "es.ar#holiday@group.v.calendar.google.com";
+
+/** An all-day event shaped like Google's holiday-calendar items. */
+function holiday(over: Partial<GcalEvent> = {}): GcalEvent {
+  return {
+    id: "20261207_60o30dr56or30c1g60o30dr4ck",
+    status: "confirmed",
+    summary: "Puente turístico",
+    description: "Día no laborable",
+    updated,
+    start: { date: "2026-12-07" },
+    end: { date: "2026-12-08" },
+    ...over,
+  };
+}
+
+test("an event of a Google holiday calendar becomes a classified day label, never a task or block", () => {
+  const result = plan({
+    calendarId: holidayCalendar,
+    events: [
+      holiday(),
+      holiday({ id: "20261208_a", summary: "Inmaculada Concepción de María", description: "Feriado", start: { date: "2026-12-08" } }),
+      holiday({ id: "20261031_b", summary: "Halloween", description: "Observancia", start: { date: "2026-10-31" } }),
+    ],
+  });
+  assert.equal(result.tasks.length, 0);
+  assert.equal(result.blocks.length, 0);
+  assert.deepEqual(result.holidays.map(item => [item.date, item.kind, item.title]), [
+    ["2026-12-07", "nonWorking", "Puente turístico"],
+    ["2026-12-08", "public", "Inmaculada Concepción de María"],
+    ["2026-10-31", "observance", "Halloween"],
+  ]);
+  assert.equal(result.holidays[0].id, `gcal_${calendarKey(holidayCalendar)}_20261207_60o30dr56or30c1g60o30dr4ck`);
+  assert.deepEqual(result.holidays[0].source, { provider: "gcal", calendarId: holidayCalendar, eventId: "20261207_60o30dr56or30c1g60o30dr4ck" });
+});
+
+test("the same all-day event in a normal calendar is still a task", () => {
+  const result = plan({ calendarId: secondary, events: [holiday()] });
+  assert.equal(result.holidays.length, 0);
+  assert.equal(result.tasks.length, 1);
+});
+
+test("holiday re-import is idempotent and an old holiday task does not block the label", () => {
+  const first = plan({ calendarId: holidayCalendar, events: [holiday()] });
+  const again = plan({ calendarId: holidayCalendar, events: [holiday()], existing: { holidayIds: first.holidays.map(item => item.id) } });
+  assert.equal(again.holidays.length, 0);
+  assert.equal(again.skipped.imported, 1);
+  // An earlier import stored the event as a task: the label is still planned.
+  const legacy = plan({ calendarId: holidayCalendar, events: [holiday()], existing: { taskIds: first.holidays.map(item => item.id) } });
+  assert.equal(legacy.holidays.length, 1);
+  assert.equal(legacy.tasks.length, 0);
+});
+
+test("a holiday event without a title or a date is unusable, a cancelled one is skipped", () => {
+  const result = plan({
+    calendarId: holidayCalendar,
+    events: [holiday({ id: "a", summary: "" }), holiday({ id: "b", start: { date: "2026-02-30" } }), holiday({ id: "c", status: "cancelled" })],
+  });
+  assert.equal(result.holidays.length, 0);
+  assert.equal(result.skipped.unusable, 2);
+  assert.equal(result.skipped.cancelled, 1);
+});
+
+test("cleanup selects only the tasks whose id carries a listed holiday calendar's key", () => {
+  const calendars = [{ id: primary }, { id: secondary }, { id: holidayCalendar }, { id: "en.usa#holiday@group.v.calendar.google.com" }];
+  const tasks = [
+    { id: `gcal_${calendarKey(holidayCalendar)}_20261207_a`, title: "Puente turístico" },
+    { id: `gcal_${calendarKey("en.usa#holiday@group.v.calendar.google.com")}_20261225_b`, title: "Christmas Day" },
+    // Same title and date as a holiday, but from a normal calendar.
+    { id: `gcal_${calendarKey(secondary)}_x1`, title: "Puente turístico" },
+    { id: `gcal_${calendarKey(primary)}_a1`, title: "Renew passport" },
+    // A user's own task: Firestore-minted id, same title as a holiday.
+    { id: "kJ3x9QmZpT0aLw2vB7nC", title: "Puente turístico" },
+    // The holiday calendar's key without the separator is not a match.
+    { id: `gcal_${calendarKey(holidayCalendar)}x_oops`, title: "No" },
+  ];
+  assert.deepEqual(selectHolidayTasks(tasks, calendars).map(task => task.id), [tasks[0].id, tasks[1].id]);
+  // A holiday calendar the account does not list proves nothing.
+  assert.deepEqual(selectHolidayTasks(tasks, [{ id: primary }, { id: secondary }]), []);
+  assert.deepEqual(selectHolidayTasks([], calendars), []);
 });

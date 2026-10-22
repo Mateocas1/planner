@@ -1,3 +1,4 @@
+import { classifyHoliday, isHolidayCalendar, type Holiday } from "./holidays.ts";
 import { toZonedInstant } from "./instant.ts";
 import { createTask, createWorkBlock, type BlockSource, type Task, type WorkBlock } from "./model.ts";
 
@@ -10,7 +11,8 @@ import { createTask, createWorkBlock, type BlockSource, type Task, type WorkBloc
  *
  * Owner decisions encoded here: a timed event becomes a work block, an all-day
  * event becomes a task dated from its first day, and a meeting never becomes a
- * task (a meeting is timed, so it is a block).
+ * task (a meeting is timed, so it is a block). An event of a Google holiday
+ * calendar is neither: it becomes a day label (see domain/holidays.ts).
  */
 
 /** The `start`/`end` shape of a Calendar API event. */
@@ -28,6 +30,7 @@ export type GcalEvent = {
   id?: string;
   status?: string;
   summary?: string;
+  description?: string;
   updated?: string;
   eventType?: string;
   recurringEventId?: string;
@@ -56,6 +59,8 @@ export type ExistingImportData = {
   taskIds?: Iterable<string>;
   /** `source.eventId` of the stored imported blocks. */
   eventIds?: Iterable<string>;
+  /** Document ids of the stored holidays. */
+  holidayIds?: Iterable<string>;
 };
 
 export type ImportPlanInput = {
@@ -73,6 +78,8 @@ export type ImportPlan = {
   blocks: WorkBlock[];
   /** Tasks to write, each with a deterministic document id. */
   tasks: Task[];
+  /** Holiday labels to write, each with a deterministic document id. */
+  holidays: Holiday[];
   skipped: ImportSkips;
 };
 
@@ -83,6 +90,14 @@ const wallClock = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
 const offsetInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 /** Google's own event id alphabet; anything else cannot become a document id. */
 const safeEventId = /^[A-Za-z0-9._-]{1,200}$/;
+
+/** A real calendar date in `YYYY-MM-DD` form. */
+function validDateKey(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match === null) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.toISOString().slice(0, 10) === value;
+}
 
 function emptySkips(): ImportSkips {
   return { cancelled: 0, declined: 0, workingLocation: 0, outOfOffice: 0, focusTime: 0, imported: 0, unusable: 0 };
@@ -163,6 +178,9 @@ export function planImport(input: ImportPlanInput): ImportPlan {
   const skipped = emptySkips();
   const blocks: WorkBlock[] = [];
   const tasks: Task[] = [];
+  const holidays: Holiday[] = [];
+  const holidayCalendar = isHolidayCalendar(input.calendarId);
+  const existingHolidayIds = new Set(input.existing?.holidayIds ?? []);
   const existingBlockIds = new Set(input.existing?.blockIds ?? []);
   const existingTaskIds = new Set(input.existing?.taskIds ?? []);
   const existingEventIds = new Set(input.existing?.eventIds ?? []);
@@ -206,6 +224,27 @@ export function planImport(input: ImportPlanInput): ImportPlan {
       continue;
     }
     const id = importDocId(input.calendarId, eventId);
+    // A holiday calendar's event is a day label: never a task or a block, even
+    // when an earlier import stored it as a task (the cleanup handles those).
+    if (holidayCalendar) {
+      const date = isAllDay(event) ? (event.start?.date ?? "") : "";
+      const title = typeof event.summary === "string" ? event.summary.trim() : "";
+      if (existingHolidayIds.has(id) || planned.has(id)) {
+        skipped.imported += 1;
+      } else if (title === "" || !validDateKey(date)) {
+        skipped.unusable += 1;
+      } else {
+        holidays.push({
+          id,
+          date,
+          title,
+          kind: classifyHoliday({ description: event.description, summary: title }),
+          source: { provider: "gcal", calendarId: input.calendarId, eventId },
+        });
+        planned.add(id);
+      }
+      continue;
+    }
     if (existingBlockIds.has(id) || existingTaskIds.has(id) || existingEventIds.has(eventId) || planned.has(id)) {
       skipped.imported += 1;
       continue;
@@ -247,7 +286,7 @@ export function planImport(input: ImportPlanInput): ImportPlan {
     }
   }
 
-  return { calendarId: input.calendarId, blocks, tasks, skipped };
+  return { calendarId: input.calendarId, blocks, tasks, holidays, skipped };
 }
 
 /** The smallest shape `importedIds` needs from a stored block. */
@@ -264,4 +303,30 @@ export function importedIds(blocks: Iterable<ImportedBlockRef>, tasks: Iterable<
   const blockIds = [...blocks].filter(block => block.source?.provider === "gcal").map(block => block.id);
   const taskIds = [...tasks].filter(task => task.id.startsWith(GCAL_ID_PREFIX)).map(task => task.id);
   return { blockIds, taskIds };
+}
+
+/**
+ * The stored tasks an earlier import made out of a Google holiday calendar's
+ * events. A task has no `source` field (its schema is closed), so the proof is
+ * its deterministic id: `gcal_<calendarKey>_<eventId>`, where the key carries a
+ * digest of the full calendar id. A task is selected only when its id starts
+ * with the key of a holiday calendar the account actually lists. Never the
+ * title or the date: a user's "Christmas" task and a normal calendar's all-day
+ * event are not holiday tasks, and ids Firestore mints for user tasks never
+ * start with `gcal_`.
+ *
+ * `calendars` is the account's whole calendar list. A holiday calendar whose
+ * key a non-holiday calendar shares (a 32-bit digest collision plus an equal
+ * 24-character slug, in practice never) is left out, so a shared key can never
+ * delete the tasks of a normal calendar.
+ */
+export function selectHolidayTasks<T extends { id: string }>(tasks: Iterable<T>, calendars: Iterable<{ id: string }>): T[] {
+  const holidayKeys = new Set<string>();
+  const otherKeys = new Set<string>();
+  for (const calendar of calendars) {
+    (isHolidayCalendar(calendar.id) ? holidayKeys : otherKeys).add(calendarKey(calendar.id));
+  }
+  const prefixes = [...holidayKeys].filter(key => !otherKeys.has(key)).map(key => `${GCAL_ID_PREFIX}${key}_`);
+  if (prefixes.length === 0) return [];
+  return [...tasks].filter(task => prefixes.some(prefix => task.id.startsWith(prefix)));
 }
