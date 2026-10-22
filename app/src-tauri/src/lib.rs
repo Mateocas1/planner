@@ -1,5 +1,6 @@
 mod deeplink;
 mod google_oauth;
+mod idle;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +20,7 @@ pub fn run() {
             google_oauth::google_oauth_revoke,
             google_oauth::google_oauth_cancel,
             window::desktop_backdrop,
+            idle::idle_seconds,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
