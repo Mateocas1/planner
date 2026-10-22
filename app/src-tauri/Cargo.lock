@@ -2729,6 +2729,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-winrt-notification",
  "ureq",
+ "webview2-com",
  "window-vibrancy",
  "windows",
 ]

@@ -3,6 +3,7 @@ mod deeplink;
 mod google_oauth;
 mod quickadd;
 mod idle;
+mod memory;
 mod notify;
 mod tray;
 mod pill;

@@ -35,6 +35,10 @@ panic = "abort"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 window-vibrancy = "0.8.1"
+# T12 (memory.rs): SetMemoryUsageTargetLevel on ICoreWebView2_19, reached
+# through with_webview. Same 0.39 series as the webview2-com in the lock file
+# (wry 0.57's), so the COM interfaces are one crate, not two copies.
+webview2-com = "0.39"
 # Idle probe (idle.rs): GetLastInputInfo + GetTickCount64. Version matches the
 # windows-core already in the lock file so no second copy is pulled in.
 windows = { version = "0.62", features = ["Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse"] }
