@@ -23,6 +23,9 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": { "desktop": { "schemes": ["calendar"] } }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
