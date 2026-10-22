@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
+import { currentAndNext } from "../domain/upNext.ts";
 import { formatRemaining } from "../domain/focus.ts";
 import { CloseIcon } from "./icons.tsx";
-import { dateKey, formatDuration, timeLabel } from "./time.ts";
+import { formatDuration, timeLabel } from "./time.ts";
 import { unlinkedBlockTitle, type FocusControls } from "./useFocusTimer.ts";
 import { settle } from "./write.ts";
 // The surface's own paint ships beside it (AGENTS.md: co-located styles).
@@ -213,14 +214,9 @@ export function NowMode({
   }, [onClose]);
 
   const now = new Date(nowMs);
-  const today = dateKey(now, timeZone);
-  const ordered = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  /* "Now" is an instant, not a date: a block that began before midnight is
-     still the block running at 00:10. Only "next" asks about today. */
-  const current = ordered.find(entry => Date.parse(entry.start) <= nowMs && nowMs < Date.parse(entry.end));
-  const next = ordered.find(
-    entry => Date.parse(entry.start) > nowMs && dateKey(new Date(entry.start), timeZone) === today,
-  );
+  /* "Now" is an instant, not a date: the running block and the next one come
+     from the one rule the whole app shares (domain/upNext.ts). */
+  const { current, next } = currentAndNext(blocks, nowMs, timeZone);
 
   const taskOf = (entry: BlockView | undefined) =>
     entry?.taskId === undefined ? undefined : tasks.find(candidate => candidate.id === entry.taskId);

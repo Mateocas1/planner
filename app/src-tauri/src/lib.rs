@@ -3,6 +3,7 @@ mod google_oauth;
 mod quickadd;
 mod idle;
 mod notify;
+mod tray;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,6 +16,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        // One-time close-to-tray notice (T6); Rust shows it, no JS permission.
+        .plugin(tauri_plugin_notification::init())
         .manage(deeplink::PendingRoute::default())
         .manage(google_oauth::OAuthFlow::default())
         .manage(quickadd::QuickAddState::default())
@@ -29,10 +32,12 @@ pub fn run() {
             quickadd::quickadd_set_shortcut,
             quickadd::quickadd_focus_main,
             idle::idle_seconds,
+            tray::tray_sync,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
             quickadd::setup(app.handle())?;
+            tray::setup(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())
