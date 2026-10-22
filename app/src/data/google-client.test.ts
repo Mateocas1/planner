@@ -16,6 +16,7 @@ import {
   statusMessage,
   truncatedNote,
   withTimeout,
+  keepTokenIfLive,
 } from "./google-client.ts";
 
 /** A fetch stand-in: each call pops the next canned response. */
@@ -202,4 +203,12 @@ test("the desktop token is read from the command result and nothing else", () =>
   assert.equal(desktopTokenFrom({ access_token: "ya29.x" }), null);
   assert.equal(desktopTokenFrom(null), null);
   assert.equal(desktopTokenFrom("ya29.x"), null);
+});
+
+test("a token that arrives after the sheet closed is revoked and dropped", () => {
+  const revoked: string[] = [];
+  assert.equal(keepTokenIfLive("late", false, token => revoked.push(token)), false);
+  assert.deepEqual(revoked, ["late"]);
+  assert.equal(keepTokenIfLive("fresh", true, token => revoked.push(token)), true);
+  assert.deepEqual(revoked, ["late"]);
 });

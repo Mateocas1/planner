@@ -22,7 +22,11 @@ const MAX_STRAY: u32 = 16;
 /// The request line is all we read; a larger head is not a browser redirect.
 const MAX_HEAD: usize = 8 * 1024;
 const POLL: Duration = Duration::from_millis(50);
-const IO_TIMEOUT: Duration = Duration::from_secs(2);
+/// Total time one connection gets to deliver its request line, however it dribbles.
+const CONN_TIMEOUT: Duration = Duration::from_secs(5);
+/// Granularity at which a blocked read re-checks the deadline and the cancel flag.
+const READ_SLICE: Duration = Duration::from_millis(100);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What a request to the loopback server means.
 #[derive(Debug, PartialEq, Eq)]
@@ -124,15 +128,24 @@ fn respond(stream: &mut TcpStream, status: &str, body: &str) {
     let _ = stream.shutdown(std::net::Shutdown::Write);
 }
 
-/// Reads up to the end of the request line. `None` for a silent, slow or oversized peer.
-fn read_request_line(stream: &mut TcpStream) -> Option<String> {
+/// Reads up to the end of the request line. `None` for a silent, slow or oversized
+/// peer, or once `until` passes or `cancel` is set: the whole read is bounded, so
+/// a peer sending a byte at a time cannot hold the single-threaded loop.
+fn read_request_line(stream: &mut TcpStream, until: Instant, cancel: &AtomicBool) -> Option<String> {
     stream.set_nonblocking(false).ok()?;
-    stream.set_read_timeout(Some(IO_TIMEOUT)).ok()?;
-    stream.set_write_timeout(Some(IO_TIMEOUT)).ok()?;
+    stream.set_read_timeout(Some(READ_SLICE)).ok()?;
+    stream.set_write_timeout(Some(WRITE_TIMEOUT)).ok()?;
     let mut buffer = Vec::with_capacity(512);
     let mut chunk = [0u8; 512];
     while buffer.len() < MAX_HEAD {
-        let read = stream.read(&mut chunk).ok()?;
+        if cancel.load(Ordering::Relaxed) || Instant::now() >= until {
+            return None;
+        }
+        let read = match stream.read(&mut chunk) {
+            Ok(read) => read,
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => continue,
+            Err(_) => return None,
+        };
         if read == 0 {
             break;
         }
@@ -153,6 +166,16 @@ pub fn wait_for_code(
     deadline: Instant,
     cancel: &AtomicBool,
 ) -> Result<String, WaitError> {
+    wait_with(listener, expected_state, deadline, cancel, CONN_TIMEOUT)
+}
+
+fn wait_with(
+    listener: &TcpListener,
+    expected_state: &str,
+    deadline: Instant,
+    cancel: &AtomicBool,
+    conn_timeout: Duration,
+) -> Result<String, WaitError> {
     listener.set_nonblocking(true).map_err(|_| WaitError::Io)?;
     let mut stray = 0;
     loop {
@@ -170,10 +193,18 @@ pub fn wait_for_code(
             }
             Err(_) => return Err(WaitError::Io),
         };
-        let outcome = match read_request_line(&mut stream) {
+        let until = deadline.min(Instant::now() + conn_timeout);
+        let outcome = match read_request_line(&mut stream, until, cancel) {
             Some(line) => parse_callback(&line, expected_state),
             None => Callback::Stray,
         };
+        // A slow peer may have eaten the rest of the flow: honour cancel and deadline first.
+        if cancel.load(Ordering::Relaxed) {
+            return Err(WaitError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            return Err(WaitError::Timeout);
+        }
         match outcome {
             Callback::Code(code) => {
                 respond(&mut stream, "200 OK", PAGE_DONE);
@@ -370,5 +401,73 @@ mod tests {
         let (_, handle) = serve(STATE, Duration::from_secs(30), cancel.clone());
         cancel.store(true, Ordering::Relaxed);
         assert_eq!(handle.join().unwrap(), Err(WaitError::Cancelled));
+    }
+
+    #[test]
+    fn a_slow_dribbling_peer_is_dropped_and_cannot_outlast_the_deadline() {
+        // Dropped after its own connection budget; the next honest request still works.
+        let (listener, redirect) = bind().unwrap();
+        let addr = redirect.trim_start_matches("http://").trim_end_matches('/').to_owned();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let waiting = cancel.clone();
+        let handle = thread::spawn(move || {
+            wait_with(&listener, STATE, Instant::now() + Duration::from_secs(10), &waiting, Duration::from_millis(300))
+        });
+        let mut slow = TcpStream::connect(&addr).unwrap();
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_millis(700) {
+            if slow.write_all(b"G").is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(40));
+        }
+        let reply = request(&addr, &format!("/?state={STATE}&code=late-code"));
+        assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+        assert_eq!(handle.join().unwrap(), Ok("late-code".to_owned()));
+
+        // A dribbler holding a long connection budget still hits the global deadline on time.
+        let (listener, redirect) = bind().unwrap();
+        let addr = redirect.trim_start_matches("http://").trim_end_matches('/').to_owned();
+        let handle = thread::spawn(move || {
+            let begun = Instant::now();
+            let result = wait_with(
+                &listener,
+                STATE,
+                Instant::now() + Duration::from_millis(500),
+                &AtomicBool::new(false),
+                Duration::from_secs(60),
+            );
+            (result, begun.elapsed())
+        });
+        let mut slow = TcpStream::connect(&addr).unwrap();
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_millis(1500) {
+            if slow.write_all(b"G").is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(40));
+        }
+        let (result, elapsed) = handle.join().unwrap();
+        assert_eq!(result, Err(WaitError::Timeout));
+        assert!(elapsed < Duration::from_millis(1200), "{elapsed:?}");
+    }
+
+    #[test]
+    fn cancelling_closes_the_port_even_with_a_peer_mid_request() {
+        let (listener, redirect) = bind().unwrap();
+        let addr = redirect.trim_start_matches("http://").trim_end_matches('/').to_owned();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let waiting = cancel.clone();
+        let handle = thread::spawn(move || {
+            let result = wait_for_code(&listener, STATE, Instant::now() + Duration::from_secs(30), &waiting);
+            drop(listener);
+            result
+        });
+        let mut slow = TcpStream::connect(&addr).unwrap();
+        slow.write_all(b"GET").unwrap();
+        thread::sleep(Duration::from_millis(150));
+        cancel.store(true, Ordering::Relaxed);
+        assert_eq!(handle.join().unwrap(), Err(WaitError::Cancelled));
+        assert!(TcpStream::connect(&addr).is_err());
     }
 }

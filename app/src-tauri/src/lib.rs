@@ -15,6 +15,7 @@ pub fn run() {
             deeplink::deeplink_take_pending,
             google_oauth::google_oauth_start,
             google_oauth::google_oauth_revoke,
+            google_oauth::google_oauth_cancel,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;

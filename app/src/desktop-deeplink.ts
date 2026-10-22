@@ -11,12 +11,22 @@ export type DeepLinkRoute = { kind: "today" } | { kind: "day"; date: string };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A real calendar day, 1970-2100 (the same rule as `src-tauri/core/src/route.rs`). */
+export function isRealDate(text: string): boolean {
+  if (!DATE.test(text)) return false;
+  const [year, month, day] = text.split("-").map(Number);
+  if (year < 1970 || year > 2100 || month < 1 || month > 12) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const last = month === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
+  return day >= 1 && day <= last;
+}
+
 /** The route in a command payload, or null for anything else. */
 export function parseDeepLinkRoute(payload: unknown): DeepLinkRoute | null {
   if (payload === null || typeof payload !== "object") return null;
   const { kind, date } = payload as { kind?: unknown; date?: unknown };
   if (kind === "today") return { kind };
-  if (kind === "day" && typeof date === "string" && DATE.test(date)) return { kind, date };
+  if (kind === "day" && typeof date === "string" && isRealDate(date)) return { kind, date };
   return null;
 }
 

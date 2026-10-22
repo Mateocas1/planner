@@ -380,6 +380,26 @@ export function revokeToken(token: string): void {
 }
 
 /**
+ * Abandons a sign-in in progress when the sheet closes: the desktop shell stops
+ * listening on its loopback port at once. A no-op in a browser.
+ */
+export function cancelSignIn(): void {
+  if (!isTauri()) return;
+  void import("@tauri-apps/api/core").then(({ invoke }) => invoke("google_oauth_cancel")).catch(() => undefined);
+}
+
+/**
+ * What to do with a token that arrived: keep it while the sheet is still open,
+ * otherwise hand it back to Google and drop it, so a sheet closed mid-sign-in
+ * leaves no live token behind. Returns whether the token was kept.
+ */
+export function keepTokenIfLive(token: string, live: boolean, revoke: (token: string) => void = revokeToken): boolean {
+  if (live) return true;
+  revoke(token);
+  return false;
+}
+
+/**
  * Asks Google for an access token. Call this from a click handler: the consent
  * popup has to be opened by a user gesture, and a blocked popup is reported
  * through `error_callback` as `popup_failed_to_open`.

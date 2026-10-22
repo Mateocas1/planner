@@ -41,7 +41,8 @@ fn client() -> Result<(&'static str, Option<&'static str>), OAuthError> {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build()
+    // No redirects: the token POST carries the code, verifier and client secret.
+    ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).redirects(0).build()
 }
 
 /// Trades the authorization code (+ PKCE verifier) for an access token.
@@ -108,6 +109,17 @@ pub async fn google_oauth_start<R: Runtime>(
         }
     }
     result
+}
+
+/// Cancels the sign-in in progress (the sheet closed): the loopback port closes
+/// within one poll. A no-op when nothing is pending.
+#[tauri::command]
+pub fn google_oauth_cancel(flow: State<'_, OAuthFlow>) {
+    if let Ok(mut slot) = flow.0.lock() {
+        if let Some(pending) = slot.take() {
+            pending.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Hands an access token back to Google once the import is over (best effort).

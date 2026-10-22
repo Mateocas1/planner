@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "../desktop.ts";
 import { removeImported, writeImportPlan } from "../data/gcal.ts";
 import {
@@ -8,6 +8,8 @@ import {
   listEvents,
   loadGis,
   requestToken,
+  cancelSignIn,
+  keepTokenIfLive,
   revokeToken,
   truncatedNote,
   type EventList,
@@ -219,14 +221,27 @@ export function GcalImportSheet({
     return () => revokeToken(token);
   }, [token]);
 
+  // Closing the sheet mid-sign-in cancels the pending flow (the loopback port
+  // closes) and any token that still arrives afterwards is revoked and dropped.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      cancelSignIn();
+    };
+  }, []);
+
   const connect = useCallback(async () => {
     setNotice(null);
     setPhase("connecting");
     try {
       const accessToken = await requestToken();
+      if (!keepTokenIfLive(accessToken, live.current)) return;
       setToken(accessToken);
       setPhase("loading");
       const list = await listCalendars(accessToken);
+      if (!live.current) return;
       setCalendars(list);
       // The owner's decision: the primary calendar is what an import starts
       // from; the others are one checkbox away.
