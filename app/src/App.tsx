@@ -10,6 +10,7 @@ import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { useDeepLink } from "./desktop-deeplink.ts";
 import { useDesktopNotifications } from "./ui/useDesktopNotifications.ts";
 import { useDesktopTray } from "./desktop-tray.ts";
+import { useSignInReveal } from "./desktop-autostart.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
@@ -75,6 +76,8 @@ const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: 
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
   const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
+  // A sign-in launch (T10) shows the window only when today's brief applies.
+  useSignInReveal({ ready: !loading && !profile.loading, blocks, timeZone: profile.timeZone, workWindow: profile.workWindow });
   const phone = useMediaQuery(phoneQuery);
   // One timer for the whole shell: the sidebar card shows it and the palette
   // commands change it. A phone has no focus surface yet, so it runs none.

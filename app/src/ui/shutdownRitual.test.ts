@@ -12,11 +12,31 @@ import {
   lateCloseFailure,
   leftoverSummary,
   minutesLabel,
+  morningBriefState,
   morningBriefText,
   releaseCloseDay,
   turnHint,
   undoMessage,
 } from "./shutdownRitual.ts";
+
+test("the brief state counts only the blocks that start today, in the planner's zone", () => {
+  const state = morningBriefState({
+    blocks: [
+      { start: "2026-10-21T09:00:00Z", end: "2026-10-21T10:00:00Z" },
+      { start: "2026-10-22T09:00:00Z", end: "2026-10-22T10:00:00Z" },
+    ],
+    timeZone: "UTC",
+    workWindow: { startMinutes: 480, endMinutes: 1080 },
+    now: new Date("2026-10-22T10:30:00Z"),
+  });
+  assert.deepEqual(state, {
+    today: "2026-10-22",
+    blockCount: 1,
+    text: "Today: 1 block, first at 09:00. First free slot 10:00.",
+  });
+  const empty = morningBriefState({ blocks: [], timeZone: "UTC", workWindow: { startMinutes: 480, endMinutes: 1080 }, now: new Date("2026-10-22T10:30:00Z") });
+  assert.deepEqual(empty, { today: "2026-10-22", blockCount: 0, text: null });
+});
 
 /**
  * The shutdown ritual's copy and arithmetic (distinctive roadmap F3, criteria

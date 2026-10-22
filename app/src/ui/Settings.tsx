@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { isTauri } from "../desktop.ts";
 import {
   notifySettingsStorageKey,
@@ -158,6 +159,67 @@ function writeNotifySettings(next: NotifySettings): void {
   } catch {
     /* storage denied: the toggles then live only until the page closes */
   }
+}
+
+/**
+ * Desktop only (T10, spec S8.6): "Open Planner when I sign in to Windows". The
+ * switch shows the operating system's own state (the HKCU Run entry), read when
+ * the sheet opens and again after every change, never a cached flag. It starts
+ * off, and the parent renders it only inside the desktop shell.
+ */
+function SignInStartupRow() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    isEnabled()
+      .then(value => {
+        if (live) setEnabled(value);
+      })
+      .catch(() => {
+        if (live) setError("Windows did not report the startup setting.");
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const toggle = () => {
+    if (enabled === null || busy) return;
+    setBusy(true);
+    setError(null);
+    void (enabled ? disable() : enable())
+      .catch(() => setError("Windows did not change the startup setting. Try again."))
+      .then(() => isEnabled())
+      .then(value => setEnabled(value))
+      .catch(() => setError("Windows did not report the startup setting."))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="form-group">
+      <div className="form-row">
+        <span id="desktop-startup-label">Open Planner when I sign in to Windows</span>
+        <button
+          type="button"
+          role="switch"
+          className="day-switch"
+          aria-checked={enabled === true}
+          aria-labelledby="desktop-startup-label"
+          disabled={enabled === null || busy}
+          onClick={toggle}
+        >
+          <span className="day-switch-track" aria-hidden="true">
+            <span className="day-switch-knob" />
+          </span>
+        </button>
+      </div>
+      <p className="day-settings-note">It starts in the background and shows the window only when today's morning brief applies.</p>
+      {error && <p className="inline-error" role="alert">{error}</p>}
+    </div>
+  );
 }
 
 export function DaySettingsSheet({
@@ -376,6 +438,7 @@ export function DaySettingsSheet({
             </div>
           </div>
         )}
+        {isTauri() && <SignInStartupRow />}
         {error && <p className="inline-error" role="alert">{error}</p>}
         {/* Desktop only: the global quick-add hotkey exists in the Tauri shell;
             the web build has no window to summon, so the row never renders. */}

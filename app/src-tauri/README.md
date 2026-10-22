@@ -36,6 +36,12 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **One notice per install.** The first close shows the toast "Planner is still running in the tray" (`tauri-plugin-notification`, Rust-side only, no JS permission). The shown flag is `tray-notice.shown` in the app config dir, written only after the toast was accepted.
 - **Data path.** `src/desktop-tray.ts` words the label from `src/domain/upNext.ts` (the same block pair the sidebar card and Now mode show) and `src/domain/focus.ts`, then pushes `{upNext, focus, progress}` to the `tray_sync` command in `src-tauri/src/tray.rs` — at most one push per 10 s, at least one per minute while focus runs. Rust owns the menu rows, the tooltip and `set_progress_bar` (`Normal` running, `Paused` paused, `None` without a session).
 
+## Start at sign-in (T10)
+
+- **Switch.** Day settings → "Open Planner when I sign in to Windows" (desktop only, off by default). It reads the real state from `tauri-plugin-autostart`, the per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry (no admin rights), which launches `Planner.exe --autostart`.
+- **Hidden launch.** The main window is created hidden (`visible: false` in `tauri.conf.json`). `src/autostart.rs` shows it for every launch except `--autostart`. `window-state` excludes visibility from its flags, so a saved state can never show a sign-in launch.
+- **Reveal rule.** Once the store and profile have loaded, `src/desktop-autostart.ts` (`shouldRevealAtSignIn`) shows the window only when the morning brief applies today: blocks start today and the brief was not dismissed on this device. Otherwise the process stays in the background; the tray (T6) is the way back to it.
+
 ## Notes
 
 - **Unsigned.** There is no code-signing certificate. Files copied locally carry no Mark-of-the-Web, so SmartScreen normally stays quiet. If Defender flags a build, submit it to Microsoft for analysis.
