@@ -70,7 +70,10 @@
           "'self'"
         ]
       },
-      "devCsp": null
+      "devCsp": null,
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     }
   },
   "plugins": {

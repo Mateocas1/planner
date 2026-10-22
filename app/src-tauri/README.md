@@ -43,3 +43,5 @@ Set in `tauri.conf.json` (`app.security.csp`); `devCsp` is `null` so the dev exe
 | `base-uri`, `form-action` | `'self'` | Blocks base-tag and form-post hijacking. |
 
 Not allowed on purpose: `https://apis.google.com` and `accounts.google.com` scripts (Firebase popup auth and Google Identity Services are not used in the desktop shell; the Google import goes through the system browser).
+
+`dangerousDisableAssetCspModification: ["style-src"]` keeps Tauri from adding nonces/hashes to `style-src`: a nonce would void `'unsafe-inline'`, and React 19 and Motion inject `<style>` elements and `insertRule` at runtime. Scripts still get Tauri's automatic hashes.
