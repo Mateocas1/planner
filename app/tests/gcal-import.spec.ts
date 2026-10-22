@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { calendarKey } from "../src/domain/gcalImport.ts";
 import {
   createRemoteAccount,
   readRemoteImport,
@@ -595,4 +596,54 @@ test("holidays import as classified day labels that the user can reclassify and 
   await page.getByRole("complementary", { name: "Holiday" }).getByRole("button", { name: "Hide this holiday" }).click();
   await expect(page.getByRole("button", { name: "Independence Day, Public holiday" })).toHaveCount(0);
   await expect.poll(async () => (await readHolidays(email)).find(item => item.title === "Independence Day")?.hidden).toBe(true);
+});
+
+test("holiday tasks from an earlier import are offered for cleanup, and only they are deleted", async ({ page }) => {
+  const email = newEmail("gcal-cleanup");
+  await createRemoteAccount(email);
+  await updateRemoteProfile(email, "UTC");
+  const uid = await remoteUid(email);
+  const date = dayKey(2);
+  const holidayTask = `gcal_${calendarKey(HOLIDAY_CALENDAR)}_h-bridge`;
+  const normalTask = `gcal_${calendarKey("team")}_evt-same-title`;
+  const seed = async (id: string, title: string) => {
+    const response = await fetch(`${FIRESTORE_REST}/users/${uid}/tasks/${id}`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: { title: { stringValue: title }, completed: { booleanValue: false }, deadline: { stringValue: date } } }),
+    });
+    if (!response.ok) throw new Error(`seed failed: ${response.status} ${await response.text()}`);
+  };
+  await seed(holidayTask, "Puente turístico");
+  await seed(normalTask, "Puente turístico");
+  await seed("userTaskSameTitle0001", "Puente turístico");
+  await stubGoogle(page, {
+    calendars: [
+      { id: "primary", summary: "Main calendar", primary: true },
+      { id: "team", summary: "Team calendar" },
+      { id: HOLIDAY_CALENDAR, summary: "Holidays in Argentina" },
+    ],
+    pages: { primary: [{ items: [] }], [HOLIDAY_CALENDAR]: [{ items: [holidayEvent("h-bridge", "Puente turístico", "Día no laborable", date)] }] },
+  });
+  await submitAuthForm(page, email, "sign in");
+
+  const sheet = await openImportSheet(page);
+  await sheet.getByRole("button", { name: "Connect Google Calendar" }).click();
+  await sheet.getByRole("checkbox", { name: "Holidays in Argentina" }).click();
+  // The count is shown before anything is deleted: one task, not the three with the same title.
+  await sheet.getByRole("button", { name: "Clean up holiday tasks (1)" }).click();
+  const confirm = sheet.getByRole("group", { name: "Clean up holiday tasks" });
+  await expect(confirm).toContainText("Delete 1 task");
+  await confirm.getByRole("button", { name: "Keep" }).click();
+  expect((await readRemoteImport(email)).tasks.length).toBe(3);
+  expect(await readHolidays(email)).toEqual([]);
+
+  await sheet.getByRole("button", { name: "Clean up holiday tasks (1)" }).click();
+  await confirm.getByRole("button", { name: "Clean up" }).click();
+  await expect(sheet.getByText("Replaced 1 holiday task with holiday labels.")).toBeVisible();
+
+  await expect.poll(async () => (await readRemoteImport(email)).tasks.map(task => task.id).sort()).toEqual([normalTask, "userTaskSameTitle0001"].sort());
+  const labels = await readHolidays(email);
+  expect(labels.map(label => [label.id, label.date, label.title, label.kind])).toEqual([[holidayTask, date, "Puente turístico", "nonWorking"]]);
+  await expect(sheet.getByRole("button", { name: /Clean up holiday tasks/ })).toHaveCount(0);
 });

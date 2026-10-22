@@ -4,6 +4,7 @@ import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
+import { calendarKey, planHolidayCleanup, selectHolidayTasks } from "../src/domain/gcalImport.ts";
 import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
@@ -652,6 +653,57 @@ test("holiday labels are owner-only and a re-import keeps the user's choices", a
     await createUserWithEmailAndPassword(other.auth, `holiday-other-${suffix}@example.invalid`, "password1");
     await assert.rejects(getDoc(doc(other.db, path)), { code: "permission-denied" });
     await assert.rejects(writeHolidays(uid, [holiday], other.db), { code: "permission-denied" });
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/**
+ * The holiday cleanup (S11) against real Firestore. It deletes stored data, so
+ * this pins the whole guarantee: of a mixed task list only the tasks the
+ * selection proves came from a holiday calendar are deleted, each after its
+ * label is stored, and a failing label write deletes nothing.
+ */
+test("cleanup deletes only holiday-calendar tasks, labels first, and nothing when the label write fails", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { cleanupHolidayTasks } = await import("../src/data/holidays.ts");
+  const { collection, getDocs } = await import("firebase/firestore");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`cleanup-owner-${suffix}`);
+  const other = client(`cleanup-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `cleanup-owner-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const holidayCalendar = "es.ar#holiday@group.v.calendar.google.com";
+    const normalCalendar = "abc123@group.calendar.google.com";
+    const holidayTaskId = `gcal_${calendarKey(holidayCalendar)}_20261207_a`;
+    const sameTitle = "Puente turístico";
+    const seeded: Record<string, Record<string, unknown>> = {
+      [holidayTaskId]: { title: sameTitle, completed: false, deadline: "2026-12-07" },
+      [`gcal_${calendarKey(holidayCalendar)}_20261225_nodate`]: { title: "Sin fecha", completed: false },
+      [`gcal_${calendarKey(normalCalendar)}_x1`]: { title: sameTitle, completed: false, deadline: "2026-12-07" },
+      [`gcal_${calendarKey("primary")}_a1`]: { title: "Renew passport", completed: false, deadline: "2026-12-07" },
+      "kJ3x9QmZpT0aLw2vB7nC": { title: sameTitle, completed: false, deadline: "2026-12-07" },
+    };
+    for (const [id, data] of Object.entries(seeded)) await setDoc(doc(owner.db, `users/${uid}/tasks/${id}`), data);
+    const stored = async (name: string) => (await getDocs(collection(owner.db, `users/${uid}/${name}`))).docs.map(entry => ({ ...entry.data(), id: entry.id }) as Record<string, unknown> & { id: string });
+    const tasks = (await stored("tasks")).map(task => ({ id: task.id, title: String(task.title), ...(typeof task.deadline === "string" ? { deadline: task.deadline } : {}) }));
+    const selected = selectHolidayTasks(tasks, [{ id: "primary" }, { id: normalCalendar }, { id: holidayCalendar }]);
+    assert.deepEqual(selected.map(item => item.task.id).sort(), [holidayTaskId, `gcal_${calendarKey(holidayCalendar)}_20261225_nodate`].sort());
+    const plan = planHolidayCleanup(selected, new Map(), []);
+    assert.deepEqual(plan.deletable, [holidayTaskId]);
+
+    // A write the server refuses (another account's subtree) stops before any delete.
+    await createUserWithEmailAndPassword(other.auth, `cleanup-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(cleanupHolidayTasks(uid, plan, other.db), { code: "permission-denied" });
+    assert.equal((await stored("tasks")).length, 5);
+    assert.deepEqual(await stored("holidays"), []);
+
+    assert.deepEqual(await cleanupHolidayTasks(uid, plan, owner.db), { labels: 1, tasks: 1 });
+    const remaining = (await stored("tasks")).map(task => task.id).sort();
+    assert.deepEqual(remaining, Object.keys(seeded).filter(id => id !== holidayTaskId).sort());
+    const labels = await stored("holidays");
+    assert.deepEqual(labels.map(label => [label.id, label.date, label.title]), [[holidayTaskId, "2026-12-07", sameTitle]]);
   } finally {
     await Promise.all([close(owner), close(other)]);
   }

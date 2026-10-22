@@ -1,4 +1,5 @@
 import { deleteField, doc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
+import type { HolidayCleanupPlan } from "../domain/gcalImport.ts";
 import { isHolidayKind, type Holiday, type HolidayKind } from "../domain/holidays.ts";
 import { db } from "./client.ts";
 import { trackRemoval } from "./pending.ts";
@@ -57,4 +58,24 @@ export async function removeHolidays(uid: string, ids: string[], database: Fires
     await commit;
   }
   return ids.length;
+}
+
+/**
+ * Replaces the holiday tasks an earlier import made with labels. The order is
+ * the safety: the labels are written and acknowledged by the server first, and
+ * only then are the tasks they replace deleted, so a failed write leaves every
+ * task in place. Only the ids `planHolidayCleanup` named are touched; this
+ * function never looks at a task's title, date or any other document.
+ */
+export async function cleanupHolidayTasks(uid: string, plan: HolidayCleanupPlan, database: Firestore = db): Promise<{ labels: number; tasks: number }> {
+  const labels = await writeHolidays(uid, plan.toWrite, database);
+  const paths = plan.deletable.map(id => `users/${uid}/tasks/${id}`);
+  for (const chunk of chunks(paths, MAX_BATCH_WRITES)) {
+    const batch = writeBatch(database);
+    for (const path of chunk) batch.delete(doc(database, path));
+    const commit = batch.commit();
+    for (const path of chunk) void trackRemoval(path, commit).catch(() => undefined);
+    await commit;
+  }
+  return { labels, tasks: paths.length };
 }

@@ -59,8 +59,8 @@ export type ExistingImportData = {
   taskIds?: Iterable<string>;
   /** `source.eventId` of the stored imported blocks. */
   eventIds?: Iterable<string>;
-  /** Document ids of the stored holidays. */
-  holidayIds?: Iterable<string>;
+  /** The stored holidays: one that already matches Google's wording is not re-written. */
+  holidays?: Iterable<Pick<Holiday, "id" | "date" | "title" | "kind">>;
 };
 
 export type ImportPlanInput = {
@@ -180,7 +180,7 @@ export function planImport(input: ImportPlanInput): ImportPlan {
   const tasks: Task[] = [];
   const holidays: Holiday[] = [];
   const holidayCalendar = isHolidayCalendar(input.calendarId);
-  const existingHolidayIds = new Set(input.existing?.holidayIds ?? []);
+  const existingHolidays = new Map([...(input.existing?.holidays ?? [])].map(holiday => [holiday.id, holiday]));
   const existingBlockIds = new Set(input.existing?.blockIds ?? []);
   const existingTaskIds = new Set(input.existing?.taskIds ?? []);
   const existingEventIds = new Set(input.existing?.eventIds ?? []);
@@ -229,18 +229,14 @@ export function planImport(input: ImportPlanInput): ImportPlan {
     if (holidayCalendar) {
       const date = isAllDay(event) ? (event.start?.date ?? "") : "";
       const title = typeof event.summary === "string" ? event.summary.trim() : "";
-      if (existingHolidayIds.has(id) || planned.has(id)) {
+      const kind = classifyHoliday({ description: event.description, summary: title });
+      const stored = existingHolidays.get(id);
+      if (planned.has(id) || (stored !== undefined && stored.date === date && stored.title === title && stored.kind === kind)) {
         skipped.imported += 1;
       } else if (title === "" || !validDateKey(date)) {
         skipped.unusable += 1;
       } else {
-        holidays.push({
-          id,
-          date,
-          title,
-          kind: classifyHoliday({ description: event.description, summary: title }),
-          source: { provider: "gcal", calendarId: input.calendarId, eventId },
-        });
+        holidays.push({ id, date, title, kind, source: { provider: "gcal", calendarId: input.calendarId, eventId } });
         planned.add(id);
       }
       continue;
@@ -320,13 +316,74 @@ export function importedIds(blocks: Iterable<ImportedBlockRef>, tasks: Iterable<
  * 24-character slug, in practice never) is left out, so a shared key can never
  * delete the tasks of a normal calendar.
  */
-export function selectHolidayTasks<T extends { id: string }>(tasks: Iterable<T>, calendars: Iterable<{ id: string }>): T[] {
-  const holidayKeys = new Set<string>();
+export function selectHolidayTasks<T extends { id: string }>(
+  tasks: Iterable<T>,
+  calendars: Iterable<{ id: string }>,
+): Array<{ task: T; calendarId: string; eventId: string }> {
+  const holidayKeys = new Map<string, string>();
   const otherKeys = new Set<string>();
   for (const calendar of calendars) {
-    (isHolidayCalendar(calendar.id) ? holidayKeys : otherKeys).add(calendarKey(calendar.id));
+    if (isHolidayCalendar(calendar.id)) holidayKeys.set(calendarKey(calendar.id), calendar.id);
+    else otherKeys.add(calendarKey(calendar.id));
   }
-  const prefixes = [...holidayKeys].filter(key => !otherKeys.has(key)).map(key => `${GCAL_ID_PREFIX}${key}_`);
-  if (prefixes.length === 0) return [];
-  return [...tasks].filter(task => prefixes.some(prefix => task.id.startsWith(prefix)));
+  const prefixes = [...holidayKeys]
+    .filter(([key]) => !otherKeys.has(key))
+    .map(([key, calendarId]) => ({ prefix: `${GCAL_ID_PREFIX}${key}_`, calendarId }));
+  const selected: Array<{ task: T; calendarId: string; eventId: string }> = [];
+  for (const task of tasks) {
+    const match = prefixes.find(({ prefix }) => task.id.startsWith(prefix) && task.id.length > prefix.length);
+    if (match !== undefined) selected.push({ task, calendarId: match.calendarId, eventId: task.id.slice(match.prefix.length) });
+  }
+  return selected;
+}
+
+/** What cleaning up the selected holiday tasks does, decided before any write. */
+export type HolidayCleanupPlan = {
+  /** Labels to write first, one per task that has no label yet. */
+  toWrite: Holiday[];
+  /** Ids of the tasks that may be deleted once their label is stored. */
+  deletable: string[];
+  /** Selected tasks left alone because no label can be made from them (no valid date). */
+  kept: number;
+};
+
+/**
+ * Turns the selected holiday tasks into labels, then names which tasks are safe
+ * to delete: only those whose label is written in this run or already stored.
+ * A task with no usable date cannot become a label and is therefore never
+ * deleted. The kind comes from the Google event when this run has read it
+ * (`events`, keyed by document id) and from the title alone otherwise, which is
+ * `other` for most titles; the user reclassifies in the calendar.
+ */
+export function planHolidayCleanup(
+  selected: Array<{ task: { id: string; title: string; deadline?: string }; calendarId: string; eventId: string }>,
+  events: ReadonlyMap<string, GcalEvent>,
+  existingHolidayIds: Iterable<string>,
+): HolidayCleanupPlan {
+  const stored = new Set(existingHolidayIds);
+  const toWrite: Holiday[] = [];
+  const deletable: string[] = [];
+  let kept = 0;
+  for (const { task, calendarId, eventId } of selected) {
+    if (stored.has(task.id)) {
+      deletable.push(task.id);
+      continue;
+    }
+    const date = task.deadline ?? "";
+    const title = task.title.trim();
+    if (title === "" || !validDateKey(date)) {
+      kept += 1;
+      continue;
+    }
+    const event = events.get(task.id);
+    toWrite.push({
+      id: task.id,
+      date,
+      title,
+      kind: classifyHoliday({ description: event?.description, summary: title }),
+      source: { provider: "gcal", calendarId, eventId },
+    });
+    deletable.push(task.id);
+  }
+  return { toWrite, deletable, kept };
 }
