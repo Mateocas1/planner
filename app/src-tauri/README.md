@@ -11,7 +11,7 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 | Command | What it does |
 | --- | --- |
 | `npm run desktop:dev` | Builds the debug exe, copies `Planner-dev.exe` to the Windows Desktop and starts Vite on `localhost:5173`. Run the exe on Windows; WSL2 forwards `localhost`. |
-| `npm run desktop:build` | `vite build` + release exe + NSIS installer (per-user install) in `src-tauri/target/x86_64-pc-windows-msvc/release/`. |
+| `npm run desktop:build` | `vite build` + release exe + NSIS installer (per-user install) in `src-tauri/target/x86_64-pc-windows-msvc/release/`. Runs through `scripts/desktop-build.sh`, which answers tauri-cli's host-side appindicator check with a stub `pkg-config` when the real one (and the library) is missing: that check only feeds the Linux bundlers this build never runs. |
 | `npm run desktop:copy` | Copies only the NSIS installer to `/mnt/c/Users/$USER/Desktop` (override with `DESKTOP_DEST` or a first argument). |
 
 `tauri dev` is not used: it tries to launch the built exe from Linux. The debug exe is not built with Tauri's `custom-protocol` feature, so it loads `build.devUrl` (the Vite server) instead of embedded assets.
