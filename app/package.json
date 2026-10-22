@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/domain/focus.test.ts src/domain/model.test.ts src/domain/quickAdd.test.ts src/domain/gcalImport.test.ts src/domain/sync.test.ts src/data/pending.test.ts src/data/google-client.test.ts src/desktop.test.ts src/desktop-deeplink.test.ts src/ui/grid.test.ts src/ui/desktopBackdrop.test.ts src/ui/time.test.ts src/ui/palette.test.ts src/ui/pageTurn.test.ts src/ui/shortcuts.test.ts src/ui/shutdownRitual.test.ts src/planning/window.test.ts src/planning/bias.test.ts src/planning/place.test.ts src/planning/capacity.test.ts src/planning/shutdown.test.ts",
+    "test": "node --experimental-strip-types --test src/domain/focus.test.ts src/domain/model.test.ts src/domain/quickAdd.test.ts src/domain/gcalImport.test.ts src/domain/sync.test.ts src/data/pending.test.ts src/data/google-client.test.ts src/desktop.test.ts src/desktop-deeplink.test.ts src/desktop-notify.test.ts src/ui/grid.test.ts src/ui/desktopBackdrop.test.ts src/ui/time.test.ts src/ui/palette.test.ts src/ui/pageTurn.test.ts src/ui/shortcuts.test.ts src/ui/shutdownRitual.test.ts src/planning/window.test.ts src/planning/bias.test.ts src/planning/place.test.ts src/planning/capacity.test.ts src/planning/shutdown.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "dev": "vite",
