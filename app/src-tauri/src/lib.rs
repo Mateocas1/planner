@@ -1,5 +1,6 @@
 mod deeplink;
 mod google_oauth;
+mod notify;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,6 +19,7 @@ pub fn run() {
             google_oauth::google_oauth_start,
             google_oauth::google_oauth_revoke,
             google_oauth::google_oauth_cancel,
+            notify::notify_show,
             window::desktop_backdrop,
         ])
         .setup(|app| {

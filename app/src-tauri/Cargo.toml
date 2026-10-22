@@ -32,3 +32,4 @@ panic = "abort"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 window-vibrancy = "0.8.1"
+tauri-winrt-notification = "0.8"
