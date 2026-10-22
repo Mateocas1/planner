@@ -30,3 +30,25 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Service worker** is skipped inside Tauri (`src/pwa-update.ts`): the assets ship inside the binary.
 - **Firebase.** The release window origin is `http://tauri.localhost`, so it uses the production Firebase config. The dev exe origin is `localhost`, so it uses the emulators (`npm run emulators`).
 - `src/lib.rs` registers plugins one `.plugin(...)` per line to keep merges simple.
+
+## Content Security Policy
+
+Set in `tauri.conf.json` (`app.security.csp`); `devCsp` is `null` so the dev exe can reach Vite HMR and the emulators. Tauri adds a hash for the one inline theme script in `index.html` at build time. Not runtime-verified from WSL: if login, sync or import breaks on Windows, look for CSP violations in WebView2 DevTools first.
+
+| Directive | Value | Why |
+| --- | --- | --- |
+| `default-src` | `'self'` | Everything not listed below is same-origin only. |
+| `script-src` | `'self'` | No remote or injected script; the theme bootstrap is allowed by Tauri's hash. |
+| `style-src` | `'self' 'unsafe-inline'` | The UI sets inline styles (motion, drag, sizing). |
+| `style-src-attr` | `'unsafe-inline'` | Keeps `style=""` attributes working even if Tauri adds a nonce to `style-src`. |
+| `img-src` | `'self' data: blob:` | Bundled icons, CSS data-URI masks, generated blobs. |
+| `font-src` | `'self' data:` | Self-hosted Onest font files. |
+| `connect-src` | `'self' ipc: http://ipc.localhost` + `https://firestore.googleapis.com`, `wss://firestore.googleapis.com`, `https://identitytoolkit.googleapis.com`, `https://securetoken.googleapis.com`, `https://www.googleapis.com` | Tauri IPC; Firestore (fetch long-poll/WebChannel; `wss` included defensively); Firebase Auth sign-in and token refresh; Google Calendar REST. |
+| `frame-src` | `https://cumbia-4ca6e.firebaseapp.com` | Firebase Auth's helper iframe. Email/password does not use it today; kept in case the SDK opens it. |
+| `worker-src` | `'self' blob:` | Defensive; the app registers no worker in the shell. |
+| `object-src` | `'none'` | No plugins. |
+| `base-uri`, `form-action` | `'self'` | Blocks base-tag and form-post hijacking. |
+
+Not allowed on purpose: `https://apis.google.com` and `accounts.google.com` scripts (Firebase popup auth and Google Identity Services are not used in the desktop shell; the Google import goes through the system browser).
+
+`dangerousDisableAssetCspModification: ["style-src"]` keeps Tauri from adding nonces/hashes to `style-src`: a nonce would void `'unsafe-inline'`, and React 19 and Motion inject `<style>` elements and `insertRule` at runtime. Scripts still get Tauri's automatic hashes.
