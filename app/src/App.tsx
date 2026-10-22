@@ -8,6 +8,7 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { useDeepLink } from "./desktop-deeplink.ts";
+import { useDesktopTray } from "./desktop-tray.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
@@ -74,6 +75,9 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   // One timer for the whole shell: the sidebar card shows it and the palette
   // commands change it. A phone has no focus surface yet, so it runs none.
   const focus = useFocusTimer({ blocks, tasks, timeZone: profile.timeZone, enabled: !phone });
+  // The tray (T6) mirrors exactly this: the Up next pick, the live session and
+  // the taskbar bar that goes with it, pushed to Rust whenever they change.
+  useDesktopTray({ blocks, tasks, timeZone: profile.timeZone, session: focus.session });
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
   const [creating, setCreating] = useState<HTMLElement | null>(null);
   const [lateError, setLateError] = useState<string | null>(null);

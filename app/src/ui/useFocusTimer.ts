@@ -17,7 +17,7 @@ import {
   type FocusSession,
   type FocusStatus,
 } from "../domain/focus.ts";
-import { dateKey } from "./time.ts";
+import { currentAndNext } from "../domain/upNext.ts";
 
 /**
  * The focus timer, as React state: one session for the document, kept per
@@ -117,11 +117,8 @@ function store(session: FocusSession | null): void {
  * midnight still counts; only "next" is a question about today.
  */
 function focusCandidate(blocks: BlockView[], nowMs: number, timeZone: string): FocusCandidate | undefined {
-  const today = dateKey(new Date(nowMs), timeZone);
-  const sorted = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  const block =
-    sorted.find(entry => Date.parse(entry.start) <= nowMs && nowMs < Date.parse(entry.end)) ??
-    sorted.find(entry => Date.parse(entry.start) > nowMs && dateKey(new Date(entry.start), timeZone) === today);
+  const { current, next } = currentAndNext(blocks, nowMs, timeZone);
+  const block = current ?? next;
   if (!block) return undefined;
   return { blockId: block.id, ...(block.taskId === undefined ? {} : { taskId: block.taskId }), endAt: Date.parse(block.end) };
 }
