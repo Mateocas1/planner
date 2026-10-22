@@ -4,6 +4,8 @@ import {
   calendarKey,
   importDocId,
   importedIds,
+  splitCleanupByCalendars,
+  cleanupOutcomeMessage,
   planHolidayCleanup,
   planImport,
   selectHolidayTasks,
@@ -263,7 +265,39 @@ test("imported ids are the gcal blocks and the gcal-prefixed tasks", () => {
     ],
     [{ id: "gcal_primary-1_a1" }, { id: "manual-2" }],
   );
-  assert.deepEqual(ids, { blockIds: ["b1"], taskIds: ["gcal_primary-1_a1"] });
+  assert.deepEqual(ids, { blockIds: ["b1"], taskIds: ["gcal_primary-1_a1"], holidayIds: [] });
+});
+
+test("imported ids include the holiday labels an import made, not other documents", () => {
+  const ids = importedIds([], [], [
+    { id: "gcal_k_h1", source: { provider: "gcal" } },
+    { id: "manual", source: { provider: "other" } },
+    { id: "nosource" },
+  ]);
+  assert.deepEqual(ids.holidayIds, ["gcal_k_h1"]);
+});
+
+test("cleanup covers only chosen calendars and counts the rest as waiting", () => {
+  const selected = [{ calendarId: "a", n: 1 }, { calendarId: "b", n: 2 }, { calendarId: "a", n: 3 }];
+  assert.deepEqual(splitCleanupByCalendars(selected, ["a"]), { ready: [selected[0], selected[2]], waiting: 1 });
+  assert.deepEqual(splitCleanupByCalendars(selected, []), { ready: [], waiting: 3 });
+  assert.deepEqual(splitCleanupByCalendars(selected, ["a", "b"]).waiting, 0);
+});
+
+test("the cleanup outcome tells the truth about partial deletes", () => {
+  assert.deepEqual(cleanupOutcomeMessage(3, 3), { ok: true, text: "Replaced 3 holiday tasks with holiday labels." });
+  assert.deepEqual(cleanupOutcomeMessage(1, 1), { ok: true, text: "Replaced 1 holiday task with holiday labels." });
+  assert.deepEqual(cleanupOutcomeMessage(0, 4), { ok: false, text: "Nothing was deleted. Try again." });
+  assert.deepEqual(cleanupOutcomeMessage(500, 700), { ok: false, text: "Deleted 500 of 700; the rest are still there \u2014 try again." });
+});
+
+test("cleanup never selects a holiday calendar whose key a normal calendar shares", () => {
+  // Found by search: same 24-character slug and the same FNV-1a digest.
+  const normal = "es.ar#holiday@group.v.canp4nacwu";
+  assert.equal(calendarKey(normal), calendarKey(holidayCalendar));
+  const tasks = [{ id: `gcal_${calendarKey(holidayCalendar)}_e1` }];
+  assert.equal(selectHolidayTasks(tasks, [{ id: holidayCalendar }]).length, 1);
+  assert.deepEqual(selectHolidayTasks(tasks, [{ id: holidayCalendar }, { id: normal }]), []);
 });
 
 const holidayCalendar = "es.ar#holiday@group.v.calendar.google.com";

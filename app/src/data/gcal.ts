@@ -2,7 +2,7 @@ import { doc, writeBatch } from "firebase/firestore";
 import { importedIds, type ImportedBlockRef, type ImportPlan } from "../domain/gcalImport.ts";
 import { blockFields } from "./blocks.ts";
 import { db } from "./client.ts";
-import { writeHolidays } from "./holidays.ts";
+import { removeHolidays, writeHolidays } from "./holidays.ts";
 import { trackRemoval } from "./pending.ts";
 import { taskFields } from "./tasks.ts";
 
@@ -62,8 +62,9 @@ export async function removeImported(
   uid: string,
   blocks: Iterable<ImportedBlockRef>,
   tasks: Iterable<{ id: string }>,
+  holidays: Iterable<{ id: string; source?: { provider: string } }> = [],
 ): Promise<ImportWriteCounts> {
-  const { blockIds, taskIds } = importedIds(blocks, tasks);
+  const { blockIds, taskIds, holidayIds } = importedIds(blocks, tasks, holidays);
   const paths = [
     ...blockIds.map(id => `users/${uid}/blocks/${id}`),
     ...taskIds.map(id => `users/${uid}/tasks/${id}`),
@@ -78,5 +79,8 @@ export async function removeImported(
     for (const path of chunk) void trackRemoval(path, commit).catch(() => undefined);
     await commit;
   }
-  return { blocks: blockIds.length, tasks: taskIds.length, holidays: 0 };
+  // Labels the import made go with it; a user's override or hidden flag lives
+  // in the same document, so removing the import removes the label entirely.
+  await removeHolidays(uid, holidayIds);
+  return { blocks: blockIds.length, tasks: taskIds.length, holidays: holidayIds.length };
 }

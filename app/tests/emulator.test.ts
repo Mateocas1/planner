@@ -699,7 +699,7 @@ test("cleanup deletes only holiday-calendar tasks, labels first, and nothing whe
     assert.equal((await stored("tasks")).length, 5);
     assert.deepEqual(await stored("holidays"), []);
 
-    assert.deepEqual(await cleanupHolidayTasks(uid, plan, owner.db), { labels: 1, tasks: 1 });
+    assert.deepEqual(await cleanupHolidayTasks(uid, plan, owner.db), { labels: 1, tasks: 1, total: 1 });
     const remaining = (await stored("tasks")).map(task => task.id).sort();
     assert.deepEqual(remaining, Object.keys(seeded).filter(id => id !== holidayTaskId).sort());
     const labels = await stored("holidays");

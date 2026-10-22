@@ -67,15 +67,23 @@ export async function removeHolidays(uid: string, ids: string[], database: Fires
  * task in place. Only the ids `planHolidayCleanup` named are touched; this
  * function never looks at a task's title, date or any other document.
  */
-export async function cleanupHolidayTasks(uid: string, plan: HolidayCleanupPlan, database: Firestore = db): Promise<{ labels: number; tasks: number }> {
+export async function cleanupHolidayTasks(uid: string, plan: HolidayCleanupPlan, database: Firestore = db): Promise<{ labels: number; tasks: number; total: number }> {
   const labels = await writeHolidays(uid, plan.toWrite, database);
   const paths = plan.deletable.map(id => `users/${uid}/tasks/${id}`);
+  let deleted = 0;
   for (const chunk of chunks(paths, MAX_BATCH_WRITES)) {
     const batch = writeBatch(database);
     for (const path of chunk) batch.delete(doc(database, path));
     const commit = batch.commit();
     for (const path of chunk) void trackRemoval(path, commit).catch(() => undefined);
-    await commit;
+    // A failed chunk stops here; the labels are stored, so running the cleanup
+    // again selects only the tasks still there and deletes just those.
+    try {
+      await commit;
+    } catch {
+      break;
+    }
+    deleted += chunk.length;
   }
-  return { labels, tasks: paths.length };
+  return { labels, tasks: deleted, total: paths.length };
 }

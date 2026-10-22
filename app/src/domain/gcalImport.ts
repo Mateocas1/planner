@@ -295,10 +295,15 @@ export type ImportedBlockRef = { id: string; source?: { provider: string } };
  * record of where they came from, and nothing else in the app mints that
  * prefix (Firestore assigns every user-created task a random id).
  */
-export function importedIds(blocks: Iterable<ImportedBlockRef>, tasks: Iterable<{ id: string }>): { blockIds: string[]; taskIds: string[] } {
+export function importedIds(
+  blocks: Iterable<ImportedBlockRef>,
+  tasks: Iterable<{ id: string }>,
+  holidays: Iterable<{ id: string; source?: { provider: string } }> = [],
+): { blockIds: string[]; taskIds: string[]; holidayIds: string[] } {
+  const holidayIds = [...holidays].filter(holiday => holiday.source?.provider === "gcal").map(holiday => holiday.id);
   const blockIds = [...blocks].filter(block => block.source?.provider === "gcal").map(block => block.id);
   const taskIds = [...tasks].filter(task => task.id.startsWith(GCAL_ID_PREFIX)).map(task => task.id);
-  return { blockIds, taskIds };
+  return { blockIds, taskIds, holidayIds };
 }
 
 /**
@@ -386,4 +391,26 @@ export function planHolidayCleanup(
     deletable.push(task.id);
   }
   return { toWrite, deletable, kept };
+}
+
+/**
+ * Cleanup reads the holiday calendar's events to keep Google's kind, so it only
+ * covers tasks of calendars the user has chosen. `waiting` counts the selected
+ * tasks of holiday calendars that are not chosen yet.
+ */
+export function splitCleanupByCalendars<T extends { calendarId: string }>(
+  selected: T[],
+  chosenCalendarIds: Iterable<string>,
+): { ready: T[]; waiting: number } {
+  const chosen = new Set(chosenCalendarIds);
+  const ready = selected.filter(item => chosen.has(item.calendarId));
+  return { ready, waiting: selected.length - ready.length };
+}
+
+/** The sentence after a cleanup, true to how many tasks were really deleted. */
+export function cleanupOutcomeMessage(deleted: number, total: number): { ok: boolean; text: string } {
+  const noun = (count: number) => `${count} holiday ${count === 1 ? "task" : "tasks"}`;
+  if (deleted >= total) return { ok: true, text: `Replaced ${noun(deleted)} with holiday labels.` };
+  if (deleted === 0) return { ok: false, text: "Nothing was deleted. Try again." };
+  return { ok: false, text: `Deleted ${deleted} of ${total}; the rest are still there \u2014 try again.` };
 }

@@ -22,6 +22,8 @@ import {
   importDocId,
   importedIds,
   planHolidayCleanup,
+  splitCleanupByCalendars,
+  cleanupOutcomeMessage,
   planImport,
   selectHolidayTasks,
   type GcalEvent,
@@ -115,8 +117,8 @@ export function importedMessage(counts: { blocks: number; tasks: number; holiday
   return `Imported ${itemsSentence(counts.blocks, counts.tasks, counts.holidays ?? 0)}`;
 }
 
-function removedMessage(counts: { blocks: number; tasks: number }): string {
-  const items = itemsSentence(counts.blocks, counts.tasks);
+function removedMessage(counts: { blocks: number; tasks: number; holidays: number }): string {
+  const items = itemsSentence(counts.blocks, counts.tasks, counts.holidays);
   return items === "" ? "There was nothing imported to remove." : `Removed ${items}.`;
 }
 
@@ -224,13 +226,13 @@ export function GcalImportSheet({
         if (typeof event?.id === "string") read.set(importDocId(id, event.id), event);
       }
     }
-    const selected = selectHolidayTasks(tasks, calendars);
-    return { selected, plan: planHolidayCleanup(selected, read, holidays.map(holiday => holiday.id)) };
+    const { ready, waiting } = splitCleanupByCalendars(selectHolidayTasks(tasks, calendars), chosen);
+    return { selected: ready, waiting, plan: planHolidayCleanup(ready, read, holidays.map(holiday => holiday.id)) };
   }, [tasks, calendars, chosen, events, holidays]);
 
   /** Everything imported so far, for the removal safety net. */
-  const imported = useMemo(() => importedIds(blocks, tasks), [blocks, tasks]);
-  const importedTotal = imported.blockIds.length + imported.taskIds.length;
+  const imported = useMemo(() => importedIds(blocks, tasks, holidays), [blocks, tasks, holidays]);
+  const importedTotal = imported.blockIds.length + imported.taskIds.length + imported.holidayIds.length;
 
   // Warm the GIS script as the sheet opens, not when Connect is pressed: the
   // consent popup has to open inside the click's user gesture, and a cold cache
@@ -373,8 +375,9 @@ export function GcalImportSheet({
     setNotice(null);
     try {
       const counts = await cleanupHolidayTasks(uid, cleanup.plan);
-      setConfirmCleanup(false);
-      setNotice({ tone: "ok", text: `Replaced ${plural(counts.tasks, "holiday task")} with holiday labels.` });
+      const outcome = cleanupOutcomeMessage(counts.tasks, counts.total);
+      if (outcome.ok) setConfirmCleanup(false);
+      setNotice({ tone: outcome.ok ? "ok" : "error", text: outcome.text });
     } catch {
       setNotice({ tone: "error", text: "Nothing was deleted. Try again." });
     } finally {
@@ -387,7 +390,7 @@ export function GcalImportSheet({
     setBusy(true);
     setNotice(null);
     try {
-      const counts = await removeImported(uid, blocks, tasks);
+      const counts = await removeImported(uid, blocks, tasks, holidays);
       setConfirmRemove(false);
       setNotice({ tone: "ok", text: removedMessage(counts) });
     } catch {
@@ -516,11 +519,15 @@ export function GcalImportSheet({
           </button>
         )}
 
+        {phase === "preview" && cleanup.waiting > 0 && (
+          <p className="gcal-note">Select the holiday calendar to clean up its old tasks</p>
+        )}
+
         {confirmCleanup && (
           <div className="gcal-confirm" role="group" aria-label="Clean up holiday tasks">
             <p className="gcal-confirm-text">
               Delete {plural(cleanup.plan.deletable.length, "task")} an earlier import made from your Google holiday
-              calendars? They become holiday labels first. Tasks you created and tasks from other calendars are not touched.
+              calendars? They become holiday labels first. Completed or edited holiday tasks are removed too. Tasks you created and tasks from other calendars are not touched.
               {cleanup.plan.kept > 0 && ` ${plural(cleanup.plan.kept, "holiday task")} without a usable date will stay.`}
             </p>
             <div className="gcal-confirm-actions">
