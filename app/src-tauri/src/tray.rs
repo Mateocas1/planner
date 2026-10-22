@@ -199,6 +199,7 @@ fn toggle_main<R: Runtime>(app: &AppHandle<R>) {
     let in_front = window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false);
     if in_front {
         let _ = window.hide();
+        crate::memory::sync_main(&window);
     } else {
         focus_main(app);
     }
@@ -252,11 +253,20 @@ fn attach_close_to_tray<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     let closing = window.clone();
     window.on_window_event(move |event| {
-        let tauri::WindowEvent::CloseRequested { api, .. } = event else { return };
-        api.prevent_close();
-        let _ = handle.save_window_state(StateFlags::all());
-        let _ = closing.hide();
-        show_tray_notice_once(&handle);
+        match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = handle.save_window_state(StateFlags::all());
+                let _ = closing.hide();
+                // T12: hidden to the tray — WebView2 aims low until it returns.
+                crate::memory::sync_main(&closing);
+                show_tray_notice_once(&handle);
+            }
+            // A minimize and its restore arrive here as resizes; the sync reads
+            // `is_minimized` and moves the memory target both ways.
+            tauri::WindowEvent::Resized(_) => crate::memory::sync_main(&closing),
+            _ => {}
+        }
     });
 }
 

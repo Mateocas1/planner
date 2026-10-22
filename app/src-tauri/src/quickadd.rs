@@ -139,11 +139,15 @@ pub fn toggle_window<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window("quickadd") else { return };
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
+        // T12: hidden again — the popup's webview aims low between uses.
+        crate::memory::sync_quickadd(&window);
         return;
     }
     center_on_cursor(&window);
     let _ = window.show();
     let _ = window.set_focus();
+    // T12: on screen — back to the normal target before the user types.
+    crate::memory::sync_quickadd(&window);
     let _ = app.emit_to("quickadd", SHOWN_EVENT, ());
 }
 
@@ -192,9 +196,13 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
             if matches!(event, WindowEvent::Focused(false)) {
                 if let Some(window) = handle.get_webview_window("quickadd") {
                     let _ = window.hide();
+                    crate::memory::sync_quickadd(&window);
                 }
             }
         });
+        // T12: the window is created hidden and usually stays that way, so its
+        // first state is LOW. The hotkey path flips it back to NORMAL.
+        crate::memory::sync_quickadd(&window);
     }
 
     Ok(())
