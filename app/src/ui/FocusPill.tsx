@@ -14,7 +14,9 @@ import {
   pillEvents,
   pillProgress,
   pillSnapshot,
+  mainInForeground,
   pillVisibility,
+  type MainWindowState,
   readPillEnabled,
   type PillSnapshot,
 } from "./focusPillState.ts";
@@ -83,7 +85,7 @@ export function FocusPill() {
     pillSnapshot(readStoredSession(), Date.now()),
   );
   const [label, setLabel] = useState("Focus");
-  /** Null until Rust answers; treated as "main focused" (pill hidden). */
+  /** Null until Rust answers; treated as "main in front" (pill hidden). */
   const [mainFocused, setMainFocused] = useState<boolean | null>(null);
   const [enabled, setEnabled] = useState(() => readPillEnabled());
   const [hiddenByUser, setHiddenByUser] = useState(false);
@@ -145,12 +147,12 @@ export function FocusPill() {
       else unlistens.push(unlisten);
     };
 
-    void invoke<boolean>("pill_main_focused")
-      .then(focused => setMainFocused(focused))
+    void invoke<MainWindowState>("pill_main_focused")
+      .then(main => setMainFocused(mainInForeground(main)))
       .catch(() => setMainFocused(false));
     void emit(pillEvents.requestState).catch(() => undefined);
 
-    void listen<boolean>(pillEvents.mainFocus, event => setMainFocused(event.payload)).then(track).catch(() => undefined);
+    void listen<MainWindowState>(pillEvents.mainFocus, event => setMainFocused(mainInForeground(event.payload))).then(track).catch(() => undefined);
     void listen<{ session: string | null; label: string }>(pillEvents.state, event => {
       setLabel(event.payload.label);
       const next = event.payload.session === null ? null : pillSnapshot(event.payload.session, Date.now());

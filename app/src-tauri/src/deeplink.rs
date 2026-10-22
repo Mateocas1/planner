@@ -26,6 +26,7 @@ pub fn focus_main<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+    crate::pill::sync_main(app);
 }
 
 fn handle_urls<R: Runtime, S: AsRef<str>>(app: &AppHandle<R>, urls: impl IntoIterator<Item = S>) {

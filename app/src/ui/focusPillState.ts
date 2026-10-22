@@ -38,6 +38,23 @@ export const pillEvents = {
   requestState: "pill://request-state",
 } as const;
 
+/** What Rust reports about the main window (src-tauri/src/pill.rs). */
+export type MainWindowState = {
+  focused: boolean;
+  visible: boolean;
+  minimized: boolean;
+};
+
+/**
+ * Whether the planner is in front of the user. Focus alone is not enough: a
+ * window hidden to the tray or minimized is out of sight even if the OS never
+ * delivered a focus loss for it, and a visible window that merely lost focus
+ * to another app is also not "in front".
+ */
+export function mainInForeground(main: MainWindowState): boolean {
+  return main.focused && main.visible && !main.minimized;
+}
+
 /** Everything the visibility rule weighs. */
 export type PillInputs = {
   /** The Settings toggle ("Show floating timer", on by default). */

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startFocus } from "../domain/focus.ts";
+import { pauseFocus } from "../domain/focus.ts";
 import {
+  mainInForeground,
   pillEnabledKey,
   pillProgress,
   pillSnapshot,
@@ -100,4 +102,45 @@ test("a broken or blocked storage still reads as on", () => {
     },
   } as unknown as Storage;
   assert.equal(readPillEnabled(broken), true);
+});
+
+/** The full show rule as the pill page applies it: Rust's window facts
+ * folded by `mainInForeground`, then weighed with the session and settings. */
+function shows(
+  main: { focused: boolean; visible: boolean; minimized: boolean },
+  overrides: Partial<Parameters<typeof pillVisibility>[0]> = {},
+) {
+  return pillVisibility(inputs({ mainFocused: mainInForeground(main), ...overrides }));
+}
+
+const front = { focused: true, visible: true, minimized: false };
+
+test("pill rule: hidden while the main window is focused", () => {
+  assert.equal(shows(front), false);
+});
+
+test("pill rule: shows when the window is hidden to the tray, even if focus was never reported lost", () => {
+  assert.equal(shows({ focused: true, visible: false, minimized: false }), true);
+  assert.equal(shows({ focused: false, visible: false, minimized: false }), true);
+});
+
+test("pill rule: shows when the window is minimized", () => {
+  assert.equal(shows({ focused: true, visible: true, minimized: true }), true);
+});
+
+test("pill rule: shows when another app has the focus", () => {
+  assert.equal(shows({ focused: false, visible: true, minimized: false }), true);
+});
+
+test("pill rule: a paused session still shows, an ended one does not", () => {
+  const away = { focused: false, visible: false, minimized: false };
+  assert.equal(shows(away, { session: pauseFocus(session, NOW + 30_000) }), true);
+  assert.equal(shows(away, { now: NOW + 21 * 60_000 }), false);
+  assert.equal(shows(away, { session: null }), false);
+});
+
+test("pill rule: the user's close and the setting off win over any window state", () => {
+  const away = { focused: false, visible: false, minimized: false };
+  assert.equal(shows(away, { hiddenByUser: true }), false);
+  assert.equal(shows(away, { enabled: false }), false);
 });

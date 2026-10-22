@@ -9,7 +9,7 @@
 //!
 //! What Rust owns is the one fact the page cannot see and the window's frame:
 //!
-//! - the main window's foreground state (`Focused` events, forwarded as
+//! - the main window's foreground state (focus, visibility and minimize state, forwarded as
 //!   `pill://main-focus`), which decides whether the pill may show (L15: it
 //!   appears by itself only while the planner is not in the foreground);
 //! - the pill's position: the default is the top-right of the primary work
@@ -20,7 +20,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent};
@@ -36,11 +35,35 @@ const EDGE_MARGIN_LOGICAL: f64 = 12.0;
 /// The pill's saved position, next to the window-state plugin's own file.
 const STATE_FILE: &str = "pill-window.json";
 
-/// Whether the main window is the foreground window right now. The pill page
-/// reads it once at load (before the first event can arrive) via the command
-/// below, then follows `MAIN_FOCUS_EVENT`.
-#[derive(Default)]
-pub struct MainFocus(Mutex<bool>);
+/// What the pill needs to know about `main`: the three facts the page folds
+/// into "is the planner in front" (`mainInForeground` in `focusPillState.ts`,
+/// the one place the rule lives). Focus alone is not enough: hiding to the tray
+/// or minimizing must show the pill even if the OS never reports a focus loss.
+#[derive(Clone, Copy, Serialize)]
+pub struct MainState {
+    focused: bool,
+    visible: bool,
+    minimized: bool,
+}
+
+fn main_state<R: Runtime>(app: &AppHandle<R>) -> MainState {
+    match app.get_webview_window(MAIN_LABEL) {
+        Some(main) => MainState {
+            focused: main.is_focused().unwrap_or(false),
+            visible: main.is_visible().unwrap_or(false),
+            minimized: main.is_minimized().unwrap_or(false),
+        },
+        None => MainState { focused: false, visible: false, minimized: false },
+    }
+}
+
+/// Tells the pill page where `main` stands now. Called from the window's own
+/// events and, explicitly, after every hide/show the app performs itself (the
+/// close-to-tray hide, the tray toggle, `focus_main`), so the pill never depends
+/// on the OS delivering a `Focused(false)` for a hidden window.
+pub fn sync_main<R: Runtime>(app: &AppHandle<R>) {
+    let _ = app.emit(MAIN_FOCUS_EVENT, main_state(app));
+}
 
 #[derive(Serialize, Deserialize)]
 struct SavedPosition {
@@ -128,8 +151,6 @@ fn apply_position<R: Runtime>(app: &AppHandle<R>, pill: &tauri::WebviewWindow<R>
 
 /// Creates the hidden pill window and wires its two Rust-side facts.
 pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
-    app.manage(MainFocus::default());
-
     let pill = WebviewWindowBuilder::new(app, PILL_LABEL, WebviewUrl::App("index.html".into()))
         .title("Focus timer")
         .inner_size(PILL_SIZE.0, PILL_SIZE.1)
@@ -152,19 +173,14 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         }
     });
 
-    // The main window's focus flips are the pill's show/hide signal: every
-    // gain or loss is stored and forwarded to the pages.
+    // Focus flips, minimize/restore (a `Resized` on Windows) and visibility
+    // changes made by the app itself (`sync_main` callers) all re-announce
+    // `main`'s state.
     let tracker = app.clone();
     if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        if let Ok(mut guard) = tracker.state::<MainFocus>().0.lock() {
-            *guard = main.is_focused().unwrap_or(false);
-        }
         main.on_window_event(move |event| {
-            if let WindowEvent::Focused(focused) = event {
-                if let Ok(mut guard) = tracker.state::<MainFocus>().0.lock() {
-                    *guard = *focused;
-                }
-                let _ = tracker.emit(MAIN_FOCUS_EVENT, *focused);
+            if matches!(event, WindowEvent::Focused(_) | WindowEvent::Resized(_)) {
+                sync_main(&tracker);
             }
         });
     }
@@ -179,8 +195,8 @@ pub fn pill_focus_main<R: Runtime>(app: AppHandle<R>) {
     crate::deeplink::focus_main(&app);
 }
 
-/// The foreground fact the pill page needs before the first event arrives.
+/// The state the pill page needs before the first event arrives.
 #[tauri::command]
-pub fn pill_main_focused(state: tauri::State<'_, MainFocus>) -> bool {
-    state.0.lock().map(|guard| *guard).unwrap_or(false)
+pub fn pill_main_focused<R: Runtime>(app: AppHandle<R>) -> MainState {
+    main_state(&app)
 }

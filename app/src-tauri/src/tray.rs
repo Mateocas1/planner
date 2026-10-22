@@ -199,6 +199,7 @@ fn toggle_main<R: Runtime>(app: &AppHandle<R>) {
     let in_front = window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false);
     if in_front {
         let _ = window.hide();
+        crate::pill::sync_main(app);
     } else {
         focus_main(app);
     }
@@ -256,6 +257,7 @@ fn attach_close_to_tray<R: Runtime>(app: &AppHandle<R>) {
         api.prevent_close();
         let _ = handle.save_window_state(StateFlags::all());
         let _ = closing.hide();
+        crate::pill::sync_main(&handle);
         show_tray_notice_once(&handle);
     });
 }
