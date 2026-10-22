@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { isTauri } from "../desktop.ts";
 import { setProfileDaySettings, type DaySettingsPatch } from "../data/profile.ts";
+import { QuickAddShortcut } from "./QuickAddShortcut.tsx";
 import { minutesPerDay, type WorkWindow } from "../planning/window.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -252,6 +254,9 @@ export function DaySettingsSheet({
           </div>
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
+        {/* Desktop only: the global quick-add hotkey exists in the Tauri shell;
+            the web build has no window to summon, so the row never renders. */}
+        {isTauri() && <QuickAddShortcut />}
       </div>
     </Sheet>
   );
