@@ -18,6 +18,7 @@ import {
   type FocusStatus,
 } from "../domain/focus.ts";
 import { dateKey } from "./time.ts";
+import { consumePendingSubtraction, sessionKeyOf } from "../domain/idle.ts";
 
 /**
  * The focus timer, as React state: one session for the document, kept per
@@ -38,6 +39,13 @@ import { dateKey } from "./time.ts";
  *    Firestore increment (offline-safe, no read) and it happens beside the
  *    report rather than inside it, so the hook's own state never depends on a
  *    network round trip and a failed counter never breaks the timer.
+ *
+ * 4. Idle away (T9, desktop only): a subtraction the user confirmed while the
+ *    session was still running is folded into this same write rather than sent
+ *    as a second one -- domain/idle.ts holds the pending decision, consumed
+ *    here exactly once, so the session's minutes land adjusted. The away span
+ *    was already clipped to the session's focused time before the user
+ *    confirmed, so the result can never go below zero.
  *
  * One session at a time: starting another replaces it with stop semantics, so a
  * replaced session is reported exactly like a stopped one.
@@ -159,6 +167,14 @@ export function useFocusTimer({
     onStopRef.current?.(stopped);
     const tracked = trackedMinutes(stopped);
     if (tracked === null || uid === undefined) return;
+    // A subtraction confirmed while this session was still running folds into
+    // this write instead of becoming a second one (T9 S8.5). Consuming removes
+    // the pending entry, so the adjustment happens exactly once; the away span
+    // was clipped to the session's focused time before the user confirmed, so
+    // the result can never go below zero.
+    const away = consumePendingSubtraction(sessionKeyOf(ended), window.localStorage);
+    const minutes = Math.max(0, tracked.minutes - away);
+    if (minutes === 0) return;
     // The counter is a side effect of the session, never a gate on it: the
     // timer has already stopped and cleared itself by the time this lands, so
     // an unreachable server leaves the session recorded rather than repeated.

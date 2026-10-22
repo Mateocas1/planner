@@ -74,6 +74,25 @@ export async function addActualMinutes(uid: string, taskId: string, minutes: num
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { actualMinutes: increment(minutes) });
 }
 
+/**
+ * Removes minutes from a task's counter (T9 idle away, spec S8.5): a session
+ * the user spent mostly away, confirmed after its own minutes already landed.
+ *
+ * It is the same write path as `addActualMinutes` -- one `increment()`
+ * transform with a negative value -- so it queues offline, commutes with every
+ * other device's increments and never needs a read. What it cannot do is see
+ * the counter: keeping the result non-negative is the caller's clamp
+ * (domain/idle.ts `clampSubtraction`), exactly once by the applied ledger, and
+ * this helper only refuses anything that is not a whole positive minute.
+ */
+export async function subtractActualMinutes(uid: string, taskId: string, minutes: number) {
+  if (typeof taskId !== "string" || taskId === "" || taskId.includes("/")) throw new Error("task ID is invalid");
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_ACTUAL_MINUTES) {
+    throw new Error(`actual minutes to subtract must be a whole minute count between 1 and ${MAX_ACTUAL_MINUTES}`);
+  }
+  await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { actualMinutes: increment(-minutes) });
+}
+
 export async function setTaskCompleted(uid: string, taskId: string, completed: boolean) {
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), completed
     ? { completed: true, completedAt: new Date().toISOString() }

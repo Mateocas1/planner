@@ -1,0 +1,24 @@
+/* Idle-away prompt (T9, spec S8.5). It mounts with the undo toast's classes
+   (`undo-toast`) and only restyles what the decision changes: the primary
+   action is the quiet one (Subtract writes actualMinutes, so it must not wear
+   the accent the undo toast's Undo earns by repairing something the user just
+   did), and Keep is a second pill, not a separator-less action. */
+
+.idle-toast-subtract {
+  background: var(--ink-800);
+  color: var(--ink-50);
+}
+
+.idle-toast-subtract:disabled { opacity: 0.6; }
+
+.idle-toast-keep {
+  background: transparent;
+  color: var(--toast-quiet);
+}
+
+.idle-toast-keep:disabled { opacity: 0.6; }
+
+@media (hover: hover) and (pointer: fine) {
+  .idle-toast-subtract:hover { background: var(--ink-700); }
+  .idle-toast-keep:hover { color: var(--toast-label); }
+}

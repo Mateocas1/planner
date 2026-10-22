@@ -1,5 +1,12 @@
 import { useState } from "react";
 import { setProfileDaySettings, type DaySettingsPatch } from "../data/profile.ts";
+import {
+  MAX_IDLE_THRESHOLD_MINUTES,
+  MIN_IDLE_THRESHOLD_MINUTES,
+  readIdleThreshold,
+  writeIdleThreshold,
+} from "../domain/idle.ts";
+import { isTauri } from "../desktop.ts";
 import { minutesPerDay, type WorkWindow } from "../planning/window.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -31,6 +38,9 @@ import "./Settings.css";
 const notATime = "Use a time like 09:00.";
 const outsideDay = "Stay inside the day: 00:00 to 24:00.";
 const inverted = "Work ends before it starts. Set an end later than the start.";
+
+/** The idle setting's own sentence, for a value outside the 5–60 range. */
+const outsideThreshold = `Pick between ${MIN_IDLE_THRESHOLD_MINUTES} and ${MAX_IDLE_THRESHOLD_MINUTES} minutes.`;
 
 /** "HH:MM" for minutes after midnight. The end of the day reads as 24:00. */
 export function formatClock(minutes: number): string {
@@ -148,12 +158,18 @@ export function DaySettingsSheet({
   const [windowDraft, setWindowDraft] = useState<{ start: string; end: string } | null>(null);
   const [shutdownDraft, setShutdownDraft] = useState<string | null>(null);
   const [shortcutsDraft, setShortcutsDraft] = useState<boolean | null>(null);
+  const [idleDraft, setIdleDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startText = windowDraft?.start ?? formatClock(workWindow.startMinutes);
   const endText = windowDraft?.end ?? formatClock(workWindow.endMinutes);
   const shutdownText = shutdownDraft ?? formatClock(shutdownTime);
   const enabled = shortcutsDraft ?? shortcutsEnabled;
+  // Desktop only (S8.5): the away threshold lives in localStorage, not the
+  // profile -- it is a preference of this machine's input habits, not a fact
+  // about the plan, and detection is a desktop-only feature anyway.
+  const desktop = isTauri();
+  const idleText = idleDraft ?? String(readIdleThreshold(window.localStorage));
 
   const editWindow = (field: "start" | "end", value: string) => {
     const next = { start: startText, end: endText };
@@ -195,6 +211,18 @@ export function DaySettingsSheet({
     setShortcutsDraft(next);
     setError(null);
     save({ shortcutsEnabled: next });
+  };
+
+  /** Persists the away threshold locally. Out-of-range values say so and keep
+   * what was typed, like every other field in this sheet. */
+  const commitIdle = () => {
+    const minutes = Number(idleText);
+    if (!Number.isInteger(minutes) || minutes < MIN_IDLE_THRESHOLD_MINUTES || minutes > MAX_IDLE_THRESHOLD_MINUTES) {
+      return setError(outsideThreshold);
+    }
+    setError(null);
+    setIdleDraft(null);
+    writeIdleThreshold(minutes, window.localStorage);
   };
 
   return (
@@ -251,6 +279,35 @@ export function DaySettingsSheet({
             </button>
           </div>
         </div>
+        {desktop && (
+          <div className="form-group">
+            <div className="form-row">
+              <label htmlFor="day-idle-threshold">Away after</label>
+              <input
+                id="day-idle-threshold"
+                className="form-control day-time"
+                type="number"
+                inputMode="numeric"
+                autoComplete="off"
+                min={MIN_IDLE_THRESHOLD_MINUTES}
+                max={MAX_IDLE_THRESHOLD_MINUTES}
+                step={1}
+                value={idleText}
+                onChange={event => setIdleDraft(event.target.value)}
+                onBlur={commitIdle}
+                onKeyDown={event => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+            </div>
+            <p className="day-settings-note">
+              Minutes of no input during focus before the app asks whether to subtract them. This device only.
+            </p>
+          </div>
+        )}
         {error && <p className="inline-error" role="alert">{error}</p>}
       </div>
     </Sheet>

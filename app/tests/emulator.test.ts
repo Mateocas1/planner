@@ -125,6 +125,55 @@ test("two offline increments accumulate on the server instead of overwriting eac
   }
 });
 
+/**
+ * Idle away (T9, spec S8.5): a subtraction confirmed after the session's own
+ * minutes already landed goes through the same increment transform as
+ * `addActualMinutes`, with a negative value (src/data/tasks.ts
+ * `subtractActualMinutes`). The helper module itself cannot be loaded here --
+ * it imports the app's client, which resolves its project from
+ * `window.location` -- so this test pins the storage semantics it depends on:
+ * one queued negative transform, drained once, changes the counter by exactly
+ * its minutes. The "Keep writes nothing" half is a property of the UI (the
+ * confirm handler is the only caller of this call shape), which the domain
+ * unit tests cover; what the server can prove is that nothing else in the
+ * write path subtracts on its own.
+ */
+test("a queued offline subtraction lands once on the server", async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`idle-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `idle-${suffix}@example.invalid`, "password1");
+    const path = `users/${account.user.uid}/tasks/away`;
+    await setDoc(doc(owner.db, path), { title: "Away task", completed: false, actualMinutes: 30 });
+
+    await disableNetwork(owner.db);
+    // The one write a confirmed Subtract produces (the same call shape
+    // subtractActualMinutes emits), queued while offline.
+    const subtraction = updateDoc(doc(owner.db, path), { actualMinutes: increment(-12) });
+    // The local cache applies the transform at once, which is what keeps the
+    // visible counter honest while the app is offline.
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 18);
+    await enableNetwork(owner.db);
+    await subtraction;
+
+    // The server holds exactly one subtraction, not a replayed one.
+    let stored: number | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      stored = (await getDocFromServer(doc(owner.db, path))).data()?.actualMinutes;
+      if (stored === 18) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(stored, 18);
+
+    // Keep: the same offline cycle with no confirmed write changes nothing.
+    await disableNetwork(owner.db);
+    await enableNetwork(owner.db);
+    assert.equal((await getDocFromServer(doc(owner.db, path))).data()?.actualMinutes, 18);
+  } finally {
+    await close(owner);
+  }
+});
+
 test("a recorded minute count is a whole number a document may hold or omit", () => {
   // The stored field is an integer counter: the timer adds whole minutes and a
   // hand-edited document may hold anything, so the domain rejects rather than
