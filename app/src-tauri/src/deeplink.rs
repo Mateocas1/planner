@@ -7,7 +7,7 @@
 
 use std::sync::Mutex;
 
-use planner_core::route::{self, Route};
+use planner_core::route::{last_route, Route};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -18,11 +18,6 @@ const PENDING_EVENT: &str = "deeplink-pending";
 /// link that launched the app before the webview finished loading.
 #[derive(Default)]
 pub struct PendingRoute(Mutex<Option<Route>>);
-
-/// The last valid route among `urls` (a launch can carry several arguments).
-fn last_route<S: AsRef<str>>(urls: impl IntoIterator<Item = S>) -> Option<Route> {
-    urls.into_iter().filter_map(|url| route::parse(url.as_ref())).last()
-}
 
 /// Brings the main window forward. Used for every link and for a second launch.
 pub fn focus_main<R: Runtime>(app: &AppHandle<R>) {
@@ -70,20 +65,4 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         handle_urls(&handle, urls.iter().map(|url| url.as_str()));
     });
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_last_valid_link_wins_and_junk_is_dropped() {
-        assert_eq!(last_route(["junk", "calendar://today", "calendar://nope"]), Some(Route::Today));
-        assert_eq!(
-            last_route(["calendar://today", "calendar://day/2026-10-22"]),
-            Some(Route::Day { date: "2026-10-22".into() })
-        );
-        assert_eq!(last_route(["C:\\app.exe", "http://x"]), None);
-        assert_eq!(last_route(Vec::<&str>::new()), None);
-    }
 }

@@ -40,6 +40,11 @@ pub fn parse(url: &str) -> Option<Route> {
     }
 }
 
+/// The last valid route among `urls` (a launch can carry several arguments).
+pub fn last_route<S: AsRef<str>>(urls: impl IntoIterator<Item = S>) -> Option<Route> {
+    urls.into_iter().filter_map(|url| parse(url.as_ref())).last()
+}
+
 /// `YYYY-MM-DD` naming a real calendar day (leap years included), 1970-2100.
 fn valid_date(text: &str) -> bool {
     let bytes = text.as_bytes();
@@ -130,6 +135,17 @@ mod tests {
             assert_eq!(parse(url), None, "{url:?}");
         }
         assert_eq!(parse(&format!("calendar://day/{}", "9".repeat(80))), None);
+    }
+
+    #[test]
+    fn the_last_valid_link_wins_and_junk_is_dropped() {
+        assert_eq!(last_route(["junk", "calendar://today", "calendar://nope"]), Some(Route::Today));
+        assert_eq!(
+            last_route(["calendar://today", "calendar://day/2026-10-22"]),
+            Some(Route::Day { date: "2026-10-22".into() })
+        );
+        assert_eq!(last_route(["C:\\app.exe", "http://x"]), None);
+        assert_eq!(last_route(Vec::<&str>::new()), None);
     }
 
     #[test]
