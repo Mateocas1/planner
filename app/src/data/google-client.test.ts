@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   GOOGLE_SCOPES,
+  desktopAuthMessage,
+  desktopTokenFrom,
   MAX_PAGES,
   authMessage,
   calendarsFrom,
@@ -174,4 +177,29 @@ test("sign-in failures name what the user can do about them", () => {
   assert.match(authMessage("access_denied"), /did not authorize/);
   assert.match(authMessage(undefined), /did not authorize/);
   assert.match(authMessage("something_new"), /did not authorize/);
+});
+
+test("the desktop shell requests the same scopes as the web import", () => {
+  const rust = readFileSync(new URL("../../src-tauri/core/src/oauth.rs", import.meta.url), "utf8");
+  const declared = /pub const SCOPE: &str = "([^"]+)"/.exec(rust)?.[1];
+  assert.equal(declared, GOOGLE_SCOPES);
+});
+
+test("a desktop sign-in failure code becomes a sentence", () => {
+  assert.equal(desktopAuthMessage("not_configured"), "Google import is not configured in this build.");
+  assert.equal(desktopAuthMessage("cancelled"), googleMessages.closed);
+  assert.equal(desktopAuthMessage("denied"), googleMessages.denied);
+  assert.equal(desktopAuthMessage("timeout"), googleMessages.timedOut);
+  /* A code Rust never sends, or a transport error, is the generic failure. */
+  assert.equal(desktopAuthMessage("failed"), googleMessages.signInFailed);
+  assert.equal(desktopAuthMessage(new Error("ipc down")), googleMessages.signInFailed);
+  assert.equal(desktopAuthMessage(undefined), googleMessages.signInFailed);
+});
+
+test("the desktop token is read from the command result and nothing else", () => {
+  assert.equal(desktopTokenFrom({ accessToken: "ya29.x", expiresIn: 3599 }), "ya29.x");
+  assert.equal(desktopTokenFrom({ accessToken: "" }), null);
+  assert.equal(desktopTokenFrom({ access_token: "ya29.x" }), null);
+  assert.equal(desktopTokenFrom(null), null);
+  assert.equal(desktopTokenFrom("ya29.x"), null);
 });

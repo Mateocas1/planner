@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { isTauri } from "../desktop.ts";
 import { removeImported, writeImportPlan } from "../data/gcal.ts";
 import {
   eventWindow,
@@ -204,8 +205,9 @@ export function GcalImportSheet({
   // consent popup has to open inside the click's user gesture, and a cold cache
   // would spend that gesture on a script load. A failure here is not reported --
   // pressing Connect retries the load and speaks if it fails again.
+  // The desktop shell has no GIS: it signs in through the system browser.
   useEffect(() => {
-    void loadGis().catch(() => undefined);
+    if (!isTauri()) void loadGis().catch(() => undefined);
   }, []);
 
   // The token is handed back to Google when it is replaced or the sheet goes
