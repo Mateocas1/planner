@@ -19,6 +19,7 @@ import {
 } from "../domain/focus.ts";
 import { dateKey } from "./time.ts";
 import { consumePendingSubtraction, sessionKeyOf } from "../domain/idle.ts";
+import { minutesToRecord } from "../domain/idleFlow.ts";
 
 /**
  * The focus timer, as React state: one session for the document, kept per
@@ -173,12 +174,12 @@ export function useFocusTimer({
     // was clipped to the session's focused time before the user confirmed, so
     // the result can never go below zero.
     const away = consumePendingSubtraction(sessionKeyOf(ended), window.localStorage);
-    const minutes = Math.max(0, tracked.minutes - away);
+    const minutes = minutesToRecord(tracked.minutes, away);
     if (minutes === 0) return;
     // The counter is a side effect of the session, never a gate on it: the
     // timer has already stopped and cleared itself by the time this lands, so
     // an unreachable server leaves the session recorded rather than repeated.
-    void addActualMinutes(uid, tracked.taskId, tracked.minutes).catch(cause => {
+    void addActualMinutes(uid, tracked.taskId, minutes).catch(cause => {
       console.error("could not record actual minutes", cause);
     });
   }, [uid]);

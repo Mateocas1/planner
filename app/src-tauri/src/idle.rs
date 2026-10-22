@@ -27,12 +27,9 @@ pub fn measure_idle_seconds() -> u64 {
         return 0;
     }
     let now = unsafe { GetTickCount64() };
-    let last = u64::from(info.dwTime);
-    // Both stamps are milliseconds of uptime. `dwTime` is a u32 and wraps
-    // roughly every 49.7 days of uptime, so a last-input stamp above the u64
-    // counter means the counter wrapped since that input.
-    let idle_ms = if now >= last { now - last } else { now + (u32::MAX as u64 + 1) - last };
-    idle_ms / 1000
+    // `dwTime` is a u32 that wraps about every 49.7 days of uptime while `now`
+    // is a u64, so the subtraction is taken modulo 2^32 in the shared core.
+    planner_core::idle::idle_ms(now, info.dwTime) / 1000
 }
 
 /// Stub for non-Windows builds: the probe is a Windows-first feature (S1) and
