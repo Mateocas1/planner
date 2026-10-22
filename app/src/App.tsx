@@ -68,7 +68,7 @@ export default function App() {
 const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar" };
 
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
-  const { loading, tasks, blocks, series, completions, pendingWrites: pending } = useStore(user.uid);
+  const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
   const phone = useMediaQuery(phoneQuery);
   // One timer for the whole shell: the sidebar card shows it and the palette
@@ -357,6 +357,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   loading={loading}
                   blocks={blocks}
                   tasks={tasks}
+                  holidays={holidays}
                   timeZone={profile.timeZone}
                   profileError={profile.error}
                   day={calendarDay}
@@ -404,6 +405,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
             uid={user.uid}
             blocks={blocks}
             tasks={tasks}
+            holidays={holidays}
             timeZone={zone}
             origin={importOrigin.current}
             onClose={() => setImportOpen(false)}

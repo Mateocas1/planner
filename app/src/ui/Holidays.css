@@ -1,0 +1,52 @@
+/* S11 — holiday labels on the calendar's Due row. A label, not a task: it sits
+ * on the same --surface-2 chip the due tasks use with the same --label-2 text,
+ * so every text pair here is one scripts/glass-contrast.mjs already proves. The
+ * kind is carried by the dot and the border (shape and hue, never text colour):
+ * public is a solid accent dot, a non-working day a solid orange one, an
+ * observance a hollow ring on a dashed border, anything else a quiet grey dot.
+ */
+.holiday-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--label-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.holiday-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.holiday-chip::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--label-3);
+}
+
+.holiday-chip.is-public::before { background: var(--accent); }
+.holiday-chip.is-nonWorking::before { background: var(--orange); }
+.holiday-chip.is-observance { border-style: dashed; border-color: var(--separator); }
+.holiday-chip.is-observance::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--label-3); }
+
+@media (hover: hover) and (pointer: fine) {
+  .holiday-chip:hover { background: var(--fill-hover); }
+}
+
+.holiday-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The sheet: the title and date, the four kinds as one segmented control, and
+ * the two actions. Opaque material like the other creation sheets. */
+.holiday-sheet-date { margin: 0; font-size: var(--text-sub); color: var(--label-2); }
+.holiday-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; }
+.holiday-kinds legend { padding: 0; }
+.holiday-actions { display: flex; gap: 8px; }

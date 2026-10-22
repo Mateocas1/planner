@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "../desktop.ts";
 import { removeImported, writeImportPlan } from "../data/gcal.ts";
+import { removeHolidays } from "../data/holidays.ts";
 import {
   eventWindow,
   googleMessages,
@@ -16,6 +17,7 @@ import {
   type GcalCalendar,
 } from "../data/google-client.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import type { Holiday } from "../domain/holidays.ts";
 import {
   importedIds,
   planImport,
@@ -78,18 +80,20 @@ function plural(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
-/** "2 work blocks and 1 task", or the one noun when the other count is zero. */
-function itemsSentence(blocks: number, tasks: number): string {
+/** "2 work blocks and 1 task", or the one noun when the other count is zero.
+ * Holiday labels come last and only when there are some. */
+function itemsSentence(blocks: number, tasks: number, holidays = 0): string {
   const parts = [
     ...(blocks === 0 ? [] : [plural(blocks, "work block")]),
     ...(tasks === 0 ? [] : [plural(tasks, "task")]),
+    ...(holidays === 0 ? [] : [plural(holidays, "holiday label")]),
   ];
-  return parts.length === 0 ? "" : parts.join(" and ");
+  return parts.length <= 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /** What the import button is about to do, in one sentence. */
-function previewSentence(blocks: number, tasks: number): string {
-  const items = itemsSentence(blocks, tasks);
+function previewSentence(blocks: number, tasks: number, holidays: number): string {
+  const items = itemsSentence(blocks, tasks, holidays);
   return items === "" ? "Nothing new to import." : `${items} to import`;
 }
 
@@ -103,8 +107,8 @@ function skippedSentence(skips: ImportSkips): string {
 }
 
 /** The toast sentence after a successful import. */
-export function importedMessage(counts: { blocks: number; tasks: number }): string {
-  return `Imported ${itemsSentence(counts.blocks, counts.tasks)}`;
+export function importedMessage(counts: { blocks: number; tasks: number; holidays?: number }): string {
+  return `Imported ${itemsSentence(counts.blocks, counts.tasks, counts.holidays ?? 0)}`;
 }
 
 function removedMessage(counts: { blocks: number; tasks: number }): string {
@@ -120,6 +124,7 @@ export function GcalImportSheet({
   uid,
   blocks,
   tasks,
+  holidays,
   timeZone,
   origin,
   onClose,
@@ -128,6 +133,7 @@ export function GcalImportSheet({
   uid: string;
   blocks: BlockView[];
   tasks: TaskView[];
+  holidays: Holiday[];
   timeZone: string;
   origin: HTMLElement | null;
   onClose: () => void;
@@ -154,8 +160,9 @@ export function GcalImportSheet({
       blockIds: blocks.map(block => block.id),
       taskIds: tasks.map(task => task.id),
       eventIds: blocks.flatMap(block => (block.source === undefined ? [] : [block.source.eventId])),
+      holidayIds: holidays.map(holiday => holiday.id),
     }),
-    [blocks, tasks],
+    [blocks, tasks, holidays],
   );
 
   // One mapper call per selected calendar: the calendar id is part of every
@@ -191,12 +198,14 @@ export function GcalImportSheet({
     const skipped = emptySkips();
     let blockCount = 0;
     let taskCount = 0;
+    let holidayCount = 0;
     for (const plan of plans) {
       blockCount += plan.blocks.length;
       taskCount += plan.tasks.length;
+      holidayCount += plan.holidays.length;
       for (const reason of Object.keys(skipped) as ImportSkipReason[]) skipped[reason] += plan.skipped[reason];
     }
-    return { blocks: blockCount, tasks: taskCount, skipped };
+    return { blocks: blockCount, tasks: taskCount, holidays: holidayCount, skipped };
   }, [plans]);
 
   /** Everything imported so far, for the removal safety net. */
@@ -303,22 +312,27 @@ export function GcalImportSheet({
     if (busy || !online) return;
     setBusy(true);
     setNotice(null);
-    const batch: { blocks: ImportPlan["blocks"]; tasks: ImportPlan["tasks"] } = { blocks: [], tasks: [] };
-    const counts = { blocks: 0, tasks: 0 };
+    const batch: { blocks: ImportPlan["blocks"]; tasks: ImportPlan["tasks"]; holidays: ImportPlan["holidays"] } = { blocks: [], tasks: [], holidays: [] };
+    const counts = { blocks: 0, tasks: 0, holidays: 0 };
     try {
       for (const plan of plans) {
-        if (plan.blocks.length === 0 && plan.tasks.length === 0) continue;
+        if (plan.blocks.length === 0 && plan.tasks.length === 0 && plan.holidays.length === 0) continue;
         const written = await writeImportPlan(uid, plan);
         counts.blocks += written.blocks;
         counts.tasks += written.tasks;
+        counts.holidays += written.holidays;
         batch.blocks.push(...plan.blocks);
         batch.tasks.push(...plan.tasks);
+        batch.holidays.push(...plan.holidays);
       }
       // The undo is exactly this batch, not everything ever imported: the ids
       // are already known, so the compensating delete is bounded to these.
       onOfferUndo({
         message: importedMessage(counts),
-        restore: () => removeImported(uid, batch.blocks, batch.tasks).then(() => undefined),
+        restore: async () => {
+          await removeImported(uid, batch.blocks, batch.tasks);
+          await removeHolidays(uid, batch.holidays.map(holiday => holiday.id));
+        },
       });
       onClose();
     } catch {
@@ -430,7 +444,7 @@ export function GcalImportSheet({
                 <p className="inline-error" role="alert">{planning.error}</p>
               ) : (
                 <>
-                  <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks)}</p>
+                  <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks, totals.holidays)}</p>
                   {skippedSentence(totals.skipped) !== "" && (
                     <p className="gcal-note">{skippedSentence(totals.skipped)}</p>
                   )}
@@ -445,10 +459,10 @@ export function GcalImportSheet({
               type="button"
               className="button-primary"
               autoFocus
-              disabled={busy || !online || totals.blocks + totals.tasks === 0}
+              disabled={busy || !online || totals.blocks + totals.tasks + totals.holidays === 0}
               onClick={() => void runImport()}
             >
-              {busy ? "Importing…" : `Import ${plural(totals.blocks + totals.tasks, "item")}`}
+              {busy ? "Importing…" : `Import ${plural(totals.blocks + totals.tasks + totals.holidays, "item")}`}
             </button>
           </>
         )}
