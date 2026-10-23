@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import { deleteTask, restoreTask, setTaskDeadline } from "../../data/tasks.ts";
 import { setTaskSomeday } from "../../data/weeklyReview.ts";
@@ -28,6 +28,7 @@ export function CleanupStep({
   weekSunday,
   onOfferUndo,
   onProblem,
+  onUndecided,
 }: {
   uid: string;
   tasks: readonly TaskView[];
@@ -40,12 +41,18 @@ export function CleanupStep({
   onOfferUndo: (item: UndoableDelete) => void;
   /** Where a failed write goes once this view is gone. */
   onProblem: (message: string) => void;
+  /** How many candidates still wait for a decision; the flow reads it to
+   *  decide whether Next finishes the step. */
+  onUndecided: (count: number) => void;
 }) {
   const today = dateKey(now, timeZone);
   const candidates = cleanupCandidates({ tasks, blocks, today, timeZone });
   // Tasks already decided in this visit: they leave the list at once.
   const [acted, setActed] = useState<Set<string>>(new Set());
   const live = candidates.filter(candidate => !acted.has(candidate.task.id));
+  useEffect(() => {
+    onUndecided(live.length);
+  }, [live.length, onUndecided]);
 
   const run = (action: CleanupAction, taskId: string) => {
     const candidate = candidates.find(entry => entry.task.id === taskId);

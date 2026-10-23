@@ -1,4 +1,5 @@
-import { motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { DueMoment } from "../../planning/weekly.ts";
 import { momentLabel } from "./weeklyFlow.ts";
 import { dur, easeOut } from "../motion.ts";
@@ -8,14 +9,16 @@ import { dur, easeOut } from "../motion.ts";
  * next to the shutdown banner's own slot, on the web as on the desktop — the
  * toast is the desktop's channel, the banner is everyone's.
  *
- * Three moves, no more: Start opens the flow on the due steps, Later holds
- * the nudge for two hours (`snoozeMinutes`, the same +2 h the toast's Later
- * takes), Skip closes the week without it. The schedule link deep-links the
- * Rituals tab, where the moments are configured. It is "quiet" by construction:
- * no icon parade, one sentence, the app's own buttons.
+ * The actions keep a clear order: "Start review" is the one primary button;
+ * "Later" holds the nudge for two hours (`snoozeMinutes`, the same +2 h the
+ * toast's Later takes) as a quiet text button; "Skip this week" and
+ * "Schedule" live behind the ⋯ disclosure, so the banner never reads as one
+ * run of links. The Rituals tab, where the moments are configured, is what
+ * "Schedule" opens.
  *
  * Entrance: opacity plus a 4 px rise, 160 ms — the pane rhythm, not a bounce;
- * the exit is a plain 120 ms fade handled by the host's AnimatePresence.
+ * the exit is a plain 120 ms fade handled by the host's AnimatePresence. The
+ * ⋯ menu fades in the same way. Escape and a pointer press outside close it.
  */
 export function WeeklyBanner({
   due,
@@ -30,6 +33,29 @@ export function WeeklyBanner({
   onSkip: () => void;
   onOpenSettings: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const more = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!more.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setMenuOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   return (
     <motion.section
       className="weekly-banner"
@@ -44,18 +70,58 @@ export function WeeklyBanner({
         <p className="weekly-banner-when">{momentLabel(due.moment)}</p>
       </div>
       <div className="weekly-banner-actions">
-        <button type="button" className="button" onClick={onOpen}>
+        <button type="button" className="button button-accent weekly-banner-start" onClick={onOpen}>
           Start review
         </button>
-        <button type="button" className="link-button" onClick={onLater}>
+        <button type="button" className="weekly-quiet" onClick={onLater}>
           Later
         </button>
-        <button type="button" className="link-button" onClick={onSkip}>
-          Skip this week
-        </button>
-        <button type="button" className="link-button" aria-label="Weekly review schedule" onClick={onOpenSettings}>
-          Schedule
-        </button>
+        <div className="weekly-banner-more" ref={more}>
+          <button
+            ref={trigger}
+            type="button"
+            className="weekly-quiet weekly-banner-dots"
+            aria-label="More weekly review options"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(open => !open)}
+          >
+            ⋯
+          </button>
+          <AnimatePresence>
+            {menuOpen && (
+              <motion.div
+                className="weekly-banner-menu"
+                role="group"
+                aria-label="Weekly review options"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, transition: { duration: dur.page, ease: easeOut } }}
+                transition={{ duration: dur.enter, ease: easeOut }}
+              >
+                <button
+                  type="button"
+                  className="weekly-banner-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onSkip();
+                  }}
+                >
+                  Skip this week
+                </button>
+                <button
+                  type="button"
+                  className="weekly-banner-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenSettings();
+                  }}
+                >
+                  Schedule
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </motion.section>
   );
