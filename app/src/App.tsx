@@ -31,7 +31,12 @@ import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts"
 import { SettingsIcon } from "./ui/Settings.tsx";
 import { SettingsView } from "./ui/settings/SettingsView.tsx";
 import { resolveSettingsTab, type SettingsTab } from "./ui/settings/tabs.ts";
+import { useWeeklyReview } from "./ui/weekly/useWeeklyReview.ts";
+import { WeeklyReview } from "./ui/weekly/WeeklyReview.tsx";
 import { matchesEvent, useShortcutBinding } from "./ui/settings/shortcutRegistry.ts";
+import { dueMoment, snoozedUntil } from "./planning/weekly.ts";
+import { skipWeeklyReview, snoozeWeeklyReview } from "./data/weeklyReview.ts";
+import { useNow } from "./ui/motion.ts";
 import { Sheet } from "./ui/Sheet.tsx";
 import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
@@ -49,7 +54,7 @@ import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
-export type View = "home" | "tasks" | "calendar" | "settings";
+export type View = "home" | "tasks" | "calendar" | "settings" | "weekly";
 
 export default function App() {
   // The keyboard inset is published once for the whole app: the sign-in gate and
@@ -113,7 +118,7 @@ export default function App() {
   );
 }
 
-const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar", settings: "Settings" };
+const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar", settings: "Settings", weekly: "Weekly review" };
 function Shell({
   user,
   view,
@@ -134,8 +139,13 @@ function Shell({
   /** Returns to the view Settings was opened from. */
   closeSettings: () => void;
 }) {
+  // The shell's one clock tick (30 s): the weekly review's due moment and its
+  // week identity are wall-clock answers, and an idle shell must still notice
+  // Friday turning to Saturday.
+  const shellNow = useNow();
   const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
+  const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   // A sign-in launch (T10) shows the window only when today's brief applies.
   useSignInReveal({ ready: !loading && !profile.loading, blocks, timeZone: profile.timeZone, workWindow: profile.workWindow });
   const phone = useMediaQuery(phoneQuery);
@@ -208,6 +218,23 @@ function Shell({
   };
   // Settings (Ronda 2, S1) is a view in the shell, not a sheet; its tab state
   // and `openSettings(tab?)` live in App — see the comment there.
+  // The weekly review (S3) is a view in the shell too. `via` remembers whether
+  // it proposed itself (banner, toast, the shutdown chain) or was opened by
+  // hand — that is what decides the steps the flow runs.
+  const [weeklyVia, setWeeklyVia] = useState<"due" | "manual">("manual");
+  const openWeeklyReview = useCallback(
+    (via: "due" | "manual") => {
+      setWeeklyVia(via);
+      onNavigate("weekly");
+    },
+    [onNavigate],
+  );
+  // One subscription to the current week's review document; the banner, the
+  // nudge pump and the flow all answer from it, so "what is due" is one fact.
+  const weekly = useWeeklyReview(user.uid, zone, shellNow);
+  const weeklyDue = profile.timeZone === null || !profile.weeklyReview.nudges
+    ? null
+    : dueMoment(shellNow, zone, profile.weeklyReview, weekly.state);
   // Actionable native notifications (T7, S8.3): block-start toasts with
   // [Start focus] / [+5 min] and the shutdown nudge. Desktop only, the web
   // build runs nothing. The actions reuse the shell's own doors: the timer's
@@ -224,6 +251,24 @@ function Shell({
       onNavigate("calendar");
     },
     onOpenShutdown: () => openShutdown(null),
+    // The weekly review's nudge (S3): the same due moment the Home banner
+    // reads, at most one toast per week and moment, and the shutdown chain
+    // takes its place on a day the ritual already closed.
+    weeklyNudge: {
+      getDue: () => {
+        if (profile.timeZone === null || !profile.weeklyReview.nudges) return null;
+        const due = dueMoment(new Date(), zone, profile.weeklyReview, weekly.state);
+        return due === null ? null : { week: due.week, day: due.moment.day, time: due.moment.time };
+      },
+      lastShutdown: profile.lastShutdown,
+      onOpen: () => openWeeklyReview("due"),
+      onLater: () => {
+        void settle(snoozeWeeklyReview(user.uid, weekly.state.week, snoozedUntil(new Date()))).catch(() => undefined);
+      },
+      onSkip: () => {
+        void settle(skipWeeklyReview(user.uid, weekly.state.week)).catch(() => undefined);
+      },
+    },
   });
   // The keyboard's reference sheet (F6): `?` opens it, Esc closes it.
   const [helpOpen, setHelpOpen] = useState(false);
@@ -315,13 +360,16 @@ function Shell({
         case "now":
           setNowOpen(true);
           return;
+        case "weekly":
+          openWeeklyReview("manual");
+          return;
         case "help":
           setHelpOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onNavigate, profile.shortcutsEnabled]);
+  }, [onNavigate, profile.shortcutsEnabled, openWeeklyReview]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -347,7 +395,6 @@ function Shell({
     void signOutUser();
   };
   const openCount = tasks.filter(task => !task.completed).length;
-  const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = dateKey(new Date(), zone);
   const newTask = (event: React.MouseEvent<HTMLButtonElement>) => setCreating(event.currentTarget);
 
@@ -382,6 +429,7 @@ function Shell({
           onSignOut={signOut}
           onImport={openImport}
           onOpenSettings={openSettings}
+          onOpenWeeklyReview={() => openWeeklyReview("manual")}
         />
       )}
       <div className="main">
@@ -447,9 +495,18 @@ function Shell({
                   shutdownTime={profile.shutdownTime}
                   lastShutdown={profile.lastShutdown}
                   profileError={profile.error}
+                  weeklyDue={weeklyDue}
                   onOpenCalendar={() => onNavigate("calendar")}
                   onOpenNow={() => setNowOpen(true)}
                   onCloseDay={openShutdown}
+                  onOpenWeeklyReview={() => openWeeklyReview("due")}
+                  onWeeklyLater={() => {
+                    void settle(snoozeWeeklyReview(user.uid, weekly.state.week, snoozedUntil(new Date()))).catch(() => undefined);
+                  }}
+                  onWeeklySkip={() => {
+                    void settle(skipWeeklyReview(user.uid, weekly.state.week)).catch(() => undefined);
+                  }}
+                  onOpenSettings={() => openSettings("rituals")}
                   onOfferUndo={offerUndo}
                 />
               )}
@@ -486,9 +543,25 @@ function Shell({
                   workWindow={profile.workWindow}
                   shutdownTime={profile.shutdownTime}
                   shortcutsEnabled={profile.shortcutsEnabled}
+                  weeklyReview={profile.weeklyReview}
                   tab={settingsTab}
                   onTab={onSettingsTab}
                   onBack={closeSettings}
+                />
+              )}
+              {view === "weekly" && (
+                <WeeklyReview
+                  uid={user.uid}
+                  tasks={tasks}
+                  blocks={blocks}
+                  timeZone={zone}
+                  now={shellNow}
+                  workWindow={profile.workWindow}
+                  settings={profile.weeklyReview}
+                  via={weeklyVia}
+                  onBack={() => onNavigate("home")}
+                  onOfferUndo={offerUndo}
+                  onProblem={setLateError}
                 />
               )}
             </motion.div>
@@ -546,6 +619,7 @@ function Shell({
           onImport={() => openImport(null)}
           onOpenNow={() => setNowOpen(true)}
           onCloseDay={() => openShutdown(null)}
+          onOpenWeeklyReview={() => openWeeklyReview("manual")}
           onOpenSettings={openSettings}
           onOpenTask={taskId => {
             setPendingTask(taskId);
@@ -564,8 +638,13 @@ function Shell({
             workWindow={profile.workWindow}
             now={new Date()}
             storedShutdown={profile.storedLastShutdown}
+            weeklyOffer={weeklyDue !== null}
             origin={shutdownOrigin.current}
             onClose={() => setShutdownOpen(false)}
+            onOpenWeeklyReview={() => {
+              setShutdownOpen(false);
+              openWeeklyReview("due");
+            }}
             onOfferUndo={offerUndo}
             onWithdrawUndo={id => setUndo(current => (current?.id === id ? null : current))}
             onProblem={setLateError}

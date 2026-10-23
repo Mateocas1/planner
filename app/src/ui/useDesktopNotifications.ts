@@ -4,6 +4,7 @@ import {
   applyNotified,
   applyShutdownNotified,
   applySnooze,
+  applyWeeklyNotified,
   dueReminders,
   notifySettingsStorageKey,
   parseNotifySettings,
@@ -12,8 +13,10 @@ import {
   reminderKey,
   serializeNotifyState,
   shutdownNudgeDue,
+  weeklyNudgeDue,
   type NotifyBlock,
   type NotifyState,
+  type WeeklyNudgeMoment,
 } from "../desktop-notify.ts";
 import { dateKey, wallMinutes } from "./time.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
@@ -71,12 +74,18 @@ export type NotifyAction =
   | { kind: "blockFocus"; key: string; blockId: string }
   | { kind: "blockOpen"; key: string; blockId: string; date: string }
   | { kind: "blockSnooze"; key: string }
-  | { kind: "shutdownOpen" };
+  | { kind: "shutdownOpen" }
+  | { kind: "weeklyReview"; key: string; action: "start" | "later" | "skip" };
 
 function parseNotifyAction(payload: unknown): NotifyAction | null {
   if (payload === null || typeof payload !== "object") return null;
-  const { kind, key, blockId, date } = payload as Record<string, unknown>;
+  const { kind, key, blockId, date, action } = payload as Record<string, unknown>;
   if (kind === "shutdownOpen") return { kind };
+  if (kind === "weeklyReview") {
+    if (typeof key !== "string") return null;
+    if (action === "start" || action === "later" || action === "skip") return { kind, key, action };
+    return null;
+  }
   if (typeof key !== "string") return null;
   switch (kind) {
     case "blockFocus":
@@ -107,6 +116,7 @@ export function useDesktopNotifications({
   focus,
   onOpenBlock,
   onOpenShutdown,
+  weeklyNudge,
 }: {
   blocks: BlockView[];
   tasks: TaskView[];
@@ -120,11 +130,22 @@ export function useDesktopNotifications({
   onOpenBlock: (date: string) => void;
   /** Opens the shutdown ritual, the banner's own door. */
   onOpenShutdown: () => void;
+  /** The weekly review's nudge (S3), already gated on the profile's nudges
+   *  switch: the pump asks `getDue()` at every tick, draws at most one toast
+   *  per week and moment, and never on a day the shutdown ritual closed.
+   *  Absent on callers that do not carry the weekly review. */
+  weeklyNudge?: {
+    getDue: () => WeeklyNudgeMoment | null;
+    lastShutdown?: unknown;
+    onOpen: () => void;
+    onLater: () => void;
+    onSkip: () => void;
+  };
 }): void {
   // The tick reads these through refs, so a stale closure never toasts for a
   // block that was moved or deleted a beat ago.
-  const latest = useRef({ blocks, tasks, timeZone, shutdownTime, lastShutdown, focus, onOpenBlock, onOpenShutdown });
-  latest.current = { blocks, tasks, timeZone, shutdownTime, lastShutdown, focus, onOpenBlock, onOpenShutdown };
+  const latest = useRef({ blocks, tasks, timeZone, shutdownTime, lastShutdown, focus, onOpenBlock, onOpenShutdown, weeklyNudge });
+  latest.current = { blocks, tasks, timeZone, shutdownTime, lastShutdown, focus, onOpenBlock, onOpenShutdown, weeklyNudge };
 
   useEffect(() => {
     if (!isTauri()) return undefined;
@@ -178,6 +199,19 @@ export function useDesktopNotifications({
         }
       }
 
+      // The weekly review's toast (S3), outside the shutdown toggle's gate:
+      // the profile's nudges switch (through `getDue`) is its own off button.
+      const weekly = latest.current.weeklyNudge;
+      if (weekly !== undefined && zone !== null) {
+        const today = dateKey(new Date(now), zone);
+        const key = weeklyNudgeDue({ due: weekly.getDue(), today, lastShutdown: weekly.lastShutdown, state });
+        if (key !== null) {
+          state = applyWeeklyNotified(state, key);
+          changed = true;
+          showToast({ kind: "weeklyReview", key });
+        }
+      }
+
       if (changed) writeState(state);
     };
 
@@ -191,7 +225,7 @@ export function useDesktopNotifications({
       const off = await listen<unknown>("notify-action", event => {
         const action = parseNotifyAction(event.payload);
         if (action === null || !live) return;
-        const { blocks: currentBlocks, focus: currentFocus, onOpenBlock: openBlock, onOpenShutdown: openShutdown } = latest.current;
+        const { blocks: currentBlocks, focus: currentFocus, onOpenBlock: openBlock, onOpenShutdown: openShutdown, weeklyNudge: weekly } = latest.current;
         switch (action.kind) {
           case "blockFocus": {
             if (currentFocus.session?.blockId === action.blockId) return;
@@ -208,6 +242,13 @@ export function useDesktopNotifications({
           case "shutdownOpen":
             openShutdown();
             return;
+          case "weeklyReview": {
+            if (weekly === undefined) return;
+            if (action.action === "start") weekly.onOpen();
+            else if (action.action === "later") weekly.onLater();
+            else weekly.onSkip();
+            return;
+          }
         }
       });
       if (!live) {

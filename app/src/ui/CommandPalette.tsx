@@ -56,6 +56,7 @@ export function CommandPalette({
   onImport,
   onOpenNow,
   onCloseDay,
+  onOpenWeeklyReview,
   onOpenSettings,
 }: {
   uid: string;
@@ -74,6 +75,8 @@ export function CommandPalette({
   onOpenNow: () => void;
   /** Runs the "Close the day" command (the ritual is the shell's, F3c). */
   onCloseDay: () => void;
+  /** Runs the "Weekly review" command (the flow is the shell's, S3). */
+  onOpenWeeklyReview: () => void;
   /** Opens the Settings view, optionally on a tab (Ronda 2, S1). */
   onOpenSettings: (tab?: SettingsTab) => void;
 }) {
@@ -176,6 +179,7 @@ export function CommandPalette({
       restoreFocus.current = false;
       if (command.action === "now-mode") onOpenNow();
       else if (command.action === "close-day") onCloseDay();
+      else if (command.action === "weekly-review") onOpenWeeklyReview();
       else onImport();
       onClose();
       return;

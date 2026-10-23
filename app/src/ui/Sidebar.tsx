@@ -24,6 +24,19 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
   { id: "calendar", label: "Calendar", Icon: CalendarIcon },
 ];
 
+/** The weekly review's rail icon: the cycle the ritual closes, drawn on the
+ *  icons' shared 24 px stroke grid (it is deliberately not one of the three
+ *  view icons). */
+export function WeeklyIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+      <path d="M20 4v3h-3" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /**
  * The desktop sidebar: a quiet glass material holding the month, the view
  * navigation (nav "Main", the name the browser tests address) with a pill that
@@ -52,6 +65,7 @@ export function Sidebar({
   onSignOut,
   onImport,
   onOpenSettings,
+  onOpenWeeklyReview,
 }: {
   email: string;
   uid: string;
@@ -73,6 +87,8 @@ export function Sidebar({
   /** Opens the Settings view (Ronda 2, S1); it is a view now, so it takes no
    * origin — the shell navigates, nothing flies out of this row. */
   onOpenSettings: () => void;
+  /** Opens the weekly review by hand (S3): the sidebar's own entry point. */
+  onOpenWeeklyReview: () => void;
 }) {
   return (
     <aside className="sidebar glass glass-regular">
@@ -100,6 +116,19 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+      {/* The weekly review's own entry (S3): the same nav-item anatomy, but not
+          one of the three views — it opens a ritual, not a destination, so it
+          carries no pill and no count, and marks itself current while the
+          flow is on screen. */}
+      <button
+        type="button"
+        className="nav-item"
+        aria-current={view === "weekly" ? "page" : undefined}
+        onClick={onOpenWeeklyReview}
+      >
+        <WeeklyIcon className="nav-icon" />
+        <span className="nav-label">Weekly review</span>
+      </button>
       {timeZone && (
         <>
           <UpNext blocks={blocks} tasks={tasks} timeZone={timeZone} focus={focus} />

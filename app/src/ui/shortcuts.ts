@@ -39,6 +39,7 @@ export type ShortcutAction =
   | "goTasks"
   | "goCalendar"
   | "now"
+  | "weekly"
   | "help";
 
 /**
@@ -111,6 +112,7 @@ const singleKeys: Record<string, ShortcutAction> = {
   c: "newTask",
   b: "newBlock",
   n: "now",
+  w: "weekly",
   "?": "help",
 };
 
@@ -343,6 +345,7 @@ export const shortcutHelp: readonly ShortcutHelpGroup[] = [
       { keys: ["g", "t"], label: "Tasks", action: "goTasks" },
       { keys: ["g", "c"], label: "Calendar", action: "goCalendar" },
       { keys: ["n"], label: "Now mode", action: "now" },
+      { keys: ["w"], label: "Weekly review", action: "weekly" },
     ],
   },
   {

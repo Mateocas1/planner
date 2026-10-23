@@ -4,6 +4,7 @@ import {
   applyNotified,
   applyShutdownNotified,
   applySnooze,
+  applyWeeklyNotified,
   dueReminders,
   emptyNotifyState,
   parseNotifySettings,
@@ -14,6 +15,8 @@ import {
   serializeNotifyState,
   shutdownNudgeDue,
   snoozeMs,
+  weeklyNudgeDue,
+  weeklyNudgeKey,
   type NotifyState,
 } from "./desktop-notify.ts";
 
@@ -86,6 +89,7 @@ test("prune drops past dedupe keys and snoozes for deleted blocks", () => {
   let state: NotifyState = {
     notified: [reminderKey(past), reminderKey(future)],
     snoozed: { [reminderKey(deleted)]: at(5), [reminderKey(future)]: at(5) },
+    weeklyKeys: [],
   };
   state = pruneNotifyState(state, [future], at(0));
   assert.deepEqual(state.notified, [reminderKey(future)]);
@@ -101,7 +105,7 @@ test("parse tolerates garbage and round-trips through serialize", () => {
     snoozed: { "b@y": 123, "c@z": "no" },
     shutdownDay: "2026-10-23",
   }));
-  assert.deepEqual(state, { notified: ["a@x"], snoozed: { "b@y": 123 }, shutdownDay: "2026-10-23" });
+  assert.deepEqual(state, { notified: ["a@x"], snoozed: { "b@y": 123 }, shutdownDay: "2026-10-23", weeklyKeys: [] });
   assert.deepEqual(parseNotifyState(serializeNotifyState(state)), state);
 });
 
@@ -134,4 +138,53 @@ test("the shutdown nudge reuses the banner's rule, at most once per day", () => 
 test("the lead and snooze constants are the spec's two and five minutes", () => {
   assert.equal(reminderLeadMs, 2 * 60_000);
   assert.equal(snoozeMs, 5 * 60_000);
+});
+
+/* ---------- the weekly review's nudge (S3) ---------- */
+
+const moment = { week: "2026-W43", day: 5, time: 17 * 60 };
+
+function weeklyState(): NotifyState {
+  return { ...emptyNotifyState(), weeklyKeys: [] };
+}
+
+test("the weekly toast fires once per week and moment, and reads stored keys", () => {
+  const base = { due: moment, today: "2026-10-23", state: weeklyState() };
+  // Due: the key comes back, the same one the draw records.
+  const key = weeklyNudgeDue(base);
+  assert.equal(key, weeklyNudgeKey(moment));
+  const after = applyWeeklyNotified(weeklyState(), key!);
+  // The same moment never fires twice...
+  assert.equal(weeklyNudgeDue({ ...base, state: after }), null);
+  // ...but another moment of the week is its own toast.
+  assert.equal(weeklyNudgeDue({ ...base, due: { week: "2026-W43", day: 0, time: 19 * 60 }, state: after }), weeklyNudgeKey({ week: "2026-W43", day: 0, time: 19 * 60 }));
+  // A new week re-arms every moment.
+  assert.equal(weeklyNudgeDue({ ...base, due: { ...moment, week: "2026-W44" }, state: after }), weeklyNudgeKey({ ...moment, week: "2026-W44" }));
+});
+
+test("the weekly toast stays quiet when nothing is due or the day was closed", () => {
+  const state = weeklyState();
+  // No due moment, no toast.
+  assert.equal(weeklyNudgeDue({ due: null, today: "2026-10-23", state }), null);
+  // The shutdown ritual closed the day: it ended with "Close the week too?",
+  // so a toast would be the second nudge the week no longer needs. The banner
+  // stays the quiet path.
+  assert.equal(weeklyNudgeDue({ due: moment, today: "2026-10-23", lastShutdown: "2026-10-23", state }), null);
+  assert.equal(weeklyNudgeDue({ due: moment, today: "2026-10-23", lastShutdown: "2026-10-25", state }), null);
+  // A yesterday's close says nothing about today.
+  assert.equal(weeklyNudgeDue({ due: moment, today: "2026-10-23", lastShutdown: "2026-10-22", state }), weeklyNudgeKey(moment));
+  // A mangled stamp is not a close.
+  assert.equal(weeklyNudgeDue({ due: moment, today: "2026-10-23", lastShutdown: "garbage", state }), weeklyNudgeKey(moment));
+});
+
+test("the weekly key list stays bounded and parses from storage", () => {
+  let state = weeklyState();
+  for (let index = 0; index < 20; index += 1) {
+    state = applyWeeklyNotified(state, `k${index}`);
+  }
+  assert.equal(state.weeklyKeys.length, 8);
+  assert.equal(state.weeklyKeys[0], "k12");
+  const parsed = parseNotifyState(JSON.stringify({ weeklyKeys: ["a", 5, "b"] }));
+  assert.deepEqual(parsed.weeklyKeys, ["a", "b"]);
+  assert.deepEqual(parseNotifyState(null).weeklyKeys, []);
 });
