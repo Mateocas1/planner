@@ -71,6 +71,13 @@ test("create_task: empty, missing and non-string titles fail", () => {
   }
 });
 
+test("create_task: a title over the cap is rejected", () => {
+  const check = checkCreateTask(JSON.stringify({ title: "x".repeat(201) }));
+  assert.ok(!check.ok);
+  assert.match(check.ok ? "" : check.error, /too long/);
+  assert.ok(checkCreateTask(JSON.stringify({ title: "x".repeat(200) })).ok, "exactly 200 is fine");
+});
+
 test("create_task: a bad date fails and never describes a write", () => {
   for (const day of ["2026-13-40", "not-a-date", "2026-11", "42"]) {
     const check = checkCreateTask(JSON.stringify({ title: "X", day }));

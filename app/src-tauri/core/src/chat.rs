@@ -98,13 +98,16 @@ struct AccumToolCall {
 /// parse as a chunk is [`StreamEvent::Malformed`] and the caller must treat
 /// the stream as failed.
 ///
-/// Tool calls: `delta.tool_calls` fragments are accumulated per call `index`
-/// (a chunk without an index continues the call being accumulated). Calls may
+/// Tool calls: `delta.tool_calls` fragments are accumulated per call `index`.
+/// A chunk without an index continues the call being accumulated — unless it
+/// carries a new call `id`, which starts a new call (a provider that never
+/// sends indexes must still be able to open a second call). Calls may
 /// interleave, so a call is emitted complete — one [`StreamEvent::ToolCall`],
 /// in index order — only when the stream ends: `data: [DONE]`, or the caller
 /// draining via [`StreamDecoder::flush_tool_calls`] at EOF. Every call event
 /// therefore arrives before `Done`. A completed call without a function name
-/// is `Malformed`.
+/// is `Malformed` — at `[DONE]` and at EOF flush alike, so the caller never
+/// silently drops it.
 #[derive(Debug, Default)]
 pub struct StreamDecoder {
     reasoning_emitted: bool,
@@ -113,11 +116,23 @@ pub struct StreamDecoder {
     tool_calls: Vec<AccumToolCall>,
     /// How many of `tool_calls` were already emitted as complete events.
     emitted_calls: usize,
+    /// The request's id, prepended to fallback call ids so a provider that
+    /// omits ids still gets handles unique across requests (two turns of the
+    /// same conversation both propose `call_0` otherwise, and one Confirm
+    /// would resolve two cards).
+    request_id: String,
 }
 
 impl StreamDecoder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Binds the decoder to one request id, used only to make fallback call
+    /// ids unique per request.
+    pub fn with_request_id(mut self, request_id: &str) -> Self {
+        self.request_id = request_id.to_string();
+        self
     }
 
     /// Whether `[DONE]` was seen; the caller can then stop reading.
@@ -147,8 +162,13 @@ impl StreamDecoder {
             let id = if call.id.is_empty() {
                 // OpenAI-compatible streams send an id in the first fragment;
                 // a provider that omits it still gets a usable handle for the
-                // tool result the UI answers with.
-                format!("call_{index}")
+                // tool result the UI answers with — unique per request, so
+                // two turns cannot collide on the same fallback id.
+                if self.request_id.is_empty() {
+                    format!("call_{index}")
+                } else {
+                    format!("call_{}_{}", self.request_id, index)
+                }
             } else {
                 call.id.clone()
             };
@@ -227,13 +247,30 @@ impl StreamDecoder {
             if let Some(entries) = delta.get("tool_calls").and_then(|entries| entries.as_array()) {
                 for entry in entries {
                     // OpenAI-compatible streams mark each fragment with the
-                    // call's `index`; a stream that omits it continues the
-                    // call being accumulated (or starts the first one).
-                    let index = entry
+                    // call's `index`. A stream that omits it continues the
+                    // call being accumulated — unless the fragment opens with
+                    // a new call `id`, which starts a new call (otherwise two
+                    // index-less calls concatenate into one name). No index
+                    // and no id at all, with no call accumulated yet, starts
+                    // the first one.
+                    let index = match entry
                         .get("index")
                         .and_then(|index| index.as_u64())
                         .map(|index| index as usize)
-                        .unwrap_or_else(|| self.tool_calls.len().saturating_sub(1));
+                    {
+                        Some(index) => index,
+                        None => {
+                            let opens_new_call = entry
+                                .get("id")
+                                .and_then(|id| id.as_str())
+                                .is_some_and(|id| !id.is_empty());
+                            if opens_new_call {
+                                self.tool_calls.len()
+                            } else {
+                                self.tool_calls.len().saturating_sub(1)
+                            }
+                        }
+                    };
                     events.extend(self.accumulate_tool_call(entry, index));
                     if events.last() == Some(&StreamEvent::Malformed) {
                         return events;
@@ -862,6 +899,62 @@ mod tests {
         ]
         .join("\n\n");
         assert_eq!(decode_all(&body), vec![StreamEvent::Malformed]);
+    }
+
+    #[test]
+    fn an_indexless_fragment_with_a_new_id_starts_a_new_call() {
+        // A provider that never sends indexes but opens each call with its
+        // own id: the second call must not concatenate into the first's name.
+        let body = [
+            tool_chunk(r#"{"id":"call_a","function":{"name":"create_task","arguments":"{}"}}"#),
+            tool_chunk(r#"{"id":"call_b","function":{"name":"move_task","arguments":"{}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_a".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_b".into(),
+                    name: "move_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn fallback_ids_are_prefixed_with_the_request_id() {
+        // A provider that omits ids entirely: the fallback handle must be
+        // unique per request, so one Confirm can never resolve two cards.
+        let mut decoder = StreamDecoder::new().with_request_id("r7");
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":0,"function":{"name":"create_task","arguments":"{}"}}"#))
+            .is_empty());
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":1,"function":{"name":"move_task","arguments":"{}"}}"#))
+            .is_empty());
+        assert_eq!(
+            decoder.flush_tool_calls(),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_r7_0".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_r7_1".into(),
+                    name: "move_task".into(),
+                    arguments: "{}".into(),
+                }),
+            ]
+        );
     }
 
     #[test]

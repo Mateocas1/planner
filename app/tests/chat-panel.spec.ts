@@ -312,11 +312,16 @@ test("tool cards: Confirm writes the task into the planner, Discard writes nothi
   await expect(discardCard.locator(".chat-card-outcome")).toHaveText("Discarded — nothing changed.");
 
   // Confirm: the write runs through the app's data functions and the card
-  // shows the outcome. The mock dates the task today, so Home's due list
-  // (checkbox row) must show it once the snapshot lands.
-  await confirmCard.getByRole("button", { name: "Confirm" }).click();
+  // shows the outcome. The click is a double click — two rapid confirms
+  // before the card's status updates — and the guard must let exactly one
+  // write through (one task in the planner below). The mock dates the task
+  // today, so Home's due list (checkbox row) must show it once the snapshot
+  // lands.
+  await confirmCard.getByRole("button", { name: "Confirm" }).dblclick();
   await expect(confirmCard.locator(".chat-card-outcome")).toHaveText("Task created.", { timeout: 15_000 });
   await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toBeVisible({ timeout: 15_000 });
+  // Exactly one: the rapid second confirm wrote nothing.
+  await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toHaveCount(1);
 
   // The discarded proposal produced no task anywhere in the planner (the
   // hidden panel keeps its own card text, so scope to the view itself).

@@ -156,6 +156,21 @@ test("resolving an unknown call id is a no-op", () => {
   assert.equal(reduceConversation(state, { type: "toolCallResolved", callId: "ghost", status: "discarded" }), state);
 });
 
+test("a repeated call id across turns resolves exactly one card", () => {
+  // Two assistant turns whose cards carry the same id (a provider reusing
+  // fallback ids): one Confirm resolves only the first card; the second
+  // stays pending for its own answer.
+  let state = streamWithCalls(toolCall("call_1"));
+  state = send(state, "r2", "another");
+  state = event(state, { type: "tool_call", call: { id: "call_1", name: "create_task", arguments: '{"title":"Y"}' } });
+  state = event(state, { type: "done" });
+  state = reduceConversation(state, { type: "toolCallResolved", callId: "call_1", status: "confirmed", outcome: "Task created." });
+  const cards = state.turns.flatMap(turn => (turn.role === "assistant" ? turn.toolCalls ?? [] : []));
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0]?.status, "confirmed");
+  assert.equal(cards[1]?.status, "pending");
+});
+
 test("at most five cards render; extras are dropped and counted for the note", () => {
   const calls = Array.from({ length: 7 }, (_, i) => toolCall(`call_${i}`));
   const state = streamWithCalls(...calls);

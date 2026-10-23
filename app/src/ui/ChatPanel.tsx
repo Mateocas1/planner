@@ -198,8 +198,12 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef(true);
-  /** The action card whose confirm write is running; others disable meanwhile. */
+  /** The action card whose confirm write is running; others disable meanwhile.
+   * The in-flight guard is a ref, not just this state: two rapid confirms on
+   * the same card both run before React re-renders, and only the ref sees the
+   * second one (one Confirm → exactly one write). */
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
+  const busyCallRef = useRef<string | null>(null);
   /** Whether the panel has been opened, so closing returns focus only then. */
   const openedOnce = useRef(false);
   const reduced = useReducedMotion();
@@ -370,7 +374,10 @@ export function ChatPanel({
 
   const confirmCard = useCallback(
     async (card: ToolCallCard) => {
-      if (busyCallId !== null) return;
+      // One Confirm, one write: a card already in flight (the ref, set before
+      // any await) or already resolved (its status) never confirms again.
+      if (busyCallRef.current !== null || card.status !== "pending") return;
+      busyCallRef.current = card.callId;
       setBusyCallId(card.callId);
       try {
         const outcome =
@@ -378,10 +385,11 @@ export function ChatPanel({
           { status: "failed" as const, message: "Proposed actions need a signed-in session." };
         resolveToolCall(card.callId, outcome.status, outcome.message);
       } finally {
+        busyCallRef.current = null;
         setBusyCallId(null);
       }
     },
-    [busyCallId, onConfirmToolCall, resolveToolCall],
+    [onConfirmToolCall, resolveToolCall],
   );
 
   const discardCard = useCallback(

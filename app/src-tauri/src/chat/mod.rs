@@ -371,7 +371,7 @@ fn run_stream(
         .set("Authorization", &format!("Bearer {key}"))
         .send_json(body)
     {
-        Ok(response) => stream_response(response, &cancel, on_event),
+        Ok(response) => stream_response(response, &request.id, &cancel, on_event),
         Err(ureq::Error::Status(status, response)) => {
             let _ = on_event.send(ChatEvent::Error {
                 code: error_code_for_status(status),
@@ -404,9 +404,11 @@ fn is_timeout(error: &io::Error) -> bool {
 /// Cancel is checked between lines and between stall ticks: a provider that
 /// stops sending is cancelled within seconds or fails as `network` after
 /// [`MAX_STALL`] without data.
-fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Channel<ChatEvent>) {
+fn stream_response(response: ureq::Response, request_id: &str, cancel: &AtomicBool, on_event: &Channel<ChatEvent>) {
     let mut reader = BufReader::new(response.into_reader());
-    let mut decoder = StreamDecoder::new();
+    // The request id makes fallback call ids unique per request, so one
+    // Confirm can never resolve two cards across turns.
+    let mut decoder = StreamDecoder::new().with_request_id(request_id);
     // The unfinished line survives stall ticks (read timeouts).
     let mut pending = Vec::new();
     let mut last_data = Instant::now();

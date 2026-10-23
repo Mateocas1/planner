@@ -20,6 +20,10 @@ import type { ChatToolCall, ChatToolSpec } from "./types.ts";
 /** At most 5 tool calls per answer; extras are dropped with a note (S1). */
 export const MAX_TOOL_CALLS_PER_ANSWER = 5;
 
+/** At most this many characters in a proposed task title (S1): the model
+ * sometimes echoes a whole page back as the title. */
+export const MAX_TOOL_TITLE_CHARS = 200;
+
 const CREATE_TASK: ChatToolSpec = {
   type: "function",
   function: {
@@ -160,6 +164,7 @@ export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<Normalize
   if (!parsed.ok) return parsed;
   const title = optionalString(parsed.value.title);
   if (title === undefined) return { ok: false, error: "The task needs a title." };
+  if (title.length > MAX_TOOL_TITLE_CHARS) return { ok: false, error: TITLE_TOO_LONG };
   const day = checkDay(parsed.value.day, "optional");
   if ("error" in day) return { ok: false, error: day.error };
   const estimate = checkEstimate(parsed.value.estimateMinutes);
@@ -171,6 +176,8 @@ export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<Normalize
   };
   return { ok: true, value, description: describeCreateTask(value, todayKey) };
 }
+
+const TITLE_TOO_LONG = `The title is too long (at most ${MAX_TOOL_TITLE_CHARS} characters).`;
 
 function describeCreateTask(value: NormalizedCreateTask, todayKey: string): string {
   const parts = [`Create task "${value.title}"`];

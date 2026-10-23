@@ -186,16 +186,26 @@ export function reduceConversation(state: ConversationState, action: Conversatio
       return emptyConversation;
     case "toolCallResolved": {
       // The user acted on one card. Unknown ids (a turn already cleared by
-      // New chat) change nothing; a matching card updates in place.
+      // New chat) change nothing; exactly ONE card resolves — the first
+      // match in the thread. A provider that repeats a call id across turns
+      // must not get both cards resolved by one Confirm.
       const known = state.turns.some(
         turn => turn.role === "assistant" && turn.toolCalls?.some(card => card.callId === action.callId) === true,
       );
       if (!known) return state;
+      let resolved = false;
       return {
         ...state,
         turns: state.turns.map(turn => {
-          if (turn.role !== "assistant" || turn.toolCalls === undefined) return turn;
-          if (!turn.toolCalls.some(card => card.callId === action.callId)) return turn;
+          if (
+            resolved ||
+            turn.role !== "assistant" ||
+            turn.toolCalls === undefined ||
+            !turn.toolCalls.some(card => card.callId === action.callId)
+          ) {
+            return turn;
+          }
+          resolved = true;
           return {
             ...turn,
             toolCalls: turn.toolCalls.map(card =>
