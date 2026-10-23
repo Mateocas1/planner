@@ -66,13 +66,14 @@ export function useChat(options: { transport: ChatTransport; buildSystemPrompt: 
           pacer.push(event.text);
           return;
         }
-        // A terminal event must not overtake text still in the pacer.
-        pacer.flush();
-        dispatchEvent(event);
-        if (activeIdRef.current === id) {
+        if (event.type === "done" || event.type === "cancelled" || event.type === "error") {
+          // A terminal event must not overtake text still in the pacer; the
+          // request is over, so late events for it are dropped above.
+          pacer.flush();
           activeIdRef.current = null;
           pacerRef.current = null;
         }
+        dispatchEvent(event);
       });
     },
     [buildSystemPrompt, dispatchEvent, transport],

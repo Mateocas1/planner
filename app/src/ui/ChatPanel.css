@@ -57,27 +57,28 @@
   right: 20px;
   bottom: 80px;
   z-index: 62;
-  display: flex;
+  display: none;
   width: min(400px, calc(100vw - 32px));
   height: min(600px, calc(100dvh - 112px));
   border-radius: var(--r-sheet);
   color: var(--label);
-  opacity: 0;
-  visibility: hidden;
-  /* Exit faster than enter; `visibility` holds the exit. */
-  transform: translateY(10px) scale(0.96);
+  /* Closed = not displayed (the palette's pattern): out of the tab order and
+     the a11y tree, and nothing transition-shaped can race the focus effect.
+     The entrance is an animation, which starts on the first displayed frame.
+     The close is instant — the palette's precedent for a keyboard surface. */
   transform-origin: 100% 100%;
-  transition:
-    opacity 140ms var(--ease-out),
-    transform 140ms var(--ease-out),
-    visibility 0s linear 140ms;
 }
 
 .chat-panel[data-open="true"] {
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+  display: flex;
+  animation: chat-panel-in 200ms var(--ease-out);
+}
+
+@keyframes chat-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
 }
 
 .chat-inner {
@@ -87,25 +88,26 @@
   gap: 4px;
   min-height: 0;
   padding: 8px;
-  filter: blur(0px);
-  transition: filter 200ms var(--ease-out);
 }
 
-.chat-panel:not([data-open="true"]) .chat-inner {
-  filter: blur(6px);
+/* The content sharpens as the card lands (the Sheet.tsx focus pull, on the
+   inner body — never a filter on the glass element itself). */
+.chat-panel[data-open="true"] .chat-inner {
+  animation: chat-inner-in 200ms var(--ease-out);
+}
+
+@keyframes chat-inner-in {
+  from {
+    filter: blur(6px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-panel {
-    transform: none;
-    transition: opacity 120ms ease, visibility 0s linear 120ms;
-  }
   .chat-panel[data-open="true"] {
-    transition: opacity 120ms ease;
+    animation-name: chat-fade-in;
   }
-  .chat-inner {
-    filter: none;
-    transition: none;
+  .chat-panel[data-open="true"] .chat-inner {
+    animation: none;
   }
 }
 
@@ -279,6 +281,14 @@
   gap: 3px;
   margin: 4px 0 8px;
   padding-left: 20px;
+}
+
+.chat-answer-body ul {
+  list-style: disc;
+}
+
+.chat-answer-body ol {
+  list-style: decimal;
 }
 
 .chat-answer-body a {
