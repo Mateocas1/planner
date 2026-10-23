@@ -784,16 +784,20 @@ test("the weekly review week document holds state and note, owner-only, with the
     // A fresh week reads as an empty state, not as an error.
     assert.deepEqual(await readWeeklyReview(uid, week, owner.db), { week, stepsDone: [], skipped: false });
 
-    // The state round-trips, and a cleared snooze is deleted, not kept stale.
+    // The state write owns skipped and the snooze only: a cleared snooze is
+    // deleted, not kept stale. Step marks are never written here — they go
+    // through markWeeklyStepDone's array-union — so a state save cannot
+    // clobber the mark another device made offline.
     await saveWeeklyReviewState(uid, { week, stepsDone: ["review"], skipped: false, snoozedUntil: "2026-10-23T18:00:00Z" }, owner.db);
-    await saveWeeklyReviewState(uid, { week, stepsDone: ["review", "cleanup"], skipped: false }, owner.db);
-    assert.deepEqual(await readWeeklyReview(uid, week, owner.db), { week, stepsDone: ["review", "cleanup"], skipped: false });
+    await markWeeklyStepDone(uid, week, "cleanup", owner.db);
+    await saveWeeklyReviewState(uid, { week, stepsDone: [], skipped: false }, owner.db);
+    assert.deepEqual(await readWeeklyReview(uid, week, owner.db), { week, stepsDone: ["cleanup"], skipped: false });
 
     // Step marks merge (an array-union transform), so two devices can both
     // mark while offline without losing the other's step.
     await markWeeklyStepDone(uid, week, "reflect", owner.db);
     await markWeeklyStepDone(uid, week, "reflect", owner.db);
-    assert.deepEqual((await readWeeklyReview(uid, week, owner.db)).stepsDone, ["review", "cleanup", "reflect"]);
+    assert.deepEqual((await readWeeklyReview(uid, week, owner.db)).stepsDone, ["cleanup", "reflect"]);
 
     // Skip and snooze write their own field and leave the steps alone.
     await skipWeeklyReview(uid, week, owner.db);
@@ -805,11 +809,18 @@ test("the weekly review week document holds state and note, owner-only, with the
     await clearWeeklyReviewSnooze(uid, week, owner.db);
     assert.equal((await readWeeklyReview(uid, week, owner.db)).snoozedUntil, undefined);
 
-    // The note round-trips with the write's own createdAt stamp.
+    // The note round-trips, and an edit keeps the first createdAt: the
+    // note's instant is when it was written, not when it was last touched.
     await saveWeeklyReviewNote(uid, week, "  Went well; deadlines slipped on Friday.  ", owner.db);
     const noted = await readWeeklyReview(uid, week, owner.db);
     assert.equal(noted.note?.text, "Went well; deadlines slipped on Friday.");
     assert.ok(typeof noted.note?.createdAt === "string" && Number.isFinite(Date.parse(noted.note.createdAt)));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await saveWeeklyReviewNote(uid, week, "Went well; deadlines slipped. Next week: fewer.", owner.db);
+    const edited = await readWeeklyReview(uid, week, owner.db);
+    assert.equal(edited.note?.text, "Went well; deadlines slipped. Next week: fewer.");
+    assert.equal(edited.note?.createdAt, noted.note?.createdAt);
+    assert.ok(typeof edited.note?.updatedAt === "string" && Number.isFinite(Date.parse(edited.note.updatedAt)));
 
     // Rejected input never reaches Firestore: an oversized note, an empty one,
     // a bad week key and an unknown step all throw before any write.
@@ -862,5 +873,66 @@ test("the someday flag is a boolean task field only its owner may set", async ()
     await assert.rejects(setTaskSomeday(uid, "stale", true, other.db), { code: "permission-denied" });
   } finally {
     await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/**
+ * Delete → undo keeps every field the row showed, including the someday flag
+ * (r2-w2a review #2): the restore rewrites the closed task schema through
+ * `taskFields`, so the flag has to ride in the deleted snapshot, the field
+ * list and the restore. The read path (`toTask`) must map it back so the
+ * snapshot the next delete captures carries it.
+ */
+test("a someday task survives delete and undo, and the read path maps the flag", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTask } = await import("../src/data/tasks.ts");
+  const { toTask } = await import("../src/data/store.ts");
+  const { setTaskSomeday } = await import("../src/data/weeklyReview.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`undo-someday-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `undo-someday-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/shelf`;
+    await setDoc(doc(owner.db, path), { title: "Shelved", completed: false, deadline: "2026-03-20" });
+    await setTaskSomeday(uid, "shelf", true, owner.db);
+
+    // The store's read path maps the flag, so the snapshot a delete captures
+    // carries it.
+    const snapshot = await getDoc(doc(owner.db, path));
+    const deleted = toTask(snapshot as never);
+    assert.equal(deleted.someday, true);
+
+    await deleteTask(uid, "shelf", owner.db);
+    assert.equal((await getDoc(doc(owner.db, path))).exists(), false);
+    await restoreTask(uid, deleted, owner.db);
+    const restored = (await getDoc(doc(owner.db, path))).data();
+    assert.equal(restored?.someday, true);
+    assert.equal(restored?.title, "Shelved");
+    assert.equal(restored?.deadline, "2026-03-20");
+    assert.equal(restored?.completed, false);
+  } finally {
+    await close(owner);
+  }
+});
+
+/** The Rituals settings write the parsed, normalized shape (review nit #7):
+ *  duplicate steps collapse and unknown keys never reach the profile. */
+test("weekly review settings are written normalized", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { profileDocument, setProfileWeeklyReview } = await import("../src/data/profile.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`weekly-settings-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `weekly-settings-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    await setProfileWeeklyReview(uid, {
+      nudges: false,
+      moments: [{ day: 5, time: 1000, steps: ["review", "review"], stray: 1 } as never],
+    }, owner.db);
+    const stored = (await getDoc(profileDocument(uid, owner.db))).data()?.weeklyReview;
+    assert.deepEqual(stored, { nudges: false, moments: [{ day: 5, time: 1000, steps: ["review"] }] });
+  } finally {
+    await close(owner);
   }
 });

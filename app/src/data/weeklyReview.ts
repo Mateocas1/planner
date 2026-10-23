@@ -55,10 +55,13 @@ export function weeklyReviewDocument(uid: string, week: string, database: Firest
 }
 
 /**
- * Writes one week's state in full. Every field the state model knows is
- * written — an absent snooze deletes the stored one — so saving a state that
- * was read earlier replaces exactly those fields and never resurrects a stale
- * snooze or skip. The note is a separate concern and is left alone.
+ * Writes one week's state: its `skipped` flag and its snooze — every field
+ * the state model owns except the step marks. `stepsDone` is deliberately
+ * never written here: step changes go through `markWeeklyStepDone`'s
+ * array-union, so saving a state read earlier cannot clobber the mark another
+ * device queued offline (last-writer-wins is the app's rule per field, and
+ * the step list is one field a whole-array write would take over). The note
+ * is a separate concern and is left alone.
  */
 export async function saveWeeklyReviewState(uid: string, state: WeeklyReviewState, database: Firestore = db) {
   requireWeek(state.week);
@@ -71,7 +74,6 @@ export async function saveWeeklyReviewState(uid: string, state: WeeklyReviewStat
     weeklyReviewDocument(uid, state.week, database),
     {
       week: state.week,
-      stepsDone: state.stepsDone,
       skipped: state.skipped,
       ...(state.snoozedUntil === undefined ? { snoozedUntil: deleteField() } : { snoozedUntil: state.snoozedUntil }),
     },
@@ -111,26 +113,38 @@ export async function clearWeeklyReviewSnooze(uid: string, week: string, databas
  * Writes the reflection note (S3: what worked, what did not, one intention).
  * The text is trimmed and capped at `MAX_NOTE_CHARS` — an oversized note is
  * rejected rather than truncated, because a silently cut note is not the note
- * anybody wrote — and the write stamps `createdAt` itself, so a note keeps the
- * instant it was written even if it is edited later.
+ * anybody wrote. `createdAt` is when the note was first written: the write
+ * reads the stored note through the same tolerant parser every reader uses and
+ * keeps its instant, stamping `updatedAt` instead, so an edit never re-dates
+ * the note. The read is a getDoc against the local cache first, so it works
+ * offline; the first write ever simply stamps now.
  */
 export async function saveWeeklyReviewNote(uid: string, week: string, text: string, database: Firestore = db) {
   requireWeek(week);
   const trimmed = typeof text === "string" ? text.trim() : "";
   if (trimmed === "") throw new Error("the reflection note must not be empty");
   if (trimmed.length > MAX_NOTE_CHARS) throw new Error(`the reflection note must be at most ${MAX_NOTE_CHARS} characters`);
+  const reference = weeklyReviewDocument(uid, week, database);
+  const stored = parseWeeklyReviewNote((await getDoc(reference)).data(), week);
   await setDoc(
-    weeklyReviewDocument(uid, week, database),
-    { week, note: { text: trimmed, createdAt: new Date().toISOString() } },
+    reference,
+    {
+      week,
+      note: {
+        text: trimmed,
+        createdAt: stored?.createdAt ?? new Date().toISOString(),
+        ...(stored === undefined ? {} : { updatedAt: new Date().toISOString() }),
+      },
+    },
     { merge: true },
   );
 }
 
 /** Reads one week's document as its state and note, both tolerant of bad data. */
 export async function readWeeklyReview(uid: string, week: string, database: Firestore = db): Promise<StoredWeeklyReview> {
-  const snapshot = await getDoc(weeklyReviewDocument(uid, week, database));
-  const data = snapshot.data();
-  return { ...parseWeeklyReviewState(data, week), ...(parseWeeklyReviewNote(data, week) === undefined ? {} : { note: parseWeeklyReviewNote(data, week) }) };
+  const data = (await getDoc(weeklyReviewDocument(uid, week, database))).data();
+  const note = parseWeeklyReviewNote(data, week);
+  return { ...parseWeeklyReviewState(data, week), ...(note === undefined ? {} : { note }) };
 }
 
 /**

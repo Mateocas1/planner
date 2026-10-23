@@ -203,8 +203,10 @@ export function parseWeeklyReviewState(data: Record<string, unknown> | undefined
   return { week, stepsDone, skipped: data.skipped === true, ...(snoozedUntil === undefined ? {} : { snoozedUntil }) };
 }
 
-/** The reflection note exactly as it is stored: `{ week, text, createdAt }`. */
-export type WeeklyReviewNote = { week: string; text: string; createdAt: string };
+/** The reflection note exactly as it is stored: `{ week, text, createdAt }`,
+ *  plus `updatedAt` once it has been edited (an edit keeps the first
+ *  `createdAt` and only stamps the later touch). */
+export type WeeklyReviewNote = { week: string; text: string; createdAt: string; updatedAt?: string };
 
 /**
  * Reads the reflection note out of a week's document. An absent, empty,
@@ -218,7 +220,10 @@ export function parseWeeklyReviewNote(data: Record<string, unknown> | undefined,
   const value = note as Record<string, unknown>;
   if (typeof value.text !== "string" || value.text === "" || value.text.length > MAX_NOTE_CHARS) return undefined;
   if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return undefined;
-  return { week, text: value.text, createdAt: value.createdAt };
+  const updatedAt = typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt))
+    ? value.updatedAt
+    : undefined;
+  return { week, text: value.text, createdAt: value.createdAt, ...(updatedAt === undefined ? {} : { updatedAt }) };
 }
 
 /** The moment that is due now, with the steps it offers. */

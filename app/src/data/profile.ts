@@ -176,9 +176,13 @@ export function parseShortcutsEnabled(data: Record<string, unknown> | undefined)
  * rules live in `../planning/weekly.ts`), then one merged set that touches only
  * `weeklyReview`, so another device's fields are never written over.
  */
-export async function setProfileWeeklyReview(uid: string, settings: WeeklyReviewSettings): Promise<void> {
+export async function setProfileWeeklyReview(uid: string, settings: WeeklyReviewSettings, database: Firestore = db): Promise<void> {
   validateWeeklyReviewSettings(settings);
-  await setDoc(profileDocument(uid), { weeklyReview: settings }, { merge: true });
+  // Write the parsed, normalized shape, never the caller's object: steps
+  // collapse to their first occurrence and stray keys stay out, so what lands
+  // in the profile is exactly what the reader would read back.
+  const normalized = parseWeeklyReviewSettings({ weeklyReview: settings });
+  await setDoc(profileDocument(uid, database), { weeklyReview: normalized }, { merge: true });
 }
 
 /**
