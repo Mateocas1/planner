@@ -57,8 +57,8 @@ test("weekly review settings default to Friday 17:00 review+cleanup+reflect and 
 test("weekly review settings read back what was written and default on bad data", () => {
   assert.deepEqual(parseWeeklyReviewSettings(undefined), defaultWeeklyReviewSettings);
   assert.deepEqual(parseWeeklyReviewSettings({}), defaultWeeklyReviewSettings);
-  assert.deepEqual(parseWeeklyReviewSettings({ weeklyReview: "yes" }), defaultWeeklyReviewSettings);
-  assert.deepEqual(parseWeeklyReviewSettings({ weeklyReview: { moments: "friday" } }), defaultWeeklyReviewSettings);
+  assert.deepEqual(parseWeeklyReviewSettings({ weeklyReview: "yes" } as never), defaultWeeklyReviewSettings);
+  assert.deepEqual(parseWeeklyReviewSettings({ weeklyReview: { moments: "friday" } as never }), defaultWeeklyReviewSettings);
   // A list that leaves no valid moment falls back to the default moments; a
   // nudges value that did parse stays as stored.
   assert.deepEqual(
@@ -91,8 +91,8 @@ test("a malformed moment is dropped whole and valid moments survive", () => {
 
 test("weekly review settings validation rejects what the reader would replace", () => {
   validateWeeklyReviewSettings(defaultWeeklyReviewSettings);
-  assert.throws(() => validateWeeklyReviewSettings({ nudges: "yes", moments: [] }), /nudges/);
-  assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: "friday" }), /moments/);
+  assert.throws(() => validateWeeklyReviewSettings({ nudges: "yes" as never, moments: [] }), /nudges/);
+  assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: "friday" as never }), /moments/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 7, time: 100, steps: ["review"] }] }), /day/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: -1, steps: ["review"] }] }), /time/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: 100, steps: [] }] }), /step/);

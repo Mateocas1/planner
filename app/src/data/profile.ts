@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, setDoc, type Firestore } from "firebase/firestore";
 import { db } from "./client.ts";
 import { isDayKey } from "../planning/shutdown.ts";
+import {
+  defaultWeeklyReviewSettings,
+  parseWeeklyReviewSettings,
+  validateWeeklyReviewSettings,
+  type WeeklyReviewSettings,
+} from "../planning/weekly.ts";
 import { defaultWorkWindow, minutesPerDay, parseWorkWindow, validateWorkWindow, type WorkWindow } from "../planning/window.ts";
 
 /**
@@ -29,6 +35,8 @@ export type ProfileState = {
   /** Minutes after midnight in the profile zone; 1080 is 18:00. */
   shutdownTime: number;
   shortcutsEnabled: boolean;
+  /** The weekly review's Rituals settings (S3); defaults on absent or bad data. */
+  weeklyReview: WeeklyReviewSettings;
   /** The profile zone's day the shutdown ritual was last closed (F3c), read
    *  through `parseLastShutdown`: absent means today is still open. */
   lastShutdown?: string;
@@ -163,6 +171,17 @@ export function parseShortcutsEnabled(data: Record<string, unknown> | undefined)
 }
 
 /**
+ * Persists the weekly review's Rituals settings (S3) as one additive profile
+ * field, the same way the day settings are written: validated first (the pure
+ * rules live in `../planning/weekly.ts`), then one merged set that touches only
+ * `weeklyReview`, so another device's fields are never written over.
+ */
+export async function setProfileWeeklyReview(uid: string, settings: WeeklyReviewSettings): Promise<void> {
+  validateWeeklyReviewSettings(settings);
+  await setDoc(profileDocument(uid), { weeklyReview: settings }, { merge: true });
+}
+
+/**
  * Rejects one minute value the reader would not read back: whole minutes inside
  * the day. This is the guard W1's report asks for -- nothing is written that
  * `parseWorkWindow` or `parseShutdownTime` would silently replace.
@@ -214,6 +233,7 @@ const unloadedProfile: Omit<ProfileState, "loading"> = {
   workWindow: defaultWorkWindow,
   shutdownTime: defaultShutdownTime,
   shortcutsEnabled: defaultShortcutsEnabled,
+  weeklyReview: defaultWeeklyReviewSettings,
   error: null,
 };
 
@@ -250,6 +270,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             workWindow: parseWorkWindow(data),
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
+            weeklyReview: parseWeeklyReviewSettings(data),
             lastShutdown: parseLastShutdown(data),
             storedLastShutdown: storedLastShutdown(data),
           }),
@@ -275,6 +296,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             workWindow: parseWorkWindow(data),
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
+            weeklyReview: parseWeeklyReviewSettings(data),
             lastShutdown: parseLastShutdown(data),
             storedLastShutdown: storedLastShutdown(data),
           });
