@@ -75,6 +75,7 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
 
     stream(request, onEvent) {
       transport.__lastStreamRequest = request;
+      exposeMock(transport);
       const { id } = request;
       listeners.set(id, onEvent);
       return new Promise<void>(resolve => {
@@ -125,12 +126,20 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
       // C3a uses `complete` for memory extraction: the mock replies with
       // canned ops and records the request so tests can assert on it.
       transport.__lastCompleteRequest = request;
+      exposeMock(transport);
       return CANNED_EXTRACTION;
     },
   };
 
-  // Dev-mock only (this transport exists behind ?chatMock): expose the live
-  // instance for tests, no ChatPanel surface involved.
-  (globalThis as { __chatMockTransport?: unknown }).__chatMockTransport = transport;
   return transport;
+}
+
+/**
+ * Exposes the mock instance that is actually in use (both ChatSurface and
+ * ChatPanel can create one; only the wired one ever streams). Late exposure
+ * — on first use, not on creation — is what keeps the global pointing at the
+ * right instance.
+ */
+function exposeMock(transport: MockChatTransport) {
+  (globalThis as { __chatMockTransport?: unknown }).__chatMockTransport = transport;
 }
