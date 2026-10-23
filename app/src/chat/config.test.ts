@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CHAT_MODEL, chatPanelVisible, mockMode } from "./config.ts";
+import { DEFAULT_CHAT_MODEL, chatPanelVisible, mockMode, normalizeChatModel } from "./config.ts";
 
 test("the default model is the NaN deepseek flash the user named", () => {
   assert.equal(DEFAULT_CHAT_MODEL, "deepseek-v4-flash");
+});
+
+test("the model setting falls back to the default when empty or blank (C3b)", () => {
+  assert.equal(normalizeChatModel(null), DEFAULT_CHAT_MODEL);
+  assert.equal(normalizeChatModel(undefined), DEFAULT_CHAT_MODEL);
+  assert.equal(normalizeChatModel(""), DEFAULT_CHAT_MODEL);
+  assert.equal(normalizeChatModel("   "), DEFAULT_CHAT_MODEL);
+});
+
+test("the model setting trims and passes unknown names through (C3b)", () => {
+  assert.equal(normalizeChatModel("  deepseek-v4-flash "), "deepseek-v4-flash");
+  assert.equal(normalizeChatModel("gpt-4o-mini"), "gpt-4o-mini");
 });
 
 test("the panel renders in a signed-in desktop shell regardless of the query (review #2)", () => {
