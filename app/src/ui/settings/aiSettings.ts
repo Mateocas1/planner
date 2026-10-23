@@ -80,22 +80,25 @@ export function engramStatusText(
 
 /**
  * The Rust Engram address rules (planner_core::engram::validate_engram_address):
- * `https://`, or `http://` on the loopback — the mirror talks to a local
- * Engram. The message is the Rust command's own wording.
+ * loopback only, on either scheme — the mirror talks to a local Engram, and a
+ * remote address would send the memories off this computer. The message is
+ * the Rust command's own wording.
  */
 export function validateEngramAddressClient(url: string): string | null {
+  const refused = "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1]).";
   let parsed: URL;
   try {
     parsed = new URL(url.trim());
   } catch {
-    return "The Engram address must be https://, or http:// on this computer (localhost).";
+    return refused;
   }
-  if (parsed.username !== "" || parsed.password !== "") {
-    return "The Engram address must be https://, or http:// on this computer (localhost).";
-  }
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  if (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback)) return null;
-  return "The Engram address must be https://, or http:// on this computer (localhost).";
+  if (parsed.username !== "" || parsed.password !== "") return refused;
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if ((parsed.protocol === "https:" || parsed.protocol === "http:") && loopback) return null;
+  return refused;
 }
 
 /** The Rust project rule worth repeating in the page: not empty (Rust also

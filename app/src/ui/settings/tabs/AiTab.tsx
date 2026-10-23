@@ -495,7 +495,7 @@ function EngramSection() {
           <SettingRow
             label="Engram address"
             controlId="engram-address"
-            description="Where your local Engram server listens. https://, or http:// on this computer (localhost)."
+            description="Where your local Engram server listens. Loopback only: localhost, 127.0.0.1 or [::1]."
             error={error}
           >
             {() => (

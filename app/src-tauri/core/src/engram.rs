@@ -113,7 +113,8 @@ impl EngramSettings {
 pub enum EngramProblem {
     /// Empty or whitespace-only address.
     AddressEmpty,
-    /// The address is not `https://`, nor `http://` on the loopback hosts.
+    /// The address is not a loopback host (`127.0.0.1`, `localhost` or
+    /// `[::1]`), on either scheme.
     AddressDisallowed,
     /// Empty or whitespace-only project name.
     ProjectEmpty,
@@ -128,7 +129,7 @@ impl std::fmt::Display for EngramProblem {
         let text = match self {
             EngramProblem::AddressEmpty => "The Engram address must not be empty.",
             EngramProblem::AddressDisallowed => {
-                "The Engram address must be https://, or http:// on this computer (localhost)."
+                "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1])."
             }
             EngramProblem::ProjectEmpty => "The Engram project must not be empty.",
             EngramProblem::ProjectTooLong => {
@@ -142,9 +143,10 @@ impl std::fmt::Display for EngramProblem {
     }
 }
 
-/// Validates an Engram address with the same rules as the chat provider base
-/// URL (`core::chat::validate_base_url`): `https://` anywhere, `http://` only
-/// on the loopback hosts (the mirror is a local service), never userinfo —
+/// Validates an Engram address: loopback only, on either scheme — the
+/// mirror is a local service, and a webview-reachable setter must never be
+/// able to point it at a remote host (memories would be exfiltrated).
+/// `127.0.0.1`, `localhost` and `[::1]` are accepted; userinfo is never —
 /// credentials inside the URL would be sent to the host and echoed in
 /// errors.
 pub fn validate_engram_address(address: &str) -> Result<(), EngramProblem> {
@@ -158,9 +160,9 @@ pub fn validate_engram_address(address: &str) -> Result<(), EngramProblem> {
     if !url.username().is_empty() || url.password().is_some() {
         return Err(EngramProblem::AddressDisallowed);
     }
-    match url.scheme() {
-        "https" => Ok(()),
-        "http" if matches!(url.host_str(), Some("localhost") | Some("127.0.0.1")) => Ok(()),
+    match url.host_str() {
+        // The url crate keeps IPv6 hosts bracketed in `host_str`.
+        Some("localhost") | Some("127.0.0.1") | Some("[::1]") => Ok(()),
         _ => Err(EngramProblem::AddressDisallowed),
     }
 }
@@ -623,14 +625,23 @@ mod tests {
     }
 
     #[test]
-    fn engram_addresses_follow_the_provider_rules() {
+    fn engram_addresses_are_loopback_only_on_both_schemes() {
         assert_eq!(validate_engram_address("http://127.0.0.1:7437"), Ok(()));
         assert_eq!(validate_engram_address("http://localhost:7437"), Ok(()));
-        assert_eq!(validate_engram_address("https://engram.example.com"), Ok(()));
+        assert_eq!(validate_engram_address("http://[::1]:7437"), Ok(()));
+        assert_eq!(validate_engram_address("https://127.0.0.1:7437"), Ok(()));
+        assert_eq!(validate_engram_address("https://[::1]"), Ok(()));
         assert_eq!(validate_engram_address("  http://127.0.0.1:7437  "), Ok(()));
         assert_eq!(
             validate_engram_address(""),
             Err(EngramProblem::AddressEmpty)
+        );
+        // A remote host is refused on both schemes: any webview that can
+        // call the setter must never point the mirror (and its memories)
+        // at a server outside this computer.
+        assert_eq!(
+            validate_engram_address("https://engram.example.com"),
+            Err(EngramProblem::AddressDisallowed)
         );
         assert_eq!(
             validate_engram_address("http://evil.com"),

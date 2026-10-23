@@ -73,23 +73,18 @@ test("the Engram status line follows mirroring off, last error, then success (sp
   assert.equal(engramStatusText(true, { ok: true, synced: 1, error: null }), "Synced 1 memory.");
 });
 
-test("the Engram address rules mirror the Rust validation: https or loopback http, no userinfo", () => {
+test("the Engram address rules mirror the Rust validation: loopback only, both schemes, no userinfo", () => {
+  const refused = "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1]).";
   assert.equal(validateEngramAddressClient("http://127.0.0.1:7437"), null);
   assert.equal(validateEngramAddressClient("http://localhost:7437"), null);
-  assert.equal(validateEngramAddressClient("https://engram.example.com"), null);
-  assert.equal(validateEngramAddressClient("http://evil.com"), "The Engram address must be https://, or http:// on this computer (localhost).");
-  assert.equal(
-    validateEngramAddressClient("https://user:pass@127.0.0.1:7437"),
-    "The Engram address must be https://, or http:// on this computer (localhost).",
-  );
-  assert.equal(
-    validateEngramAddressClient(""),
-    "The Engram address must be https://, or http:// on this computer (localhost).",
-  );
-  assert.equal(
-    validateEngramAddressClient("not a url"),
-    "The Engram address must be https://, or http:// on this computer (localhost).",
-  );
+  assert.equal(validateEngramAddressClient("http://[::1]:7437"), null);
+  assert.equal(validateEngramAddressClient("https://127.0.0.1:7437"), null);
+  // A remote host is refused on both schemes.
+  assert.equal(validateEngramAddressClient("https://engram.example.com"), refused);
+  assert.equal(validateEngramAddressClient("http://evil.com"), refused);
+  assert.equal(validateEngramAddressClient("https://user:pass@127.0.0.1:7437"), refused);
+  assert.equal(validateEngramAddressClient(""), refused);
+  assert.equal(validateEngramAddressClient("not a url"), refused);
 });
 
 test("an empty Engram project is refused; a named one passes", () => {
