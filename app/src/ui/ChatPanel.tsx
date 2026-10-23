@@ -128,23 +128,27 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef(true);
+  /** Whether the panel has been opened, so closing returns focus only then. */
+  const openedOnce = useRef(false);
 
   const streamingTurn: (ChatTurn & { role: "assistant" }) | null = (() => {
     const last = state.turns[state.turns.length - 1];
     return streaming && last !== undefined && last.role === "assistant" ? last : null;
   })();
 
-  // Structural appends (a new turn, the waiting bubble) drive the FLIP glide;
-  // text growth inside a turn deliberately does not.
-  const appendKey = state.turns.length + (state.phase === "pending" || state.phase === "reasoning" ? 1 : 0);
-  useGlideOnAppend(columnRef, appendKey);
-
   // Auto-scroll: stick to the bottom while the user hasn't scrolled away.
+  // This runs BEFORE the FLIP glide below, so the glide measures the final
+  // painted positions (scroll applied) and animates the true visual delta.
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (scroller === null || !stickyRef.current) return;
     scroller.scrollTop = scroller.scrollHeight;
   });
+
+  // Structural appends (a new turn, the waiting bubble) drive the FLIP glide;
+  // text growth inside a turn deliberately does not.
+  const appendKey = state.turns.length + (state.phase === "pending" || state.phase === "reasoning" ? 1 : 0);
+  useGlideOnAppend(columnRef, appendKey);
 
   const onScroll = useCallback(() => {
     const scroller = scrollRef.current;
@@ -189,8 +193,15 @@ export function ChatPanel({
   }, [open]);
 
   useEffect(() => {
-    if (open) fieldRef.current?.focus({ preventScroll: true });
-    else launcherRef.current?.focus({ preventScroll: true });
+    // Focus follows open/close only — never on the first mount, where the
+    // panel has no claim on the caret the app already placed.
+    if (open) {
+      openedOnce.current = true;
+      fieldRef.current?.focus({ preventScroll: true });
+    } else if (openedOnce.current) {
+      openedOnce.current = false;
+      launcherRef.current?.focus({ preventScroll: true });
+    }
   }, [open]);
 
   if (!visible) return null;
