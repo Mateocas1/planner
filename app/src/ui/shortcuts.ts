@@ -349,6 +349,7 @@ export const shortcutHelp: readonly ShortcutHelpGroup[] = [
     title: "Anywhere",
     entries: [
       { keys: ["⌘", "K"], label: "Command palette" },
+      { keys: ["Ctrl", "J"], label: "Chat panel" },
       { keys: ["?"], label: "This sheet", action: "help" },
       { keys: ["Esc"], label: "Close what is open" },
     ],
