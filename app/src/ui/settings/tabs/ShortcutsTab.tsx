@@ -1,5 +1,6 @@
 import { shortcutHelp } from "../../shortcuts.ts";
 import { keycaps, rebindableShortcuts } from "../shortcutRegistry.ts";
+import { Keycap } from "../Keycap.tsx";
 import { ShortcutRecorder } from "../ShortcutRecorder.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 
@@ -22,7 +23,8 @@ export function ShortcutsTab({
   return (
     <>
       <Section title="Customize" description="Record a new combination; Escape cancels.">
-        {rebindableShortcuts.map(shortcut => (
+        {/* Desktop-only rows are not rendered on the web: no label without a control. */}
+        {rebindableShortcuts.filter(shortcut => desktop || !shortcut.desktopOnly).map(shortcut => (
           <SettingRow
             key={shortcut.id}
             label={shortcut.label}
@@ -49,7 +51,7 @@ export function ShortcutsTab({
               </div>
               <div className="settings-row-control shortcut-built-in">
                 {entry.keys.map(key => (
-                  <kbd key={key}>{key}</kbd>
+                  <Keycap key={key}>{key}</Keycap>
                 ))}
               </div>
             </div>

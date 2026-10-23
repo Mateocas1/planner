@@ -199,11 +199,16 @@
 .settings-empty .settings-row-desc { margin-top: 4px; display: block; -webkit-line-clamp: unset; }
 
 /* The time value is narrow and tabular, so 09:15 and 17:45 sit on the same
-   digits whatever the user types. */
+   digits whatever the user types. The width is in the field's own units (ch
+   for the digits, em for the padding), so it grows with the font and fits the
+   full "88:88" at every scale. It is not a percentage: the row's control column
+   is auto-sized, and a percentage cap halved the field ("09:" was clipped). */
 .form-control.day-time {
-  width: 84px;
-  max-width: 50%;
+  width: calc(5.5ch + 1em);
+  max-width: none;
+  padding-inline: 0.5em;
   flex: none;
+  white-space: nowrap;
 }
 
 /* ---------- the switch (moved from ui/Settings.css, paint unchanged) ---------- */

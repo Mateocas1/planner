@@ -10,6 +10,7 @@ import {
   setBinding,
   useShortcutBinding,
 } from "./shortcutRegistry.ts";
+import { Keycap } from "./Keycap.tsx";
 import "./ShortcutRecorder.css";
 
 /**
@@ -144,7 +145,7 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
         }}
         onBlur={() => setRecording(false)}
       >
-        {recording ? <span className="shortcut-chip-recording">Press keys…</span> : caps.map(cap => <kbd key={cap}>{cap}</kbd>)}
+        {recording ? <span className="shortcut-chip-recording">Press keys…</span> : caps.map(cap => <Keycap key={cap}>{cap}</Keycap>)}
       </button>
       {!isDefault && (
         <button type="button" className="link-button shortcut-restore" onClick={() => commit(null)}>
