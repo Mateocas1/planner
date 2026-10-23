@@ -223,7 +223,7 @@ test("memory extraction: canned ops from the mock ride into the next conversatio
         return mock?.__lastCompleteRequest != null;
       }),
     )
-    .toBe(true, "extraction recorded its complete request");
+    .toBe(true); // extraction recorded its complete request
   // Second conversation: the system prompt carries the extracted note.
   await field(page).fill("What is left of my day?");
   await field(page).press("Enter");
@@ -235,5 +235,5 @@ test("memory extraction: canned ops from the mock ride into the next conversatio
         return system.includes("Prefers short answers") && system.includes("planning-style");
       }),
     )
-    .toBe(true, "the second conversation's system prompt includes the memory");
+    .toBe(true); // the second conversation's system prompt includes the memory
 });
