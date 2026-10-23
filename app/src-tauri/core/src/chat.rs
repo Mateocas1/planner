@@ -7,6 +7,9 @@
 //! operation logic (topic-key upserts, caps). Serialization shapes mirror the
 //! TypeScript contract in `app/src/chat/types.ts`.
 
+use std::fmt;
+use std::io;
+
 use serde::{Deserialize, Serialize};
 
 /// Error codes of the chat contract (`app/src/chat/types.ts`).
@@ -141,12 +144,63 @@ impl StreamDecoder {
 // ---------------------------------------------------------------------------
 // Request validation and error mapping
 
+/// Longest accepted API key, in characters.
+pub const MAX_KEY_CHARS: usize = 512;
+
+/// Why an API key was rejected before it may touch the credential store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyProblem {
+    /// Empty or whitespace only.
+    Empty,
+    /// More than [`MAX_KEY_CHARS`] characters.
+    TooLong,
+    /// Contains a control character: a CRLF would inject headers into the
+    /// provider request (the `Authorization` header value is written
+    /// unvalidated by ureq).
+    ControlChars,
+}
+
+impl fmt::Display for KeyProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            KeyProblem::Empty => "The API key must not be empty.",
+            KeyProblem::TooLong => "The API key is too long.",
+            KeyProblem::ControlChars => "The API key must not contain control characters.",
+        };
+        f.write_str(text)
+    }
+}
+
+/// Validates an API key before it is stored. The key is trimmed by the
+/// caller before this runs, so [`KeyProblem::Empty`] covers whitespace-only
+/// input too.
+pub fn validate_key(key: &str) -> Result<(), KeyProblem> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(KeyProblem::Empty);
+    }
+    if key.chars().count() > MAX_KEY_CHARS {
+        return Err(KeyProblem::TooLong);
+    }
+    if key.chars().any(char::is_control) {
+        return Err(KeyProblem::ControlChars);
+    }
+    Ok(())
+}
+
 /// Validates a provider base URL: `https://` anywhere, or `http://` on the
 /// loopback hosts only (any port, so a local proxy or dev server works).
+/// URLs carrying userinfo (`https://user:pass@host`) are rejected: the
+/// credentials would be sent to the host, and callers must never echo the
+/// raw URL back (it may contain secrets) — rejection messages say only that
+/// the provider address is not allowed.
 pub fn validate_base_url(base_url: &str) -> Result<(), ChatErrorCode> {
     let Ok(url) = url::Url::parse(base_url.trim()) else {
         return Err(ChatErrorCode::InvalidRequest);
     };
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(ChatErrorCode::InvalidRequest);
+    }
     match url.scheme() {
         "https" => Ok(()),
         "http" if matches!(url.host_str(), Some("localhost") | Some("127.0.0.1")) => Ok(()),
@@ -177,6 +231,26 @@ pub const MAX_MEMORIES: usize = 200;
 
 /// Cap on one memory's content, applied on upsert.
 pub const MAX_CONTENT_CHARS: usize = 2000;
+
+/// Cap on one memory's title, applied on upsert (longer titles are
+/// truncated, never rejected).
+pub const MAX_TITLE_CHARS: usize = 200;
+
+/// Cap on one memory's topic key. A longer key rejects the whole call: the
+/// model output is misbehaving and must not be saved silently.
+pub const MAX_TOPIC_KEY_CHARS: usize = 120;
+
+/// Maximum number of extraction operations accepted in one
+/// `chat_memories_apply` call. More than that rejects the whole call.
+pub const MAX_OPS_PER_CALL: usize = 64;
+
+/// Maximum number of corrupt-file backups kept next to the memory file.
+pub const MAX_BACKUPS: usize = 3;
+
+/// Cap on one SSE body line, in bytes. A longer line means the provider is
+/// not speaking SSE: the caller must fail the stream with a `provider`
+/// error instead of buffering unboundedly.
+pub const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
 
 /// One durable memory (spec S5). Serialized camelCase over IPC and into the
 /// JSON file; `updated_at` is Unix epoch milliseconds.
@@ -210,13 +284,24 @@ pub enum MemoryOp {
 /// (same id, never a duplicate); a new topic is appended unless the store is
 /// already at [`MAX_MEMORIES`], in which case the op is dropped in place —
 /// the cap never evicts existing memories. Content is truncated to
-/// [`MAX_CONTENT_CHARS`] characters. `now_ms` stamps updated and new rows.
+/// [`MAX_CONTENT_CHARS`] characters and titles to [`MAX_TITLE_CHARS`].
+///
+/// The whole call is rejected (`Err`) — leaving the caller to save nothing —
+/// when there are more than [`MAX_OPS_PER_CALL`] ops or any topic key is
+/// longer than [`MAX_TOPIC_KEY_CHARS`] characters. `now_ms` stamps updated
+/// and new rows.
 pub fn apply_memory_ops(
     mut memories: Vec<Memory>,
     ops: &[MemoryOp],
     mut new_id: impl FnMut() -> String,
     now_ms: i64,
-) -> Vec<Memory> {
+) -> Result<Vec<Memory>, String> {
+    if ops.len() > MAX_OPS_PER_CALL {
+        return Err(format!(
+            "the extraction sent {} operations but at most {MAX_OPS_PER_CALL} are allowed; nothing was saved",
+            ops.len()
+        ));
+    }
     for op in ops {
         match op {
             MemoryOp::Upsert {
@@ -228,19 +313,25 @@ pub fn apply_memory_ops(
                 if topic_key.is_empty() {
                     continue;
                 }
+                if topic_key.chars().count() > MAX_TOPIC_KEY_CHARS {
+                    return Err(format!(
+                        "a memory topic key is longer than {MAX_TOPIC_KEY_CHARS} characters; nothing was saved"
+                    ));
+                }
                 let content = truncate_chars(content, MAX_CONTENT_CHARS);
+                let title = truncate_chars(title, MAX_TITLE_CHARS);
                 if let Some(existing) = memories
                     .iter_mut()
                     .find(|memory| memory.topic_key == topic_key)
                 {
-                    existing.title = title.clone();
+                    existing.title = title;
                     existing.content = content;
                     existing.updated_at = now_ms;
                 } else if memories.len() < MAX_MEMORIES {
                     memories.push(Memory {
                         id: new_id(),
                         topic_key: topic_key.to_string(),
-                        title: title.clone(),
+                        title,
                         content,
                         updated_at: now_ms,
                     });
@@ -251,7 +342,7 @@ pub fn apply_memory_ops(
             }
         }
     }
-    memories
+    Ok(memories)
 }
 
 /// A fresh random memory id (`mem-` + 24 hex chars). Falls back to a
@@ -276,6 +367,60 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
         return text.to_string();
     }
     text.chars().take(max_chars).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Memory-file load classification and corrupt-file backups
+
+/// What the caller of a memory-file load must do with the file.
+#[derive(Debug, PartialEq)]
+pub enum LoadDecision {
+    /// No file (or nothing to load): start with an empty store.
+    Empty,
+    /// The file exists but its JSON is corrupt: the caller must move it
+    /// aside (a timestamped backup) and start with an empty store.
+    Corrupt,
+    /// The file loaded fine.
+    Loaded(Vec<Memory>),
+    /// The file exists but cannot be read (permissions, sharing violation,
+    /// invalid UTF-8). The caller must surface the error and refuse every
+    /// write, so a transient read failure can never wipe the memories.
+    Unreadable(String),
+}
+
+/// Classifies one attempt to read the memory file as text and parse it.
+/// `NotFound` is an empty store; every other read error (including invalid
+/// UTF-8, which `read_to_string` reports as `InvalidData`) is
+/// [`LoadDecision::Unreadable`]; a successful read that fails to parse is
+/// [`LoadDecision::Corrupt`].
+pub fn classify_load(result: io::Result<String>) -> LoadDecision {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => LoadDecision::Empty,
+        Err(error) => LoadDecision::Unreadable(error.to_string()),
+        Ok(text) => match serde_json::from_str::<Vec<Memory>>(&text) {
+            Ok(memories) => LoadDecision::Loaded(memories),
+            Err(_) => LoadDecision::Corrupt,
+        },
+    }
+}
+
+/// Prefix of the timestamped backups of a corrupt memory file.
+pub const BACKUP_PREFIX: &str = "chat-memories.json.bak-";
+
+/// A unique, chronologically sortable backup file name for one corrupt
+/// memory file. Backups within the same millisecond differ by sequence
+/// number, so a backup never overwrites an earlier one.
+pub fn backup_file_name(now_ms: i64, seq: u32) -> String {
+    format!("{BACKUP_PREFIX}{now_ms}-{seq:03}")
+}
+
+/// Which existing backup names to delete after one more backup was added,
+/// keeping only the [`MAX_BACKUPS`] newest (the names sort
+/// chronologically). Returns the names to remove, oldest first.
+pub fn prune_backups(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    let keep_from = names.len().saturating_sub(MAX_BACKUPS);
+    names.drain(..keep_from).collect()
 }
 
 #[cfg(test)]
@@ -465,7 +610,7 @@ mod tests {
             title: "Standup time".into(),
             content: "Standup is at 9:30.".into(),
         }];
-        let memories = apply_memory_ops(Vec::new(), &ops, fixed_id, 10);
+        let memories = apply_memory_ops(Vec::new(), &ops, fixed_id, 10).unwrap();
         assert_eq!(memories.len(), 1);
         assert_eq!(memories[0].topic_key, "standup");
         assert_eq!(memories[0].updated_at, 10);
@@ -480,7 +625,7 @@ mod tests {
             title: "Moved".into(),
             content: "Standup moved to 10:00.".into(),
         }];
-        let memories = apply_memory_ops(store, &ops, fixed_id, 20);
+        let memories = apply_memory_ops(store, &ops, fixed_id, 20).unwrap();
         assert_eq!(memories.len(), 2);
         assert_eq!(memories[0].id, "m1");
         assert_eq!(memories[0].title, "Moved");
@@ -494,7 +639,7 @@ mod tests {
         let ops = [MemoryOp::Delete {
             topic_key: "standup".into(),
         }];
-        let memories = apply_memory_ops(store, &ops, fixed_id, 30);
+        let memories = apply_memory_ops(store, &ops, fixed_id, 30).unwrap();
         assert_eq!(memories.len(), 1);
         assert_eq!(memories[0].topic_key, "other");
     }
@@ -505,7 +650,7 @@ mod tests {
         let ops = [MemoryOp::Delete {
             topic_key: "nope".into(),
         }];
-        assert_eq!(apply_memory_ops(store, &ops, fixed_id, 40).len(), 1);
+        assert_eq!(apply_memory_ops(store, &ops, fixed_id, 40).unwrap().len(), 1);
     }
 
     #[test]
@@ -516,7 +661,7 @@ mod tests {
             title: "T".into(),
             content: long,
         }];
-        let memories = apply_memory_ops(Vec::new(), &ops, fixed_id, 50);
+        let memories = apply_memory_ops(Vec::new(), &ops, fixed_id, 50).unwrap();
         assert_eq!(memories[0].content.chars().count(), MAX_CONTENT_CHARS);
     }
 
@@ -537,7 +682,7 @@ mod tests {
                 content: "New content.".into(),
             },
         ];
-        let memories = apply_memory_ops(store, &ops, fixed_id, 60);
+        let memories = apply_memory_ops(store, &ops, fixed_id, 60).unwrap();
         assert_eq!(memories.len(), MAX_MEMORIES);
         assert_eq!(memories[0].title, "Updated");
         assert!(memories.iter().all(|m| m.topic_key != "brand-new"));
@@ -550,7 +695,141 @@ mod tests {
             title: "T".into(),
             content: "C".into(),
         }];
-        assert!(apply_memory_ops(Vec::new(), &ops, fixed_id, 70).is_empty());
+        assert!(apply_memory_ops(Vec::new(), &ops, fixed_id, 70).unwrap().is_empty());
+    }
+
+    // --- security fixes (chat-c1-sec review) ---
+
+    #[test]
+    fn api_keys_with_control_characters_are_rejected() {
+        assert_eq!(validate_key("ok-key"), Ok(()));
+        assert_eq!(validate_key("  padded key  "), Ok(()));
+        assert_eq!(validate_key(""), Err(KeyProblem::Empty));
+        assert_eq!(validate_key("   "), Err(KeyProblem::Empty));
+        assert_eq!(validate_key(&"k".repeat(MAX_KEY_CHARS + 1)), Err(KeyProblem::TooLong));
+        assert_eq!(validate_key(&"k".repeat(MAX_KEY_CHARS)), Ok(()));
+        assert_eq!(validate_key("sk-abc\r\nX-Injected: 1"), Err(KeyProblem::ControlChars));
+        assert_eq!(validate_key("sk-abc\nX"), Err(KeyProblem::ControlChars));
+        assert_eq!(validate_key("sk-a\u{7f}c"), Err(KeyProblem::ControlChars));
+    }
+
+    #[test]
+    fn userinfo_urls_are_rejected() {
+        for url in [
+            "https://user:pass@api.nan.builders/v1",
+            "https://user@evil.com",
+            "http://bob@localhost/v1",
+        ] {
+            assert_eq!(
+                validate_base_url(url),
+                Err(ChatErrorCode::InvalidRequest),
+                "userinfo must be rejected: {url}"
+            );
+        }
+        // Without userinfo the same hosts stay valid.
+        assert_eq!(validate_base_url("https://api.nan.builders/v1"), Ok(()));
+        assert_eq!(validate_base_url("http://localhost/v1"), Ok(()));
+    }
+
+    #[test]
+    fn a_missing_memory_file_is_an_empty_store() {
+        let decision = classify_load(Err(io::Error::from(io::ErrorKind::NotFound)));
+        assert!(matches!(decision, LoadDecision::Empty));
+    }
+
+    #[test]
+    fn any_other_read_error_is_unreadable_and_must_refuse_writes() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::Other,
+            io::ErrorKind::InvalidData,
+        ] {
+            let decision = classify_load(Err(io::Error::from(kind)));
+            assert!(
+                matches!(decision, LoadDecision::Unreadable(_)),
+                "non-NotFound error {kind:?} must be Unreadable"
+            );
+        }
+    }
+
+    #[test]
+    fn non_utf8_memory_bytes_are_unreadable_so_an_apply_cannot_wipe_them() {
+        // What `fs::read_to_string` returns for a file with invalid UTF-8.
+        let bytes: Vec<u8> = vec![0xFF, 0xFE, b'{', 0x00];
+        let result: io::Result<String> =
+            String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+        assert!(matches!(classify_load(result), LoadDecision::Unreadable(_)));
+    }
+
+    #[test]
+    fn corrupt_memory_json_is_corrupt_and_valid_json_loads() {
+        assert!(matches!(
+            classify_load(Ok("not json at all".into())),
+            LoadDecision::Corrupt
+        ));
+        let decision = classify_load(Ok(
+            r#"[{"id":"m1","topicKey":"t","title":"T","content":"C","updatedAt":1}]"#.into(),
+        ));
+        assert!(matches!(decision, LoadDecision::Loaded(_)));
+    }
+
+    #[test]
+    fn backup_names_are_timestamped_and_unique_within_a_millisecond() {
+        let a = backup_file_name(1_700_000_000_000, 0);
+        let b = backup_file_name(1_700_000_000_000, 1);
+        let c = backup_file_name(1_700_000_000_001, 0);
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        assert!(a.starts_with("chat-memories.json.bak-"));
+        // Timestamped names sort chronologically.
+        assert!(a < c);
+    }
+
+    #[test]
+    fn backup_pruning_keeps_only_the_newest_three() {
+        let names: Vec<String> = (0..5)
+            .map(|ms| backup_file_name(1_700_000_000_000 + ms, 0))
+            .collect();
+        let pruned = prune_backups(names.clone());
+        // The three oldest go; the two newest stay.
+        assert_eq!(pruned, names[0..2].to_vec());
+        assert_eq!(prune_backups(names[..MAX_BACKUPS].to_vec()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn more_than_the_op_cap_rejects_the_whole_call() {
+        let ops: Vec<MemoryOp> = (0..=MAX_OPS_PER_CALL)
+            .map(|i| MemoryOp::Upsert {
+                topic_key: format!("topic-{i}"),
+                title: "T".into(),
+                content: "C".into(),
+            })
+            .collect();
+        let result = apply_memory_ops(Vec::new(), &ops, fixed_id, 80);
+        assert!(result.is_err(), "65 ops must be rejected, not truncated");
+        assert_eq!(
+            apply_memory_ops(Vec::new(), &ops[..MAX_OPS_PER_CALL], fixed_id, 80).unwrap().len(),
+            MAX_OPS_PER_CALL,
+        );
+    }
+
+    #[test]
+    fn over_long_topic_keys_reject_the_call_and_titles_are_capped() {
+        let long_key = "k".repeat(MAX_TOPIC_KEY_CHARS + 1);
+        let ops = [MemoryOp::Upsert {
+            topic_key: long_key,
+            title: "T".into(),
+            content: "C".into(),
+        }];
+        assert!(apply_memory_ops(Vec::new(), &ops, fixed_id, 90).is_err());
+        let long_title = "t".repeat(MAX_TITLE_CHARS + 50);
+        let ops = [MemoryOp::Upsert {
+            topic_key: "topic".into(),
+            title: long_title,
+            content: "C".into(),
+        }];
+        let memories = apply_memory_ops(Vec::new(), &ops, fixed_id, 95).unwrap();
+        assert_eq!(memories[0].title.chars().count(), MAX_TITLE_CHARS);
     }
 
     #[test]
