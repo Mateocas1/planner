@@ -231,15 +231,17 @@ export function ChatPanel({
     // Focus follows open/close only — never on the first mount, where the
     // panel has no claim on the caret the app already placed. On close the
     // launcher takes focus at once; `inert` on the closing panel stops the
-    // composer from re-taking it (review #3).
+    // composer from re-taking it (review #3). When a reopen lands inside the
+    // exit, the composer is still inert in this commit — the effect re-runs
+    // once the exit is cancelled and focuses then.
     if (open) {
       openedOnce.current = true;
-      fieldRef.current?.focus({ preventScroll: true });
+      if (!closing) fieldRef.current?.focus({ preventScroll: true });
     } else if (openedOnce.current) {
       openedOnce.current = false;
       launcherRef.current?.focus({ preventScroll: true });
     }
-  }, [open]);
+  }, [open, closing]);
 
   // The exit lifecycle (review #3): see the comment above `closing`. Runs in a
   // layout effect so the closing card never paints as hidden for a frame.
