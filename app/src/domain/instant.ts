@@ -63,6 +63,15 @@ function wallValue(stamp: number, timeZone: string): string {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
+/** Date key (YYYY-MM-DD) of an instant in the given zone. Lives here with the
+ *  other zoned-arithmetic helpers (ronda 2, review fix 5): the model derives
+ *  day keys from stored instants, so the domain layer must not reach into the
+ *  ui/ — surfaces re-export it from `ui/time.ts` as before. */
+export function dateKey(date: Date, timeZone: string): string {
+  const parts = wallParts(date, timeZone);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
 /** Converts a datetime-local value (YYYY-MM-DDTHH:MM) into a zoned ISO instant
  * interpreted in the given zone. Two correction passes land the instant whose
  * wall clock in the zone equals the input (stamp = wall - offset); a zone's own

@@ -18,7 +18,7 @@
  * Timestamps are epoch milliseconds; the caller decides what "now" is.
  */
 
-import { dateKey } from "../ui/time.ts";
+import { dateKey } from "./instant.ts";
 
 /** One device's focus session, exactly as it is persisted. */
 export type FocusSession = {

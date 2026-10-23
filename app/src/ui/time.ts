@@ -14,17 +14,11 @@
 
 import { pad, wallAsUtc, wallParts, type WallParts } from "../domain/instant.ts";
 
-export { pad, toZonedInstant, wallAsUtc, wallParts } from "../domain/instant.ts";
+export { dateKey, pad, toZonedInstant, wallAsUtc, wallParts } from "../domain/instant.ts";
 export type { WallParts } from "../domain/instant.ts";
 
 export const dayMs = 86_400_000;
 export const minutesPerDay = 1440;
-
-/** Date key (YYYY-MM-DD) of an instant in the given zone. */
-export function dateKey(date: Date, timeZone: string): string {
-  const parts = wallParts(date, timeZone);
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
-}
 
 /** Date key of a wall-UTC day value. */
 export function wallDayKey(wallUtc: number): string {
