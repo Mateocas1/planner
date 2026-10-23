@@ -13,9 +13,10 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { DEFAULT_CHAT_MODEL } from "./config.ts";
-import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState } from "./conversation.ts";
+import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
 import { createPacer, type StreamPacer } from "./pacer.ts";
-import type { ChatEvent, ChatTransport } from "./types.ts";
+import { CHAT_TOOLS, toolResultContent } from "./tools.ts";
+import type { ChatEvent, ChatMessage, ChatTransport } from "./types.ts";
 
 export type ChatController = {
   state: ConversationState;
@@ -23,6 +24,9 @@ export type ChatController = {
   stop: () => void;
   retry: () => void;
   newChat: () => void;
+  /** Resolves one action card (the user confirmed, discarded, or the write
+   * failed). Resolving never triggers a new model call (spec S1). */
+  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => void;
 };
 
 let requestCounter = 0;
@@ -31,6 +35,35 @@ const nextRequestId = () => `r${++requestCounter}`;
 /** How long a closed panel waits for activity before the conversation "ends"
  * and extraction may run (spec S5, parent decision L3). */
 export const IDLE_EXTRACT_MS = 10 * 60 * 1000;
+
+/**
+ * The conversation as the OpenAI protocol needs it: every assistant turn that
+ * proposed tool calls carries its `tool_calls`, and each proposed call is
+ * answered by one `tool` message — pending, confirmed, failed or discarded —
+ * so the next request stays valid even when the user sends a new message with
+ * cards still open (spec S1).
+ */
+export function buildMessages(systemPrompt: string, turns: ChatTurn[]): ChatMessage[] {
+  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
+  for (const turn of turns) {
+    if (turn.role === "user") {
+      messages.push({ role: "user", content: turn.text });
+      continue;
+    }
+    const hasCalls = turn.toolCalls !== undefined && turn.toolCalls.length > 0;
+    if (turn.text === "" && !hasCalls) continue;
+    const calls = turn.toolCalls ?? [];
+    messages.push({
+      role: "assistant",
+      content: turn.text,
+      ...(calls.length > 0 ? { toolCalls: calls.map(card => ({ id: card.callId, name: card.name, arguments: card.arguments })) } : {}),
+    });
+    for (const card of calls) {
+      messages.push({ role: "tool", toolCallId: card.callId, content: toolResultContent(card) });
+    }
+  }
+  return messages;
+}
 
 export function useChat(options: {
   transport: ChatTransport;
@@ -92,13 +125,9 @@ export function useChat(options: {
       });
       pacerRef.current = pacer;
       activeIdRef.current = id;
-      const messages = [
-        { role: "system" as const, content: buildSystemPrompt() },
-        ...state.turns
-          .filter(turn => turn.role !== "assistant" || turn.text !== "")
-          .map(turn => ({ role: turn.role, content: turn.text })),
-      ];
-      void transport.stream({ id, model: DEFAULT_CHAT_MODEL, messages }, event => {
+      void transport.stream(
+        { id, model: DEFAULT_CHAT_MODEL, messages: buildMessages(buildSystemPrompt(), state.turns), tools: CHAT_TOOLS },
+        event => {
         if (activeIdRef.current !== id) return;
         if (event.type === "delta") {
           pacer.push(event.text);
@@ -161,6 +190,13 @@ export function useChat(options: {
     dispatch({ type: "newChat" });
   }, [transport, fireConversationEnd]);
 
+  const resolveToolCall = useCallback(
+    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => {
+      dispatch({ type: "toolCallResolved", callId, status, outcome });
+    },
+    [],
+  );
+
   // The close/reopen transition drives the idle timer.
   const panelOpenRef = useRef(panelOpen);
   useEffect(() => {
@@ -187,5 +223,5 @@ export function useChat(options: {
     return () => window.removeEventListener("beforeunload", onUnload);
   }, [fireConversationEnd]);
 
-  return { state, send, stop, retry, newChat };
+  return { state, send, stop, retry, newChat, resolveToolCall };
 }

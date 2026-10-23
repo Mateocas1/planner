@@ -6,6 +6,8 @@
  * real bursts to smooth. `?chatMock=error` streams the failure path instead.
  */
 
+import { browserTimeZone } from "../data/profile.ts";
+import { dateKey } from "../ui/time.ts";
 import type { ChatEvent, ChatRequest, ChatTransport } from "./types.ts";
 
 /**
@@ -33,7 +35,7 @@ You have **two blocks** left, and the *Deep Work* session on the chat panel is n
 
 If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [the planner guide](https://example.com/planner-guide).`;
 
-export type MockScenario = "answer" | "error";
+export type MockScenario = "answer" | "error" | "tools";
 
 export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
@@ -98,6 +100,35 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           return;
         }
         clock += 700; // ≈1.2 s of reasoning before the first word
+        if (scenario === "tools") {
+          // R1 (spec S1): the mock proposes two planner changes — one dated
+          // today (the confirm test's visible task), one undated (the discard
+          // test's invisible one). Tool calls bypass the pacer: they are
+          // discrete events, not text.
+          for (const chunk of chunkPlan("Here's what I can do for you:")) {
+            clock += chunk.gapMs;
+            const text = chunk.text;
+            schedule(id, clock, () => emit({ type: "delta", text }));
+          }
+          const today = dateKey(new Date(), browserTimeZone);
+          const calls: Array<{ id: string; name: string; args: string }> = [
+            { id: "call_confirm", name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, estimateMinutes: 30 }) },
+            { id: "call_discard", name: "create_task", args: JSON.stringify({ title: "Return library books" }) },
+          ];
+          for (const call of calls) {
+            clock += 250;
+            const event: ChatEvent = { type: "tool_call", call: { id: call.id, name: call.name, arguments: call.args } };
+            schedule(id, clock, () => emit(event));
+          }
+          clock += 120;
+          schedule(id, clock, () => {
+            clearTimers(id);
+            emit({ type: "done" });
+            listeners.delete(id);
+            resolve();
+          });
+          return;
+        }
         for (const chunk of chunkPlan(CANNED_ANSWER)) {
           clock += chunk.gapMs;
           const text = chunk.text;

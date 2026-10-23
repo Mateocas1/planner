@@ -31,9 +31,11 @@ use std::time::Instant;
 
 use planner_core::chat::chat_completions_url;
 use planner_core::chat::error_code_for_status;
+use planner_core::chat::provider_body;
 use planner_core::chat::validate_base_url;
-use planner_core::chat::{read_limited_line, LineError};
 use planner_core::chat::validate_key;
+use planner_core::chat::WireMessage;
+use planner_core::chat::{read_limited_line, LineError};
 use planner_core::chat::ChatErrorCode;
 use planner_core::chat::ChatEvent;
 use planner_core::chat::KeyProblem;
@@ -41,6 +43,7 @@ use planner_core::chat::MAX_KEY_CHARS;
 use planner_core::chat::MAX_SSE_LINE_BYTES;
 use planner_core::chat::StreamDecoder;
 use planner_core::chat::StreamEvent;
+use planner_core::chat::ToolCallPayload;
 use serde::Deserialize;
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -74,12 +77,11 @@ const PROVIDER_FILE_NAME: &str = "chat-provider.json";
 // ---------------------------------------------------------------------------
 // IPC shapes (mirrors of `app/src/chat/types.ts`)
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-}
+/// One turn of the conversation over IPC. The IPC is camelCase; the provider
+/// wire shape (snake_case `tool_calls`, `content: null` on tool-call-only
+/// assistant turns) is built in the pure core ([`provider_body`]), where it
+/// is unit-tested on Linux.
+use planner_core::chat::WireMessage as ChatMessage;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +89,10 @@ pub struct ChatRequest {
     pub id: String,
     pub model: String,
     pub messages: Vec<ChatMessage>,
+    /// Function-tool definitions in the OpenAI wire shape, forwarded verbatim
+    /// when present. Absent for memory-extraction completions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 /// The rejection of a command call (`chat_complete` or the local checks of
@@ -359,18 +365,14 @@ fn run_stream(
             return;
         }
     };
-    let body = serde_json::json!({
-        "model": request.model,
-        "messages": request.messages,
-        "stream": true,
-    });
+    let body = provider_body(&request.model, &request.messages, request.tools.as_ref(), true);
     let url = chat_completions_url(&base_url);
     match http_agent()
         .post(&url)
         .set("Authorization", &format!("Bearer {key}"))
         .send_json(body)
     {
-        Ok(response) => stream_response(response, &cancel, on_event),
+        Ok(response) => stream_response(response, &request.id, &cancel, on_event),
         Err(ureq::Error::Status(status, response)) => {
             let _ = on_event.send(ChatEvent::Error {
                 code: error_code_for_status(status),
@@ -403,9 +405,11 @@ fn is_timeout(error: &io::Error) -> bool {
 /// Cancel is checked between lines and between stall ticks: a provider that
 /// stops sending is cancelled within seconds or fails as `network` after
 /// [`MAX_STALL`] without data.
-fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Channel<ChatEvent>) {
+fn stream_response(response: ureq::Response, request_id: &str, cancel: &AtomicBool, on_event: &Channel<ChatEvent>) {
     let mut reader = BufReader::new(response.into_reader());
-    let mut decoder = StreamDecoder::new();
+    // The request id makes fallback call ids unique per request, so one
+    // Confirm can never resolve two cards across turns.
+    let mut decoder = StreamDecoder::new().with_request_id(request_id);
     // The unfinished line survives stall ticks (read timeouts).
     let mut pending = Vec::new();
     let mut last_data = Instant::now();
@@ -466,6 +470,11 @@ fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Cha
                         return;
                     }
                 }
+                StreamEvent::ToolCall(call) => {
+                    if on_event.send(ChatEvent::ToolCall { call }).is_err() {
+                        return;
+                    }
+                }
             }
         }
         if decoder.is_done() {
@@ -476,6 +485,27 @@ fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Cha
     if cancel.load(Ordering::Relaxed) {
         let _ = on_event.send(ChatEvent::Cancelled);
     } else {
+        // A stream that ended at EOF without `[DONE]` may still hold pending
+        // tool calls; flush them before the terminal event, in index order.
+        // A nameless call the flush reports as `Malformed` fails the stream
+        // exactly like a malformed line — it is never dropped silently.
+        for event in decoder.flush_tool_calls() {
+            match event {
+                StreamEvent::ToolCall(call) => {
+                    if on_event.send(ChatEvent::ToolCall { call }).is_err() {
+                        return; // the webview is gone; stop the work
+                    }
+                }
+                StreamEvent::Malformed => {
+                    let _ = on_event.send(ChatEvent::Error {
+                        code: ChatErrorCode::Provider,
+                        message: "the provider sent a malformed reply stream".into(),
+                    });
+                    return;
+                }
+                _ => {}
+            }
+        }
         let _ = on_event.send(ChatEvent::Done);
     }
 }
@@ -531,11 +561,7 @@ fn run_complete(request: ChatRequest, base_url: String) -> Result<String, IpcErr
         .ok_or_else(|| {
             IpcError::new(ChatErrorCode::NoKey, "No API key is saved. Add one in Settings.")
         })?;
-    let body = serde_json::json!({
-        "model": request.model,
-        "messages": request.messages,
-        "stream": false,
-    });
+    let body = provider_body(&request.model, &request.messages, request.tools.as_ref(), false);
     let url = chat_completions_url(&base_url);
     match http_agent()
         .post(&url)
