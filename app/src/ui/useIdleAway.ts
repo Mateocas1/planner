@@ -5,6 +5,7 @@ import {
   IDLE_POLL_MS,
   appliedKeyOf,
   awayMinutesOf,
+  awayEnd,
   awayStart,
   isIdle,
   readIdleThreshold,
@@ -129,7 +130,8 @@ export function useIdleAway({
             // The span opens where the absence began, not where we noticed it.
             booksRef.current = openAway(booksRef.current, awayStart(Date.now(), idleSeconds));
           } else if (booksRef.current.openFrom !== null) {
-            closeSpanAndPrompt(session, Date.now());
+            // The absence ended at the last input, not at this poll.
+            closeSpanAndPrompt(session, awayEnd(Date.now(), idleSeconds));
           }
         })
         .catch(() => {

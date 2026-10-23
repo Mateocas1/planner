@@ -6,6 +6,7 @@ import {
   MIN_IDLE_THRESHOLD_MINUTES,
   appliedKeyOf,
   awayMinutesOf,
+  awayEnd,
   awayStart,
   clipAwaySpan,
   clampSubtraction,
@@ -72,6 +73,13 @@ test("the threshold setting is clamped into 5–60 and falls back on nonsense", 
 
 test("a span opens at now minus the reported idle", () => {
   assert.equal(awayStart(END, 660), END - 11 * minute);
+});
+
+test("an away span ends at the last input, not at the poll that noticed the return", () => {
+  // The poll at 14:30 sees 20 s of idle: the user came back at 14:29:40.
+  assert.equal(awayEnd(START + 30 * minute, 20), START + 30 * minute - 20_000);
+  // Input during the poll itself: the span ends at the poll instant.
+  assert.equal(awayEnd(START + 30 * minute, 0), START + 30 * minute);
 });
 
 test("a span crossing the session start is clipped to it", () => {
