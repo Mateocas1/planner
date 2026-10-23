@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatEvent } from "./types.ts";
-import { emptyConversation, lastUserText, reduceConversation, type ConversationState } from "./conversation.ts";
+import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ConversationState } from "./conversation.ts";
 
 const send = (state: ConversationState, id: string, text: string) => reduceConversation(state, { type: "send", id, text });
 const event = (state: ConversationState, chatEvent: ChatEvent) => reduceConversation(state, { type: "event", event: chatEvent });
@@ -105,4 +105,11 @@ test("lastUserText finds the most recent user turn", () => {
   state = event(state, {  type: "done"  });
   state = send(state, "r2", "two");
   assert.equal(lastUserText(state), "two");
+});
+
+test("hasExchange: an exchange needs a user message and a non-empty answer (S5)", () => {
+  assert.equal(hasExchange(emptyConversation.turns), false);
+  assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }]), false, "a lone user turn is not an exchange");
+  assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }, { id: "a1", role: "assistant", text: "", segments: [] }]), false, "an empty assistant turn (error, stop) is not an exchange");
+  assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }, { id: "a1", role: "assistant", text: "hello", segments: ["hello"] }]), true);
 });

@@ -8,6 +8,22 @@
 
 import type { ChatEvent, ChatRequest, ChatTransport } from "./types.ts";
 
+/**
+ * What the mock's extraction (`complete`) replies with (spec S5): strict JSON
+ * ops the panel applies to the in-memory backend, so a second conversation's
+ * system prompt carries the note. The browser test reads the recorded
+ * requests through `globalThis.__chatMockTransport`.
+ */
+export const CANNED_EXTRACTION = JSON.stringify({
+  ops: [{ op: "upsert", topicKey: "planning-style", title: "Prefers short answers", content: "The user prefers short, concrete answers with times in their own timezone." }],
+});
+
+/** The mock transport plus the request recording the browser tests read. */
+export type MockChatTransport = ChatTransport & {
+  __lastStreamRequest: ChatRequest | null;
+  __lastCompleteRequest: ChatRequest | null;
+};
+
 const CANNED_ANSWER = `Here's where your day stands.
 
 You have **two blocks** left, and the *Deep Work* session on the chat panel is next. The shutdown ritual opens at **18:30**.
@@ -19,7 +35,7 @@ If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [th
 
 export type MockScenario = "answer" | "error";
 
-export function createMockTransport(scenario: MockScenario = "answer"): ChatTransport {
+export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
   const timers = new Map<string, ReturnType<typeof setTimeout>[]>();
   /** The live `onEvent` per request id, so cancel can emit the terminal event. */
@@ -53,8 +69,13 @@ export function createMockTransport(scenario: MockScenario = "answer"): ChatTran
     return chunks;
   };
 
-  return {
+  const transport: MockChatTransport = {
+    __lastStreamRequest: null,
+    __lastCompleteRequest: null,
+
     stream(request, onEvent) {
+      transport.__lastStreamRequest = request;
+      exposeMock(transport);
       const { id } = request;
       listeners.set(id, onEvent);
       return new Promise<void>(resolve => {
@@ -102,10 +123,23 @@ export function createMockTransport(scenario: MockScenario = "answer"): ChatTran
     },
 
     async complete(request) {
-      // C3 uses `complete` for memory extraction; the mock returns the canned
-      // answer so a miswired extraction is visible instead of silent.
-      void request;
-      return CANNED_ANSWER;
+      // C3a uses `complete` for memory extraction: the mock replies with
+      // canned ops and records the request so tests can assert on it.
+      transport.__lastCompleteRequest = request;
+      exposeMock(transport);
+      return CANNED_EXTRACTION;
     },
   };
+
+  return transport;
+}
+
+/**
+ * Exposes the mock instance that is actually in use (both ChatSurface and
+ * ChatPanel can create one; only the wired one ever streams). Late exposure
+ * — on first use, not on creation — is what keeps the global pointing at the
+ * right instance.
+ */
+function exposeMock(transport: MockChatTransport) {
+  (globalThis as { __chatMockTransport?: unknown }).__chatMockTransport = transport;
 }

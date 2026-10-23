@@ -11,11 +11,6 @@
 /** The model every chat request names until C3 makes it a setting. */
 export const DEFAULT_CHAT_MODEL = "deepseek-v4-flash";
 
-/** The system prompt C3 will build from the planner context (S4). */
-export function buildSystemPrompt(): string {
-  return "You are the assistant inside the user's personal planner. Be concise and helpful. Format answers with a small Markdown subset: paragraphs, bold, italic, inline code, fenced code blocks, lists and links.";
-}
-
 /**
  * When the floating chat panel renders at all (S1, review #2): the panel is an
  * in-app surface, so inside the Tauri desktop shell it needs a signed-in
