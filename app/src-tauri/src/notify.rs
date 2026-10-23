@@ -45,6 +45,9 @@ pub enum NotifyRequest {
     },
     /// The shutdown nudge: [Close the day].
     Shutdown,
+    /// The weekly review nudge (S3): [Start review] / [Later] / [Skip this
+    /// week]. The dedupe key is echoed back on every action.
+    WeeklyReview { key: String },
 }
 
 /// What a pressed action means, as the `notify-action` event payload.
@@ -59,6 +62,9 @@ pub enum NotifyAction {
     BlockSnooze { key: String },
     /// [Close the day] (or the nudge's body): open the shutdown ritual.
     ShutdownOpen,
+    /// The weekly review nudge: `action` is "start", "later" or "skip" — the
+    /// writes behind each belong to the frontend, exactly as T7 arranged.
+    WeeklyReview { key: String, action: String },
 }
 
 /// Shows the requested toast and wires its activation callbacks. The action
@@ -149,6 +155,36 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
                             move |_action| {
                                 focus_main(&app);
                                 report(&app, NotifyAction::ShutdownOpen);
+                                Ok(())
+                            }
+                        });
+                    toast.show().map_err(|error| error.to_string())
+                }
+                NotifyRequest::WeeklyReview { key } => {
+                    let toast = Toast::new(&app_id)
+                        .title("Time to close the week.")
+                        .text1("The weekly review is ready.")
+                        .scenario(Scenario::Reminder)
+                        .add_button("Start review", "start")
+                        .add_button("Later", "later")
+                        .add_button("Skip this week", "skip")
+                        .on_activated({
+                            let app = app.clone();
+                            let key = key.clone();
+                            move |action| {
+                                // The toast body counts as Start: it means "open
+                                // the review", the same sentence either way.
+                                // Skip only silences the week; the window does
+                                // not need to come forward for a "no".
+                                let action = match action.as_deref() {
+                                    Some("later") => "later",
+                                    Some("skip") => "skip",
+                                    _ => "start",
+                                };
+                                if action != "skip" {
+                                    focus_main(&app);
+                                }
+                                report(&app, NotifyAction::WeeklyReview { key: key.clone(), action: action.to_string() });
                                 Ok(())
                             }
                         });

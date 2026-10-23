@@ -50,7 +50,7 @@ export type PaletteActionCommand = {
 
 /** Every action the palette can run. The two task actions act on the row the
  * palette was opened from; the others open a surface of their own. */
-export type PaletteActionKind = "gcal-import" | "now-mode" | "close-day" | "complete-task" | "move-tomorrow";
+export type PaletteActionKind = "gcal-import" | "now-mode" | "close-day" | "weekly-review" | "complete-task" | "move-tomorrow";
 
 /** The keyboard action each palette action performs, so its hint is the key
  * the router already answers with. */
@@ -163,6 +163,15 @@ export const actionCommands: PaletteActionCommand[] = [
     action: "close-day",
     label: "Close the day",
     keywords: ["close", "shutdown", "day", "ritual"],
+  },
+  /* The weekly review's manual entry (S3): the review proposes itself, but it
+     is reachable any day, from here too. */
+  {
+    kind: "action",
+    id: "action-weekly-review",
+    action: "weekly-review",
+    label: "Weekly review",
+    keywords: ["weekly", "review", "retro", "week"],
   },
 ];
 

@@ -1,0 +1,498 @@
+/* The weekly review flow (S3, ronda 2 W2b). Same grammar as the Settings view:
+   the shell's transparent background, opaque --surface cards, tokens only.
+   Motion lives in WeeklyReview.tsx; reduced motion is handled there. */
+
+.weekly {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 760px;
+  padding: 8px 32px 48px;
+}
+
+/* ---------- the head ---------- */
+
+.weekly-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.weekly-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px 0 2px;
+  margin-top: 2px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-size: var(--text-sub);
+  font-weight: 500;
+  flex: none;
+}
+
+.weekly-back-icon { width: 16px; height: 16px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .weekly-back:hover { color: var(--label); background: var(--fill-hover); }
+}
+
+.weekly-title h2 {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  color: var(--label);
+}
+
+.weekly-title p {
+  margin: 4px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- the step rail ---------- */
+
+.weekly-rail {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+
+.weekly-rail-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-weight: 500;
+  font-size: var(--text-body);
+  transition: color var(--dur-hover) ease;
+}
+
+.weekly-rail-item[aria-current="step"] { color: var(--label); }
+.weekly-rail-item[aria-current="step"] .weekly-step-mark { color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .weekly-rail-item:not([aria-current="step"]):hover { color: var(--label); background: var(--fill-hover); }
+}
+
+.weekly-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--pill);
+  box-shadow: var(--pill-shadow);
+}
+
+.weekly-rail-item > :not(.weekly-pill) { position: relative; }
+
+/* The step's mark: its number, or the check a finished step carries. */
+.weekly-step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--check-ring);
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-step-mark.is-done {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- the pane ---------- */
+
+.weekly-pane { min-width: 0; }
+
+.weekly-pane-lede h3 {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--label);
+}
+
+.weekly-pane-lede p {
+  margin: 2px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.weekly-pane-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.weekly-lede {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--label-2);
+}
+
+.weekly-empty {
+  margin: 0;
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+  font-size: var(--text-body);
+  color: var(--label-2);
+}
+
+/* ---------- Review: the numbers ---------- */
+
+.weekly-numbers {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+}
+
+.weekly-number {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.weekly-number + .weekly-number { border-top: 0.5px solid var(--separator); }
+
+.weekly-number dt {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.weekly-number dd {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--label);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-subtitle {
+  margin: 0;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.weekly-top-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+}
+
+.weekly-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 40px;
+}
+
+.weekly-top-row + .weekly-top-row { border-top: 0.5px solid var(--separator); }
+
+.weekly-top-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--fill-hover);
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-top-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  color: var(--label);
+}
+
+.weekly-top-minutes {
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Clean up ---------- */
+
+.weekly-cleanup {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+}
+
+.weekly-cleanup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  min-height: 56px;
+}
+
+.weekly-cleanup-row + .weekly-cleanup-row { border-top: 0.5px solid var(--separator); }
+
+.weekly-cleanup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.weekly-cleanup-title {
+  font-size: var(--text-body);
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-cleanup-why {
+  font-size: var(--text-caption);
+  color: var(--orange);
+}
+
+.weekly-cleanup-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* Delete is the one destructive action in the row: its words carry the
+   product's red, its weight stays a small button. */
+.button.small.is-danger { color: var(--red); }
+
+/* ---------- Plan ---------- */
+
+.weekly-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 264px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+}
+
+.weekly-pick li + li .weekly-pick-row { border-top: 0.5px solid var(--separator); }
+
+.weekly-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.weekly-pick-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  color: var(--label);
+}
+
+.weekly-pick-deadline {
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-plan-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.weekly-plan-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.weekly-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+}
+
+.weekly-plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 14px;
+  min-height: 40px;
+}
+
+.weekly-plan-row + .weekly-plan-row { border-top: 0.5px solid var(--separator); }
+
+.weekly-plan-day {
+  width: 52px;
+  flex: none;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-plan-time {
+  width: 96px;
+  flex: none;
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-plan-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--label);
+}
+
+.weekly-plan-notice {
+  margin: 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+/* ---------- Reflect ---------- */
+
+.weekly-reflect {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+  font: 400 var(--text-body) / 1.5 var(--font);
+  color: var(--label);
+  resize: vertical;
+}
+
+.weekly-reflect:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.weekly-count {
+  margin: -6px 0 0;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-count.is-over { color: var(--red); }
+
+/* ---------- the flow's actions ---------- */
+
+.weekly-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.weekly-actions .button:disabled { opacity: 0.45; cursor: default; }
+
+.weekly-progress {
+  margin: -8px 0 0;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+/* ---------- the Home banner ---------- */
+
+.weekly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--r-group);
+  background: var(--accent-soft);
+  border: 0.5px solid var(--separator);
+  margin-bottom: 4px;
+}
+
+.weekly-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.weekly-banner-text p { margin: 0; font-size: var(--text-body); color: var(--label); }
+
+.weekly-banner-when {
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.weekly-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ---------- phone ---------- */
+
+@media (max-width: 760px) {
+  .weekly { padding: 8px 16px 96px; }
+  .weekly-number { grid-template-columns: 110px 1fr; }
+  .weekly-cleanup-row { flex-wrap: wrap; }
+  .weekly-cleanup-actions { width: 100%; justify-content: flex-end; }
+}

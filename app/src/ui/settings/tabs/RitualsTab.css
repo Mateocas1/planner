@@ -1,0 +1,86 @@
+/* The Rituals tab's moment rows (S3): the settings card's own grammar, with
+   one block per moment — when it opens, and the steps it runs. */
+
+.rituals-moments {
+  display: flex;
+  flex-direction: column;
+}
+
+.rituals-moment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.rituals-moment + .rituals-moment {
+  border-top: 0.5px solid var(--separator);
+}
+
+.rituals-moment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rituals-moment-label {
+  font-size: var(--text-body);
+  color: var(--label);
+}
+
+.rituals-moment-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rituals-day {
+  width: auto;
+  min-width: 116px;
+}
+
+/* The step chips: one press toggles the step in or out of the moment's run.
+   Pressed state is the accent wash, told three ways (fill, aria-pressed, and
+   the label's weight). */
+.rituals-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rituals-step-chip {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--r-control);
+  border: 0.5px solid var(--separator);
+  background: var(--surface-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--label-2);
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+.rituals-step-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rituals-step-chip:hover { color: var(--label); }
+  .rituals-step-chip[aria-pressed="true"]:hover { color: var(--accent); }
+}
+
+.rituals-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.rituals-foot .inline-error {
+  margin: 0;
+}

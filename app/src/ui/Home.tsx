@@ -15,8 +15,10 @@ import { nextOccurrence } from "./Tasks.tsx";
 import { TaskDetails } from "./TaskDetails.tsx";
 import { MorningBrief } from "./MorningBrief.tsx";
 import { PlanMyDay } from "./PlanMyDay.tsx";
+import { WeeklyBanner } from "./weekly/WeeklyBanner.tsx";
 import { blockTomorrow, rovingTabIndex, tomorrowKey } from "./shortcuts.ts";
 import { bannerVisible } from "./shutdownRitual.ts";
+import type { DueMoment } from "../planning/weekly.ts";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wallMinutes } from "./time.ts";
 import type { UndoableDelete } from "./UndoToast.tsx";
 import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
@@ -80,6 +82,15 @@ type HomeProps = {
   onOpenNow: () => void;
   /** Opens the shutdown ritual, from the banner or from a turned page (F3c). */
   onCloseDay: (origin: HTMLElement | null) => void;
+  /** The weekly review's due moment (S3), or null when nothing proposes
+   *  itself; the banner is the one quiet surface every device gets. */
+  weeklyDue: DueMoment | null;
+  /** The banner's moves: open the flow, hold for two hours, skip the week,
+   *  and deep-link the Rituals tab where the moments are configured. */
+  onOpenWeeklyReview: () => void;
+  onWeeklyLater: () => void;
+  onWeeklySkip: () => void;
+  onOpenSettings: () => void;
   /** Carries the day to tomorrow when the page is turned (F3). Defaults to
    *  opening the ritual: the page turn is the ritual's own first page. */
   onTurnDay?: () => boolean | void | Promise<boolean | void>;
@@ -97,9 +108,14 @@ function TodayPage({
   workWindow,
   shutdownTime,
   lastShutdown,
+  weeklyDue,
   onOpenCalendar,
   onOpenNow,
   onCloseDay,
+  onOpenWeeklyReview,
+  onWeeklyLater,
+  onWeeklySkip,
+  onOpenSettings,
   onTurnDay,
   onOfferUndo,
 }: HomeProps & { timeZone: string }) {
@@ -237,6 +253,19 @@ function TodayPage({
           )}
         </section>
       )}
+
+      {/* The weekly review's quiet banner (S3): while a moment is due, one
+          sentence and its three moves, on the web as on the desktop. */}
+      <AnimatePresence>{weeklyDue !== null && (
+        <WeeklyBanner
+          key="weekly-banner"
+          due={weeklyDue}
+          onOpen={onOpenWeeklyReview}
+          onLater={onWeeklyLater}
+          onSkip={onWeeklySkip}
+          onOpenSettings={onOpenSettings}
+        />
+      )}</AnimatePresence>
 
       {empty ? (
         <div className="empty-state" role="status">
