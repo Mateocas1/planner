@@ -72,8 +72,9 @@ pub enum StreamEvent {
     /// A non-empty piece of the answer text.
     Delta(String),
     /// One tool call became complete: its id, function name and the arguments
-    /// accumulated so far. Emitted when a later call index starts, or when
-    /// the stream ends — never mid-call.
+    /// accumulated so far. Calls are only emitted when the stream ends — at
+    /// `data: [DONE]`, or via [`StreamDecoder::flush_tool_calls`] at EOF —
+    /// never mid-call, because fragments may interleave.
     ToolCall(ToolCallPayload),
     /// The stream ended (`data: [DONE]`).
     Done,
@@ -889,6 +890,18 @@ mod tests {
                 arguments: "{}".into(),
             })]
         );
+    }
+
+    #[test]
+    fn eof_flush_surfaces_a_nameless_call_as_malformed() {
+        // A nameless call must never be dropped silently at EOF: the flush
+        // reports it exactly like [DONE] does, and the caller fails the
+        // stream instead of sending Done.
+        let mut decoder = StreamDecoder::new().with_request_id("r1");
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":0,"id":"call_x","function":{"arguments":"{}"}}"#))
+            .is_empty());
+        assert_eq!(decoder.flush_tool_calls(), vec![StreamEvent::Malformed]);
     }
 
     #[test]

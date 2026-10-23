@@ -486,9 +486,23 @@ fn stream_response(response: ureq::Response, request_id: &str, cancel: &AtomicBo
     } else {
         // A stream that ended at EOF without `[DONE]` may still hold pending
         // tool calls; flush them before the terminal event, in index order.
+        // A nameless call the flush reports as `Malformed` fails the stream
+        // exactly like a malformed line — it is never dropped silently.
         for event in decoder.flush_tool_calls() {
-            if let StreamEvent::ToolCall(call) = event {
-                let _ = on_event.send(ChatEvent::ToolCall { call });
+            match event {
+                StreamEvent::ToolCall(call) => {
+                    if on_event.send(ChatEvent::ToolCall { call }).is_err() {
+                        return; // the webview is gone; stop the work
+                    }
+                }
+                StreamEvent::Malformed => {
+                    let _ = on_event.send(ChatEvent::Error {
+                        code: ChatErrorCode::Provider,
+                        message: "the provider sent a malformed reply stream".into(),
+                    });
+                    return;
+                }
+                _ => {}
             }
         }
         let _ = on_event.send(ChatEvent::Done);
