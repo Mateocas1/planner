@@ -41,8 +41,28 @@ pub const DEFAULT_ENGRAM_PROJECT: &str = "calendar-assistant";
 /// The one session the mirror owns inside the Engram project. Engram
 /// validates `session_id` → `project` ownership on every observation write,
 /// so the mirror registers this session once per process (idempotent) and
-/// names it on every upsert.
+/// names it on every upsert. Deletes and stale-cleanup additionally require
+/// a candidate row to carry this session: the project may hold observations
+/// from other writers, and the mirror only ever touches its own.
 pub const ENGRAM_SESSION_ID: &str = "calendar-app-mirror";
+
+/// Every topic key the mirror writes to Engram is prefixed with this
+/// namespace, so the project's rows from other writers (no prefix) and from
+/// other sessions (foreign `session_id`) can never be matched by the
+/// mirror's deletes or stale cleanup. The prefix is stripped before
+/// comparing with the local store's unprefixed topic keys.
+pub const MIRROR_TOPIC_PREFIX: &str = "calendar-app/";
+
+/// The Engram topic key for one local memory topic key.
+pub fn mirror_topic_key(topic_key: &str) -> String {
+    format!("{MIRROR_TOPIC_PREFIX}{topic_key}")
+}
+
+/// The local topic key behind an Engram topic key, when it carries the
+/// mirror's namespace prefix.
+pub fn strip_mirror_prefix(topic_key: &str) -> Option<&str> {
+    topic_key.strip_prefix(MIRROR_TOPIC_PREFIX)
+}
 
 /// Longest accepted Engram project name, in characters.
 pub const MAX_ENGRAM_PROJECT_CHARS: usize = 120;
@@ -195,9 +215,10 @@ pub fn session_body(settings: &EngramSettings) -> String {
 }
 
 /// The `POST /observations` body for one memory upsert. The memory's
-/// `topicKey` rides as `topic_key`, so the same topic updates the same
-/// observation (never a duplicate); `capture_prompt: false` keeps Engram
-/// from recording anything besides the memory itself.
+/// `topicKey` rides as a namespace-prefixed `topic_key` (same topic →
+/// update, never a duplicate, and no foreign row can ever match);
+/// `capture_prompt: false` keeps Engram from recording anything besides
+/// the memory itself.
 pub fn upsert_body(settings: &EngramSettings, memory: &Memory) -> String {
     serde_json::json!({
         "session_id": ENGRAM_SESSION_ID,
@@ -206,7 +227,7 @@ pub fn upsert_body(settings: &EngramSettings, memory: &Memory) -> String {
         "type": ENGRAM_MEMORY_TYPE,
         "title": memory.title,
         "content": memory.content,
-        "topic_key": memory.topic_key,
+        "topic_key": mirror_topic_key(&memory.topic_key),
         "capture_prompt": false,
     })
     .to_string()
@@ -327,27 +348,54 @@ fn post_observation(
         .ok_or_else(|| "Engram's upsert reply had no observation id.".to_string())
 }
 
-/// Finds the remote observation id carrying this topic key in one
-/// `GET /observations/recent` reply body. Unknown or malformed bodies are
-/// `Ok(None)` — the caller must treat "cannot see it" as "leave it alone",
-/// never as permission to skip the delete silently... it returns `Ok(None)`
-/// and [`mirror_delete`] reports `false` so callers can log the doubt.
-pub fn remote_topic_id(recent_json: &str, topic_key: &str) -> Option<i64> {
-    let observations = serde_json::from_str::<serde_json::Value>(recent_json).ok()?;
-    let observations = observations.as_array()?;
-    observations
-        .iter()
-        .find(|observation| {
-            observation.get("topic_key").and_then(|key| key.as_str()) == Some(topic_key)
-        })
-        .and_then(|observation| observation.get("id").and_then(|id| id.as_i64()))
+/// One parsed remote observation row (only the fields the mirror uses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteObservation {
+    pub id: i64,
+    pub topic_key: Option<String>,
+    pub session_id: Option<String>,
 }
 
-/// Mirrors one memory delete by topic key: finds the remote row through the
-/// recent-observations list, then deletes it. A `404` (already gone) is
-/// success — idempotent. `Ok(false)` means nothing was found to delete (the
-/// mirror never wrote it, or it was already removed); the local delete still
-/// stands either way.
+/// Parses a `GET /observations/recent` reply body. Malformed bodies and
+/// rows yield nothing (the caller must treat "cannot see it" as "leave it
+/// alone", never as permission to delete).
+pub fn parse_observations(recent_json: &str) -> Vec<RemoteObservation> {
+    serde_json::from_str::<serde_json::Value>(recent_json)
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|observation| {
+            Some(RemoteObservation {
+                id: observation.get("id")?.as_i64()?,
+                topic_key: observation
+                    .get("topic_key")
+                    .and_then(|key| key.as_str())
+                    .map(str::to_string),
+                session_id: observation
+                    .get("session_id")
+                    .and_then(|session| session.as_str())
+                    .map(str::to_string),
+            })
+        })
+        .collect()
+}
+
+/// Whether a remote row was written by this mirror: it must carry the
+/// mirror's own session id. Engram's recent list exposes `session_id`
+/// (verified live against v3.4.1); a row without one, or with a foreign
+/// one, is never touched.
+fn own_session(row: &RemoteObservation) -> bool {
+    row.session_id.as_deref() == Some(ENGRAM_SESSION_ID)
+}
+
+/// Mirrors one memory delete by topic key: finds the remote row through
+/// the recent-observations list, then deletes it. Only a row with the
+/// mirror's namespace prefix **and** the mirror's own session id matches —
+/// foreign observations in the same project are never touched. A `404`
+/// (already gone) is success — idempotent. `Ok(false)` means nothing was
+/// found to delete (the mirror never wrote it, or it was already removed);
+/// the local delete still stands either way.
 pub fn mirror_delete(
     transport: &impl EngramTransport,
     settings: &EngramSettings,
@@ -372,7 +420,12 @@ pub fn mirror_delete(
             recent.status
         ));
     }
-    let Some(id) = remote_topic_id(&recent.body, topic_key) else {
+    let mirror_key = mirror_topic_key(topic_key);
+    let Some(id) = parse_observations(&recent.body)
+        .into_iter()
+        .find(|row| own_session(row) && row.topic_key.as_deref() == Some(mirror_key.as_str()))
+        .map(|row| row.id)
+    else {
         return Ok(false);
     };
     let response = transport
@@ -450,20 +503,20 @@ pub fn sync_all(
         local_topics.push(memory.topic_key.as_str());
         report.upserted += 1;
     }
-    let remote = serde_json::from_str::<serde_json::Value>(&recent.body)
-        .ok()
-        .and_then(|value| value.as_array().cloned())
-        .unwrap_or_default();
-    for observation in remote {
-        let Some(topic) = observation.get("topic_key").and_then(|key| key.as_str()) else {
-            continue;
-        };
-        if local_topics.contains(&topic) {
+    // Only mirrored rows (namespace prefix + the mirror's own session) are
+    // stale-delete candidates: observations another writer put into this
+    // project never match, whatever their topic key says.
+    for row in parse_observations(&recent.body) {
+        if !own_session(&row) {
             continue;
         }
-        let Some(id) = observation.get("id").and_then(|id| id.as_i64()) else {
+        let Some(local_topic) = row.topic_key.as_deref().and_then(strip_mirror_prefix) else {
             continue;
         };
+        if local_topics.contains(&local_topic) {
+            continue;
+        }
+        let id = row.id;
         let response = transport
             .call(EngramRequest {
                 method: "DELETE",
@@ -653,7 +706,7 @@ mod tests {
                 "type": "note",
                 "title": "Title",
                 "content": "Content",
-                "topic_key": "style/short",
+                "topic_key": "calendar-app/style/short",
                 "capture_prompt": false,
             })
         );
@@ -681,20 +734,36 @@ mod tests {
     // --- remote lookup ---
 
     #[test]
-    fn remote_topic_id_finds_the_matching_observation() {
+    fn parse_observations_reads_the_fields_the_mirror_uses() {
         let recent = r#"[
-            {"id": 7, "topic_key": "other/topic", "title": "x"},
-            {"id": 4157, "topic_key": "style/short", "title": "y"}
+            {"id": 7, "topic_key": "other/topic", "session_id": "someone-else"},
+            {"id": 4157, "topic_key": "calendar-app/style/short", "session_id": "calendar-app-mirror"},
+            {"id": 9},
+            "garbage"
         ]"#;
-        assert_eq!(remote_topic_id(recent, "style/short"), Some(4157));
-        assert_eq!(remote_topic_id(recent, "nope"), None);
+        let rows = parse_observations(recent);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].id, 7);
+        assert_eq!(rows[0].topic_key.as_deref(), Some("other/topic"));
+        assert_eq!(rows[1].id, 4157);
+        // A row with an id but no topic_key/session fields still parses
+        // (with `None`s); a non-object row is dropped.
+        assert_eq!(rows[2].id, 9);
+        assert_eq!(rows[2].topic_key, None);
+        assert_eq!(rows[2].session_id, None);
+        // Malformed bodies yield nothing ("cannot see it" → leave it alone).
+        assert!(parse_observations("not json").is_empty());
+        assert!(parse_observations("{}").is_empty());
+        assert!(parse_observations("[]").is_empty());
     }
 
     #[test]
-    fn remote_topic_id_treats_malformed_bodies_as_not_found() {
-        assert_eq!(remote_topic_id("not json", "t"), None);
-        assert_eq!(remote_topic_id("{}", "t"), None);
-        assert_eq!(remote_topic_id("[]", "t"), None);
+    fn mirror_topic_keys_are_namespaced() {
+        assert_eq!(mirror_topic_key("style/short"), "calendar-app/style/short");
+        assert_eq!(strip_mirror_prefix("calendar-app/style/short"), Some("style/short"));
+        // Foreign keys (no prefix, or a prefix-like name) never strip.
+        assert_eq!(strip_mirror_prefix("style/short"), None);
+        assert_eq!(strip_mirror_prefix("calendar-appish/foo"), None);
     }
 
     // --- client over a fake transport ---
@@ -767,7 +836,7 @@ mod tests {
         assert_eq!(requests[1].url, "http://127.0.0.1:7437/observations");
         let body: serde_json::Value =
             serde_json::from_str(requests[1].json_body.as_deref().unwrap()).unwrap();
-        assert_eq!(body["topic_key"], "t");
+        assert_eq!(body["topic_key"], "calendar-app/t");
         assert_eq!(body["capture_prompt"], false);
     }
 
@@ -786,7 +855,10 @@ mod tests {
     #[test]
     fn mirror_delete_looks_the_topic_up_then_deletes_by_id() {
         let fake = Fake::new(vec![
-            Fake::ok(200, r#"[{"id":4157,"topic_key":"t"}]"#),
+            Fake::ok(
+                200,
+                r#"[{"id":4157,"topic_key":"calendar-app/t","session_id":"calendar-app-mirror"}]"#,
+            ),
             Fake::ok(200, r#"{"status":"deleted"}"#),
         ]);
         assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(true));
@@ -803,6 +875,22 @@ mod tests {
     }
 
     #[test]
+    fn mirror_delete_never_touches_a_foreign_row() {
+        // Same project, but neither the namespace prefix nor the mirror's
+        // session: both must survive a delete for a colliding local topic.
+        let fake = Fake::new(vec![Fake::ok(
+            200,
+            r#"[
+                {"id":1,"topic_key":"t","session_id":"calendar-app-mirror"},
+                {"id":2,"topic_key":"calendar-app/t","session_id":"someone-else"},
+                {"id":3,"topic_key":"calendar-app/t"}
+            ]"#,
+        )]);
+        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(false));
+        assert_eq!(fake.requests().len(), 1, "no delete call without an own row");
+    }
+
+    #[test]
     fn mirror_delete_is_idempotent_for_an_unknown_topic() {
         let fake = Fake::new(vec![Fake::ok(200, "[]")]);
         assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(false));
@@ -811,13 +899,14 @@ mod tests {
 
     #[test]
     fn mirror_delete_treats_a_404_as_success_and_a_409_as_failure() {
+        let own_row = r#"[{"id":1,"topic_key":"calendar-app/t","session_id":"calendar-app-mirror"}]"#;
         let fake = Fake::new(vec![
-            Fake::ok(200, r#"[{"id":1,"topic_key":"t"}]"#),
+            Fake::ok(200, own_row),
             Fake::ok(404, r#"{"error":"not found"}"#),
         ]);
         assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(true));
         let fake = Fake::new(vec![
-            Fake::ok(200, r#"[{"id":1,"topic_key":"t"}]"#),
+            Fake::ok(200, own_row),
             Fake::ok(409, r#"{"error":"mismatch"}"#),
         ]);
         assert!(mirror_delete(&fake, &settings(), "t").is_err());
@@ -828,7 +917,13 @@ mod tests {
         let memories = vec![memory("keep/1"), memory("keep/2")];
         let fake = Fake::new(vec![
             Fake::ok(201, r#"{"id":"s"}"#),                       // session
-            Fake::ok(200, r#"[{"id":10,"topic_key":"stale"},{"id":11,"topic_key":"keep/1"}]"#), // recent
+            Fake::ok(
+                200,
+                r#"[
+                    {"id":10,"topic_key":"calendar-app/stale","session_id":"calendar-app-mirror"},
+                    {"id":11,"topic_key":"calendar-app/keep/1","session_id":"calendar-app-mirror"}
+                ]"#,
+            ),                                                    // recent
             Fake::ok(201, r#"{"id":100}"#),                       // upsert keep/1
             Fake::ok(201, r#"{"id":101}"#),                       // upsert keep/2
             Fake::ok(200, r#"{"status":"deleted"}"#),             // delete stale 10
@@ -838,8 +933,30 @@ mod tests {
         let requests = fake.requests();
         assert_eq!(requests.len(), 5);
         // `keep/1` was upserted, not deleted, despite existing remotely.
-        assert!(requests[2].json_body.as_deref().unwrap().contains("keep/1"));
+        assert!(requests[2].json_body.as_deref().unwrap().contains("calendar-app/keep/1"));
         assert_eq!(requests[4].url, "http://127.0.0.1:7437/observations/10?expected_project=proj");
+    }
+
+    #[test]
+    fn sync_all_never_touches_foreign_observations() {
+        // Rows in the same project without the mirror's namespace prefix, or
+        // with a foreign session id (or no session id at all) survive sync,
+        // even when their topic key would collide with a stale mirror topic.
+        let fake = Fake::new(vec![
+            Fake::ok(201, r#"{"id":"s"}"#),
+            Fake::ok(
+                200,
+                r#"[
+                    {"id":1,"topic_key":"stale","session_id":"calendar-app-mirror"},
+                    {"id":2,"topic_key":"calendar-app/stale","session_id":"someone-else"},
+                    {"id":3,"topic_key":"calendar-app/stale"},
+                    {"id":4,"topic_key":"unrelated/foreign","session_id":"someone-else"}
+                ]"#,
+            ),
+        ]);
+        let report = sync_all(&fake, &settings(), &[]).unwrap();
+        assert_eq!(report, SyncReport { upserted: 0, deleted: 0 });
+        assert_eq!(fake.requests().len(), 2, "only session + lookup, no deletes");
     }
 
     #[test]
@@ -850,7 +967,7 @@ mod tests {
         let memories = vec![memory("keep/1")];
         let fake = Fake::new(vec![
             Fake::ok(201, r#"{"id":"s"}"#),
-            Fake::ok(200, r#"[{"id":11,"topic_key":"keep/1"}]"#),
+            Fake::ok(200, r#"[{"id":11,"topic_key":"calendar-app/keep/1","session_id":"calendar-app-mirror"}]"#),
             Fake::ok(201, r#"{"id":11}"#),
         ]);
         let report = sync_all(&fake, &settings(), &memories).unwrap();
@@ -865,7 +982,7 @@ mod tests {
         assert!(sync_all(&fake, &settings(), &memories).is_err());
         let fake = Fake::new(vec![
             Fake::ok(201, r#"{}"#),
-            Fake::ok(200, r#"[{"id":5,"topic_key":"stale"}]"#),
+            Fake::ok(200, r#"[{"id":5,"topic_key":"calendar-app/stale","session_id":"calendar-app-mirror"}]"#),
             Fake::ok(201, r#"{"id":6}"#),
             Fake::ok(409, r#"{"error":"mismatch"}"#),
         ]);
@@ -876,7 +993,13 @@ mod tests {
     fn sync_all_with_no_memories_only_deletes_everything_remote() {
         let fake = Fake::new(vec![
             Fake::ok(201, r#"{}"#),
-            Fake::ok(200, r#"[{"id":1,"topic_key":"a"},{"id":2,"topic_key":"b"}]"#),
+            Fake::ok(
+                200,
+                r#"[
+                    {"id":1,"topic_key":"calendar-app/a","session_id":"calendar-app-mirror"},
+                    {"id":2,"topic_key":"calendar-app/b","session_id":"calendar-app-mirror"}
+                ]"#,
+            ),
             Fake::ok(200, r#"{}"#),
             Fake::ok(200, r#"{}"#),
         ]);
