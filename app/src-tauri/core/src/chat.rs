@@ -903,3 +903,115 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Bounded SSE line reading
+
+/// Why a line could not be read.
+#[derive(Debug)]
+pub enum LineError {
+    /// A read error; timeouts surface here too and are retryable, because the
+    /// partial line stays in the caller's buffer.
+    Io(std::io::Error),
+    /// The line grew past the cap: the provider is not speaking SSE. Fails
+    /// the stream instead of buffering unboundedly.
+    Overlong,
+}
+
+/// Reads one `\n`-terminated line (without the terminator) into a String.
+/// `buf` holds the bytes of an unfinished line across calls, so a read
+/// timeout mid-line loses nothing: call again with the same `buf`. Returns
+/// `Ok(None)` at EOF once nothing is pending.
+pub fn read_limited_line(
+    reader: &mut impl std::io::BufRead,
+    buf: &mut Vec<u8>,
+    max: usize,
+) -> Result<Option<String>, LineError> {
+    loop {
+        let available = reader.fill_buf().map_err(LineError::Io)?;
+        if available.is_empty() {
+            break; // EOF
+        }
+        match available.iter().position(|&byte| byte == b'\n') {
+            Some(pos) => {
+                buf.extend_from_slice(&available[..pos]);
+                reader.consume(pos + 1);
+                let line = String::from_utf8_lossy(buf).into_owned();
+                buf.clear();
+                return Ok(Some(line));
+            }
+            None => {
+                buf.extend_from_slice(available);
+                let len = available.len();
+                reader.consume(len);
+                if buf.len() > max {
+                    return Err(LineError::Overlong);
+                }
+            }
+        }
+    }
+    if buf.is_empty() {
+        Ok(None)
+    } else {
+        let line = String::from_utf8_lossy(buf).into_owned();
+        buf.clear();
+        Ok(Some(line))
+    }
+}
+
+#[cfg(test)]
+mod line_reader_tests {
+    use super::{read_limited_line, LineError};
+    use std::collections::VecDeque;
+    use std::io::{self, BufRead, BufReader, Read};
+
+    /// A reader that replays scripted chunks and timeouts.
+    struct Script(VecDeque<io::Result<&'static [u8]>>);
+
+    impl Read for Script {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            match self.0.pop_front() {
+                None => Ok(0),
+                Some(Err(error)) => Err(error),
+                Some(Ok(bytes)) => {
+                    out[..bytes.len()].copy_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+            }
+        }
+    }
+
+    fn timeout() -> io::Result<&'static [u8]> {
+        Err(io::Error::new(io::ErrorKind::TimedOut, "tick"))
+    }
+
+    fn reader(steps: Vec<io::Result<&'static [u8]>>) -> impl BufRead {
+        BufReader::new(Script(steps.into()))
+    }
+
+    #[test]
+    fn a_timeout_mid_line_keeps_the_partial_bytes() {
+        let mut r = reader(vec![Ok(b"data: {\"a\""), timeout(), Ok(b":1}\nnext\n")]);
+        let mut buf = Vec::new();
+        assert!(matches!(read_limited_line(&mut r, &mut buf, 1024), Err(LineError::Io(_))));
+        let line = read_limited_line(&mut r, &mut buf, 1024).unwrap();
+        assert_eq!(line.as_deref(), Some("data: {\"a\":1}"));
+        assert_eq!(read_limited_line(&mut r, &mut buf, 1024).unwrap().as_deref(), Some("next"));
+        assert_eq!(read_limited_line(&mut r, &mut buf, 1024).unwrap(), None);
+    }
+
+    #[test]
+    fn an_overlong_line_fails_instead_of_buffering() {
+        let mut r = reader(vec![Ok(b"0123456789"), Ok(b"0123456789")]);
+        let mut buf = Vec::new();
+        assert!(matches!(read_limited_line(&mut r, &mut buf, 15), Err(LineError::Overlong)));
+    }
+
+    #[test]
+    fn a_final_line_without_newline_is_returned_at_eof() {
+        let mut r = reader(vec![Ok(b"data: [DONE]")]);
+        let mut buf = Vec::new();
+        assert_eq!(read_limited_line(&mut r, &mut buf, 64).unwrap().as_deref(), Some("data: [DONE]"));
+        assert_eq!(read_limited_line(&mut r, &mut buf, 64).unwrap(), None);
+    }
+}

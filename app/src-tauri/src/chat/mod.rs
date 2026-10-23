@@ -18,7 +18,6 @@ pub mod memory_store;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::io::BufRead;
 use std::io::BufReader;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -32,6 +31,7 @@ use std::time::Instant;
 use planner_core::chat::chat_completions_url;
 use planner_core::chat::error_code_for_status;
 use planner_core::chat::validate_base_url;
+use planner_core::chat::{read_limited_line, LineError};
 use planner_core::chat::validate_key;
 use planner_core::chat::ChatErrorCode;
 use planner_core::chat::ChatEvent;
@@ -385,48 +385,6 @@ fn run_stream(
     }
 }
 
-/// Why reading one SSE line failed.
-enum LineError {
-    /// Any read error that is not a timeout (connection reset, TLS error).
-    Io(io::Error),
-    /// The line grew past [`MAX_SSE_LINE_BYTES`]: the provider is not
-    /// speaking SSE. Fails the stream instead of buffering unboundedly.
-    Overlong,
-}
-
-/// Reads one SSE body line, bounded: at most [`MAX_SSE_LINE_BYTES`] bytes
-/// are buffered, so a hostile or broken provider cannot grow memory
-/// forever. Returns `Ok(None)` at a clean EOF.
-fn read_limited_line(reader: &mut impl BufRead, max: usize) -> Result<Option<String>, LineError> {
-    let mut buf: Vec<u8> = Vec::new();
-    loop {
-        let available = reader.fill_buf().map_err(LineError::Io)?;
-        if available.is_empty() {
-            break; // EOF
-        }
-        match available.iter().position(|&byte| byte == b'\n') {
-            Some(pos) => {
-                buf.extend_from_slice(&available[..pos]);
-                reader.consume(pos + 1);
-                return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
-            }
-            None => {
-                buf.extend_from_slice(available);
-                let len = available.len();
-                reader.consume(len);
-                if buf.len() > max {
-                    return Err(LineError::Overlong);
-                }
-            }
-        }
-    }
-    if buf.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
-    }
-}
-
 /// Whether this read error is a timeout (the provider sent nothing for
 /// [`READ_TIMEOUT`]) rather than a real failure. ureq normalizes socket
 /// read timeouts to `TimedOut`; the loop below keeps waiting until
@@ -447,13 +405,15 @@ fn is_timeout(error: &io::Error) -> bool {
 fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Channel<ChatEvent>) {
     let mut reader = BufReader::new(response.into_reader());
     let mut decoder = StreamDecoder::new();
+    // The unfinished line survives stall ticks (read timeouts).
+    let mut pending = Vec::new();
     let mut last_data = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
             let _ = on_event.send(ChatEvent::Cancelled);
             return;
         }
-        let line = match read_limited_line(&mut reader, MAX_SSE_LINE_BYTES) {
+        let line = match read_limited_line(&mut reader, &mut pending, MAX_SSE_LINE_BYTES) {
             Ok(Some(line)) => {
                 last_data = Instant::now();
                 line
