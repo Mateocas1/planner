@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { flushSync } from "react-dom";
 import { onSnapshot } from "firebase/firestore";
 import type { View } from "../App.tsx";
+import { isTauri } from "../desktop.ts";
 import { parseShortcutsEnabled, profileDocument } from "../data/profile.ts";
 import { addSeries } from "../data/series.ts";
 import type { TaskView } from "../data/store.ts";
@@ -10,9 +11,11 @@ import { parseQuickAdd, type QuickAdd } from "../domain/quickAdd.ts";
 import { PlayIcon } from "./FocusWidget.tsx";
 import { CalendarIcon, PlusIcon, CloseIcon, SearchIcon, TasksIcon } from "./icons.tsx";
 import { useMediaQuery } from "./motion.ts";
-import { buildCommands, focusCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
+import { buildCommands, focusCommands, settingsCommands, type PaletteCommand, type PaletteDestination } from "./palette.ts";
 import { quickAddPartLabel } from "./QuickAddChips.tsx";
 import { publishShortcut, type SurfaceAction } from "./shortcuts.ts";
+import { SettingsIcon } from "./Settings.tsx";
+import type { SettingsTab } from "./settings/tabs.ts";
 import { ThemeIcon, views } from "./Sidebar.tsx";
 import { setThemePreference } from "./theme.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
@@ -53,6 +56,7 @@ export function CommandPalette({
   onImport,
   onOpenNow,
   onCloseDay,
+  onOpenSettings,
 }: {
   uid: string;
   /** The profile zone: the create row's date preview is a planner day. */
@@ -70,6 +74,8 @@ export function CommandPalette({
   onOpenNow: () => void;
   /** Runs the "Close the day" command (the ritual is the shell's, F3c). */
   onCloseDay: () => void;
+  /** Opens the Settings view, optionally on a tab (Ronda 2, S1). */
+  onOpenSettings: (tab?: SettingsTab) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +86,7 @@ export function CommandPalette({
   // The keyboard setting is read here rather than passed in: the palette is
   // open over one profile document, and the shell's App.tsx is not its owner.
   const [shortcutsOn, setShortcutsOn] = useState(false);
+  const desktop = isTauri();
   // Whether a task row held focus when the palette opened: the task actions act
   // on that row, so they are offered only then.
   const [taskFocused, setTaskFocused] = useState(false);
@@ -100,9 +107,9 @@ export function CommandPalette({
         tasks,
         destinations,
         focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
-        { shortcuts: hints, focusedTask: taskFocused },
+        { shortcuts: hints, focusedTask: taskFocused, settingsCommands: settingsCommands(desktop) },
       ),
-    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused],
+    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused, desktop],
   );
   // The same parser the New task sheet uses, so one line creates the same task
   // from either place. The clock is read per keystroke: "tomorrow" follows the
@@ -170,6 +177,11 @@ export function CommandPalette({
       if (command.action === "now-mode") onOpenNow();
       else if (command.action === "close-day") onCloseDay();
       else onImport();
+      onClose();
+      return;
+    }
+    if (command.kind === "settings") {
+      onOpenSettings(command.tab);
       onClose();
       return;
     }
@@ -356,6 +368,7 @@ function commandIcon(command: PaletteCommand) {
     return command.action === "complete-task" ? <TasksIcon /> : <CalendarIcon />;
   }
   if (command.kind === "focus") return <PlayIcon />;
+  if (command.kind === "settings") return <SettingsIcon />;
   const Icon = views.find(entry => entry.id === command.view)?.Icon ?? TasksIcon;
   return <Icon />;
 }

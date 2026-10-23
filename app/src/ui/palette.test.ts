@@ -74,7 +74,7 @@ test("the palette offers the shutdown ritual for a query that names it, and nowh
    actions with their key hints, and the hint is the key the router really
    answers with. */
 
-const focusedTask = { shortcuts: true, focusedTask: true };
+const focusedTask: PaletteContext = { shortcuts: true, focusedTask: true, settingsCommands: [] };
 
 /** The action rows of a query as [id, hint] pairs, so the assertions read the
  * hint without narrowing every command by hand. */

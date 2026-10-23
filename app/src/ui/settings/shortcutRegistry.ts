@@ -360,7 +360,7 @@ export function setBinding(
   accelerator: Accelerator | null,
 ): Conflict | null {
   if (accelerator === null) {
-    const next = readStored();
+    const next = readStored() as Record<string, string>;
     delete next[id];
     writeStored(next);
     return null;
@@ -373,10 +373,10 @@ export function setBinding(
   };
   const conflict = findConflict(accelerator, { bindings, setting: id, desktop: false });
   if (conflict !== null) return conflict;
-  const next = { ...current };
+  const next = { ...current } as Record<string, string | undefined>;
   if (accelerator === rebindableShortcut(id).defaultAccelerator) delete next[id];
   else next[id] = accelerator;
-  writeStored(next);
+  writeStored(next as StoredBindings);
   return null;
 }
 

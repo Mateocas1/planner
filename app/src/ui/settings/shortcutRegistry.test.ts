@@ -15,10 +15,14 @@ import {
   rebindableShortcuts,
   sameCombo,
   setBinding,
+  type Accelerator,
+  type RebindableShortcutId,
 } from "./shortcutRegistry.ts";
 
 /** The defaults every conflict test starts from. */
-const defaults = Object.fromEntries(rebindableShortcuts.map(shortcut => [shortcut.id, shortcut.defaultAccelerator]));
+const defaults: Record<RebindableShortcutId, Accelerator> = Object.fromEntries(
+  rebindableShortcuts.map(shortcut => [shortcut.id, shortcut.defaultAccelerator]),
+) as Record<RebindableShortcutId, Accelerator>;
 
 const press = (code: string, mods: Partial<{ ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }> = {}) =>
   captureFromEvent({ code, ctrlKey: mods.ctrl ?? false, altKey: mods.alt ?? false, shiftKey: mods.shift ?? false, metaKey: mods.meta ?? false });
