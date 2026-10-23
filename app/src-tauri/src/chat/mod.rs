@@ -30,9 +30,11 @@ use std::time::Instant;
 
 use planner_core::chat::chat_completions_url;
 use planner_core::chat::error_code_for_status;
+use planner_core::chat::provider_body;
 use planner_core::chat::validate_base_url;
-use planner_core::chat::{read_limited_line, LineError};
 use planner_core::chat::validate_key;
+use planner_core::chat::WireMessage;
+use planner_core::chat::{read_limited_line, LineError};
 use planner_core::chat::ChatErrorCode;
 use planner_core::chat::ChatEvent;
 use planner_core::chat::KeyProblem;
@@ -40,6 +42,7 @@ use planner_core::chat::MAX_KEY_CHARS;
 use planner_core::chat::MAX_SSE_LINE_BYTES;
 use planner_core::chat::StreamDecoder;
 use planner_core::chat::StreamEvent;
+use planner_core::chat::ToolCallPayload;
 use serde::Deserialize;
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -73,12 +76,11 @@ const PROVIDER_FILE_NAME: &str = "chat-provider.json";
 // ---------------------------------------------------------------------------
 // IPC shapes (mirrors of `app/src/chat/types.ts`)
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-}
+/// One turn of the conversation over IPC. The IPC is camelCase; the provider
+/// wire shape (snake_case `tool_calls`, `content: null` on tool-call-only
+/// assistant turns) is built in the pure core ([`provider_body`]), where it
+/// is unit-tested on Linux.
+use planner_core::chat::WireMessage as ChatMessage;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +88,10 @@ pub struct ChatRequest {
     pub id: String,
     pub model: String,
     pub messages: Vec<ChatMessage>,
+    /// Function-tool definitions in the OpenAI wire shape, forwarded verbatim
+    /// when present. Absent for memory-extraction completions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 /// The rejection of a command call (`chat_complete` or the local checks of
@@ -358,11 +364,7 @@ fn run_stream(
             return;
         }
     };
-    let body = serde_json::json!({
-        "model": request.model,
-        "messages": request.messages,
-        "stream": true,
-    });
+    let body = provider_body(&request.model, &request.messages, request.tools.as_ref(), true);
     let url = chat_completions_url(&base_url);
     match http_agent()
         .post(&url)
@@ -465,6 +467,11 @@ fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Cha
                         return;
                     }
                 }
+                StreamEvent::ToolCall(call) => {
+                    if on_event.send(ChatEvent::ToolCall { call }).is_err() {
+                        return;
+                    }
+                }
             }
         }
         if decoder.is_done() {
@@ -475,6 +482,13 @@ fn stream_response(response: ureq::Response, cancel: &AtomicBool, on_event: &Cha
     if cancel.load(Ordering::Relaxed) {
         let _ = on_event.send(ChatEvent::Cancelled);
     } else {
+        // A stream that ended at EOF without `[DONE]` may still hold pending
+        // tool calls; flush them before the terminal event, in index order.
+        for event in decoder.flush_tool_calls() {
+            if let StreamEvent::ToolCall(call) = event {
+                let _ = on_event.send(ChatEvent::ToolCall { call });
+            }
+        }
         let _ = on_event.send(ChatEvent::Done);
     }
 }
@@ -530,11 +544,7 @@ fn run_complete(request: ChatRequest, base_url: String) -> Result<String, IpcErr
         .ok_or_else(|| {
             IpcError::new(ChatErrorCode::NoKey, "No API key is saved. Add one in Settings.")
         })?;
-    let body = serde_json::json!({
-        "model": request.model,
-        "messages": request.messages,
-        "stream": false,
-    });
+    let body = provider_body(&request.model, &request.messages, request.tools.as_ref(), false);
     let url = chat_completions_url(&base_url);
     match http_agent()
         .post(&url)
