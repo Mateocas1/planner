@@ -5,6 +5,7 @@
 
 pub mod chat;
 pub mod engram;
+pub mod fsutil;
 pub mod idle;
 pub mod loopback;
 pub mod oauth;

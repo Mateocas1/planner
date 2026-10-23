@@ -12,9 +12,12 @@
 //! - the best-effort mirror hook [`mirror_after_write`] that
 //!   `memory_store` fires after every successful local write: Engram is
 //!   never on the UI path, so a dead Engram never fails or delays a local
-//!   memory write (spec S2) — the hook runs on its own thread, ignores
-//!   failures, and only records them in the status file.
+//!   memory write (spec S2) — the hook enqueues onto one mirror worker
+//!   thread, which ignores failures and only records them in the status
+//!   file.
 
+use std::sync::mpsc::Sender;
+use std::sync::OnceLock;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::PoisonError;
@@ -53,6 +56,10 @@ impl EngramTransport for UreqTransport {
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
+            // Never follow redirects: a loopback Engram could 307/308 a POST
+            // to another host (ureq resends the body on those), and the
+            // mirror must only ever talk to the configured address.
+            .redirects(0)
             .build();
         let call = match (request.method, request.json_body.as_deref()) {
             ("GET", _) => agent.get(&request.url).call(),
@@ -118,7 +125,7 @@ fn write_status(app: &AppHandle, status: &EngramMirrorStatus) {
         return;
     };
     if let Ok(json) = serde_json::to_string(status) {
-        let _ = memory_store::atomic_write(&path, &json);
+        let _ = planner_core::fsutil::atomic_write(&path, &json);
     }
 }
 
@@ -130,66 +137,101 @@ fn now_ms() -> i64 {
 }
 
 // ---------------------------------------------------------------------------
+// Mirror worker (one ordered thread for every Engram side effect)
+
+/// One unit of Engram work, processed strictly in arrival order by the
+/// single mirror worker thread: per-op mirrors (upserts, deletes, clear-all
+/// batches) and "Sync now" requests never race each other, so an upsert
+/// followed by a delete of the same topic always leaves no remote row.
+enum MirrorJob {
+    /// Mirror the ops of one successful local write. Settings are loaded
+    /// inside the worker (never on the caller/command thread).
+    Ops {
+        app: AppHandle,
+        ops: Vec<MemoryOp>,
+    },
+    /// "Sync now": push every local memory, then report through `reply`.
+    Sync {
+        app: AppHandle,
+        reply: std::sync::mpsc::Sender<Result<EngramMirrorStatus, String>>,
+    },
+}
+
+/// The mirror worker's enqueue end. The thread is spawned once per process
+/// and lives until exit; enqueueing never blocks and never fails the caller
+/// (a dead worker only means the status file goes stale).
+fn mirror_worker() -> &'static Sender<MirrorJob> {
+    static WORKER: OnceLock<Sender<MirrorJob>> = OnceLock::new();
+    WORKER.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<MirrorJob>();
+        let _ = std::thread::Builder::new()
+            .name("engram-mirror".into())
+            .spawn(move || {
+                while let Ok(job) = rx.recv() {
+                    match job {
+                        MirrorJob::Ops { app, ops } => {
+                            let settings = load_settings(&app);
+                            if !settings.enabled {
+                                continue;
+                            }
+                            // The local write already succeeded; the report
+                            // (including its failure) only feeds the status.
+                            let report = core::mirror_ops(&UreqTransport, &settings, &ops);
+                            write_status(
+                                &app,
+                                &EngramMirrorStatus {
+                                    last_attempt_at: now_ms(),
+                                    ok: report.failure.is_none(),
+                                    synced: report.synced,
+                                    error: report.failure,
+                                },
+                            );
+                        }
+                        MirrorJob::Sync { app, reply } => {
+                            let settings = load_settings(&app);
+                            let attempt_at = now_ms();
+                            let result = memory_store::load_all(&app).and_then(|memories| {
+                                core::sync_all(&UreqTransport, &settings, &memories)
+                            });
+                            let status = match result {
+                                Ok(report) => EngramMirrorStatus {
+                                    last_attempt_at: attempt_at,
+                                    ok: true,
+                                    synced: report.upserted + report.deleted,
+                                    error: None,
+                                },
+                                Err(error) => EngramMirrorStatus {
+                                    last_attempt_at: attempt_at,
+                                    ok: false,
+                                    synced: 0,
+                                    error: Some(error),
+                                },
+                            };
+                            write_status(&app, &status);
+                            let _ = reply.send(Ok(status));
+                        }
+                    }
+                }
+            });
+        tx
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Best-effort mirror hook (fired by memory_store after successful writes)
 
 /// Mirrors the ops of one successful local write, best effort. Called only
 /// after the local save already succeeded: this function never reports a
 /// failure upward (there is nothing to undo), never blocks the caller, and
-/// does nothing when mirroring is off or the ops are empty.
+/// does nothing when mirroring is off or the ops are empty. The Engram work
+/// runs on the single mirror worker, in order, off the caller thread.
 pub(crate) fn mirror_after_write(app: &AppHandle, ops: &[MemoryOp]) {
     if ops.is_empty() {
         return;
     }
-    let settings = load_settings(app);
-    if !settings.enabled {
-        return;
-    }
-    let app = app.clone();
-    let ops = ops.to_vec();
-    std::thread::spawn(move || {
-        let mut synced = 0usize;
-        let mut failure: Option<String> = None;
-        for op in &ops {
-            let result = match op {
-                MemoryOp::Upsert {
-                    topic_key,
-                    title,
-                    content,
-                } => core::mirror_upsert(
-                    &UreqTransport,
-                    &settings,
-                    &planner_core::chat::Memory {
-                        // The remote row is keyed by topic_key; the local id
-                        // and timestamp are not part of the mirror payload.
-                        id: String::new(),
-                        topic_key: topic_key.clone(),
-                        title: title.clone(),
-                        content: content.clone(),
-                        updated_at: 0,
-                    },
-                )
-                .map(|_| ()),
-                MemoryOp::Delete { topic_key } => {
-                    core::mirror_delete(&UreqTransport, &settings, topic_key).map(|_| ())
-                }
-            };
-            match result {
-                Ok(()) => synced += 1,
-                Err(error) => {
-                    failure = Some(error);
-                    break;
-                }
-            }
-        }
-        write_status(
-            &app,
-            &EngramMirrorStatus {
-                last_attempt_at: now_ms(),
-                ok: failure.is_none(),
-                synced,
-                error: failure,
-            },
-        );
+    let _ = mirror_worker().send(MirrorJob::Ops {
+        app: app.clone(),
+        ops: ops.to_vec(),
     });
 }
 
@@ -212,40 +254,28 @@ pub fn engram_settings_set(app: AppHandle, settings: EngramSettings) -> Result<(
     let path = settings_path(&app)?;
     let json = serde_json::to_string_pretty(&settings)
         .map_err(|error| format!("the Engram settings could not be serialized: {error}"))?;
-    memory_store::atomic_write(&path, &json)
+    planner_core::fsutil::atomic_write(&path, &json)
 }
 
 /// "Sync now": pushes every local memory to Engram and removes every
-/// mirrored topic the local store no longer has. The blocking HTTP work
-/// runs on Tauri's blocking pool, never on the UI thread (same pattern as
-/// `chat_complete`). The attempt is recorded in the status file either way.
+/// mirrored topic the local store no longer has. The job is queued behind
+/// any pending per-op mirrors (one worker, so it observes the store's
+/// latest state) and its blocking HTTP work runs on the worker thread, off
+/// the async runtime. The attempt is recorded in the status file either way.
 #[tauri::command]
 pub async fn engram_sync_now(app: AppHandle) -> Result<EngramMirrorStatus, String> {
-    let settings = load_settings(&app);
-    let attempt_at = now_ms();
-    let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let memories = memory_store::load_all(&worker_app)?;
-        core::sync_all(&UreqTransport, &settings, &memories)
-    })
-    .await
-    .map_err(|error| format!("the sync worker failed: {error}"))?;
-    let status = match result {
-        Ok(report) => EngramMirrorStatus {
-            last_attempt_at: attempt_at,
-            ok: true,
-            synced: report.upserted + report.deleted,
-            error: None,
-        },
-        Err(error) => EngramMirrorStatus {
-            last_attempt_at: attempt_at,
-            ok: false,
-            synced: 0,
-            error: Some(error),
-        },
-    };
-    write_status(&app, &status);
-    Ok(status)
+    let (tx, rx) = std::sync::mpsc::channel();
+    mirror_worker()
+        .send(MirrorJob::Sync {
+            app,
+            reply: tx,
+        })
+        .map_err(|error| format!("the mirror worker is gone: {error}"))?;
+    // The worker always replies; wait off the async runtime's core threads.
+    tauri::async_runtime::spawn_blocking(move || rx.recv())
+        .await
+        .map_err(|error| format!("the sync worker failed: {error}"))?
+        .map_err(|error| format!("the mirror worker dropped the sync reply: {error}"))?
 }
 
 /// The last mirror attempt (any background write or "Sync now"), or `None`

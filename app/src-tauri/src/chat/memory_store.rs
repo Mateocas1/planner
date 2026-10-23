@@ -13,12 +13,11 @@
 //! can never wipe the memories.
 
 use std::fs;
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
 use planner_core::chat::apply_memory_ops;
+use planner_core::fsutil::atomic_write;
 use planner_core::chat::backup_file_name;
 use planner_core::chat::classify_load;
 use planner_core::chat::new_memory_id;
@@ -90,32 +89,6 @@ fn backup_corrupt(path: &Path) {
     for name in prune_backups(names) {
         let _ = fs::remove_file(dir.join(name));
     }
-}
-
-/// Writes a text file atomically: create the temp file in the same
-/// directory, `write_all`, `sync_all`, then rename over the target, so an
-/// interrupted write can never leave a half-written file.
-pub(crate) fn atomic_write(path: &Path, contents: &str) -> Result<(), String> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| "the target file has no directory".to_string())?;
-    fs::create_dir_all(dir).map_err(|error| {
-        format!(
-            "the directory could not be created: {error} ({} {})",
-            dir.display(),
-            path.display()
-        )
-    })?;
-    let temp = path.with_extension("tmp");
-    let mut file = File::create(&temp)
-        .map_err(|error| format!("{} could not be created: {error}", temp.display()))?;
-    file.write_all(contents.as_bytes())
-        .map_err(|error| format!("{} could not be written: {error}", temp.display()))?;
-    file.sync_all()
-        .map_err(|error| format!("{} could not be flushed: {error}", temp.display()))?;
-    drop(file);
-    fs::rename(&temp, path)
-        .map_err(|error| format!("{} could not be replaced: {error}", path.display()))
 }
 
 fn save(path: &Path, memories: &[Memory]) -> Result<(), String> {
