@@ -304,6 +304,9 @@ export type ReviewTask = {
   deadline?: string;
   estimate?: number;
   actualMinutes?: number;
+  /** The same minutes attributed per profile-zone day (S3/L6); present on
+   *  every task tracked since the map existed. */
+  actualByDay?: Record<string, number>;
   completedAt?: string;
   /** The Clean-up step's "someday" shelf: a flagged task is never a candidate
    *  again, or flagging it once would only resurface it next week. */
@@ -320,6 +323,10 @@ export type WeeklyNumbers = {
   plannedMinutes: number;
   /** Sum of `actualMinutes` over the tasks completed this week. */
   actualMinutes: number;
+  /** True when part of `actualMinutes` came from the cumulative-counter
+   *  approximation instead of per-day data, so the UI can say the number is
+   *  approximate (S3/L6: exact only from the day tracking began). */
+  actualIsPartial: boolean;
   /** Median `actual / estimate` over the week's tracked, estimated work; null
    *  when the week left nothing to learn from. */
   biasRatio: number | null;
@@ -361,16 +368,22 @@ function zonedMidnight(dayKey: string, timeZone: string): number {
 /**
  * The Review step's numbers for the week `now` falls on, in the zone.
  *
- * Two limits of the stored model, both reported rather than hidden:
- * - `actualMinutes` on a task is a cumulative counter, so a week's actual time
- *   is the tracked minutes of the tasks *completed* that week; minutes
- *   tracked on still-open work land in a later week's numbers.
- * - a task's actual time is grouped by its title, which is the only label the
- *   model gives tracked work.
+ * Actual minutes are attributed per day since L6 (ronda 2): every task with
+ * an `actualByDay` map contributes exactly the minutes its map places on this
+ * week's days — open tasks included, which the old cumulative rule could not
+ * see. Tasks without a map (tracked before it existed) fall back to the old
+ * approximation: the cumulative counter of the tasks completed this week, so
+ * earlier weeks' minutes still leak in and still-open work stays invisible.
+ * `actualIsPartial` is true whenever any counted minute came from that
+ * fallback — or whenever an unmapped task holds tracked minutes the model
+ * cannot place — so the surface can say the number is approximate.
+ *
+ * A task's actual time is grouped by its title, which is the only label the
+ * model gives tracked work.
  *
  * The bias ratio reuses the learner's sample rule from `planning/bias.ts`
- * (only tracked sessions of at least `MIN_ACTUAL_MINUTES` count) over the
- * week's completed tasks, and reports the median without clamping: this is a
+ * (only tracked sessions of at least `MIN_ACTUAL_MINUTES` count) over each
+ * task's counted minutes, and reports the median without clamping: this is a
  * record of the week, not a suggestion.
  */
 export function weeklyNumbers(input: {
@@ -407,17 +420,45 @@ export function weeklyNumbers(input: {
   const minutesByTitle = new Map<string, number>();
   const ratios: number[] = [];
   let actualMinutes = 0;
+  let actualIsPartial = false;
   let doneCount = 0;
-  for (const task of input.tasks) {
-    if (!task.completed || !inWeek(instantDayKey(task.completedAt ?? "", input.timeZone))) continue;
-    doneCount += 1;
-    const tracked = task.actualMinutes ?? 0;
-    actualMinutes += tracked;
+
+  /** Records one task's counted minutes into the sum, the per-title grouping
+   *  and the bias samples. One path for exact and approximate minutes alike. */
+  const credit = (task: ReviewTask, minutes: number) => {
+    if (!(minutes > 0)) return;
+    actualMinutes += minutes;
     const title = task.title.trim() === "" ? task.id : task.title.trim();
-    minutesByTitle.set(title, (minutesByTitle.get(title) ?? 0) + tracked);
+    minutesByTitle.set(title, (minutesByTitle.get(title) ?? 0) + minutes);
     if (typeof task.estimate === "number" && Number.isFinite(task.estimate) && task.estimate > 0
-        && tracked >= MIN_ACTUAL_MINUTES) {
-      ratios.push(tracked / task.estimate);
+        && minutes >= MIN_ACTUAL_MINUTES) {
+      ratios.push(minutes / task.estimate);
+    }
+  };
+
+  for (const task of input.tasks) {
+    const completedThisWeek = task.completed && inWeek(instantDayKey(task.completedAt ?? "", input.timeZone));
+    if (completedThisWeek) doneCount += 1;
+    // An empty map is no data (the domain reader would have dropped it): the
+    // task falls back to the approximation, like a missing field.
+    const map = task.actualByDay;
+    if (map !== undefined && Object.keys(map).length > 0) {
+      // Exact: only this week's days count, read-clamped at zero (a day can
+      // go negative in storage; no week may show it).
+      let weekMinutes = 0;
+      for (const [day, minutes] of Object.entries(map)) {
+        if (day >= monday && day <= sunday) weekMinutes += Math.max(0, minutes);
+      }
+      credit(task, weekMinutes);
+    } else if (completedThisWeek) {
+      // Fallback: the cumulative counter of a task completed this week.
+      const tracked = task.actualMinutes ?? 0;
+      if (tracked > 0) actualIsPartial = true;
+      credit(task, tracked);
+    } else if ((task.actualMinutes ?? 0) > 0) {
+      // Tracked minutes the old model cannot place in any week: the number
+      // may be missing work nobody can see.
+      actualIsPartial = true;
     }
   }
 
@@ -431,6 +472,7 @@ export function weeklyNumbers(input: {
     week,
     plannedMinutes: Math.round(plannedMinutes),
     actualMinutes,
+    actualIsPartial,
     biasRatio: ratios.length === 0 ? null : median(ratios),
     doneCount,
     plannedCount: plannedTasks.size,

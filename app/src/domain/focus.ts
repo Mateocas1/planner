@@ -18,6 +18,8 @@
  * Timestamps are epoch milliseconds; the caller decides what "now" is.
  */
 
+import { dateKey } from "../ui/time.ts";
+
 /** One device's focus session, exactly as it is persisted. */
 export type FocusSession = {
   blockId: string;
@@ -126,6 +128,18 @@ export const focusStorageKey = "planner-focus";
 /** The stored form. One key, one JSON object, read back by parseSession. */
 export function serializeSession(session: FocusSession): string {
   return JSON.stringify(session);
+}
+
+/**
+ * The profile-zone day (YYYY-MM-DD) a stopped session's tracked minutes are
+ * attributed to (ronda 2 S3/L6): the day the session *started*, never the day
+ * it stopped. A timer running 23:30 → 00:15 counts for the day the work
+ * began, so one session never splits across two days and the write lands on
+ * the same day key the hook passes to `addActualMinutes` — an attribution the
+ * weekly review can sum back exactly.
+ */
+export function sessionDayKey(startedAtMs: number, timeZone: string): string {
+  return dateKey(new Date(startedAtMs), timeZone);
 }
 
 function instant(value: unknown): value is number {
