@@ -371,12 +371,19 @@ function zonedMidnight(dayKey: string, timeZone: string): number {
  * Actual minutes are attributed per day since L6 (ronda 2): every task with
  * an `actualByDay` map contributes exactly the minutes its map places on this
  * week's days — open tasks included, which the old cumulative rule could not
- * see. Tasks without a map (tracked before it existed) fall back to the old
- * approximation: the cumulative counter of the tasks completed this week, so
- * earlier weeks' minutes still leak in and still-open work stays invisible.
- * `actualIsPartial` is true whenever any counted minute came from that
- * fallback — or whenever an unmapped task holds tracked minutes the model
- * cannot place — so the surface can say the number is approximate.
+ * see — plus, through the same fallback rule as an unmapped task, the
+ * remainder its total holds beyond the mapped days: minutes tracked before
+ * the map existed (review fix 1), which no day can claim. Tasks without a
+ * map fall back to the old approximation: the cumulative counter of the
+ * tasks completed this week, so earlier weeks' minutes still leak in and
+ * still-open work stays invisible. `actualIsPartial` is true whenever any
+ * counted minute came from that fallback, a remainder or an unmapped task —
+ * so the surface can say the number is approximate.
+ *
+ * Days are summed SIGNED and clamped once at each task's in-week sum (review
+ * fix 2): storage may hold a negative day from an older build's away
+ * attribution, and one clamp at the sum shows the task's true net (70 − 30
+ * on two days is 40) instead of hiding the negative behind a per-day clamp.
  *
  * A task's actual time is grouped by its title, which is the only label the
  * model gives tracked work.
@@ -443,13 +450,28 @@ export function weeklyNumbers(input: {
     // task falls back to the approximation, like a missing field.
     const map = task.actualByDay;
     if (map !== undefined && Object.keys(map).length > 0) {
-      // Exact: only this week's days count, read-clamped at zero (a day can
-      // go negative in storage; no week may show it).
+      // Exact per-day minutes: the week's days, summed signed and clamped once
+      // at the task's sum — a negative day (an older build's away attribution)
+      // shows the task's true net instead of hiding behind a per-day clamp.
       let weekMinutes = 0;
+      let rawDays = 0;
       for (const [day, minutes] of Object.entries(map)) {
-        if (day >= monday && day <= sunday) weekMinutes += Math.max(0, minutes);
+        rawDays += minutes;
+        if (day >= monday && day <= sunday) weekMinutes += minutes;
       }
-      credit(task, weekMinutes);
+      credit(task, Math.max(0, weekMinutes));
+      // Pre-map minutes: whatever the total holds beyond the mapped days was
+      // tracked before the map existed, so no day can claim it. The fallback
+      // rule decides — completed this week credits it, and the number becomes
+      // approximate; the signed days are the baseline, so a negative day's
+      // correction (70 total, {d1: 70, d2: −30}) never invents a remainder.
+      const remainder = typeof task.actualMinutes === "number" && Number.isFinite(task.actualMinutes)
+        ? Math.max(0, task.actualMinutes - rawDays)
+        : 0;
+      if (remainder > 0 && completedThisWeek) {
+        actualIsPartial = true;
+        credit(task, remainder);
+      }
     } else if (completedThisWeek) {
       // Fallback: the cumulative counter of a task completed this week.
       const tracked = task.actualMinutes ?? 0;

@@ -347,8 +347,9 @@ test("tracked minutes are attributed to the session's start day, even across mid
 
 /* ---------------------------------------- weekly numbers from actualByDay */
 
-/** Two day keys of week 2026-W13 and one of the week after. */
+/** Two day keys of week 2026-W13, one of the day after TUE, one of the week after. */
 const TUE = "2026-03-24";
+const WED = "2026-03-25";
 const SAT = "2026-03-28";
 const NEXT_MONDAY = "2026-03-30";
 
@@ -408,18 +409,62 @@ test("exact and approximate tasks mix, and empty or unreadable day maps read as 
       taskWith({ id: "exact", title: "Exact", completed: false, actualByDay: { [TUE]: 25 } }),
       // An empty map is no data: the fallback decides, like a missing field.
       taskWith({ id: "empty", title: "Empty", completed: true, completedAt: "2026-03-26T10:00:00+01:00", actualMinutes: 40, actualByDay: {} }),
-      // A hand-edited negative day is clamped at zero when the week is summed.
+      // Signed days clamp ONCE at the task's in-week sum: -15 + 10 is still
+      // negative, so the task contributes nothing rather than a clamped 10.
       taskWith({ id: "clamped", title: "Clamped", completed: false, actualByDay: { [TUE]: -15, [SAT]: 10 } }),
     ],
     [],
   );
-  assert.equal(numbers.actualMinutes, 75); // 25 + 40 + 10 (the -15 clamps to 0)
+  assert.equal(numbers.actualMinutes, 65); // 25 + 40 + 0 (−15 + 10 clamps once, at the sum)
   assert.equal(numbers.actualIsPartial, true); // the empty-map task fell back
   assert.deepEqual(numbers.topTasks, [
     { title: "Empty", minutes: 40 },
     { title: "Exact", minutes: 25 },
-    { title: "Clamped", minutes: 10 },
   ]);
+});
+
+test("pre-map minutes a mapped task still holds ride the fallback and mark the week partial", () => {
+  // Legacy 40 min tracked before the map existed, then a 25 min session wrote
+  // {TUE: 25} (total 65). The week counts the mapped 25 exactly plus the 40
+  // unplaceable remainder through the same fallback rule as an unmapped task
+  // (review fix 1) — dropping the remainder made the week wrong and unflagged.
+  const numbers = numbersWith(
+    [taskWith({
+      id: "mixed",
+      title: "Mixed",
+      completed: true,
+      completedAt: "2026-03-26T10:00:00+01:00",
+      estimate: 120,
+      actualMinutes: 65,
+      actualByDay: { [TUE]: 25 },
+    })],
+    [],
+  );
+  assert.equal(numbers.actualMinutes, 65); // 25 mapped + 40 remainder
+  assert.equal(numbers.actualIsPartial, true); // the remainder is approximate
+  assert.deepEqual(numbers.topTasks, [{ title: "Mixed", minutes: 65 }]);
+  // Mapped and remainder each join the bias samples through the one credit
+  // path, so the median is the mean of their two ratios against the estimate.
+  assert.equal(numbers.biasRatio, (25 / 120 + 40 / 120) / 2);
+});
+
+test("a cross-midnight session's away correction lands on the start day and the week sums signed days once", () => {
+  // The review's session: 23:30 → 00:40 Madrid (70 min). The credit is the
+  // start day (TUE); the 00:10–00:40 away correction rides the SAME day (fix
+  // 2 — one attribution rule for a session's credit and its corrections), so
+  // storage holds {TUE: 40} and the week shows 40 exactly.
+  const startedAt = Date.parse("2026-03-24T22:30:00Z"); // 23:30 Madrid (CET)
+  const awayFrom = Date.parse("2026-03-24T23:10:00Z"); // 00:10 Madrid on WED
+  assert.equal(sessionDayKey(startedAt, MADRID), TUE);
+  assert.notEqual(sessionDayKey(awayFrom, MADRID), TUE); // the span's own day is WED
+  const numbers = numbersWith([taskWith({ id: "night", title: "Night", actualByDay: { [TUE]: 40 } })], []);
+  assert.equal(numbers.actualMinutes, 40);
+  assert.equal(numbers.actualIsPartial, false);
+  // A map an older build wrote ({TUE: 70, WED: −30}) still sums to the same
+  // 40: the days stay signed and the clamp happens once at the task's sum.
+  const legacy = numbersWith([taskWith({ id: "legacy", title: "Legacy", actualByDay: { [TUE]: 70, [WED]: -30 } })], []);
+  assert.equal(legacy.actualMinutes, 40);
+  assert.equal(legacy.actualIsPartial, false);
 });
 
 test("a week with no tracked work at all is exact, not partial", () => {
