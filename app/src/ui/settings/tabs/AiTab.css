@@ -1,0 +1,46 @@
+/* AI tab (task C3b): row-level additions only — the tab inherits the
+   Settings view's sections, cards and rows and adds no new colour or
+   motion. */
+
+/* The Base URL / API key / Model fields. The row's control column is
+   auto-sized, so the width is fixed and caps at the card: enough for a
+   provider URL without stretching the row. */
+.form-control.ai-field {
+  width: 280px;
+  max-width: 100%;
+  text-align: left;
+  color: var(--label);
+  padding: 8px 10px;
+}
+
+/* Button groups in the control column (Save / Replace / Remove, and the
+   inline confirms). */
+.ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-button {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: var(--text-sub);
+}
+
+/* The one-line privacy note under the last section. */
+.ai-privacy {
+  margin: 14px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+/* The date line under a memory's preview. */
+.ai-memory-date {
+  margin-top: 2px;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.ai-danger-link {
+  color: var(--red);
+}
