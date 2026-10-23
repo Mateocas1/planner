@@ -69,7 +69,7 @@ test("the next 7 days group by day; an empty day says so; today and day 8 stay o
   );
   assert.ok(text.includes("2026-10-30") && text.includes("Write tests"), text);
   assert.ok(text.includes("2026-11-01") && text.includes("Deep clean"), text);
-  assert.ok(text.includes("2026-11-02"), text, "empty days are still listed");
+  assert.ok(text.includes("2026-11-02"), `empty days are still listed: ${text}`);
   assert.ok(text.includes("no blocks"), text);
   assert.ok(!text.includes("Too far"), text);
   const weekSection = text.slice(text.indexOf("Next 7 days"));
@@ -85,9 +85,9 @@ test("caps bound the output: today blocks, per-day blocks and open tasks each sh
   );
   const manyTasks = Array.from({ length: 20 }, (_, i) => task(`k${i}`, `Task number ${i}`, { deadline: "2026-11-02" }));
   const text = buildPlannerContext(snapshot([...manyToday, ...manyWeek], manyTasks), new Date("2026-10-29T12:00:00Z"), "UTC");
-  assert.ok(text.includes("+6 more"), text, "20 today blocks, 14 shown");
-  assert.ok(text.includes("+3 more"), text, "9 blocks on 2026-10-30, 6 shown");
-  assert.ok(text.includes("+8 more"), text, "20 open tasks, 12 shown");
+  assert.ok(text.includes("+6 more"), `20 today blocks, 14 shown: ${text}`);
+  assert.ok(text.includes("+3 more"), `9 blocks on 2026-10-30, 6 shown: ${text}`);
+  assert.ok(text.includes("+8 more"), `20 open tasks, 12 shown: ${text}`);
   assert.ok(text.length < 7000, `context too long: ${text.length} chars`);
 });
 
@@ -117,7 +117,7 @@ test("open unscheduled tasks exclude completed and scheduled tasks and carry est
   assert.ok(text.includes("2026-11-02"), text);
   assert.ok(text.includes("Buy milk"), text);
   const openSection = text.slice(text.indexOf("Open unscheduled tasks:"));
-  assert.ok(!openSection.includes("Scheduled task"), openSection, "a task placed on a block is not unscheduled");
+  assert.ok(!openSection.includes("Scheduled task"), `a task placed on a block is not unscheduled: ${openSection}`);
   assert.ok(!openSection.includes("Completed task"), openSection);
 });
 

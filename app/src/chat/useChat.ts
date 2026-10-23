@@ -11,9 +11,9 @@
  * `requestId` guard is the second line of defence.
  */
 
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { DEFAULT_CHAT_MODEL } from "./config.ts";
-import { emptyConversation, lastUserText, reduceConversation, type ConversationState } from "./conversation.ts";
+import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState } from "./conversation.ts";
 import { createPacer, type StreamPacer } from "./pacer.ts";
 import type { ChatEvent, ChatTransport } from "./types.ts";
 
@@ -28,8 +28,23 @@ export type ChatController = {
 let requestCounter = 0;
 const nextRequestId = () => `r${++requestCounter}`;
 
-export function useChat(options: { transport: ChatTransport; buildSystemPrompt: () => string }): ChatController {
-  const { transport, buildSystemPrompt } = options;
+/** How long a closed panel waits for activity before the conversation "ends"
+ * and extraction may run (spec S5, parent decision L3). */
+export const IDLE_EXTRACT_MS = 10 * 60 * 1000;
+
+export function useChat(options: {
+  transport: ChatTransport;
+  buildSystemPrompt: () => string;
+  /** The panel's open state: a close with ≥1 exchange starts the idle timer
+   * whose expiry ends the conversation; a reopen cancels it and re-arms
+   * extraction so the continued conversation can end again later. */
+  panelOpen?: boolean;
+  /** Called once per conversation end (New chat, the idle timer, unload)
+   * with the transcript turns, before anything is cleared. */
+  onConversationEnd?: (turns: ChatTurn[]) => void;
+  idleExtractMs?: number;
+}): ChatController {
+  const { transport, buildSystemPrompt, panelOpen, onConversationEnd, idleExtractMs = IDLE_EXTRACT_MS } = options;
   const [state, dispatch] = useReducer(reduceConversation, emptyConversation);
   /** Mirrors `state` for building requests without stale closures. */
   const stateRef = useRef(state);
@@ -37,6 +52,29 @@ export function useChat(options: { transport: ChatTransport; buildSystemPrompt: 
   /** The request whose events and pacer are live; older ids are dropped. */
   const activeIdRef = useRef<string | null>(null);
   const pacerRef = useRef<StreamPacer | null>(null);
+  /** Whether extraction already ran for the current conversation (spec S5):
+   * one extraction per end, never a duplicate batch for the same turns. */
+  const extractedRef = useRef(false);
+
+  // The conversation-end callback lives in a ref so the effects below never
+  // need to re-arm because App re-created the closure.
+  const onEndRef = useRef(onConversationEnd);
+  onEndRef.current = onConversationEnd;
+
+  /** Fires the end-of-conversation hook at most once per conversation, and
+   * only when there is a real exchange to extract memories from. */
+  const fireConversationEnd = useCallback(() => {
+    if (extractedRef.current) return;
+    const turns = stateRef.current.turns;
+    if (!hasExchange(turns)) return;
+    extractedRef.current = true;
+    onEndRef.current?.(turns);
+  }, []);
+
+  // End on panel close + idle (spec S5): closing with ≥1 exchange starts the
+  // timer; the expiry ends the conversation. Reopening cancels the timer and
+  // re-arms extraction, so a conversation continued after an idle extraction
+  // can still end again with its new turns.
 
   const dispatchEvent = useCallback((event: ChatEvent) => {
     dispatch({ type: "event", event });
@@ -116,8 +154,38 @@ export function useChat(options: { transport: ChatTransport; buildSystemPrompt: 
       pacerRef.current = null;
       void transport.cancel(id);
     }
+    // "New chat" is a conversation end: extraction sees the turns before the
+    // reset, and the next conversation starts unextracted.
+    fireConversationEnd();
+    extractedRef.current = false;
     dispatch({ type: "newChat" });
-  }, [transport]);
+  }, [transport, fireConversationEnd]);
+
+  // The close/reopen transition drives the idle timer.
+  const panelOpenRef = useRef(panelOpen);
+  useEffect(() => {
+    if (panelOpen === panelOpenRef.current) return undefined;
+    const wasOpen = panelOpenRef.current;
+    panelOpenRef.current = panelOpen;
+    if (panelOpen || wasOpen !== true) return undefined;
+    if (extractedRef.current || !hasExchange(stateRef.current.turns)) return undefined;
+    const timer = window.setTimeout(fireConversationEnd, idleExtractMs);
+    return () => window.clearTimeout(timer);
+  }, [panelOpen, idleExtractMs, fireConversationEnd]);
+
+  // Reopening after an idle extraction re-arms for the continued conversation.
+  useEffect(() => {
+    if (panelOpen === true && extractedRef.current) extractedRef.current = false;
+  }, [panelOpen]);
+
+  // Best-effort: an app quit with a live conversation extracts what it can.
+  // The call is async and will usually not finish — it is a cheap effort, not
+  // a guarantee (spec S5).
+  useEffect(() => {
+    const onUnload = () => fireConversationEnd();
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [fireConversationEnd]);
 
   return { state, send, stop, retry, newChat };
 }

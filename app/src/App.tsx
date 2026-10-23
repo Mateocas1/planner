@@ -16,7 +16,7 @@ import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { BiasHint, completedSamples, type TrackedTask } from "./ui/BiasHint.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
-import { ChatPanel } from "./ui/ChatPanel.tsx";
+import { ChatSurface } from "./chat/ChatSurface.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
@@ -71,8 +71,16 @@ export default function App() {
       <UpdatePrompt />
       {/* The floating chat panel (desktop, signed-in; dev-mock with ?chatMock
           is account-free). Signed-out users never see it — not even on the
-          sign-in screen (review #2). */}
-      <ChatPanel signedIn={user !== null} />
+          sign-in screen (review #2). ChatSurface wires transport, planner
+          context and memories (C3a); the key setup opens Settings' AI tab in
+          W1. */}
+      <ChatSurface
+        signedIn={user !== null}
+        uid={user?.uid ?? null}
+        onSetupKey={() => {
+          // TODO(W1 integration): openSettings("ai")
+        }}
+      />
     </MotionConfig>
   );
 }

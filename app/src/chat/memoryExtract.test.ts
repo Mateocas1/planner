@@ -14,7 +14,7 @@ const memory = (id: string, topicKey: string, title: string, updatedAt: number):
 
 const turns: ChatTurn[] = [
   { id: "u1", role: "user", text: "I plan my week on Sunday evenings." },
-  { id: "a1", role: "assistant", text: "Noted, that is a good habit." },
+  { id: "a1", role: "assistant", text: "Noted, that is a good habit.", segments: ["Noted, that is a good habit."] },
 ];
 
 test("a good JSON object with ops parses to typed memory ops", () => {
@@ -91,11 +91,11 @@ test("buildExtractionRequest puts the rules in a system message and the transcri
   const system = request.messages[0]?.content ?? "";
   const user = request.messages[1]?.content ?? "";
   assert.ok(system.includes("JSON"), system);
-  assert.ok(system.includes("10"), system, "the op cap is named");
+  assert.ok(system.includes("10"), `the op cap is named: ${system}`);
   assert.ok(user.includes("User: I plan my week on Sunday evenings."), user);
   assert.ok(user.includes("Assistant: Noted, that is a good habit."), user);
   assert.ok(user.includes("Weekly habit") && user.includes("Tooling"), user);
-  assert.ok(user.includes("data"), user, "the transcript is framed as data, not instructions");
+  assert.ok(user.includes("data"), `the transcript is framed as data, not instructions: ${user}`);
 });
 
 test("buildExtractionRequest works with no memories yet", () => {
