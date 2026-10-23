@@ -15,7 +15,7 @@ import { closeAway, confirmAway, emptyBooks, keepAway, openAway, type AwayBooks 
 import { subtractActualMinutes } from "../data/tasks.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
-import { dateKey } from "./time.ts";
+import { subtractionDayKey } from "../domain/idle.ts";
 import { trackedMinutes } from "./useFocusTimer.ts";
 
 /**
@@ -59,11 +59,12 @@ export type IdlePrompt = {
   /** Whole away minutes, unclamped — the number the sentence shows. */
   minutes: number;
   /**
-   * The earliest confirmed away span's start, in epoch ms: the instant the
-   * subtraction's day key comes from (S3/L6 — the day of the away span, never
-   * "now" at write time). Absent only on a malformed prompt.
+   * The session's start, in epoch ms: the instant the subtraction's day key
+   * comes from (ronda 2, review fix 2 — the same day the session's focus
+   * credit landed, never the away span's own day and never "now" at write
+   * time). A prompt without a usable start refuses the write (review fix 4).
    */
-  awayFrom?: number;
+  startedAt: number;
   /**
    * What the session already recorded, when it has stopped: null while the
    * session is still open (its minutes will fold the subtraction in), 0 when
@@ -123,9 +124,9 @@ export function useIdleAway({
       blockId: ended.blockId,
       ...(ended.taskId === undefined ? {} : { taskId: ended.taskId }),
       minutes,
-      // The spans are clipped to the session's focus and at least a whole
-      // minute survived, so at least one span is here.
-      awayFrom: Math.min(...spans.map(span => span.from)),
+      // The subtraction rides the session's start day (review fix 2), so the
+      // prompt carries the start the credit used.
+      startedAt: ended.startedAt,
       recorded,
     });
   }, []);
@@ -205,12 +206,14 @@ export function useIdleAway({
     (taskActualMinutes: number) => {
       const current = promptRef.current;
       if (current === null) return;
+      // The subtraction's day is the day the session STARTED (ronda 2, review
+      // fix 2) — the same day its focus credit landed, so a cross-midnight
+      // away span can never drive another day negative. A prompt without a
+      // usable start refuses the write (review fix 4): nothing is written and
+      // nothing is marked applied, so no epoch-0 day key can exist.
+      const dayKey = subtractionDayKey(current.startedAt, zone);
+      if (dayKey === undefined) return;
       setPrompt(null);
-      // The subtraction's day is the day the away span began (S3/L6), not the
-      // day the user pressed Subtract. The session's own start is the fallback
-      // for a malformed prompt; both come from the prompt, never from now.
-      const awayFrom = current.awayFrom ?? Number(current.sessionKey.slice(current.sessionKey.lastIndexOf("@") + 1));
-      const dayKey = dateKey(new Date(Number.isFinite(awayFrom) ? awayFrom : 0), zone);
       booksRef.current = confirmAway(booksRef.current, current, taskActualMinutes, {
         storage: window.localStorage,
         write:
