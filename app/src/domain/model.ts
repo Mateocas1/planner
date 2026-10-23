@@ -162,9 +162,12 @@ export function parseActualMinutes(value: unknown): number | undefined {
  * existed has none, and a hand-edited document may hold anything; in both
  * cases the value reads as absent rather than crashing the surface. Only real
  * `YYYY-MM-DD` day keys survive, values must be finite numbers floored to
- * whole minutes, and a negative day clamps at zero: storage may hold a
- * negative day (an away subtraction can land on a day whose credit landed the
- * day before), but no reader may show it. An empty result is no data.
+ * whole minutes and capped at the counter bound. The map stays SIGNED: a
+ * negative day is a real fact about storage (an older build attributed an
+ * away subtraction to the span's own day, so a cross-midnight span could land
+ * where its credit did not), and clamping here would hide it — the weekly
+ * reviewer clamps once at each task's in-week sum instead, and undo writes
+ * the stored map back unchanged. An empty result is no data.
  */
 export function parseActualByDay(value: unknown): Record<string, number> | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -172,7 +175,7 @@ export function parseActualByDay(value: unknown): Record<string, number> | undef
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     if (!validDate(key)) continue;
     if (typeof raw !== "number" || !Number.isFinite(raw)) continue;
-    map[key] = Math.min(MAX_ACTUAL_MINUTES, Math.max(0, Math.floor(raw)));
+    map[key] = Math.min(MAX_ACTUAL_MINUTES, Math.floor(raw));
   }
   return Object.keys(map).length === 0 ? undefined : map;
 }

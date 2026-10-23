@@ -943,22 +943,25 @@ test("weekly review settings are written normalized", async () => {
 /**
  * The per-day map a task may hold next to its cumulative counter. The reader
  * is tolerant (a hand-edited document may hold anything): only whole-day keys
- * with finite numbers survive, negative days clamp at zero (a day can go
- * negative in storage when an away subtraction lands on a day whose credit
- * landed the day before — readers must never show it), and an empty result
- * reads as absent.
+ * with finite numbers survive, and values are floored to whole minutes and
+ * capped at the counter bound. The map stays SIGNED: storage may hold a
+ * negative day (an older build attributed an away subtraction to the span's
+ * own day, so a cross-midnight span could land where its credit did not), and
+ * the reviewer clamps once at each task's in-week sum — clamping here would
+ * hide a real negative and make the weekly total wrong, and undo would
+ * persist the clamped map over the stored one.
  */
-test("a per-day actual map reads only real days with clamped whole-minute counts", () => {
+test("a per-day actual map reads only real days with signed whole-minute counts", () => {
   assert.equal(parseActualByDay(undefined), undefined);
   assert.equal(parseActualByDay("nope"), undefined);
   assert.equal(parseActualByDay([]), undefined);
   assert.equal(parseActualByDay({}), undefined); // empty is no data
   assert.deepEqual(parseActualByDay({ "2026-03-24": 45, "2026-03-28": 1 }), { "2026-03-24": 45, "2026-03-28": 1 });
-  // Clamps and drops: negatives floor at zero, floats floor, non-days and
-  // non-numbers never survive, values beyond the counter bound are capped.
+  // Floors, caps and drops, but does NOT clamp: a negative day survives as
+  // the negative it is; non-days and non-numbers never survive.
   assert.deepEqual(
     parseActualByDay({ "2026-03-24": -15, "2026-03-25": 30.9, "2026-2-24": 10, "not-a-day": 5, "2026-03-26": "x", "2026-03-27": Number.NaN }),
-    { "2026-03-24": 0, "2026-03-25": 30 },
+    { "2026-03-24": -15, "2026-03-25": 30 },
   );
   assert.deepEqual(parseActualByDay({ "2026-03-24": MAX_ACTUAL_MINUTES + 1 }), { "2026-03-24": MAX_ACTUAL_MINUTES });
 });
@@ -1078,6 +1081,40 @@ test("a task's day map survives delete and undo, and the read path maps it", asy
     const restored = (await getDoc(doc(owner.db, path))).data();
     assert.equal(restored?.actualMinutes, 35);
     assert.deepEqual(restored?.actualByDay, { "2026-03-24": 30, "2026-03-25": 5 });
+  } finally {
+    await close(owner);
+  }
+});
+
+/**
+ * Undo writes the map back UNCHANGED, negatives included (review fix 3): the
+ * restore normalizes through the same signed reader, so a stored negative day
+ * — an older build's cross-midnight away subtraction — is preserved exactly,
+ * never rewritten as the clamped zero while the total stays at 40.
+ */
+test("a negative legacy day round-trips delete and undo unchanged", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTask } = await import("../src/data/tasks.ts");
+  const { toTask } = await import("../src/data/store.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`undo-negative-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `undo-negative-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/legacy`;
+    // The review's shape: a 23:30 → 00:40 session credited 70 to day 1; an
+    // older build's away subtraction put −30 on day 2. Total is 40.
+    await setDoc(doc(owner.db, path), { title: "Legacy", completed: false, actualMinutes: 40, actualByDay: { "2026-03-24": 70, "2026-03-25": -30 } });
+
+    const snapshot = await getDoc(doc(owner.db, path));
+    const deleted = toTask(snapshot as never);
+    assert.deepEqual(deleted.actualByDay, { "2026-03-24": 70, "2026-03-25": -30 });
+
+    await deleteTask(uid, "legacy", owner.db);
+    await restoreTask(uid, deleted, owner.db);
+    const restored = (await getDoc(doc(owner.db, path))).data();
+    assert.equal(restored?.actualMinutes, 40);
+    assert.deepEqual(restored?.actualByDay, { "2026-03-24": 70, "2026-03-25": -30 });
   } finally {
     await close(owner);
   }
