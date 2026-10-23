@@ -162,7 +162,7 @@ export function acceleratorLabel(accelerator: Accelerator): string {
  * ---------------------------------------------------------------------- */
 
 /** The keys that are modifiers themselves: pressing one is not choosing a key. */
-const MODIFIER_CODES = new Set([
+export const MODIFIER_CODES = new Set([
   "ControlLeft", "ControlRight", "AltLeft", "AltRight",
   "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight",
 ]);

@@ -234,17 +234,17 @@ test("with the switch off the single-key shortcuts stop and navigation stays", a
   const email = newEmail("keys-off");
   await seedWalkableTasks(page, email);
 
-  // criterion 6: the Day settings switch is the mechanism, and it is the one
+  // criterion 6: the Settings switch is the mechanism, and it is the one
   // that writes the profile
-  await page.getByRole("button", { name: "Day settings" }).click();
-  const settings = page.getByRole("complementary", { name: "Day settings" });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings).toBeVisible();
   const toggle = page.getByRole("switch", { name: "Keyboard shortcuts" });
   await expect(toggle).toBeChecked();
   await toggle.click();
   await expect(toggle).not.toBeChecked();
   await expect.poll(async () => (await readRemoteDaySettings(email)).shortcutsEnabled, poll).toBe(false);
-  await settings.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
 
   await focusPage(page);
@@ -265,10 +265,10 @@ test("with the switch off the single-key shortcuts stop and navigation stays", a
   await expect(page.getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
 
   // and turning it back on restores the letters
-  await page.getByRole("button", { name: "Day settings" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("switch", { name: "Keyboard shortcuts" }).click();
   await expect.poll(async () => (await readRemoteDaySettings(email)).shortcutsEnabled, poll).toBe(true);
-  await settings.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
   await openView(page, "Tasks");
   await focusPage(page);

@@ -206,7 +206,7 @@ test("the footer is one row: the account, the sync line and the theme control", 
  * The footer inside its own column (SB2). The sidebar is a fixed 244 px box, so
  * a footer row that never wraps paints its last control past the edge: "Sign
  * out" was cut at "Sign o" on every desktop width. Every footer control -- the
- * account, Day settings, the theme switch and both links -- must sit inside the
+ * account, Settings, the theme switch and both links -- must sit inside the
  * box the sidebar clips, and the links must be painted whole and clickable,
  * while the import entry keeps the full name assistive tech and the tests use.
  */
@@ -263,7 +263,7 @@ test("nothing in the footer overflows the sidebar, at any desktop width", async 
       return { clip, controls, identity };
     });
 
-    /* The account, Day settings, the theme control and the two links. */
+    /* The account, the Settings gear, the theme control and the two links. */
     expect(report.controls.length, `${where}: the footer holds its controls`).toBe(5);
     expect(
       report.identity.room,

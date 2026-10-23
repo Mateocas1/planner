@@ -5,6 +5,7 @@ import {
   acceleratorLabel,
   captureFromEvent,
   keycaps,
+  MODIFIER_CODES,
   rebindableShortcut,
   setBinding,
   useShortcutBinding,
@@ -92,6 +93,9 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
   useEffect(() => {
     if (!recording) return undefined;
     const onKey = (event: KeyboardEvent) => {
+      // A modifier alone is not a choice yet: recording keeps waiting for the
+      // key that completes the chord, exactly as the brief specifies.
+      if (MODIFIER_CODES.has(event.code)) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.key === "Escape") {

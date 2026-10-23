@@ -149,14 +149,14 @@ test("the key hints are left out when keyboard shortcuts are off", async ({ page
   await openView(page, "Today");
 
   /* The palette reads the profile once, when the shell mounts it, so the answer
-     is in hand before it opens: the signal that the read landed is Day
-     settings' own switch, which renders that same field. Waiting on it is what
+     is in hand before it opens: the signal that the read landed is Settings'
+     own switch, which renders that same field. Waiting on it is what
      makes the absence below mean something. */
-  await page.getByRole("button", { name: "Day settings" }).click();
-  const settings = page.getByRole("complementary", { name: "Day settings" });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings).toBeVisible();
   await expect(page.getByRole("switch", { name: "Keyboard shortcuts" })).toHaveAttribute("aria-checked", "false");
-  await settings.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
 
   await page.keyboard.press("Control+k");
