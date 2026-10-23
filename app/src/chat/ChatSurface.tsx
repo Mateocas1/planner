@@ -11,8 +11,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel, type ToolOutcome } from "../ui/ChatPanel.tsx";
-import { addBlock } from "../data/blocks.ts";
-import { addTask, setTaskDeadline } from "../data/tasks.ts";
+import { addTask } from "../data/tasks.ts";
+import { moveTaskWithBlock } from "../data/chatMove.ts";
+import { db } from "../data/client.ts";
 import { isTauri } from "../desktop.ts";
 import { dateKey, localValue, toZonedInstant } from "../ui/time.ts";
 import { getChatModel, mockMode } from "./config.ts";
@@ -78,14 +79,16 @@ export function ChatSurface({
     [snapshot, timeZone],
   );
 
-  // R1 (spec S1): the confirm flow. Validation is pure (tools.ts); the write
-  // goes through the same data functions the UI's own surfaces use, for the
-  // signed-in user only. `move_task` maps onto what the app already does:
-  // a target day is `setTaskDeadline` (null = unschedule), and a start time —
-  // the app's primitive for placing a task at a time — adds a work block for
-  // the estimate's duration (60 min without one). Invalid proposals fail
-  // before any write; a failed write leaves the card failed, data untouched
-  // by this flow.
+  // R1 (spec S1): the confirm flow. Validation is pure (tools.ts) — every
+  // check, including the midnight room check for a start time, runs before
+  // any data call — and the write goes through the app's own data functions
+  // for the signed-in user only. `move_task` maps onto what the app already
+  // does: a target day is `setTaskDeadline`'s deadline (null = unschedule),
+  // and a start time — the app's primitive for placing a task at a time —
+  // adds a task-linked work block for the estimate's duration. Both land in
+  // ONE writeBatch (`moveTaskWithBlock`), so a move is atomic. Invalid
+  // proposals fail before any write; a failed write leaves the card failed
+  // and data untouched by this flow.
   const toolContext = useMemo<ChatToolContext>(
     () => ({ tasks: snapshot.tasks, timeZone, todayKey: dateKey(new Date(), timeZone) }),
     [snapshot.tasks, timeZone],
@@ -104,19 +107,20 @@ export function ChatSurface({
         }
         if (call.name === "move_task") {
           const value = check.value as NormalizedMoveTask;
-          await setTaskDeadline(uid, value.taskId, value.title, value.day === null ? undefined : value.day);
-          if (value.startMinutes !== undefined && value.day !== null) {
-            const estimate = toolContext.tasks.find(task => task.id === value.taskId)?.estimateMinutes ?? 60;
-            if (value.startMinutes + estimate > 1440) {
-              throw new Error("The start time leaves no room before midnight for this task's estimate.");
-            }
-            await addBlock(
-              uid,
-              toZonedInstant(localValue(value.day, value.startMinutes), timeZone),
-              toZonedInstant(localValue(value.day, value.startMinutes + estimate), timeZone),
-              value.taskId,
-            );
-          }
+          const estimate = toolContext.tasks.find(task => task.id === value.taskId)?.estimateMinutes ?? 60;
+          await moveTaskWithBlock(uid, {
+            taskId: value.taskId,
+            title: value.title,
+            ...(value.day === null ? {} : { deadline: value.day }),
+            ...(value.startMinutes !== undefined && value.day !== null
+              ? {
+                  block: {
+                    start: toZonedInstant(localValue(value.day, value.startMinutes), timeZone),
+                    end: toZonedInstant(localValue(value.day, value.startMinutes + estimate), timeZone),
+                  },
+                }
+              : {}),
+          }, db);
           const message =
             value.day === null
               ? "The task was unscheduled."

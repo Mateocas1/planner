@@ -129,6 +129,20 @@ test("move_task: a valid start time becomes minutes since midnight and needs a d
   assert.ok(!bad.ok);
 });
 
+test("move_task: a start time must leave room before midnight for the estimate", () => {
+  // t2 estimates 90 min: 23:30 + 90 would run past midnight.
+  const overflow = checkMoveTask('{"taskId":"t2","day":"2026-10-30","startTime":"23:30"}', context);
+  assert.ok(!overflow.ok);
+  assert.match(overflow.ok ? "" : overflow.error, /no room before midnight/);
+  // Ending exactly at midnight is fine (22:30 + 90 = 1440).
+  const edge = checkMoveTask('{"taskId":"t2","day":"2026-10-30","startTime":"22:30"}', context);
+  assert.ok(edge.ok);
+  // A task without an estimate assumes the app's 60 minutes (t1).
+  const assumed = checkMoveTask('{"taskId":"t1","day":"2026-10-30","startTime":"23:30"}', context);
+  assert.ok(!assumed.ok);
+  assert.match(assumed.ok ? "" : assumed.error, /no room before midnight/);
+});
+
 test("validateToolCall describes both tools and rejects unknown names", () => {
   const create = validateToolCall({ name: "create_task", arguments: '{"title":"X","day":"2026-10-29"}' }, context);
   assert.ok(create.ok);

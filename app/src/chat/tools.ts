@@ -13,6 +13,7 @@
  * for the estimate's duration (60 min without one), next to the deadline.
  */
 
+import { ASSUMED_ESTIMATE_MINUTES } from "../domain/model.ts";
 import { formatDateKey } from "../ui/format.ts";
 import type { ChatToolCall, ChatToolSpec } from "./types.ts";
 
@@ -191,7 +192,9 @@ function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["task
 }
 
 /** Validates `move_task` arguments against the planner context (S1: unknown
- * id, bad date). An unknown id or a malformed proposal never writes. */
+ * id, bad date). An unknown id or a malformed proposal never writes. Every
+ * check — including the midnight room check for a start time — runs here,
+ * so a rejected proposal fails the card before any data call happens. */
 export function checkMoveTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedMoveTask> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
@@ -218,6 +221,13 @@ export function checkMoveTask(raw: string, context: ChatToolContext): ToolCheck<
       return { ok: false, error: "A start time needs a target day." };
     }
     startMinutes = hour * 60 + minute;
+    // The block this start time creates runs for the task's estimate (the
+    // app's assumed 60 minutes without one) and must end before midnight —
+    // checked here, before any write, exactly like the estimate bounds.
+    const estimate = task.estimateMinutes ?? ASSUMED_ESTIMATE_MINUTES;
+    if (startMinutes + estimate > 1440) {
+      return { ok: false, error: "The start time leaves no room before midnight for this task's estimate." };
+    }
   }
   const value: NormalizedMoveTask = {
     taskId,
