@@ -1,0 +1,562 @@
+/* ChatPanel (ChatPanel.tsx). Co-located so the panel's material and motion
+   stay out of app.css.
+
+   Motion (task C2, S2 — built through the animate/review-animations flow):
+
+   - Panel open/close. A keyboard surface, so this is deliberately the app's
+     shortest flight rather than a sheet's: opacity + translateY(10px)/scale
+     (0.96), transform-origin at the launcher (bottom-right), 200 ms in,
+     140 ms out (an exit says "gone"). CSS transitions, so Ctrl+J pressed
+     mid-flight retargets instead of restarting. Reduced motion: opacity only.
+   - Content focus-pull: .chat-inner sharpens from blur(6px) as the card lands
+     (the Sheet.tsx pattern, on the inner body — never a filter on the glass
+     element itself, which would repaint the backdrop flat).
+   - User bubble: blur(8px) + 6px rise + slight scale to sharp, 200 ms, one
+     animation at mount. Reduced motion: opacity fade only.
+   - Content glide: FLIP is applied in JS (useGlideOnAppend) as compensating
+     transforms via WAAPI — layout is never animated.
+   - Waiting spinner: rotating captured stroke, linear (constant motion).
+     Reduced motion: a gentle opacity pulse instead of rotation.
+   - Spinner → answer morph: one DOM node across the phase change; the spinner
+     cross-fades out (opacity + scale), the text fades in with blur(4px) → 0.
+     No container animation: the bubble's growth is a single-frame layout
+     change, bridged by the cross-fade, so text is never scaled or distorted.
+   - Streamed text: each reveal chunk is a span that blurs in once (keyed by
+     chunk index, so re-renders never restart it). Reduced motion: none.
+   - Nothing on the completed answer bubble: it replaces the live bubble in the
+     same frame at `done`, and an entrance here would flash. */
+
+.chat-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 62;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: 50%;
+  color: var(--label);
+  cursor: pointer;
+  box-shadow: var(--glass-shadow);
+  transition: transform var(--dur-press) var(--ease-out), color var(--dur-hover) ease;
+}
+
+.chat-launcher:active {
+  transform: scale(0.94);
+}
+
+.chat-launcher[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.chat-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  z-index: 62;
+  display: none;
+  width: min(400px, calc(100vw - 32px));
+  height: min(600px, calc(100dvh - 112px));
+  border-radius: var(--r-sheet);
+  color: var(--label);
+  /* Closed = not displayed (the palette's pattern): out of the tab order and
+     the a11y tree, and nothing transition-shaped can race the focus effect.
+     The entrance is an animation, which starts on the first displayed frame.
+     The close is instant — the palette's precedent for a keyboard surface. */
+  transform-origin: 100% 100%;
+}
+
+.chat-panel[data-open="true"] {
+  display: flex;
+  animation: chat-panel-in 200ms var(--ease-out);
+}
+
+@keyframes chat-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+.chat-inner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 8px;
+}
+
+/* The content sharpens as the card lands (the Sheet.tsx focus pull, on the
+   inner body — never a filter on the glass element itself). */
+.chat-panel[data-open="true"] .chat-inner {
+  animation: chat-inner-in 200ms var(--ease-out);
+}
+
+@keyframes chat-inner-in {
+  from {
+    filter: blur(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel[data-open="true"] {
+    animation-name: chat-fade-in;
+  }
+  .chat-panel[data-open="true"] .chat-inner {
+    animation: none;
+  }
+}
+
+/* head ------------------------------------------------------------------ */
+
+.chat-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.chat-head-title {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--label-2);
+}
+
+.chat-new-chat {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--label-2);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease, opacity var(--dur-hover) ease;
+}
+
+.chat-new-chat:hover {
+  background: var(--fill-hover);
+  color: var(--label);
+}
+
+.chat-new-chat:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+}
+
+.chat-icon-button:hover {
+  background: var(--fill-hover);
+  color: var(--label);
+}
+
+/* thread ------------------------------------------------------------------ */
+
+.chat-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Bottom-anchored while the thread is short: the greeting sits above the
+   composer as in the reference, and appends glide up instead of jumping. */
+.chat-column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  padding: 8px 2px;
+}
+
+.chat-empty {
+  padding: 8px 6px 16px;
+}
+
+.chat-empty-hi {
+  margin: 0 0 2px;
+  color: var(--label-2);
+  font-size: var(--text-sub);
+}
+
+.chat-empty-heading {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--label);
+}
+
+.chat-bubble {
+  max-width: 86%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.chat-user {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: var(--ink-925);
+  color: var(--ink-50);
+  animation: chat-user-in 200ms var(--ease-out) both;
+}
+
+/* On the dark glass the near-black pill needs a rim, or it disappears. */
+:root[data-theme="dark"] .chat-user,
+:root[data-theme="dark"] .chat-send {
+  box-shadow: inset 0 0 0 1px rgb(244 247 252 / 0.09);
+}
+
+@keyframes chat-user-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+    filter: blur(8px);
+  }
+}
+
+.chat-answer {
+  position: relative;
+  align-self: flex-start;
+  border-bottom-left-radius: 6px;
+  background: var(--fill-hover);
+  color: var(--label);
+}
+
+/* The completed bubble replaces the live one in the same frame at `done` —
+   no entrance here, or the swap would flash. */
+.chat-answer[data-live] {
+  animation: chat-fade-in 160ms var(--ease-out) both;
+}
+
+@keyframes chat-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.chat-answer-body {
+  min-width: 0;
+}
+
+.chat-answer-body p {
+  margin: 0 0 8px;
+}
+
+.chat-answer-body > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-answer-body ul,
+.chat-answer-body ol {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.chat-answer-body ul {
+  list-style: disc;
+}
+
+.chat-answer-body ol {
+  list-style: decimal;
+}
+
+.chat-answer-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-answer-body code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--label) 8%, transparent);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.88em;
+}
+
+.chat-answer-body pre {
+  margin: 6px 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--label) 8%, transparent);
+  overflow-x: auto;
+}
+
+.chat-answer-body pre code {
+  padding: 0;
+  background: none;
+}
+
+/* waiting + morph ---------------------------------------------------------- */
+
+.chat-waiting {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--label-2);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+/* Streaming text has arrived: the spinner fades out in place (absolutely
+   positioned so the text takes the bubble over, never beside it). */
+.chat-waiting.is-done {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+}
+
+.chat-spinner {
+  animation: chat-spin 0.9s linear infinite;
+}
+
+@keyframes chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.chat-spinner circle {
+  fill: none;
+  stroke-width: 2.4;
+}
+
+.chat-spinner-track {
+  stroke: color-mix(in srgb, var(--label) 16%, transparent);
+}
+
+.chat-spinner-arc {
+  stroke: var(--label-2);
+  stroke-linecap: round;
+  stroke-dasharray: 30 17;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-user {
+    animation: chat-fade-in 160ms ease both;
+  }
+  .chat-answer[data-live] {
+    animation: none;
+  }
+  .chat-spinner {
+    animation: chat-spin-pulse 1.4s ease-in-out infinite alternate;
+  }
+  @keyframes chat-spin-pulse {
+    from {
+      opacity: 0.45;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* streamed reveal ---------------------------------------------------------- */
+
+.chat-reveal-p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.chat-reveal {
+  display: inline;
+  animation: chat-reveal-in 240ms var(--ease-out) both;
+}
+
+@keyframes chat-reveal-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reveal {
+    animation: none;
+  }
+}
+
+/* error ------------------------------------------------------------------ */
+
+.chat-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+  font-size: var(--text-sub);
+  animation: chat-fade-in 150ms var(--ease-out) both;
+}
+
+.chat-error-message {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.chat-retry {
+  flex: none;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
+  font: inherit;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+}
+
+.chat-retry:active {
+  transform: scale(0.94);
+}
+
+.chat-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* jump to latest ---------------------------------------------------------- */
+
+.chat-jump {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  z-index: 1;
+  padding: 6px 12px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--pill);
+  box-shadow: var(--pill-shadow);
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: chat-jump-in 140ms var(--ease-out) both;
+}
+
+@keyframes chat-jump-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-jump {
+    animation: none;
+  }
+}
+
+/* composer ------------------------------------------------------------------ */
+
+.chat-composer {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 5px 5px 5px 10px;
+  border-radius: var(--r-group);
+  background: var(--glass-tint-thin);
+}
+
+.chat-composer:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-field {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1.45;
+  resize: none;
+  field-sizing: content;
+  max-height: 140px;
+}
+
+.chat-field:focus-visible {
+  outline: none;
+}
+
+.chat-field::placeholder {
+  color: var(--label-2);
+}
+
+.chat-send {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink-925);
+  box-shadow: var(--pill-shadow);
+  color: var(--ink-50);
+  cursor: pointer;
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    opacity var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) ease,
+    color var(--dur-hover) ease;
+}
+
+.chat-send:active {
+  transform: scale(0.92);
+}
+
+.chat-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.chat-send.is-stop {
+  background: var(--red);
+  color: rgb(255 255 255 / 0.95);
+}
