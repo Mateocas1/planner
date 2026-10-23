@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseInline, parseMarkdown, stableBoundary } from "./markdown.ts";
+import { parseInline, parseInlineRanges, parseMarkdown, stableBoundary, visibleTailEnd } from "./markdown.ts";
 
 test("stableBoundary: text with no blank line is all tail", () => {
   assert.equal(stableBoundary("Hello there, strea"), 0);
@@ -60,6 +60,59 @@ test("parseMarkdown: an unterminated fence is an open code block, never a throw"
 test("parseMarkdown: a partially typed line is a paragraph with literal markers", () => {
   const blocks = parseMarkdown("The **ans");
   assert.deepEqual(blocks, [{ type: "p", inlines: [{ kind: "text", text: "The **ans" }] }]);
+});
+
+test("visibleTailEnd: an unpaired bold opener is held back (review #1)", () => {
+  const text = "You have **two bl";
+  const visible = text.slice(0, visibleTailEnd(text));
+  assert.equal(visible, "You have ");
+  // Nothing rendered shows a raw marker.
+  assert.ok(!visible.includes("*"));
+});
+
+test("visibleTailEnd: a closing ** reveals the bold text (review #1)", () => {
+  const text = "You have **two blocks** left";
+  const visible = text.slice(0, visibleTailEnd(text));
+  assert.equal(visible, text);
+  assert.deepEqual(parseInline(visible).filter(inline => inline.kind === "bold"), [{ kind: "bold", text: "two blocks" }]);
+});
+
+test("visibleTailEnd: an unpaired italic opener is held back", () => {
+  const partial = "the *Deep Work ses";
+  assert.equal(partial.slice(0, visibleTailEnd(partial)), "the ");
+  const closed = "the *Deep Work* session";
+  assert.equal(closed.slice(0, visibleTailEnd(closed)), closed);
+});
+
+test("visibleTailEnd: inline code holds until the closing backtick", () => {
+  assert.equal("use `npm ru".slice(0, visibleTailEnd("use `npm ru")), "use ");
+  const done = "use `npm run` now";
+  assert.equal(done.slice(0, visibleTailEnd(done)), done);
+});
+
+test("visibleTailEnd: a partial fence-opening line is held back (review #1)", () => {
+  assert.equal("text\n``".slice(0, visibleTailEnd("text\n``")), "text\n");
+  assert.equal("text\n```js".slice(0, visibleTailEnd("text\n```js")), "text\n");
+});
+
+test("holdback is display-only: unclosed markers still render literally at done", () => {
+  const text = "You have **two bl";
+  assert.deepEqual(parseMarkdown(text), [{ type: "p", inlines: [{ kind: "text", text }] }]);
+});
+
+test("visibleTailEnd: a complete code span at the tail stays visible", () => {
+  const done = "run `plan tomorrow`";
+  assert.equal(done.slice(0, visibleTailEnd(done)), done);
+});
+
+test("parseInlineRanges records match and content offsets (renderer splits by chunk)", () => {
+  const text = "You have **two blocks** left";
+  const ranges = parseInlineRanges(text);
+  const bold = ranges.find(range => range.inline.kind === "bold");
+  assert.ok(bold);
+  assert.equal(text.slice(bold.start, bold.end), "**two blocks**");
+  assert.equal(text.slice(bold.contentStart, bold.contentEnd), "two blocks");
+  assert.deepEqual(parseInline(text), ranges.map(range => range.inline));
 });
 
 test("parseMarkdown: a soft line break joins the paragraph", () => {

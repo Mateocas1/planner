@@ -17,6 +17,18 @@ export type MarkdownInline =
   | { kind: "code"; text: string }
   | { kind: "link"; text: string; href: string };
 
+/** A parsed inline plus where it sits in the source, so the streaming renderer
+ * can split it across the pacer's chunks. `contentStart/contentEnd` bound the
+ * displayed text inside the match (the `**`/`*`/`` ` ``/link syntax around it
+ * is never rendered). */
+export type MarkdownInlineRange = {
+  inline: MarkdownInline;
+  start: number;
+  end: number;
+  contentStart: number;
+  contentEnd: number;
+};
+
 export type MarkdownBlock =
   | { type: "p"; inlines: MarkdownInline[] }
   | { type: "code"; lang: string; text: string; open: boolean }
@@ -66,22 +78,67 @@ export function stableBoundary(text: string): number {
  * wins over `*`; a marker without its pair stays literal. Nesting (bold
  * inside a link label, code inside bold) is out of the subset.
  */
-export function parseInline(text: string): MarkdownInline[] {
+export function parseInlineRanges(text: string): MarkdownInlineRange[] {
   const pattern = /\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/g;
-  const inlines: MarkdownInline[] = [];
+  const ranges: MarkdownInlineRange[] = [];
   let cursor = 0;
   for (const match of text.matchAll(pattern)) {
     const start = match.index;
-    if (start > cursor) inlines.push({ kind: "text", text: text.slice(cursor, start) });
+    const end = start + match[0].length;
+    if (start > cursor) ranges.push({ inline: { kind: "text", text: text.slice(cursor, start) }, start: cursor, end: start, contentStart: cursor, contentEnd: start });
     const [, bold, italic, code, label, href] = match;
-    if (bold !== undefined) inlines.push({ kind: "bold", text: bold });
-    else if (italic !== undefined) inlines.push({ kind: "italic", text: italic });
-    else if (code !== undefined) inlines.push({ kind: "code", text: code });
-    else inlines.push({ kind: "link", text: label ?? "", href: href ?? "" });
-    cursor = start + match[0].length;
+    if (bold !== undefined) {
+      ranges.push({ inline: { kind: "bold", text: bold }, start, end, contentStart: start + 2, contentEnd: end - 2 });
+    } else if (italic !== undefined) {
+      ranges.push({ inline: { kind: "italic", text: italic }, start, end, contentStart: start + 1, contentEnd: end - 1 });
+    } else if (code !== undefined) {
+      ranges.push({ inline: { kind: "code", text: code }, start, end, contentStart: start + 1, contentEnd: end - 1 });
+    } else {
+      ranges.push({ inline: { kind: "link", text: label ?? "", href: href ?? "" }, start, end, contentStart: start + 1, contentEnd: start + 1 + (label ?? "").length });
+    }
+    cursor = end;
   }
-  if (cursor < text.length) inlines.push({ kind: "text", text: text.slice(cursor) });
-  return inlines;
+  if (cursor < text.length) ranges.push({ inline: { kind: "text", text: text.slice(cursor) }, start: cursor, end: text.length, contentStart: cursor, contentEnd: text.length });
+  return ranges;
+}
+
+/** Split inline text into styled runs. One scan, alternation-ordered so `**`
+ * wins over `*`; a marker without its pair stays literal. Nesting (bold
+ * inside a link label, code inside bold) is out of the subset. */
+export function parseInline(text: string): MarkdownInline[] {
+  return parseInlineRanges(text).map(range => range.inline);
+}
+
+/**
+ * How much of a still-streaming tail may be *displayed* right now (review #1):
+ * the length of the longest prefix whose inline parse shows no raw marker.
+ * Everything from the first marker character that no completed construct
+ * (bold, italic, code span) has consumed is held back until its pair arrives,
+ * so the live text never reads `You have **two bl`. A partial fence opening
+ * (a final line of `` ` ``s that is not a fence yet) is covered by the same
+ * rule; a complete opening fence is handled upstream, where the tail renders
+ * as a code block.
+ *
+ * The holdback is display-only: the completed answer parses the full text, so
+ * a marker still unclosed at `done` renders literally, exactly as the parser
+ * treats any unmatched marker.
+ */
+export function visibleTailEnd(text: string): number {
+  const ranges = parseInlineRanges(text);
+  const firstMarker = (from: number, to: number): number => {
+    if (to <= from) return -1;
+    const found = text.slice(from, to).search(/\*\*|\*|`/);
+    return found === -1 ? -1 : from + found;
+  };
+  // A text range is an unmatched run: any `*` or `` ` `` inside it has no pair.
+  for (const range of ranges) {
+    if (range.inline.kind !== "text") continue;
+    const marker = firstMarker(range.start, range.end);
+    if (marker !== -1) return marker;
+  }
+  const after = ranges.length > 0 ? ranges[ranges.length - 1].end : 0;
+  const marker = firstMarker(after, text.length);
+  return marker === -1 ? text.length : marker;
 }
 
 /** Group raw lines into blocks. Whitespace-only lines separate blocks. */
