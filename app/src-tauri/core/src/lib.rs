@@ -8,3 +8,4 @@ pub mod loopback;
 pub mod oauth;
 pub mod pkce;
 pub mod route;
+pub mod webview;
