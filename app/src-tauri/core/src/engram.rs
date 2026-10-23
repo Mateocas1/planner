@@ -202,10 +202,78 @@ pub const ENGRAM_MEMORY_TYPE: &str = "note";
 /// Engram project, so the assistant's notes never leak into other scopes.
 pub const ENGRAM_MEMORY_SCOPE: &str = "project";
 
-/// How many recent observations a delete lookup fetches. The local store
-/// caps memories at [`crate::chat::MAX_MEMORIES`], so 200 recent rows always
-/// cover every topic the mirror could have written.
+/// How many recent observations a lookup fetches first. The local store
+/// caps memories at [`crate::chat::MAX_MEMORIES`], so the first page nearly
+/// always suffices; when a reply fills the page, the lookup doubles the
+/// limit and refetches until exhausted (Engram's recent list has no offset
+/// pagination, verified live against v3.4.1, but its limit is uncapped).
 pub const RECENT_LOOKUP_LIMIT: usize = 200;
+
+/// Doubled-page ceiling for a lookup: past this, a full page means the
+/// project is unexpectedly huge and the lookup refuses (fail closed) rather
+/// than silently seeing a truncated list.
+const MAX_RECENT_LOOKUP_LIMIT: usize = RECENT_LOOKUP_LIMIT * 64;
+
+/// Fetches every recent observation of the project, without the 200-row
+/// window: each full page doubles the limit until the server returns fewer
+/// rows than asked for. A non-200 answer, a transport failure, or a still-
+/// full page at the ceiling is an error — the caller must never act on a
+/// truncated list.
+fn fetch_recent_observations(
+    transport: &impl EngramTransport,
+    settings: &EngramSettings,
+) -> Result<Vec<RemoteObservation>, String> {
+    fetch_recent_observations_bounded(transport, settings, RECENT_LOOKUP_LIMIT, MAX_RECENT_LOOKUP_LIMIT)
+}
+
+/// The paging loop with injectable bounds (tests use tiny pages).
+fn fetch_recent_observations_bounded(
+    transport: &impl EngramTransport,
+    settings: &EngramSettings,
+    mut limit: usize,
+    max_limit: usize,
+) -> Result<Vec<RemoteObservation>, String> {
+    loop {
+        let recent = transport
+            .call(EngramRequest {
+                method: "GET",
+                url: engram_url(
+                    &settings.address,
+                    &format!(
+                        "observations/recent?project={}&limit={limit}",
+                        urlencode(&settings.project)
+                    ),
+                ),
+                json_body: None,
+            })
+            .map_err(|error| format!("Engram unreachable: {error}"))?;
+        if recent.status != 200 {
+            return Err(format!(
+                "Engram refused the memory lookup (HTTP {}).",
+                recent.status
+            ));
+        }
+        let rows = parse_observations(&recent.body);
+        if rows.len() < limit {
+            return Ok(rows);
+        }
+        if limit >= max_limit {
+            return Err(format!(
+                "Engram returned a full page of {limit} observations; the lookup refuses to guess."
+            ));
+        }
+        limit = (limit * 2).min(max_limit);
+    }
+}
+
+/// The outcome of one mirrored delete: the row was found and deleted, or no
+/// own row for that topic exists. A `NotFound` is its own state — callers
+/// must not count it as a synced memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteOutcome {
+    Deleted,
+    NotFound,
+}
 
 /// The `POST /sessions` body that registers the mirror's session.
 pub fn session_body(settings: &EngramSettings) -> String {
@@ -402,33 +470,14 @@ pub fn mirror_delete(
     transport: &impl EngramTransport,
     settings: &EngramSettings,
     topic_key: &str,
-) -> Result<bool, String> {
-    let recent = transport
-        .call(EngramRequest {
-            method: "GET",
-            url: engram_url(
-                &settings.address,
-                &format!(
-                    "observations/recent?project={}&limit={RECENT_LOOKUP_LIMIT}",
-                    urlencode(&settings.project)
-                ),
-            ),
-            json_body: None,
-        })
-        .map_err(|error| format!("Engram unreachable: {error}"))?;
-    if recent.status != 200 {
-        return Err(format!(
-            "Engram refused the memory lookup (HTTP {}).",
-            recent.status
-        ));
-    }
+) -> Result<DeleteOutcome, String> {
     let mirror_key = mirror_topic_key(topic_key);
-    let Some(id) = parse_observations(&recent.body)
+    let Some(id) = fetch_recent_observations(transport, settings)?
         .into_iter()
         .find(|row| own_session(row) && row.topic_key.as_deref() == Some(mirror_key.as_str()))
         .map(|row| row.id)
     else {
-        return Ok(false);
+        return Ok(DeleteOutcome::NotFound);
     };
     let response = transport
         .call(EngramRequest {
@@ -444,7 +493,7 @@ pub fn mirror_delete(
         })
         .map_err(|error| format!("Engram unreachable: {error}"))?;
     match response.status {
-        200 | 404 => Ok(true),
+        200 | 404 => Ok(DeleteOutcome::Deleted),
         _ => Err(format!(
             "Engram refused the memory delete (HTTP {}).",
             response.status
@@ -479,25 +528,7 @@ pub fn sync_all(
     memories: &[Memory],
 ) -> Result<SyncReport, String> {
     ensure_session(transport, settings)?;
-    let recent = transport
-        .call(EngramRequest {
-            method: "GET",
-            url: engram_url(
-                &settings.address,
-                &format!(
-                    "observations/recent?project={}&limit={RECENT_LOOKUP_LIMIT}",
-                    urlencode(&settings.project)
-                ),
-            ),
-            json_body: None,
-        })
-        .map_err(|error| format!("Engram unreachable: {error}"))?;
-    if recent.status != 200 {
-        return Err(format!(
-            "Engram refused the memory lookup (HTTP {}).",
-            recent.status
-        ));
-    }
+    let recent = fetch_recent_observations(transport, settings)?;
     let mut report = SyncReport::default();
     let mut local_topics: Vec<&str> = Vec::with_capacity(memories.len());
     for memory in memories {
@@ -508,7 +539,7 @@ pub fn sync_all(
     // Only mirrored rows (namespace prefix + the mirror's own session) are
     // stale-delete candidates: observations another writer put into this
     // project never match, whatever their topic key says.
-    for row in parse_observations(&recent.body) {
+    for row in recent {
         if !own_session(&row) {
             continue;
         }
@@ -872,7 +903,7 @@ mod tests {
             ),
             Fake::ok(200, r#"{"status":"deleted"}"#),
         ]);
-        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(true));
+        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(DeleteOutcome::Deleted));
         let requests = fake.requests();
         assert_eq!(
             requests[0].url,
@@ -897,15 +928,89 @@ mod tests {
                 {"id":3,"topic_key":"calendar-app/t"}
             ]"#,
         )]);
-        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(false));
+        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(DeleteOutcome::NotFound));
         assert_eq!(fake.requests().len(), 1, "no delete call without an own row");
     }
 
     #[test]
     fn mirror_delete_is_idempotent_for_an_unknown_topic() {
         let fake = Fake::new(vec![Fake::ok(200, "[]")]);
-        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(false));
+        assert_eq!(
+            mirror_delete(&fake, &settings(), "t"),
+            Ok(DeleteOutcome::NotFound)
+        );
         assert_eq!(fake.requests().len(), 1, "no delete call without a row");
+    }
+
+    #[test]
+    fn mirror_delete_finds_a_topic_beyond_a_full_first_page() {
+        // First page (limit 200) is full and does not contain the topic;
+        // the lookup refetches with a doubled limit and finds it there.
+        let first_page: Vec<String> = (0..200)
+            .map(|i| {
+                format!(
+                    r#"{{"id":{i},"topic_key":"calendar-app/bulk-{i}","session_id":"calendar-app-mirror"}}"#
+                )
+            })
+            .collect();
+        let second_page = format!(
+            "[{},{{\"id\":999,\"topic_key\":\"calendar-app/deep\",\"session_id\":\"calendar-app-mirror\"}}]",
+            first_page.join(",")
+        );
+        let fake = Fake::new(vec![
+            Fake::ok(200, &format!("[{}]", first_page.join(","))),
+            Fake::ok(200, &second_page),
+            Fake::ok(200, r#"{"status":"deleted"}"#),
+        ]);
+        assert_eq!(
+            mirror_delete(&fake, &settings(), "deep"),
+            Ok(DeleteOutcome::Deleted)
+        );
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].url.ends_with("limit=200"));
+        assert!(requests[1].url.ends_with("limit=400"));
+        assert_eq!(
+            requests[2].url,
+            "http://127.0.0.1:7437/observations/999?expected_project=proj"
+        );
+    }
+
+    #[test]
+    fn mirror_delete_still_reports_not_found_when_paging_exhausts_without_a_match() {
+        let first_page: Vec<String> = (0..200)
+            .map(|i| {
+                format!(
+                    r#"{{"id":{i},"topic_key":"calendar-app/bulk-{i}","session_id":"calendar-app-mirror"}}"#
+                )
+            })
+            .collect();
+        let fake = Fake::new(vec![
+            Fake::ok(200, &format!("[{}]", first_page.join(","))),
+            Fake::ok(200, &format!("[{}]", first_page.join(","))),
+        ]);
+        assert_eq!(
+            mirror_delete(&fake, &settings(), "absent"),
+            Ok(DeleteOutcome::NotFound)
+        );
+    }
+
+    #[test]
+    fn the_paging_loop_refuses_to_act_on_a_lookup_that_never_exhausts() {
+        let settings = settings();
+        let full_page = |n: usize| {
+            let rows: Vec<String> = (0..n)
+                .map(|i| {
+                    format!(r#"{{"id":{i},"topic_key":"k{i}","session_id":"calendar-app-mirror"}}"#)
+                })
+                .collect();
+            Fake::ok(200, &format!("[{}]", rows.join(",")))
+        };
+        // Limits 2, 4, 8 (ceiling): every page full → error, never a guess.
+        let fake = Fake::new(vec![full_page(2), full_page(4), full_page(8)]);
+        assert!(fetch_recent_observations_bounded(&fake, &settings, 2, 8).is_err());
+        assert_eq!(fake.requests().len(), 3);
+        assert!(fake.requests()[2].url.ends_with("limit=8"));
     }
 
     #[test]
@@ -915,7 +1020,7 @@ mod tests {
             Fake::ok(200, own_row),
             Fake::ok(404, r#"{"error":"not found"}"#),
         ]);
-        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(true));
+        assert_eq!(mirror_delete(&fake, &settings(), "t"), Ok(DeleteOutcome::Deleted));
         let fake = Fake::new(vec![
             Fake::ok(200, own_row),
             Fake::ok(409, r#"{"error":"mismatch"}"#),
