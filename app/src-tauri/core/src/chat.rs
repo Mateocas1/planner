@@ -104,12 +104,17 @@ impl StreamDecoder {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
             return vec![StreamEvent::Malformed];
         };
+        if value.get("error").is_some() {
+            return vec![StreamEvent::Malformed];
+        }
+        // A chunk without choices (e.g. a closing usage-only chunk) carries
+        // no text: skip it rather than failing the reply.
         let Some(choice) = value
             .get("choices")
             .and_then(|choices| choices.as_array())
             .and_then(|choices| choices.first())
         else {
-            return vec![StreamEvent::Malformed];
+            return Vec::new();
         };
         let mut events = Vec::new();
         if let Some(delta) = choice.get("delta") {
@@ -350,8 +355,15 @@ mod tests {
     }
 
     #[test]
-    fn json_without_choices_is_malformed() {
-        let body = r#"data: {"id":"x"}"#;
+    fn a_usage_only_chunk_without_choices_is_ignored() {
+        // OpenAI-compatible providers may close with a usage chunk.
+        let body = "data: {\"id\":\"x\",\"choices\":[],\"usage\":{\"total_tokens\":9}}\ndata: {\"id\":\"x\",\"usage\":{}}";
+        assert_eq!(decode_all(body), Vec::<StreamEvent>::new());
+    }
+
+    #[test]
+    fn an_error_object_in_the_stream_is_malformed() {
+        let body = r#"data: {"error":{"message":"overloaded"}}"#;
         assert_eq!(decode_all(body), vec![StreamEvent::Malformed]);
     }
 
