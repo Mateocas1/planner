@@ -26,7 +26,7 @@
  *   click, a re-render or a reconnect cannot apply it twice.
  */
 
-import type { FocusSession } from "./focus.ts";
+import { sessionDayKey, type FocusSession } from "./focus.ts";
 
 /** How often the desktop shell polls the OS idle time while a session runs. */
 export const IDLE_POLL_MS = 30_000;
@@ -165,6 +165,23 @@ export function clampSubtraction(
  * block alone is not enough). */
 export function sessionKeyOf(session: Pick<FocusSession, "blockId" | "startedAt">): string {
   return `${session.blockId}@${session.startedAt}`;
+}
+
+/**
+ * The day key a confirmed away subtraction is attributed to (ronda 2, review
+ * fix 2): the session's START day — the same day the session's focus credit
+ * landed — never the away span's own day. One attribution rule for a
+ * session's credit and its corrections, so a cross-midnight away span can
+ * never drive a day negative: the day that received the credit pays the
+ * correction. `undefined` means the prompt carries no usable session start
+ * (review fix 4): the caller refuses the write rather than inventing a day
+ * key — the epoch is not a session start, so no `1970-01-01` key can exist.
+ */
+export function subtractionDayKey(startedAtMs: unknown, timeZone: string): string | undefined {
+  if (typeof startedAtMs !== "number" || !Number.isSafeInteger(startedAtMs) || startedAtMs <= 0) {
+    return undefined;
+  }
+  return sessionDayKey(startedAtMs, timeZone);
 }
 
 /** The idempotency key of one confirmed subtraction: the session plus its

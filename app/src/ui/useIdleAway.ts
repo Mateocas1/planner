@@ -13,7 +13,9 @@ import {
 } from "../domain/idle.ts";
 import { closeAway, confirmAway, emptyBooks, keepAway, openAway, type AwayBooks } from "../domain/idleFlow.ts";
 import { subtractActualMinutes } from "../data/tasks.ts";
+import { useProfileTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
+import { subtractionDayKey } from "../domain/idle.ts";
 import { trackedMinutes } from "./useFocusTimer.ts";
 
 /**
@@ -57,6 +59,13 @@ export type IdlePrompt = {
   /** Whole away minutes, unclamped — the number the sentence shows. */
   minutes: number;
   /**
+   * The session's start, in epoch ms: the instant the subtraction's day key
+   * comes from (ronda 2, review fix 2 — the same day the session's focus
+   * credit landed, never the away span's own day and never "now" at write
+   * time). A prompt without a usable start refuses the write (review fix 4).
+   */
+  startedAt: number;
+  /**
    * What the session already recorded, when it has stopped: null while the
    * session is still open (its minutes will fold the subtraction in), 0 when
    * it reported nothing worth recording (below MIN_TRACKED_MINUTES or no
@@ -80,6 +89,12 @@ export function useIdleAway({
   const [prompt, setPrompt] = useState<IdlePrompt | null>(null);
   const promptRef = useRef<IdlePrompt | null>(null);
   promptRef.current = prompt;
+
+  // The profile zone decides which day an away span belongs to — the same
+  // zone every other day key in the app is read in. The browser zone is the
+  // fallback while the profile is still loading, like the focus timer's.
+  const profile = useProfileTimeZone(uid ?? null);
+  const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   // The current session's away spans, plus one still open (the user has been
   // idle past the threshold but has not come back yet).
@@ -109,6 +124,9 @@ export function useIdleAway({
       blockId: ended.blockId,
       ...(ended.taskId === undefined ? {} : { taskId: ended.taskId }),
       minutes,
+      // The subtraction rides the session's start day (review fix 2), so the
+      // prompt carries the start the credit used.
+      startedAt: ended.startedAt,
       recorded,
     });
   }, []);
@@ -188,6 +206,13 @@ export function useIdleAway({
     (taskActualMinutes: number) => {
       const current = promptRef.current;
       if (current === null) return;
+      // The subtraction's day is the day the session STARTED (ronda 2, review
+      // fix 2) — the same day its focus credit landed, so a cross-midnight
+      // away span can never drive another day negative. A prompt without a
+      // usable start refuses the write (review fix 4): nothing is written and
+      // nothing is marked applied, so no epoch-0 day key can exist.
+      const dayKey = subtractionDayKey(current.startedAt, zone);
+      if (dayKey === undefined) return;
       setPrompt(null);
       booksRef.current = confirmAway(booksRef.current, current, taskActualMinutes, {
         storage: window.localStorage,
@@ -195,13 +220,13 @@ export function useIdleAway({
           uid === undefined
             ? undefined
             : (taskId, minutes) => {
-                void subtractActualMinutes(uid, taskId, minutes).catch(() => {
+                void subtractActualMinutes(uid, taskId, minutes, dayKey).catch(() => {
                   onError?.("The subtraction could not be saved.");
                 });
               },
       }).books;
     },
-    [uid, onError],
+    [uid, zone, onError],
   );
 
   /** Keep: no write at all, and the session's spans are spent — they never

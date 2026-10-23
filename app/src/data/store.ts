@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, type QueryDocumentSnapshot, type QuerySnapshot } from "firebase/firestore";
 import { parseHoliday, type Holiday } from "../domain/holidays.ts";
-import { parseActualMinutes, parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
+import { parseActualByDay, parseActualMinutes, parseBlock as parseStoredBlock, parseEstimate, type Recurrence, type Task, type WorkBlock } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
@@ -56,6 +56,7 @@ export function toTask(doc: QueryDocumentSnapshot): TaskView {
   const data = doc.data();
   const estimate = parseEstimate(data.estimate);
   const actualMinutes = parseActualMinutes(data.actualMinutes);
+  const actualByDay = parseActualByDay(data.actualByDay);
   return {
     id: doc.id,
     title: String(data.title),
@@ -64,6 +65,7 @@ export function toTask(doc: QueryDocumentSnapshot): TaskView {
     ...(data.deadline === undefined ? {} : { deadline: String(data.deadline) }),
     ...(estimate === undefined ? {} : { estimate }),
     ...(actualMinutes === undefined ? {} : { actualMinutes }),
+    ...(actualByDay === undefined ? {} : { actualByDay }),
     ...(data.completedAt === undefined ? {} : { completedAt: String(data.completedAt) }),
     ...(data.someday === true ? { someday: true } : {}),
   };
