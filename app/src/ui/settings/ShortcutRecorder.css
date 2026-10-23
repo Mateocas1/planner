@@ -25,12 +25,6 @@
   font-weight: 500;
 }
 
-.shortcut-chip kbd {
-  font-family: inherit;
-  font-size: var(--text-caption);
-  color: var(--label);
-}
-
 .shortcut-chip[data-recording="true"] {
   color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);
@@ -107,21 +101,9 @@
   to { opacity: 0; }
 }
 
-/* The read-only built-in keycaps. */
+/* The read-only built-in keycaps share the recorder's cap (Keycap.css). */
 .shortcut-built-in {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-.shortcut-built-in kbd,
-.shortcut-chip kbd {
-  min-width: 20px;
-  height: 22px;
-  padding: 0 5px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--separator);
 }

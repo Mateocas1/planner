@@ -113,6 +113,46 @@ test("a changed work window still persists from the new container", async ({ pag
     .toEqual({ timeZone: ZONE, workStart: 510, workEnd: 960, shutdownTime: null, shortcutsEnabled: null });
 });
 
+test("time fields show the full value at every font scale, and the web hides desktop-only rows", async ({ page }) => {
+  await enter(page, "settings-fit", { workStart: 9 * 60, workEnd: 17 * 60, shutdownTime: 18 * 60 });
+  await gear(page).click();
+  await expect(view(page)).toBeVisible();
+
+  /* The work-start field holds "09:00" in full: nothing clipped. */
+  const start = page.getByLabel("Work starts");
+  await expect(start).toHaveValue("09:00");
+  const fits = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate(el => el.scrollWidth <= el.clientWidth);
+  await expect.poll(() => fits(start)).toBe(true);
+
+  /* The widest value the field takes still fits, at the default scale and at a
+     larger root font. Nothing is committed: the value is put back before blur,
+     and the same time is not written. */
+  await start.fill("88:88");
+  await expect.poll(() => fits(start)).toBe(true);
+  await start.fill("09:00");
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "22px";
+  });
+  await expect.poll(() => fits(start)).toBe(true);
+  await expect.poll(() => fits(page.getByLabel("Work ends"))).toBe(true);
+  await expect.poll(() => fits(page.getByLabel("Shut down at"))).toBe(true);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "";
+  });
+
+  /* The desktop-only quick-add row has no label on the web: it is not rendered. */
+  await rail(page).getByRole("button", { name: "Shortcuts" }).click();
+  await expect(view(page).getByRole("heading", { name: "Shortcuts" })).toBeVisible();
+  await expect(view(page).getByText("Quick add anywhere")).toHaveCount(0);
+  await expect(view(page).getByRole("button", { name: /Command palette shortcut/ })).toBeVisible();
+
+  /* Built-in keys and recorder keycaps draw in the UI font, not the monospace default. */
+  const keycap = view(page).locator(".keycap").first();
+  await expect(keycap).toBeVisible();
+  await expect.poll(() => keycap.evaluate(el => getComputedStyle(el).fontFamily)).not.toContain("monospace");
+});
+
 test("the palette recorder refuses a conflict and restores the default", async ({ page }) => {
   await enter(page, "settings-recorder");
   await gear(page).click();
