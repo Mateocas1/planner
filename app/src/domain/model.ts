@@ -1,4 +1,20 @@
-export type Task = { id: string; title: string; deadline?: string; estimate?: number; actualMinutes?: number };
+/**
+ * A task's tracked minutes, attributed per profile-zone day (ronda 2 S3/L6):
+ * every increment or decrement of `actualMinutes` also moves the matching
+ * `actualByDay.<YYYY-MM-DD>` entry in the same atomic write. The total stays
+ * the single source of truth; the map is the "when did it happen" view the
+ * weekly review sums. Tasks written before the map existed (and totals edited
+ * by hand, should a surface ever offer that) have none — readers treat the
+ * absence as "cannot place in a week", not as zero.
+ */
+export type Task = {
+  id: string;
+  title: string;
+  deadline?: string;
+  estimate?: number;
+  actualMinutes?: number;
+  actualByDay?: Record<string, number>;
+};
 
 /**
  * How long a task is expected to take, in whole minutes. An estimate is a
@@ -139,6 +155,26 @@ export function parseActualMinutes(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Reads a stored per-day map out of a document. A task written before the map
+ * existed has none, and a hand-edited document may hold anything; in both
+ * cases the value reads as absent rather than crashing the surface. Only real
+ * `YYYY-MM-DD` day keys survive, values must be finite numbers floored to
+ * whole minutes, and a negative day clamps at zero: storage may hold a
+ * negative day (an away subtraction can land on a day whose credit landed the
+ * day before), but no reader may show it. An empty result is no data.
+ */
+export function parseActualByDay(value: unknown): Record<string, number> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const map: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!validDate(key)) continue;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) continue;
+    map[key] = Math.min(MAX_ACTUAL_MINUTES, Math.max(0, Math.floor(raw)));
+  }
+  return Object.keys(map).length === 0 ? undefined : map;
 }
 
 /** An estimate in the words a person uses: "45 min", "1h", "1h 30m". */
