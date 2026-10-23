@@ -187,7 +187,7 @@ pub struct Memory {
 
 /// One memory-extraction operation, keyed by `topicKey`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(tag = "op", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum MemoryOp {
     Upsert {
         topic_key: String,
