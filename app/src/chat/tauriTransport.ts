@@ -1,8 +1,10 @@
 /**
  * Desktop transport for the chat panel: the Rust side (`src-tauri/src/chat/`)
- * holds the API key and performs the HTTPS call, so the key never reaches the
- * page (spec S3). Implements the `ChatTransport` contract from `types.ts`
- * over `invoke` + `Channel`.
+ * holds the API key, owns the non-secret provider address (bound to the key,
+ * never sent from the page) and performs the HTTPS call, so the key never
+ * reaches the page (spec S3). Implements the `ChatTransport` contract from
+ * `types.ts` over `invoke` + `Channel`. Key helpers for Settings live in
+ * `keyStore.ts`.
  */
 
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -12,20 +14,6 @@ import type {
   ChatRequest,
   ChatTransport,
 } from "./types.ts";
-
-/** The default OpenAI-compatible endpoint (spec S3, parent decision L1/L4). */
-export const DEFAULT_CHAT_BASE_URL = "https://api.nan.builders/v1";
-
-/**
- * The provider base URL is a non-secret setting owned by the Settings UI
- * (task C3). Until that lands, the module default applies and the setter
- * lets Settings overwrite it.
- */
-let chatBaseUrl = DEFAULT_CHAT_BASE_URL;
-
-export function setChatBaseUrl(baseUrl: string): void {
-  chatBaseUrl = baseUrl;
-}
 
 function terminal(event: ChatEvent): boolean {
   return (
@@ -85,7 +73,7 @@ export function createTauriChatTransport(): ChatTransport {
             resolve();
           }
         };
-        invoke("chat_stream", { request, baseUrl: chatBaseUrl, onEvent: channel }).catch(
+        invoke("chat_stream", { request, onEvent: channel }).catch(
           (error) => {
             if (!settled) {
               settled = true;
@@ -100,7 +88,7 @@ export function createTauriChatTransport(): ChatTransport {
     },
     complete(request: ChatRequest) {
       // The Rust rejection serializes as `{code, message}` (IpcError).
-      return invoke<string>("chat_complete", { request, baseUrl: chatBaseUrl });
+      return invoke<string>("chat_complete", { request });
     },
   };
 }

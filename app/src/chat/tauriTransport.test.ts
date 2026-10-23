@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CHAT_BASE_URL, toChatEvent } from "./tauriTransport.ts";
+import { toChatEvent } from "./tauriTransport.ts";
 import type { ChatEvent } from "./types.ts";
-
-test("the default base URL is the NaN OpenAI-compatible endpoint", () => {
-  assert.equal(DEFAULT_CHAT_BASE_URL, "https://api.nan.builders/v1");
-});
 
 test("toChatEvent passes the contract events through", () => {
   const events: Array<unknown> = [
