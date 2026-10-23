@@ -13,7 +13,9 @@ import {
 } from "../domain/idle.ts";
 import { closeAway, confirmAway, emptyBooks, keepAway, openAway, type AwayBooks } from "../domain/idleFlow.ts";
 import { subtractActualMinutes } from "../data/tasks.ts";
+import { useProfileTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
+import { dateKey } from "./time.ts";
 import { trackedMinutes } from "./useFocusTimer.ts";
 
 /**
@@ -57,6 +59,12 @@ export type IdlePrompt = {
   /** Whole away minutes, unclamped — the number the sentence shows. */
   minutes: number;
   /**
+   * The earliest confirmed away span's start, in epoch ms: the instant the
+   * subtraction's day key comes from (S3/L6 — the day of the away span, never
+   * "now" at write time). Absent only on a malformed prompt.
+   */
+  awayFrom?: number;
+  /**
    * What the session already recorded, when it has stopped: null while the
    * session is still open (its minutes will fold the subtraction in), 0 when
    * it reported nothing worth recording (below MIN_TRACKED_MINUTES or no
@@ -80,6 +88,12 @@ export function useIdleAway({
   const [prompt, setPrompt] = useState<IdlePrompt | null>(null);
   const promptRef = useRef<IdlePrompt | null>(null);
   promptRef.current = prompt;
+
+  // The profile zone decides which day an away span belongs to — the same
+  // zone every other day key in the app is read in. The browser zone is the
+  // fallback while the profile is still loading, like the focus timer's.
+  const profile = useProfileTimeZone(uid ?? null);
+  const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   // The current session's away spans, plus one still open (the user has been
   // idle past the threshold but has not come back yet).
@@ -109,6 +123,9 @@ export function useIdleAway({
       blockId: ended.blockId,
       ...(ended.taskId === undefined ? {} : { taskId: ended.taskId }),
       minutes,
+      // The spans are clipped to the session's focus and at least a whole
+      // minute survived, so at least one span is here.
+      awayFrom: Math.min(...spans.map(span => span.from)),
       recorded,
     });
   }, []);
@@ -189,19 +206,24 @@ export function useIdleAway({
       const current = promptRef.current;
       if (current === null) return;
       setPrompt(null);
+      // The subtraction's day is the day the away span began (S3/L6), not the
+      // day the user pressed Subtract. The session's own start is the fallback
+      // for a malformed prompt; both come from the prompt, never from now.
+      const awayFrom = current.awayFrom ?? Number(current.sessionKey.slice(current.sessionKey.lastIndexOf("@") + 1));
+      const dayKey = dateKey(new Date(Number.isFinite(awayFrom) ? awayFrom : 0), zone);
       booksRef.current = confirmAway(booksRef.current, current, taskActualMinutes, {
         storage: window.localStorage,
         write:
           uid === undefined
             ? undefined
             : (taskId, minutes) => {
-                void subtractActualMinutes(uid, taskId, minutes).catch(() => {
+                void subtractActualMinutes(uid, taskId, minutes, dayKey).catch(() => {
                   onError?.("The subtraction could not be saved.");
                 });
               },
       }).books;
     },
-    [uid, onError],
+    [uid, zone, onError],
   );
 
   /** Keep: no write at all, and the session's spans are spent — they never

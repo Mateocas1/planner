@@ -14,6 +14,7 @@ import {
   startFocus,
   stopFocus,
   focusStorageKey,
+  sessionDayKey,
   type FocusReport,
   type FocusSession,
   type FocusStatus,
@@ -177,13 +178,19 @@ export function useFocusTimer({
     const away = consumePendingSubtraction(sessionKeyOf(ended), window.localStorage);
     const minutes = minutesToRecord(tracked.minutes, away);
     if (minutes === 0) return;
+    // The day the minutes belong to is the profile-zone day the session
+    // STARTED (ronda 2 S3/L6), not the day the stop lands on: a session that
+    // crosses midnight counts for the day the work began. The folded away
+    // subtraction rides the same day — the away span is a clipped subset of
+    // this session's focused time, so its minutes were credited here too.
+    const dayKey = sessionDayKey(ended.startedAt, zone);
     // The counter is a side effect of the session, never a gate on it: the
     // timer has already stopped and cleared itself by the time this lands, so
     // an unreachable server leaves the session recorded rather than repeated.
-    void addActualMinutes(uid, tracked.taskId, minutes).catch(cause => {
+    void addActualMinutes(uid, tracked.taskId, minutes, dayKey).catch(cause => {
       console.error("could not record actual minutes", cause);
     });
-  }, [uid]);
+  }, [uid, zone]);
 
   useEffect(() => {
     const onVisibility = () => {
