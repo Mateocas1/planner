@@ -12,6 +12,7 @@
  *   with a Retry, and any partial answer above it stays.
  */
 
+import { MAX_TOOL_CALLS_PER_ANSWER } from "./tools.ts";
 import type { ChatEvent, ChatErrorCode } from "./types.ts";
 
 export type ChatTurn =
@@ -65,12 +66,20 @@ export function hasExchange(turns: ChatTurn[]): boolean {
   return turns.some(turn => turn.role === "user") && turns.some(turn => turn.role === "assistant" && turn.text !== "");
 }
 
-/** Append text to the trailing assistant turn, keeping text and segments in step. */
-function appendAssistantText(state: ConversationState, delta: string): ConversationState {
+/**
+ * Appends one stream piece (text delta or a tool call) to the trailing
+ * assistant turn, opening the turn when the stream has not created one yet —
+ * text and tool calls both open it.
+ */
+function appendAssistantTurn(state: ConversationState, apply: (turn: ChatTurn & { role: "assistant" }) => ChatTurn): ConversationState {
   const turns = state.turns.slice();
   const last = turns[turns.length - 1];
-  if (last === undefined || last.role !== "assistant") return state;
-  turns[turns.length - 1] = { ...last, text: last.text + delta, segments: [...last.segments, delta] };
+  if (last !== undefined && last.role === "assistant") {
+    turns[turns.length - 1] = apply(last);
+    return { ...state, turns };
+  }
+  const turn: ChatTurn & { role: "assistant" } = { id: `a${state.requestId ?? ""}`, role: "assistant", text: "", segments: [] };
+  turns.push(apply(turn));
   return { ...state, turns };
 }
 
@@ -93,13 +102,34 @@ export function reduceConversation(state: ConversationState, action: Conversatio
       if (state.requestId === null) return state;
       const event = action.event;
       if (event.type === "reasoning") return { ...state, phase: "reasoning" };
-      if (event.type === "delta") {
-        // The first text morphs the waiting bubble into the answer bubble.
+      if (event.type === "tool_call") {
+        // A tool call renders as an action card inside the answer (spec S1):
+        // it opens the assistant turn like a delta does, and the card stays
+        // pending until the user acts — resolving one never re-opens a stream.
         const fresh = state.phase !== "streaming";
-        const base = fresh
-          ? { ...state, phase: "streaming" as const, turns: [...state.turns, { id: `a${state.requestId}`, role: "assistant" as const, text: "", segments: [] as string[] }] }
-          : state;
-        return appendAssistantText(base, event.text);
+        const base = fresh ? { ...state, phase: "streaming" as const } : state;
+        return appendAssistantTurn(base, turn => {
+          const toolCalls = turn.toolCalls ?? [];
+          if (toolCalls.length >= MAX_TOOL_CALLS_PER_ANSWER) {
+            // Extras are dropped with a note (spec S1); the card never renders.
+            return { ...turn, callsDropped: (turn.callsDropped ?? 0) + 1 };
+          }
+          const call = event.call;
+          return {
+            ...turn,
+            toolCalls: [...toolCalls, { callId: call.id, name: call.name, arguments: call.arguments, status: "pending" as const }],
+          };
+        });
+      }
+      if (event.type === "delta") {
+        // The first piece morphs the waiting bubble into the answer bubble.
+        const fresh = state.phase !== "streaming";
+        const base = fresh ? { ...state, phase: "streaming" as const } : state;
+        return appendAssistantTurn(base, turn => ({
+          ...turn,
+          text: turn.text + event.text,
+          segments: [...turn.segments, event.text],
+        }));
       }
       if (event.type === "done") return { ...state, phase: "idle", requestId: null };
       if (event.type === "cancelled") return { ...state, phase: "idle", requestId: null };
@@ -128,5 +158,28 @@ export function reduceConversation(state: ConversationState, action: Conversatio
     }
     case "newChat":
       return emptyConversation;
+    case "toolCallResolved": {
+      // The user acted on one card. Unknown ids (a turn already cleared by
+      // New chat) change nothing; a matching card updates in place.
+      const known = state.turns.some(
+        turn => turn.role === "assistant" && turn.toolCalls?.some(card => card.callId === action.callId) === true,
+      );
+      if (!known) return state;
+      return {
+        ...state,
+        turns: state.turns.map(turn => {
+          if (turn.role !== "assistant" || turn.toolCalls === undefined) return turn;
+          if (!turn.toolCalls.some(card => card.callId === action.callId)) return turn;
+          return {
+            ...turn,
+            toolCalls: turn.toolCalls.map(card =>
+              card.callId === action.callId
+                ? { ...card, status: action.status, ...(action.outcome === undefined ? {} : { outcome: action.outcome }) }
+                : card,
+            ),
+          };
+        }),
+      };
+    }
   }
 }
