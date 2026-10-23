@@ -155,9 +155,12 @@ test("a 20-minute focus session adds 20 minutes to its task, and Task details sh
   await timer(page).getByRole("button", { name: "Stop" }).click();
   await expect(timer(page)).toHaveCount(0);
 
-  /* Whole minutes, added to the task's own counter: no read, no overwrite. */
+  /* Whole minutes, added to the task's own counter: no read, no overwrite —
+     and, in the same write, to the session's start day in the planner's zone
+     (UTC here) for the weekly review's plan-vs-actual (W2c, ronda2 L6). */
+  const startDay = new Date(now - 20 * 60_000).toISOString().slice(0, 10);
   await expect.poll(() => readRemoteTasks(email), poll).toEqual([
-    { title: "Write the brief", completed: false, actualMinutes: 20 },
+    { title: "Write the brief", completed: false, actualMinutes: 20, actualByDay: { [startDay]: 20 } },
   ]);
 
   await openTasks(page);

@@ -108,8 +108,16 @@ function encodeFields(data: Record<string, string | boolean>): RestFields {
   return fields;
 }
 
-function decodeDocument(document: RestDocument): { id: string; data: Record<string, string | boolean | number> } {
-  const data: Record<string, string | boolean | number> = {};
+function decodeMinuteMap(map: { fields?: Record<string, { integerValue?: string; doubleValue?: number }> }): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [day, entry] of Object.entries(map.fields ?? {})) {
+    out[day] = entry.integerValue !== undefined ? Number(entry.integerValue) : Number(entry.doubleValue);
+  }
+  return out;
+}
+
+function decodeDocument(document: RestDocument): { id: string; data: Record<string, string | boolean | number | Record<string, number>> } {
+  const data: Record<string, string | boolean | number | Record<string, number>> = {};
   for (const [key, value] of Object.entries(document.fields ?? {})) {
     if ("stringValue" in value) data[key] = value.stringValue;
     else if ("booleanValue" in value) data[key] = value.booleanValue;
@@ -117,6 +125,8 @@ function decodeDocument(document: RestDocument): { id: string; data: Record<stri
     // back as the number the domain wrote, not as a string.
     else if ("integerValue" in value) data[key] = Number(value.integerValue);
     else if ("doubleValue" in value) data[key] = value.doubleValue;
+    // `actualByDay` (W2c) is a map of day key → whole minutes.
+    else if ("mapValue" in value) data[key] = decodeMinuteMap(value.mapValue);
     else throw new Error(`unsupported Firestore REST value for ${key}: ${JSON.stringify(value)}`);
   }
   // The document id is the last segment of the full resource name.
