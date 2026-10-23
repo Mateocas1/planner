@@ -131,6 +131,13 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Loads the whole store for the Engram mirror's "Sync now" (task R2). The
+/// same data-safety rules as the commands: a missing file is empty, an
+/// unreadable file is an error and refuses to write.
+pub(crate) fn load_all(app: &AppHandle) -> Result<Vec<Memory>, String> {
+    load(&file_path(app)?)
+}
+
 /// Lists all memories, newest topic first is the caller's concern; the order
 /// is the store's insertion order. An unreadable file is an error.
 #[tauri::command]
@@ -147,6 +154,7 @@ pub fn chat_memories_apply(app: AppHandle, ops: Vec<MemoryOp>) -> Result<Vec<Mem
     let path = file_path(&app)?;
     let memories = apply_memory_ops(load(&path)?, &ops, new_memory_id, now_ms())?;
     save(&path, &memories)?;
+    super::engram::mirror_after_write(&app, &ops);
     Ok(memories)
 }
 
@@ -156,8 +164,18 @@ pub fn chat_memories_apply(app: AppHandle, ops: Vec<MemoryOp>) -> Result<Vec<Mem
 pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
     let mut memories = load(&path)?;
+    // The deleted memory's topic key drives the Engram mirror delete (R2).
+    let topic = memories
+        .iter()
+        .find(|memory| memory.id == id)
+        .map(|memory| MemoryOp::Delete {
+            topic_key: memory.topic_key.clone(),
+        });
     memories.retain(|memory| memory.id != id);
     save(&path, &memories)?;
+    if let Some(op) = topic {
+        super::engram::mirror_after_write(&app, std::slice::from_ref(&op));
+    }
     Ok(memories)
 }
 
@@ -165,7 +183,15 @@ pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, S
 #[tauri::command]
 pub fn chat_memories_clear(app: AppHandle) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
-    load(&path)?;
+    let memories = load(&path)?;
+    // "Clear all" removes the mirrored observations too (spec S2).
+    let mirror_ops: Vec<MemoryOp> = memories
+        .iter()
+        .map(|memory| MemoryOp::Delete {
+            topic_key: memory.topic_key.clone(),
+        })
+        .collect();
     save(&path, &[])?;
+    super::engram::mirror_after_write(&app, &mirror_ops);
     Ok(Vec::new())
 }

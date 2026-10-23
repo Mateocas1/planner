@@ -13,6 +13,7 @@
 //! (never taken from the webview per call) and never echoed in error
 //! messages.
 
+pub mod engram;
 pub mod memory_store;
 
 use std::collections::HashMap;
