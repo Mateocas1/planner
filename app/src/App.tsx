@@ -8,6 +8,7 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { useDeepLink } from "./desktop-deeplink.ts";
+import { isTauri } from "./desktop.ts";
 import { useDesktopNotifications } from "./ui/useDesktopNotifications.ts";
 import { useDesktopTray } from "./desktop-tray.ts";
 import { useSignInReveal } from "./desktop-autostart.ts";
@@ -27,7 +28,10 @@ import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
-import { DaySettingsSheet } from "./ui/Settings.tsx";
+import { SettingsIcon } from "./ui/Settings.tsx";
+import { SettingsView } from "./ui/settings/SettingsView.tsx";
+import { resolveSettingsTab, type SettingsTab } from "./ui/settings/tabs.ts";
+import { matchesEvent, useShortcutBinding } from "./ui/settings/shortcutRegistry.ts";
 import { Sheet } from "./ui/Sheet.tsx";
 import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
@@ -45,7 +49,7 @@ import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
-export type View = "home" | "tasks" | "calendar";
+export type View = "home" | "tasks" | "calendar" | "settings";
 
 export default function App() {
   // The keyboard inset is published once for the whole app: the sign-in gate and
@@ -77,7 +81,7 @@ export default function App() {
   );
 }
 
-const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar" };
+const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar", settings: "Settings" };
 function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
   const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
@@ -151,14 +155,23 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     importOrigin.current = origin;
     setImportOpen(true);
   };
-  // Day settings (S1): the same panel from the sidebar's account row and from
-  // the phone's account menu, so it grows out of whichever control was pressed.
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsOrigin = useRef<HTMLElement | null>(null);
-  const openSettings = (origin: HTMLElement | null) => {
-    settingsOrigin.current = origin;
-    setSettingsOpen(true);
-  };
+  // Settings (Ronda 2, S1) is a view in the shell, not a sheet: the tab it
+  // opens on is the shell's state so `openSettings(tab?)` stays the single
+  // entry point the palette, the phone account menu and the later deep links
+  // (rituals, ai) all use. The view Settings was opened from is remembered
+  // for Back; Escape and every sidebar nav item return the ordinary way.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const previousView = useRef<View>("home");
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+  const openSettings = useCallback(
+    (tab?: SettingsTab) => {
+      setSettingsTab(resolveSettingsTab(tab, isTauri()));
+      if (viewRef.current !== "settings") previousView.current = viewRef.current;
+      onNavigate("settings");
+    },
+    [onNavigate],
+  );
   // Actionable native notifications (T7, S8.3): block-start toasts with
   // [Start focus] / [+5 min] and the shutdown nudge. Desktop only, the web
   // build runs nothing. The actions reuse the shell's own doors: the timer's
@@ -191,16 +204,32 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const scrolled = useScrolled();
   const titleHidden = useTitleScrolledAway(view);
 
+  // The palette opens on its rebindable chord (default Ctrl+K), read live
+  // from the shortcut registry so a rebind in Settings takes at once. Cmd and
+  // Ctrl count as the same command modifier (the registry's rule).
+  const paletteChord = useShortcutBinding("palette");
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "k") return;
-      // Cmd/Ctrl+K is the palette's from anywhere, including inside a field.
+      if (!matchesEvent(paletteChord, event)) return;
+      // The palette is open from anywhere, including inside a field.
       event.preventDefault();
       setPaletteOpen(true);
     };
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, []);
+  }, [paletteChord]);
+
+  // `Ctrl+,` opens Settings from anywhere. It is a fixed chord (the registry
+  // keeps it out of the recorder), so a plain listener is all it needs.
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!matchesEvent("ctrl+Comma", event)) return;
+      event.preventDefault();
+      openSettings();
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [openSettings]);
 
   /* The keyboard (F6): one more listener, and the only one that reads letters.
      ui/shortcuts.ts decides -- is this a field, a dialog, an IME, a browser
@@ -341,7 +370,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                 pending={pending}
                 onSignOut={signOut}
                 onImport={openImport}
-                onSettings={openSettings}
+                onOpenSettings={() => openSettings()}
               />
             ) : (
               <button ref={newTaskRef} type="button" className="button button-accent" onClick={newTask}>
@@ -415,6 +444,17 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   onDeleted={offerUndo}
                 />
               )}
+              {view === "settings" && (
+                <SettingsView
+                  uid={user.uid}
+                  workWindow={profile.workWindow}
+                  shutdownTime={profile.shutdownTime}
+                  shortcutsEnabled={profile.shortcutsEnabled}
+                  tab={settingsTab}
+                  onTab={setSettingsTab}
+                  onBack={() => onNavigate(previousView.current === "settings" ? "home" : previousView.current)}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -445,19 +485,6 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {settingsOpen && (
-          <DaySettingsSheet
-            key="day-settings"
-            uid={user.uid}
-            workWindow={profile.workWindow}
-            shutdownTime={profile.shutdownTime}
-            shortcutsEnabled={profile.shortcutsEnabled}
-            origin={settingsOrigin.current}
-            onClose={() => setSettingsOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
         {importOpen && (
           <GcalImportSheet
             key="gcal-import"
@@ -483,6 +510,7 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
           onImport={() => openImport(null)}
           onOpenNow={() => setNowOpen(true)}
           onCloseDay={() => openShutdown(null)}
+          onOpenSettings={openSettings}
           onOpenTask={taskId => {
             setPendingTask(taskId);
             onNavigate("tasks");
@@ -565,13 +593,13 @@ function AccountMenu({
   pending,
   onSignOut,
   onImport,
-  onSettings,
+  onOpenSettings,
 }: {
   email: string;
   pending: number;
   onSignOut: () => void;
   onImport: (origin: HTMLElement) => void;
-  onSettings: (origin: HTMLElement) => void;
+  onOpenSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -593,17 +621,17 @@ function AccountMenu({
             <SyncStatus pending={pending} />
             {/* No sidebar at this width, so the theme control lives here. */}
             <ThemeSwitch />
-            {/* And so does the import entry: the same footer action, one tap
-                from the account the calendars belong to. */}
+            {/* And so does the settings entry: the same footer action, one tap
+                from the account whose preferences they are. */}
             <button
               type="button"
               className="link-button"
-              onClick={event => {
+              onClick={() => {
                 setOpen(false);
-                onSettings(event.currentTarget);
+                onOpenSettings();
               }}
             >
-              Day settings
+              Settings
             </button>
             <button
               type="button"

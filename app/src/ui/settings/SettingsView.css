@@ -1,0 +1,294 @@
+/* Settings as a view in the shell (Ronda 2, S1). Tokens only, the same set
+   scripts/glass-contrast.mjs already proves: the rail is transparent on the
+   shell (the app's glass, Mica on desktop), the content groups are opaque
+   --surface cards on it, and no glass is nested. Motion lives in
+   SettingsView.tsx (motion/react); reduced motion is handled there. */
+
+.settings {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: 0 40px;
+  max-width: 880px;
+  padding: 8px 32px 48px;
+}
+
+/* ---------- the rail ---------- */
+
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: start;
+  position: sticky;
+  top: 68px;
+}
+
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px 0 2px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-size: var(--text-sub);
+  font-weight: 500;
+  align-self: flex-start;
+}
+
+.settings-back-icon { width: 16px; height: 16px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-back:hover { color: var(--label); background: var(--fill-hover); }
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The rail item is the sidebar nav item's anatomy: icon + label, 40 px, the
+   shared nav-pill look via its own layoutId pill. */
+.settings-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-weight: 500;
+  font-size: var(--text-body);
+  transition: color var(--dur-hover) ease;
+}
+
+.settings-nav-icon { width: 18px; height: 18px; flex: none; position: relative; }
+.settings-nav-item span:not(.settings-pill) { position: relative; }
+
+.settings-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--pill);
+  box-shadow: var(--pill-shadow);
+}
+
+.settings-nav-item[aria-current="page"] { color: var(--label); }
+.settings-nav-item[aria-current="page"] .settings-nav-icon { color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-nav-item:not([aria-current="page"]):hover { color: var(--label); background: var(--fill-hover); }
+}
+
+/* ---------- the content column ---------- */
+
+.settings-pane { min-width: 0; }
+
+.settings-pane-inner {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-head h2 {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  color: var(--label);
+}
+
+.settings-head p {
+  margin: 4px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.settings-section-desc {
+  margin: -2px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+/* The card is the creation sheets' .form-group material: opaque --surface,
+   one --r-group radius, the hairline it already carries. */
+.settings-card {
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow, 0 1px 2px rgb(0 0 0 / 0.06));
+  border: 0.5px solid var(--separator);
+}
+
+/* ---------- the setting row ---------- */
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 56px;
+  padding: 10px 14px;
+}
+
+.settings-row + .settings-row { border-top: 0.5px solid var(--separator); }
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row-label {
+  font-size: var(--text-body);
+  color: var(--label);
+}
+
+.settings-row-desc {
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.settings-row-text .inline-error {
+  margin: 2px 0 0;
+}
+
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+}
+
+.settings-placeholder-value {
+  font-size: var(--text-sub);
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-coming-soon {
+  margin: -12px 0 0;
+  font-size: var(--text-sub);
+  color: var(--label-3);
+}
+
+.settings-empty {
+  padding: 20px 14px;
+}
+
+.settings-empty p { margin: 0; font-size: var(--text-body); color: var(--label); }
+.settings-empty .settings-row-desc { margin-top: 4px; display: block; -webkit-line-clamp: unset; }
+
+/* The time value is narrow and tabular, so 09:15 and 17:45 sit on the same
+   digits whatever the user types. */
+.form-control.day-time {
+  width: 84px;
+  max-width: 50%;
+  flex: none;
+}
+
+/* ---------- the switch (moved from ui/Settings.css, paint unchanged) ---------- */
+
+.day-switch {
+  display: grid;
+  place-items: center;
+  flex: none;
+  /* The row is 56 px tall; the button borrows the row so a thumb has the
+     same target every other control in the view has. */
+  min-height: 44px;
+  padding: 0 4px;
+}
+
+.day-switch-track {
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.day-switch[aria-checked="true"] .day-switch-track {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.day-switch-knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--pill-shadow);
+}
+
+.day-switch[aria-checked="true"] .day-switch-knob {
+  /* Knob at the far end: the position, not only the fill, is the state. */
+  transform: translateX(18px);
+  background: var(--on-accent);
+}
+
+.day-switch:disabled { opacity: 0.5; }
+
+.day-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-control);
+}
+
+/* ---------- the phone (≤ 760 px): the rail becomes a sticky strip ---------- */
+
+.settings.is-phone {
+  grid-template-columns: 1fr;
+  padding: 8px 16px 96px;
+}
+
+.settings.is-phone .settings-rail {
+  position: sticky;
+  top: 52px;
+  z-index: 5;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 -16px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.settings.is-phone .settings-back { display: none; }
+
+.settings.is-phone .settings-nav {
+  flex-direction: row;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  gap: 4px;
+  scrollbar-width: none;
+}
+
+.settings.is-phone .settings-nav::-webkit-scrollbar { display: none; }
+
+.settings.is-phone .settings-nav-item {
+  scroll-snap-align: start;
+  flex: none;
+  height: 34px;
+}
