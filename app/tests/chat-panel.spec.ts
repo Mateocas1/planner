@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
+import { submitAuthForm } from "./browser-helpers.ts";
 
 /**
  * The chat panel's mock-mode browser spec (task C2). Runs against a Vite dev
@@ -45,6 +46,20 @@ const field = (page: Page) => panel(page).getByRole("textbox", { name: "Message"
 const liveAnswer = (page: Page) => panel(page).locator(".chat-answer[data-live]");
 const sendButton = (page: Page) => panel(page).getByRole("button", { name: "Send" });
 const stopButton = (page: Page) => panel(page).getByRole("button", { name: "Stop" });
+const actionCard = (page: Page, title: string) => panel(page).locator(".chat-card").filter({ hasText: title });
+
+/** Signs the browser session in on the dev server, so a confirmed card can
+ * write through the app's own data functions (R1 browser spec). The emulator
+ * provides the account; the write lands in the Firestore emulator and the
+ * planner's own Home list shows it. */
+async function signIn(page: Page): Promise<void> {
+  const email = `chat-tools-${Date.now()}@example.test`;
+  await submitAuthForm(page, email, "sign up", { url: base });
+  await page.goto(`${base}/?chatMock=tools`);
+  // The session restores asynchronously after the reload; the mock panel is
+  // visible before the uid is back, and a confirm before it would only fail.
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible({ timeout: 30_000 });
+}
 
 /**
  * Wait for running animations to finish before a screenshot (review item 2:
@@ -271,4 +286,82 @@ test("memory extraction: canned ops from the mock ride into the next conversatio
       }),
     )
     .toBe(true); // the second conversation's system prompt includes the memory
+});
+
+test("tool cards: Confirm writes the task into the planner, Discard writes nothing (R1, S1)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signIn(page);
+  await expect(launcher(page)).toBeVisible();
+  await page.keyboard.press("Control+j");
+  await expect(panel(page)).toHaveAttribute("data-open", "true");
+
+  // The mock proposes two changes: a dated task and an undated one.
+  await field(page).fill("Plan my errands");
+  await field(page).press("Enter");
+  const confirmCard = actionCard(page, "Water the plants");
+  const discardCard = actionCard(page, "Return library books");
+  await expect(confirmCard).toBeVisible({ timeout: 30_000 });
+  await expect(discardCard).toBeVisible();
+  // Both start pending, with Confirm and Discard.
+  await expect(confirmCard.getByRole("button", { name: "Confirm" })).toBeVisible();
+  await expect(confirmCard.getByRole("button", { name: "Discard" })).toBeVisible();
+
+  // Discard first: the card resolves and nothing is written.
+  await discardCard.getByRole("button", { name: "Discard" }).click();
+  await expect(discardCard.locator(".chat-card-outcome")).toHaveText("Discarded — nothing changed.");
+
+  // Confirm: the write runs through the app's data functions and the card
+  // shows the outcome. The mock dates the task today, so Home's due list
+  // (checkbox row) must show it once the snapshot lands.
+  await confirmCard.getByRole("button", { name: "Confirm" }).click();
+  await expect(confirmCard.locator(".chat-card-outcome")).toHaveText("Task created.", { timeout: 15_000 });
+  await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toBeVisible({ timeout: 15_000 });
+
+  // The discarded proposal produced no task anywhere in the planner (the
+  // hidden panel keeps its own card text, so scope to the view itself).
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeHidden();
+  await expect(page.getByRole("checkbox", { name: "Complete: Return library books" })).toHaveCount(0);
+  await expect(page.locator(".view").getByText("Return library books")).toHaveCount(0);
+});
+
+test("tool cards: the outcome rides to the next request as tool messages (R1, S1)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signIn(page);
+  await expect(launcher(page)).toBeVisible();
+  await page.keyboard.press("Control+j");
+  await expect(panel(page)).toHaveAttribute("data-open", "true");
+  await field(page).fill("Plan my errands");
+  await field(page).press("Enter");
+  const confirmCard = actionCard(page, "Water the plants");
+  await expect(confirmCard).toBeVisible({ timeout: 30_000 });
+  await confirmCard.getByRole("button", { name: "Confirm" }).click();
+  await expect(confirmCard.locator(".chat-card-outcome")).toHaveText("Task created.", { timeout: 15_000 });
+  await expect(stopButton(page)).toBeHidden({ timeout: 20_000 });
+
+  // The next request carries the assistant's tool_calls and one tool message
+  // per card — confirmed and discarded alike (OpenAI protocol, spec S1).
+  await field(page).fill("What did you just do?");
+  await field(page).press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        type PollMessage = { role?: string; toolCalls?: Array<{ id?: string }>; toolCallId?: string; content?: string };
+        const mock = (window as { __chatMockTransport?: { __lastStreamRequest?: { messages?: PollMessage[] } } }).__chatMockTransport;
+        const messages: PollMessage[] = mock?.__lastStreamRequest?.messages ?? [];
+        const assistant = messages.filter(message => message.role === "assistant" && message.toolCalls !== undefined);
+        const toolMessages = messages.filter(message => message.role === "tool");
+        return (
+          assistant.length === 1 &&
+          assistant[0]?.toolCalls?.length === 2 &&
+          assistant[0]?.toolCalls?.every(call => typeof call.id === "string" && call.id !== "") &&
+          toolMessages.length === 2 &&
+          toolMessages.every(message => typeof message.toolCallId === "string")
+        );
+      }),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 });
