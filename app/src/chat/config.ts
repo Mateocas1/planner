@@ -17,14 +17,19 @@ export function buildSystemPrompt(): string {
 }
 
 /**
- * When the floating chat panel renders at all (S1): inside the Tauri desktop
- * shell always, and on the web only while developing with `?chatMock` in the
- * URL — a production web build never renders it. The inputs are passed in so
- * the rule stays testable without a browser.
+ * When the floating chat panel renders at all (S1, review #2): the panel is an
+ * in-app surface, so inside the Tauri desktop shell it needs a signed-in
+ * session — on the sign-in screen neither the launcher nor the panel exists.
+ * On the web it renders only while developing with `?chatMock` in the URL, and
+ * that dev-mock path is account-free (no emulator user needed) — a production
+ * web build never renders it. The inputs are passed in so the rule stays
+ * testable without a browser, and callers recompute it every render so a
+ * sign-in/out flips visibility immediately.
  */
-export function chatPanelVisible(options: { desktop: boolean; dev: boolean; mockQuery: string | null }): boolean {
-  if (options.desktop) return true;
-  return options.dev && options.mockQuery !== null;
+export function chatPanelVisible(options: { desktop: boolean; dev: boolean; mockQuery: string | null; signedIn: boolean }): boolean {
+  const surface = options.desktop || (options.dev && options.mockQuery !== null);
+  // The dev-mock path is account-free; the real panel needs a signed-in session.
+  return surface && (options.signedIn || options.mockQuery !== null);
 }
 
 /** What the mock transport should do this run (`?chatMock=error` streams a failure). */

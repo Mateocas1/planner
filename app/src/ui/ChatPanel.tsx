@@ -99,17 +99,15 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
 export function ChatPanel({
   transport,
   buildSystemPrompt,
+  signedIn = false,
 }: {
   /** Defaults select the mock in dev-mock mode; C4 wires the Tauri bridge. */
   transport?: ChatTransport;
   buildSystemPrompt?: () => string;
+  /** Review #2: the panel is an in-app surface, so the real (non-mock) panel
+   * exists only for a signed-in session; App passes `user !== null`. */
+  signedIn?: boolean;
 }) {
-  const [visible] = useState(() => {
-    const mockQuery = new URLSearchParams(window.location.search).get("chatMock");
-    // Node (unit tests) does not define import.meta.env; only Vite does.
-    const dev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
-    return chatPanelVisible({ desktop: isTauri(), dev, mockQuery });
-  });
   const [mockQuery] = useState(() => new URLSearchParams(window.location.search).get("chatMock"));
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -122,6 +120,11 @@ export function ChatPanel({
   const { state, send, stop, retry, newChat } = useChat({ transport: resolvedTransport, buildSystemPrompt: resolvedPrompt });
   const inFlight = state.phase !== "idle";
   const streaming = state.phase === "streaming";
+
+  // Recomputed every render (review #2), never frozen at mount: signing in or
+  // out flips the launcher and panel on the next App render.
+  const dev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+  const visible = chatPanelVisible({ desktop: isTauri(), dev, mockQuery, signedIn });
 
   const launcherRef = useRef<HTMLButtonElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);

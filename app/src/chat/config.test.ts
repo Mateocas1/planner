@@ -12,15 +12,19 @@ test("buildSystemPrompt returns a short non-empty prompt (C3 replaces the stub)"
   assert.ok(prompt.length < 1000);
 });
 
-test("the panel renders in the desktop shell regardless of the query", () => {
-  assert.equal(chatPanelVisible({ desktop: true, dev: false, mockQuery: null }), true);
-  assert.equal(chatPanelVisible({ desktop: true, dev: false, mockQuery: "1" }), true);
+test("the panel renders in a signed-in desktop shell regardless of the query (review #2)", () => {
+  assert.equal(chatPanelVisible({ desktop: true, dev: false, mockQuery: null, signedIn: true }), true);
+  assert.equal(chatPanelVisible({ desktop: true, dev: false, mockQuery: "1", signedIn: true }), true);
 });
 
-test("the panel renders on the web only while developing with ?chatMock", () => {
-  assert.equal(chatPanelVisible({ desktop: false, dev: true, mockQuery: "1" }), true);
-  assert.equal(chatPanelVisible({ desktop: false, dev: true, mockQuery: null }), false);
-  assert.equal(chatPanelVisible({ desktop: false, dev: false, mockQuery: "1" }), false, "a production web build never renders the panel");
+test("the panel never renders on a signed-out desktop sign-in screen (review #2)", () => {
+  assert.equal(chatPanelVisible({ desktop: true, dev: false, mockQuery: null, signedIn: false }), false);
+});
+
+test("the panel renders on the web only while developing with ?chatMock (account-free)", () => {
+  assert.equal(chatPanelVisible({ desktop: false, dev: true, mockQuery: "1", signedIn: false }), true, "the dev mock is account-free");
+  assert.equal(chatPanelVisible({ desktop: false, dev: true, mockQuery: null, signedIn: true }), false);
+  assert.equal(chatPanelVisible({ desktop: false, dev: false, mockQuery: "1", signedIn: true }), false, "a production web build never renders the panel");
 });
 
 test("?chatMock=error asks the mock transport for the failure scenario", () => {
