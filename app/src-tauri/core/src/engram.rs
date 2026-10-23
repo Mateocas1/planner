@@ -28,6 +28,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::chat::Memory;
+use crate::chat::MemoryOp;
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -571,6 +572,69 @@ pub fn sync_all(
         }
     }
     Ok(report)
+}
+
+/// One processed mirror batch: how many ops landed (upserts plus deletes
+/// that found a row), how many deletes found nothing to remove, and the
+/// first failure that stopped the batch, if any. The local write the batch
+/// mirrors has already succeeded either way — a mirror failure never
+/// propagates as a local-write error; callers record it in the status.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MirrorOpsReport {
+    pub synced: usize,
+    pub skipped: usize,
+    pub failure: Option<String>,
+}
+
+/// Mirrors a batch of memory ops in order, registering the session once for
+/// the whole batch (not once per upsert). Order is preserved exactly: an
+/// upsert followed by a delete of the same topic leaves no remote row. The
+/// batch stops at its first failure; everything before it landed.
+pub fn mirror_ops(
+    transport: &impl EngramTransport,
+    settings: &EngramSettings,
+    ops: &[MemoryOp],
+) -> MirrorOpsReport {
+    let mut report = MirrorOpsReport::default();
+    if let Err(error) = ensure_session(transport, settings) {
+        report.failure = Some(error);
+        return report;
+    }
+    for op in ops {
+        match op {
+            MemoryOp::Upsert {
+                topic_key,
+                title,
+                content,
+            } => {
+                let memory = Memory {
+                    // The remote row is keyed by topic_key; the local id and
+                    // timestamp are not part of the mirror payload.
+                    id: String::new(),
+                    topic_key: topic_key.clone(),
+                    title: title.clone(),
+                    content: content.clone(),
+                    updated_at: 0,
+                };
+                match post_observation(transport, settings, &memory) {
+                    Ok(_) => report.synced += 1,
+                    Err(error) => {
+                        report.failure = Some(error);
+                        break;
+                    }
+                }
+            }
+            MemoryOp::Delete { topic_key } => match mirror_delete(transport, settings, topic_key) {
+                Ok(DeleteOutcome::Deleted) => report.synced += 1,
+                Ok(DeleteOutcome::NotFound) => report.skipped += 1,
+                Err(error) => {
+                    report.failure = Some(error);
+                    break;
+                }
+            },
+        }
+    }
+    report
 }
 
 /// The persisted mirror status (spec S2: `engram_status` — last result or
@@ -1121,6 +1185,103 @@ mod tests {
         ]);
         let report = sync_all(&fake, &settings(), &[]).unwrap();
         assert_eq!(report, SyncReport { upserted: 0, deleted: 2 });
+    }
+
+    // --- batch mirror (the hook memory_store fires after a local write) ---
+
+    fn own_row_json(id: i64, topic: &str) -> String {
+        format!(
+            r#"[{{"id":{id},"topic_key":"calendar-app/{topic}","session_id":"calendar-app-mirror"}}]"#
+        )
+    }
+
+    #[test]
+    fn mirror_ops_processes_upsert_then_delete_in_order_leaving_no_row() {
+        // The delete after the upsert must find the row the upsert just
+        // wrote: same order as the local ops, one session registration.
+        let fake = Fake::new(vec![
+            Fake::ok(201, r#"{"id":"s"}"#),        // session (once)
+            Fake::ok(201, r#"{"id":77,"status":"saved"}"#), // upsert
+            Fake::ok(200, &own_row_json(77, "t")), // delete lookup
+            Fake::ok(200, r#"{"status":"deleted"}"#),
+        ]);
+        let ops = vec![
+            MemoryOp::Upsert {
+                topic_key: "t".into(),
+                title: "Title".into(),
+                content: "Content".into(),
+            },
+            MemoryOp::Delete { topic_key: "t".into() },
+        ];
+        let report = mirror_ops(&fake, &settings(), &ops);
+        assert_eq!(
+            report,
+            MirrorOpsReport {
+                synced: 2, // the upsert landed, and the delete found its row
+                skipped: 0,
+                failure: None
+            }
+        );
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(requests[0].url, "http://127.0.0.1:7437/sessions");
+        assert_eq!(requests[1].url, "http://127.0.0.1:7437/observations");
+        assert_eq!(requests[2].method, "GET");
+        assert_eq!(requests[3].method, "DELETE");
+    }
+
+    #[test]
+    fn mirror_ops_counts_a_not_found_delete_as_skipped_not_synced() {
+        let fake = Fake::new(vec![
+            Fake::ok(201, r#"{"id":"s"}"#),
+            Fake::ok(200, "[]"),
+        ]);
+        let ops = vec![MemoryOp::Delete { topic_key: "t".into() }];
+        let report = mirror_ops(&fake, &settings(), &ops);
+        assert_eq!(report.synced, 0);
+        assert_eq!(report.skipped, 1);
+        assert_eq!(report.failure, None);
+    }
+
+    #[test]
+    fn mirror_ops_reports_a_failure_without_panicking_and_counts_what_landed() {
+        // Engram down at the session: the batch reports the failure and no
+        // local write is affected (this function never panics or unwinds).
+        let fake = Fake::new(vec![Err("connection refused".into())]);
+        let ops = vec![MemoryOp::Upsert {
+            topic_key: "t".into(),
+            title: "Title".into(),
+            content: "Content".into(),
+        }];
+        let report = mirror_ops(&fake, &settings(), &ops);
+        assert_eq!(report.synced, 0);
+        assert_eq!(
+            report.failure.as_deref(),
+            Some("Engram unreachable: connection refused")
+        );
+
+        // First op lands, second is refused: synced=1 and the batch stops.
+        let fake = Fake::new(vec![
+            Fake::ok(201, r#"{"id":"s"}"#),
+            Fake::ok(201, r#"{"id":1}"#),
+            Fake::ok(500, "boom"),
+        ]);
+        let ops = vec![
+            MemoryOp::Upsert {
+                topic_key: "a".into(),
+                title: "T".into(),
+                content: "C".into(),
+            },
+            MemoryOp::Upsert {
+                topic_key: "b".into(),
+                title: "T".into(),
+                content: "C".into(),
+            },
+        ];
+        let report = mirror_ops(&fake, &settings(), &ops);
+        assert_eq!(report.synced, 1);
+        assert!(report.failure.is_some());
+        assert_eq!(fake.requests().len(), 3, "the batch stopped at the failure");
     }
 
     #[test]
