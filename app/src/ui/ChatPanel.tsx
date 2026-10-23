@@ -13,12 +13,17 @@ import "./ChatPanel.css";
  * The floating chat panel (task C2, S1+S2): a ≈400×600 glass card in the
  * bottom-right corner, opened with `Ctrl+J` (preventDefault — WebView2 opens
  * Downloads on it), the launcher button, and closed with Esc, the launcher or
- * the close button. Desktop only; on the web it renders only while developing
- * with `?chatMock`, so a production web build never mounts it.
+ * the close button. Desktop only, signed in; on the web it renders only while
+ * developing with `?chatMock`, so a production web build never mounts it.
  *
  * The real transport is C1's Tauri bridge; until that lands on this branch the
  * non-mock desktop default is a transport that reports an error instead of
  * pretending to work. C3/C4 wire the real one by passing `transport`.
+ *
+ * Closing runs a 120 ms exit (`data-closing` keeps the card displayed but
+ * `inert`, `chat-panel-out` plays, and `animationend` — with a ~200 ms
+ * timeout fallback — hides it). The exit never cancels an in-flight stream:
+ * the request keeps running hidden, so reopening shows the finished answer.
  */
 
 /** Placeholder for C1's tauriTransport, which is wired at integration (C4). */
@@ -60,8 +65,17 @@ const Spinner = () => (
   </svg>
 );
 
-function reducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Reduced motion, cached (review #4): `matchMedia` is read once per mount
+ * and re-read on changes, never per frame. */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReduced(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
 }
 
 /**
@@ -69,8 +83,10 @@ function reducedMotion(): boolean {
  * glides up instead of jumping. Layout is never animated — the effect measures
  * the children before and after the commit and animates only the compensating
  * `transform`, then clears it so no composited layer lingers under the text.
+ * It runs only when `appendKey` changes (review #4): a pacer frame re-renders
+ * the stream but never re-measures `getBoundingClientRect`.
  */
-function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, appendKey: number) {
+function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, appendKey: number, reduced: boolean) {
   const tops = useRef<Map<Element, number>>(new Map());
   const lastAppendKey = useRef(appendKey);
   useLayoutEffect(() => {
@@ -80,7 +96,7 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
     lastAppendKey.current = appendKey;
     const newTops = new Map<Element, number>();
     for (const child of column.children) newTops.set(child, child.getBoundingClientRect().top);
-    if (appended && !reducedMotion()) {
+    if (appended && !reduced) {
       for (const [child, previousTop] of tops.current) {
         const newTop = newTops.get(child);
         if (newTop === undefined) continue;
@@ -93,7 +109,7 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
       }
     }
     tops.current = newTops;
-  });
+  }, [appendKey, reduced, columnRef]);
 }
 
 export function ChatPanel({
@@ -133,6 +149,22 @@ export function ChatPanel({
   const stickyRef = useRef(true);
   /** Whether the panel has been opened, so closing returns focus only then. */
   const openedOnce = useRef(false);
+  const reduced = useReducedMotion();
+  /** True while the 120 ms exit animation plays: the card stays displayed but
+   * inert until `animationend` (or the fallback timer) hides it. */
+  const [closing, setClosing] = useState(false);
+  const closeFallback = useRef<number | null>(null);
+
+  const cancelExit = useCallback(() => {
+    if (closeFallback.current !== null) {
+      window.clearTimeout(closeFallback.current);
+      closeFallback.current = null;
+    }
+  }, []);
+
+  // Drive the exit (review #3). open → false starts it unless reduced motion
+  // (which hides instantly, as before); `animationend` or the ~200 ms fallback
+  // ends it. Reopening mid-exit cancels both, so the entrance restarts cleanly.
 
   const streamingTurn: (ChatTurn & { role: "assistant" }) | null = (() => {
     const last = state.turns[state.turns.length - 1];
@@ -151,7 +183,7 @@ export function ChatPanel({
   // Structural appends (a new turn, the waiting bubble) drive the FLIP glide;
   // text growth inside a turn deliberately does not.
   const appendKey = state.turns.length + (state.phase === "pending" || state.phase === "reasoning" ? 1 : 0);
-  useGlideOnAppend(columnRef, appendKey);
+  useGlideOnAppend(columnRef, appendKey, reduced);
 
   const onScroll = useCallback(() => {
     const scroller = scrollRef.current;
@@ -166,8 +198,8 @@ export function ChatPanel({
     if (scroller === null) return;
     stickyRef.current = true;
     setShowJump(false);
-    scroller.scrollTo({ top: scroller.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
-  }, []);
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduced ? "auto" : "smooth" });
+  }, [reduced]);
 
   // Ctrl+J toggles the panel from anywhere, fields included (the app's single-key
   // router ignores modified keys, so there is no conflict to arbitrate).
@@ -197,7 +229,9 @@ export function ChatPanel({
 
   useEffect(() => {
     // Focus follows open/close only — never on the first mount, where the
-    // panel has no claim on the caret the app already placed.
+    // panel has no claim on the caret the app already placed. On close the
+    // launcher takes focus at once; `inert` on the closing panel stops the
+    // composer from re-taking it (review #3).
     if (open) {
       openedOnce.current = true;
       fieldRef.current?.focus({ preventScroll: true });
@@ -206,6 +240,30 @@ export function ChatPanel({
       launcherRef.current?.focus({ preventScroll: true });
     }
   }, [open]);
+
+  // The exit lifecycle (review #3): see the comment above `closing`. Runs in a
+  // layout effect so the closing card never paints as hidden for a frame.
+  useLayoutEffect(() => {
+    if (open || !openedOnce.current || reduced) {
+      cancelExit();
+      setClosing(false);
+      return;
+    }
+    setClosing(true);
+    closeFallback.current = window.setTimeout(() => {
+      closeFallback.current = null;
+      setClosing(false);
+    }, 200);
+  }, [open, reduced, cancelExit]);
+
+  const onPanelAnimationEnd = (event: React.AnimationEvent<HTMLElement>) => {
+    // Inner animations (bubbles, the spinner) bubble up — only the panel's own
+    // exit ends the close.
+    if (closing && event.animationName === "chat-panel-out") {
+      cancelExit();
+      setClosing(false);
+    }
+  };
 
   if (!visible) return null;
 
@@ -263,6 +321,9 @@ export function ChatPanel({
       <section
         className="chat-panel glass glass-thick"
         data-open={open}
+        data-closing={closing || undefined}
+        inert={closing || undefined}
+        onAnimationEnd={onPanelAnimationEnd}
         aria-label="Chat"
         role="dialog"
         aria-modal="false"
