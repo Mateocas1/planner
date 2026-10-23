@@ -74,6 +74,13 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
   `src/memory.rs`) applied while a window is hidden or minimized, not
   command-line features.
 
+## Chat (desktop LLM panel)
+
+- **Key storage (S3).** The user's OpenAI-compatible API key lives only in the Windows Credential Manager (service `com.picala.planner`, user `chat-api-key`, `keyring` crate with the `windows-native` backend). The webview gets `chat_key_status() -> bool`, `chat_key_set(key)` and `chat_key_clear()`; the key itself is never returned to the page, never logged, and never written to disk by the app. Empty/whitespace keys and keys over 512 characters are rejected.
+- **Streaming (S3).** `chat_stream(request, base_url, on_event)` runs in a `std::thread` on the existing `ureq` dependency (no tokio/reqwest): POST `{base_url}/chat/completions` with `stream: true`, SSE decoded line by line in `planner_core::chat` (unit-tested on Linux) and reported as `ChatEvent`s over a Tauri `Channel` — `reasoning` once when `delta.reasoning_content` first appears, `delta` per content piece, then `done`/`cancelled`/`error` with the contract's snake_case codes (401/403 → `unauthorized`, 429 → `rate_limited`, transport failures → `network`, anything else → `provider`, no key → `no_key`, bad base URL → `invalid_request`). Base URLs must be `https://`, or `http://` on `localhost`/`127.0.0.1`. Connect timeout 15 s; read timeout 300 s because reasoning models pause between chunks. `chat_cancel(id)` flips a cancel flag the reader checks between lines; `chat_complete(request, base_url)` is the non-streamed variant used for memory extraction.
+- **Memory store (S5).** Durable memories persist in `chat-memories.json` in the app config dir (same directory as `quickadd.json`), owned by `chat/memory_store.rs` and reached from the webview only through `chat_memories_list/apply/delete/clear`. Writes are atomic (temp file + rename); a corrupt file is moved aside as `.json.bak` and the store starts empty instead of crashing. Caps live in `planner_core::chat`: at most 200 memories (a full store drops new topics in place, never evicts) and content truncated to 2000 characters; upserts are keyed by `topicKey` and never duplicate.
+- The provider base URL and model are non-secret settings (task C3); the transport's default is `https://api.nan.builders/v1`.
+
 ## Content Security Policy
 
 Set in `tauri.conf.json` (`app.security.csp`); `devCsp` is `null` so the dev exe can reach Vite HMR and the emulators. Tauri adds a hash for the one inline theme script in `index.html` at build time. Not runtime-verified from WSL: if login, sync or import breaks on Windows, look for CSP violations in WebView2 DevTools first.
