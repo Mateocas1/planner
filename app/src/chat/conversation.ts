@@ -15,9 +15,34 @@
 import { MAX_TOOL_CALLS_PER_ANSWER } from "./tools.ts";
 import type { ChatEvent, ChatErrorCode } from "./types.ts";
 
+/** The lifecycle of one proposed tool call on its action card (spec S1).
+ * `pending` waits for the user; the others are terminal and become the `tool`
+ * message the next request sends back to the model. */
+export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed";
+
+export type ToolCallCard = {
+  /** The model's call id; the `tool` message answers it by this id. */
+  callId: string;
+  name: string;
+  /** The raw JSON arguments the model sent, exactly as proposed. */
+  arguments: string;
+  status: ToolCallStatus;
+  /** The outcome line shown on the card once resolved (result or error). */
+  outcome?: string;
+};
+
 export type ChatTurn =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; text: string; segments: string[] };
+  | {
+      id: string;
+      role: "assistant";
+      text: string;
+      segments: string[];
+      /** The tool calls proposed in this reply, in arrival order. */
+      toolCalls?: ToolCallCard[];
+      /** How many calls arrived past the 5-per-answer cap and were dropped. */
+      callsDropped?: number;
+    };
 
 export type ConversationPhase =
   /** Nothing in flight. */
@@ -42,7 +67,8 @@ export type ConversationAction =
   | { type: "event"; event: ChatEvent }
   | { type: "stop" }
   | { type: "retry"; id: string }
-  | { type: "newChat" };
+  | { type: "newChat" }
+  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed"; outcome?: string };
 
 export const emptyConversation: ConversationState = { turns: [], phase: "idle", requestId: null, error: null };
 

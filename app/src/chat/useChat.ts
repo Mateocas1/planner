@@ -26,7 +26,7 @@ export type ChatController = {
   newChat: () => void;
   /** Resolves one action card (the user confirmed, discarded, or the write
    * failed). Resolving never triggers a new model call (spec S1). */
-  resolveToolCall: (callId: string, status: ToolCallStatus, outcome?: string) => void;
+  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => void;
 };
 
 let requestCounter = 0;
@@ -43,7 +43,7 @@ export const IDLE_EXTRACT_MS = 10 * 60 * 1000;
  * so the next request stays valid even when the user sends a new message with
  * cards still open (spec S1).
  */
-function buildMessages(systemPrompt: string, turns: ChatTurn[]): ChatMessage[] {
+export function buildMessages(systemPrompt: string, turns: ChatTurn[]): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
   for (const turn of turns) {
     if (turn.role === "user") {
@@ -52,12 +52,13 @@ function buildMessages(systemPrompt: string, turns: ChatTurn[]): ChatMessage[] {
     }
     const hasCalls = turn.toolCalls !== undefined && turn.toolCalls.length > 0;
     if (turn.text === "" && !hasCalls) continue;
+    const calls = turn.toolCalls ?? [];
     messages.push({
       role: "assistant",
       content: turn.text,
-      ...(hasCalls ? { toolCalls: turn.toolCalls.map(card => ({ id: card.callId, name: card.name, arguments: card.arguments })) } : {}),
+      ...(calls.length > 0 ? { toolCalls: calls.map(card => ({ id: card.callId, name: card.name, arguments: card.arguments })) } : {}),
     });
-    for (const card of turn.toolCalls ?? []) {
+    for (const card of calls) {
       messages.push({ role: "tool", toolCallId: card.callId, content: toolResultContent(card) });
     }
   }
@@ -190,7 +191,7 @@ export function useChat(options: {
   }, [transport, fireConversationEnd]);
 
   const resolveToolCall = useCallback(
-    (callId: string, status: ToolCallStatus, outcome?: string) => {
+    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => {
       dispatch({ type: "toolCallResolved", callId, status, outcome });
     },
     [],

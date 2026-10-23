@@ -10,8 +10,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatPanel } from "../ui/ChatPanel.tsx";
+import { ChatPanel, type ToolOutcome } from "../ui/ChatPanel.tsx";
+import { addBlock } from "../data/blocks.ts";
+import { addTask, setTaskDeadline } from "../data/tasks.ts";
 import { isTauri } from "../desktop.ts";
+import { dateKey, localValue, toZonedInstant } from "../ui/time.ts";
 import { getChatModel, mockMode } from "./config.ts";
 import type { ChatTurn } from "./conversation.ts";
 import { createInMemoryMemoryBackend, tauriMemoryBackend, type ChatMemoryBackend } from "./memoryBackend.ts";
@@ -19,8 +22,9 @@ import { buildExtractionRequest, parseMemoryOps } from "./memoryExtract.ts";
 import type { Memory } from "./memoryStore.ts";
 import { createMockTransport } from "./mockTransport.ts";
 import { buildSystemPrompt } from "./systemPrompt.ts";
+import { validateToolCall, type ChatToolContext, type NormalizedCreateTask, type NormalizedMoveTask } from "./tools.ts";
 import { createTauriChatTransport } from "./tauriTransport.ts";
-import type { ChatTransport } from "./types.ts";
+import type { ChatToolCall, ChatTransport } from "./types.ts";
 import { usePlannerSnapshot } from "./usePlannerSnapshot.ts";
 
 export function ChatSurface({
@@ -74,6 +78,61 @@ export function ChatSurface({
     [snapshot, timeZone],
   );
 
+  // R1 (spec S1): the confirm flow. Validation is pure (tools.ts); the write
+  // goes through the same data functions the UI's own surfaces use, for the
+  // signed-in user only. `move_task` maps onto what the app already does:
+  // a target day is `setTaskDeadline` (null = unschedule), and a start time —
+  // the app's primitive for placing a task at a time — adds a work block for
+  // the estimate's duration (60 min without one). Invalid proposals fail
+  // before any write; a failed write leaves the card failed, data untouched
+  // by this flow.
+  const toolContext = useMemo<ChatToolContext>(
+    () => ({ tasks: snapshot.tasks, timeZone, todayKey: dateKey(new Date(), timeZone) }),
+    [snapshot.tasks, timeZone],
+  );
+
+  const executeToolCall = useCallback(
+    async (call: ChatToolCall): Promise<ToolOutcome> => {
+      if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
+      const check = validateToolCall(call, toolContext);
+      if (!check.ok) return { status: "failed", message: check.error };
+      try {
+        if (call.name === "create_task") {
+          const value = check.value as NormalizedCreateTask;
+          await addTask(uid, value.title, value.day, value.estimateMinutes);
+          return { status: "confirmed", message: "Task created." };
+        }
+        if (call.name === "move_task") {
+          const value = check.value as NormalizedMoveTask;
+          await setTaskDeadline(uid, value.taskId, value.title, value.day === null ? undefined : value.day);
+          if (value.startMinutes !== undefined && value.day !== null) {
+            const estimate = toolContext.tasks.find(task => task.id === value.taskId)?.estimateMinutes ?? 60;
+            if (value.startMinutes + estimate > 1440) {
+              throw new Error("The start time leaves no room before midnight for this task's estimate.");
+            }
+            await addBlock(
+              uid,
+              toZonedInstant(localValue(value.day, value.startMinutes), timeZone),
+              toZonedInstant(localValue(value.day, value.startMinutes + estimate), timeZone),
+              value.taskId,
+            );
+          }
+          const message =
+            value.day === null
+              ? "The task was unscheduled."
+              : value.startMinutes !== undefined
+                ? "The task was moved and placed on the schedule."
+                : "The task was moved.";
+          return { status: "confirmed", message };
+        }
+        return { status: "failed", message: `Unknown action "${call.name}".` };
+      } catch (error) {
+        return { status: "failed", message: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    [uid, toolContext, timeZone],
+  );
+
   const onConversationEnd = useCallback(
     (turns: ChatTurn[]) => {
       if (transport === null) return;
@@ -105,6 +164,8 @@ export function ChatSurface({
       buildSystemPrompt={buildPrompt}
       onConversationEnd={onConversationEnd}
       onSetupKey={onSetupKey}
+      toolContext={toolContext}
+      onConfirmToolCall={executeToolCall}
     />
   );
 }

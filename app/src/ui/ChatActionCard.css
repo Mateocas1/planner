@@ -1,0 +1,104 @@
+/**
+ * One proposed planner change (Ronda 3 R1, spec S1): what will change, in
+ * plain words, with Confirm and Discard, then the outcome. The card lives
+ * inside the answer bubble.
+ *
+ * Motion (built through the animate flow, spec S1 "cards enter like the
+ * answer bubble"): the entrance is the user pill's — opacity, 6 px rise and a
+ * light blur to sharp, 200 ms ease-out, CSS animation on mount (the cheapest
+ * tool that works, off the main thread). State changes (outcome swap) do not
+ * animate: data the user is reading must not move for style. Reduced motion
+ * is opacity only, shipped with the animation, never a follow-up.
+ */
+
+.chat-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--surface-2);
+  animation: chat-card-in 200ms var(--ease-out) both;
+}
+
+@keyframes chat-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-card {
+    animation-name: chat-fade-in;
+  }
+}
+
+.chat-card-action {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--label);
+  overflow-wrap: break-word;
+}
+
+.chat-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chat-card button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: var(--text-small, 13px);
+  cursor: pointer;
+}
+
+.chat-card-confirm {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.chat-card-confirm:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.chat-card-confirm:disabled,
+.chat-card-discard:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-card-discard {
+  background: var(--fill-hover);
+  color: var(--label-2);
+}
+
+.chat-card-discard:hover:not(:disabled) {
+  background: var(--fill-press);
+}
+
+/* The outcome replaces the buttons: one quiet line, tinted by state. */
+.chat-card-outcome {
+  margin: 6px 0 0;
+  font-size: var(--text-small, 13px);
+  color: var(--label-2);
+}
+
+.chat-card[data-status="confirmed"] .chat-card-outcome {
+  color: var(--green);
+}
+
+.chat-card[data-status="failed"] .chat-card-outcome {
+  color: var(--red);
+}
+
+.chat-calls-note {
+  margin: 8px 0 0;
+  font-size: var(--text-small, 13px);
+  font-style: italic;
+  color: var(--label-3);
+}
