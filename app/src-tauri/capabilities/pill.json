@@ -4,7 +4,8 @@
   "description": "Permissions for the floating focus-timer pill window (task T8): events for the session sync, dragging by its body, and show/hide of its own window. App commands are ACL-gated by the AppManifest (build.rs): the pill may only invoke its own three pill_* commands.",
   "windows": ["pill"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:default",
     "core:window:allow-start-dragging",
     "core:window:allow-show",
     "core:window:allow-hide",

@@ -9,10 +9,13 @@
 //!
 //! 1. every command in `generate_handler!` (src/lib.rs) is in the manifest;
 //! 2. every manifest command is granted to at least one window;
-//! 3. no sensitive command is granted to the auxiliary windows
-//!    (`pill` / `quickadd`): secret/key, chat, memory, Engram, OAuth, deep
-//!    link, tray, idle, notifications and main-window control stay `main`-only;
-//! 4. every non-`core:` permission a capability references is a real manifest
+//! 3. no sensitive command is granted to any capability that reaches a
+//!    non-main window (`pill` / `quickadd`, alone or mixed with `main`):
+//!    secret/key, chat, memory, Engram, OAuth, deep link, tray, idle,
+//!    notifications, quick-add shortcut and main-window control stay `main`-only;
+//! 4. the auxiliary windows get exactly their documented app permissions, no
+//!    more (an added grant must be a conscious edit of this test);
+//! 5. every non-`core:` permission a capability references is a real manifest
 //!    command permission (catches typos like `allow-quickadd_get-config`).
 
 use std::collections::BTreeSet;
@@ -87,6 +90,27 @@ fn sensitive_prefixes() -> &'static [&'static str] {
         "allow-notify-",
         "allow-desktop-launched-at-sign-in",
         "allow-desktop-show-main",
+        "allow-quickadd-set-shortcut",
+        "allow-quickadd-get-config",
+    ]
+}
+
+/// Exact app-permission allowlist for each auxiliary window's capability.
+/// Anything else granted to these capabilities fails `auxiliary_windows_get_exact_app_permissions`.
+fn auxiliary_allowlists() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        (
+            "pill",
+            &[
+                "allow-pill-focus-main",
+                "allow-pill-main-focused",
+                "allow-pill-visibility-changed",
+            ],
+        ),
+        (
+            "quickadd",
+            &["allow-desktop-backdrop", "allow-quickadd-focus-main"],
+        ),
     ]
 }
 
@@ -169,7 +193,9 @@ fn every_manifest_command_is_granted_to_a_window() {
 fn sensitive_commands_stay_on_the_main_window() {
     let capabilities = read_capabilities();
     for (identifier, windows, permissions) in &capabilities {
-        if windows.iter().any(|window| window == "main") {
+        // Only a capability scoped to `main` alone may hold sensitive grants;
+        // a mixed `["pill", "main"]` capability reaches the pill and is checked.
+        if windows.len() == 1 && windows[0] == "main" {
             continue;
         }
         let leaks: Vec<_> = sensitive_prefixes()
@@ -184,6 +210,27 @@ fn sensitive_commands_stay_on_the_main_window() {
         assert!(
             leaks.is_empty(),
             "capability {identifier} must not grant sensitive commands: {leaks:?}"
+        );
+    }
+}
+
+#[test]
+fn auxiliary_windows_get_exact_app_permissions() {
+    let capabilities = read_capabilities();
+    for (window, expected) in auxiliary_allowlists() {
+        let (identifier, _, permissions) = capabilities
+            .iter()
+            .find(|(identifier, _, _)| identifier == window)
+            .unwrap_or_else(|| panic!("no capability with identifier {window:?}"));
+        let actual: BTreeSet<_> = permissions
+            .iter()
+            .filter(|permission| !permission.contains(':'))
+            .map(String::as_str)
+            .collect();
+        let expected: BTreeSet<_> = expected.iter().copied().collect();
+        assert_eq!(
+            actual, expected,
+            "capability {identifier} must grant exactly these app permissions"
         );
     }
 }

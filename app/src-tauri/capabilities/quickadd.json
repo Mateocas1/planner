@@ -4,7 +4,8 @@
   "description": "Permissions for the global quick-add window (task T5): hide itself, resize to fit the NL chips, and listen for the shown event. App commands are ACL-gated by the AppManifest (build.rs): the quick-add window may only set its backdrop and focus the main window. Shortcut registration and window positioning stay on the Rust side.",
   "windows": ["quickadd"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:default",
     "core:window:allow-hide",
     "core:window:allow-set-size",
     "allow-desktop-backdrop",
