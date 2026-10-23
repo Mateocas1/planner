@@ -277,19 +277,32 @@ pub const MAX_KEY_CHARS: usize = 512;
 pub struct WireMessage {
     pub role: String,
     pub content: String,
-    /// Assistant only: the tool calls this reply proposes, in the OpenAI
-    /// wire shape (`{id, type: "function", function: {name, arguments}}`),
-    /// forwarded verbatim — the webview owns that shape.
+    /// Assistant only: the tool calls this reply proposes, in the flat
+    /// `{id, name, arguments}` IPC shape. [`provider_body`] converts them to
+    /// the OpenAI wire shape — the single conversion point on the path to the
+    /// provider, unit-tested in this module.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<serde_json::Value>>,
+    pub tool_calls: Option<Vec<WireToolCall>>,
     /// Tool only: the id of the call this message answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
 }
 
+/// One tool call over IPC, in the flat shape `app/src/chat/types.ts` calls
+/// `ChatToolCall` (the same shape the `tool_call` event carries).
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
 /// One message in the provider's wire shape: snake_case `tool_calls` /
-/// `tool_call_id`, and `content: null` on an assistant turn that only
-/// proposes tool calls (the OpenAI protocol there expects null, not `""`).
+/// `tool_call_id`, each call in the OpenAI `{id, type: "function",
+/// function: {name, arguments}}` shape, and `content: null` on an assistant
+/// turn that only proposes tool calls (the OpenAI protocol there expects
+/// null, not `""`).
 fn provider_message(message: &WireMessage) -> serde_json::Value {
     let only_tool_calls =
         message.role == "assistant" && message.content.is_empty() && message.tool_calls.is_some();
@@ -302,7 +315,11 @@ fn provider_message(message: &WireMessage) -> serde_json::Value {
         },
     });
     if let Some(tool_calls) = &message.tool_calls {
-        value["tool_calls"] = serde_json::json!(tool_calls);
+        value["tool_calls"] = serde_json::json!(tool_calls.iter().map(|call| serde_json::json!({
+            "id": call.id,
+            "type": "function",
+            "function": {"name": call.name, "arguments": call.arguments},
+        })).collect::<Vec<_>>());
     }
     if let Some(tool_call_id) = &message.tool_call_id {
         value["tool_call_id"] = serde_json::json!(tool_call_id);
@@ -1251,6 +1268,14 @@ mod tests {
         }
     }
 
+    fn wire_call(id: &str, name: &str, arguments: &str) -> WireToolCall {
+        WireToolCall {
+            id: id.into(),
+            name: name.into(),
+            arguments: arguments.into(),
+        }
+    }
+
     #[test]
     fn plain_messages_map_to_the_provider_shape() {
         assert_eq!(
@@ -1267,32 +1292,63 @@ mod tests {
     }
 
     #[test]
-    fn tool_calls_and_tool_results_use_the_snake_case_wire_fields() {
-        let call = serde_json::json!({
-            "id": "call_1", "type": "function",
-            "function": {"name": "create_task", "arguments": "{}"},
-        });
+    fn a_follow_up_request_carries_the_openai_tool_call_wire_shape() {
+        // The exact body of the request after a card was answered: the
+        // assistant turn proposes its calls in the OpenAI shape ({id, type:
+        // "function", function: {name, arguments}}) and each call is answered
+        // by one `tool` message, in call order.
         let assistant = WireMessage {
             role: "assistant".into(),
             content: String::new(),
-            tool_calls: Some(vec![call.clone()]),
+            tool_calls: Some(vec![
+                wire_call("call_1", "create_task", r#"{"title":"X"}"#),
+                wire_call("call_2", "move_task", r#"{"taskId":"t1"}"#),
+            ]),
             tool_call_id: None,
         };
-        let tool = WireMessage {
+        let tool = |id: &str, content: &str| WireMessage {
             role: "tool".into(),
-            content: "Applied: done".into(),
+            content: content.into(),
             tool_calls: None,
-            tool_call_id: Some("call_1".into()),
+            tool_call_id: Some(id.into()),
         };
-        let body = provider_body("m", &[assistant, tool], None, false);
-        assert_eq!(
-            body["messages"][0],
-            serde_json::json!({"role": "assistant", "content": serde_json::Value::Null, "tool_calls": [call]}),
-            "an assistant turn that only proposes tool calls carries content: null"
+        let body = provider_body(
+            "deepseek-v4-flash",
+            &[
+                wire("user", "plan my errands"),
+                assistant,
+                tool("call_1", "The user confirmed and it was applied. Task created."),
+                tool("call_2", "The user discarded this proposal. Nothing was changed."),
+            ],
+            Some(&vec![serde_json::json!({"type": "function", "function": {"name": "create_task"}})]),
+            true,
         );
         assert_eq!(
-            body["messages"][1],
-            serde_json::json!({"role": "tool", "content": "Applied: done", "tool_call_id": "call_1"}),
+            body,
+            serde_json::json!({
+                "model": "deepseek-v4-flash",
+                "messages": [
+                    {"role": "user", "content": "plan my errands"},
+                    {
+                        "role": "assistant",
+                        "content": serde_json::Value::Null,
+                        "tool_calls": [
+                            {
+                                "id": "call_1", "type": "function",
+                                "function": {"name": "create_task", "arguments": r#"{"title":"X"}"#},
+                            },
+                            {
+                                "id": "call_2", "type": "function",
+                                "function": {"name": "move_task", "arguments": r#"{"taskId":"t1"}"#},
+                            },
+                        ],
+                    },
+                    {"role": "tool", "content": "The user confirmed and it was applied. Task created.", "tool_call_id": "call_1"},
+                    {"role": "tool", "content": "The user discarded this proposal. Nothing was changed.", "tool_call_id": "call_2"},
+                ],
+                "stream": true,
+                "tools": [{"type": "function", "function": {"name": "create_task"}}],
+            })
         );
     }
 
@@ -1301,7 +1357,7 @@ mod tests {
         let turn = WireMessage {
             role: "assistant".into(),
             content: "Here is my proposal.".into(),
-            tool_calls: Some(vec![serde_json::json!({"id": "c"})]),
+            tool_calls: Some(vec![wire_call("c", "create_task", "{}")]),
             tool_call_id: None,
         };
         let body = provider_body("m", &[turn], None, false);
@@ -1320,10 +1376,13 @@ mod tests {
     #[test]
     fn wire_messages_deserialize_the_camel_case_ipc_shape() {
         let message: WireMessage = serde_json::from_str(
-            r#"{"role": "assistant", "content": "", "toolCalls": [{"id": "c"}], "toolCallId": null}"#,
+            r#"{"role": "assistant", "content": "", "toolCalls": [{"id": "c", "name": "create_task", "arguments": "{}"}], "toolCallId": null}"#,
         )
         .unwrap();
-        assert_eq!(message.tool_calls.as_ref().map(|calls| calls.len()), Some(1));
+        assert_eq!(
+            message.tool_calls,
+            Some(vec![wire_call("c", "create_task", "{}")])
+        );
         assert_eq!(message.tool_call_id, None);
     }
 }

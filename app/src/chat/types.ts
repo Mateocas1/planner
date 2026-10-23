@@ -9,8 +9,10 @@
 export type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
-  /** Assistant only: the tool calls this reply proposes, already in the
-   * OpenAI wire shape the provider expects (id, name, raw JSON arguments). */
+  /** Assistant only: the tool calls this reply proposes, in the flat
+   * `{id, name, arguments}` shape; the Rust transport converts them to the
+   * OpenAI wire shape (`{id, type: "function", function: {name, arguments}}`)
+   * when it builds the provider body (core/src/chat.rs `provider_body`). */
   toolCalls?: ChatToolCall[];
   /** Tool role only: the id of the call this message answers. */
   toolCallId?: string;
