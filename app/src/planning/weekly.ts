@@ -18,7 +18,7 @@
  */
 
 import { MIN_ACTUAL_MINUTES } from "./bias.ts";
-import { dateKey, dayMs, keyToWallUtc, mondayOf, todayWallUtc, wallDayKey, wallMinutes } from "../ui/time.ts";
+import { dateKey, dayMs, keyToWallUtc, mondayOf, todayWallUtc, wallAsUtc, wallDayKey, wallMinutes } from "../ui/time.ts";
 
 /** The four steps one review walks through, in flow order (S3). */
 export type WeeklyReviewStep = "review" | "cleanup" | "plan" | "reflect";
@@ -71,8 +71,8 @@ function requireMoment(moment: unknown, label: string): WeeklyMoment {
   if (!Number.isInteger(value.day) || (value.day as number) < 0 || (value.day as number) > 6) {
     throw new Error(`${label} day must be a weekday 0 (Sunday) through 6 (Saturday)`);
   }
-  if (!Number.isInteger(value.time) || (value.time as number) < 0 || (value.time as number) > 1440) {
-    throw new Error(`${label} time must be a whole minute count between 0 and 1440`);
+  if (!Number.isInteger(value.time) || (value.time as number) < 0 || (value.time as number) >= 1440) {
+    throw new Error(`${label} time must be a whole minute count between 0 and 1439`);
   }
   if (!Array.isArray(value.steps)) throw new Error(`${label} steps must be a list`);
   const steps: WeeklyReviewStep[] = [];
@@ -300,6 +300,9 @@ export type ReviewTask = {
   estimate?: number;
   actualMinutes?: number;
   completedAt?: string;
+  /** The Clean-up step's "someday" shelf: a flagged task is never a candidate
+   *  again, or flagging it once would only resurface it next week. */
+  someday?: boolean;
 };
 
 /** A block as the review reads it: which task it planned, and when. */
@@ -338,6 +341,18 @@ function instantDayKey(instant: string, timeZone: string): string | undefined {
   return Number.isFinite(stamp) ? dateKey(new Date(stamp), timeZone) : undefined;
 }
 
+/** The real instant of the zone's midnight on a day key: the same two-pass
+ *  correction `toZonedInstant` applies (stamp = wall − offset), so a DST day's
+ *  00:00 lands on the exact epoch millisecond. */
+function zonedMidnight(dayKey: string, timeZone: string): number {
+  const guess = Date.parse(`${dayKey}T00:00:00Z`);
+  let stamp = guess;
+  for (let pass = 0; pass < 2; pass += 1) {
+    stamp = guess - (wallAsUtc(new Date(stamp), timeZone) - stamp);
+  }
+  return stamp;
+}
+
 /**
  * The Review step's numbers for the week `now` falls on, in the zone.
  *
@@ -361,6 +376,12 @@ export function weeklyNumbers(input: {
 }): WeeklyNumbers {
   const { week, monday, sunday } = weekOfInstant(input.now, input.timeZone);
   const inWeek = (day: string | undefined) => day !== undefined && day >= monday && day <= sunday;
+  // The week's real window in the zone: Monday 00:00 through the next Monday
+  // 00:00, as actual instants (so a DST change inside the week shifts the
+  // window by its real hour). A block is attributed by the minutes it actually
+  // spends inside this window.
+  const weekStart = zonedMidnight(monday, input.timeZone);
+  const weekEnd = zonedMidnight(wallDayKey(keyToWallUtc(monday) + 7 * dayMs), input.timeZone);
 
   let plannedMinutes = 0;
   const plannedTasks = new Set<string>();
@@ -368,8 +389,13 @@ export function weeklyNumbers(input: {
     const start = Date.parse(block.start);
     const end = Date.parse(block.end);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-    if (!inWeek(instantDayKey(block.start, input.timeZone))) continue;
-    plannedMinutes += (end - start) / 60_000;
+    // Clip to the week's Monday-to-Monday window: a block crossing the edge
+    // (Sunday 23:00 → Monday 01:00) counts its minutes in each week it touches
+    // instead of landing whole in the week of its start day.
+    const clippedStart = Math.max(start, weekStart);
+    const clippedEnd = Math.min(end, weekEnd);
+    if (clippedEnd <= clippedStart) continue;
+    plannedMinutes += (clippedEnd - clippedStart) / 60_000;
     if (block.taskId !== undefined) plannedTasks.add(block.taskId);
   }
 
@@ -424,7 +450,9 @@ export type CleanupCandidate = {
 
 /**
  * The Clean-up step's candidates (S3): unfinished tasks that are overdue, or
- * that had a block in the week containing `today` and are still open.
+ * that had a block in the week containing `today` and are still open. Tasks
+ * flagged `someday` are never candidates: the step's own action must not feed
+ * the task straight back into next week's list.
  *
  * "Postponed ≥ 2 times" is not derivable from the stored model: neither tasks
  * nor blocks record a postponement count (the daily roll moves deadlines
@@ -451,7 +479,7 @@ export function cleanupCandidates(input: {
   }
   const candidates: CleanupCandidate[] = [];
   for (const task of input.tasks) {
-    if (task.completed) continue;
+    if (task.completed || task.someday) continue;
     const reasons: CleanupReason[] = [];
     if (task.deadline !== undefined && task.deadline < input.today) reasons.push("overdue");
     if (scheduledThisWeek.has(task.id)) reasons.push("scheduled-not-done");

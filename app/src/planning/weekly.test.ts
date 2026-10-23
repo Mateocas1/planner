@@ -95,6 +95,8 @@ test("weekly review settings validation rejects what the reader would replace", 
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: "friday" as never }), /moments/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 7, time: 100, steps: ["review"] }] }), /day/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: -1, steps: ["review"] }] }), /time/);
+  // 1440 is midnight of the next day: a moment there would never open on its day.
+  assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: 1440, steps: ["review"] }] }), /time/);
   assert.throws(() => validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: 100, steps: [] }] }), /step/);
   // Repeated steps collapse instead of failing.
   validateWeeklyReviewSettings({ nudges: true, moments: [{ day: 5, time: 100, steps: ["review", "review"] }] });
@@ -300,6 +302,27 @@ test("the bias ratio is the median over tracked, estimated work and the top thre
   assert.deepEqual(numbersWith([], []).topTasks, []);
 });
 
+test("a block crossing the week edge is clipped to the zone's Monday-to-Monday window", () => {
+  // Sunday 23:00 → Monday 01:00 Madrid: sixty minutes inside each ISO week.
+  const crossing = [{ start: "2026-03-29T23:00:00+02:00", end: "2026-03-30T01:00:00+02:00", taskId: "t1" }];
+  // Sunday evening still belongs to 2026-W13 (which ends Sunday 2026-03-29).
+  assert.equal(numbersWith([], crossing).plannedMinutes, 60);
+  // The same block also feeds the next week, whose Monday it spills into.
+  const nextWeek = weeklyNumbers({ now: new Date(Date.parse("2026-03-30T11:00:00Z")), timeZone: MADRID, tasks: [], blocks: crossing });
+  assert.equal(nextWeek.plannedMinutes, 60);
+  // A block wholly outside the window contributes nothing.
+  assert.equal(numbersWith([], [{ start: "2026-03-16T09:00:00+01:00", end: "2026-03-16T10:00:00+01:00", taskId: "t1" }]).plannedMinutes, 0);
+});
+
+test("clipping keeps real elapsed minutes across the spring-forward night", () => {
+  // Madrid springs forward on Sunday 2026-03-29 (02:00 → 03:00). A block from
+  // Sunday 23:00 to Monday 01:00 is still one real hour, counted in each week.
+  const crossing = [{ start: "2026-03-29T23:00:00+02:00", end: "2026-03-30T01:00:00+02:00", taskId: "t1" }];
+  assert.equal(numbersWith([], crossing).plannedMinutes, 60);
+  const nextWeek = weeklyNumbers({ now: new Date(Date.parse("2026-03-30T11:00:00Z")), timeZone: MADRID, tasks: [], blocks: crossing });
+  assert.equal(nextWeek.plannedMinutes, 60);
+});
+
 /* ----------------------------------------------------- cleanup candidates */
 
 test("clean-up candidates are overdue or scheduled-and-not-done unfinished tasks", () => {
@@ -327,6 +350,16 @@ test("clean-up candidates are overdue or scheduled-and-not-done unfinished tasks
   assert.deepEqual(lastWeek.map(candidate => candidate.task.id), ["both", "over"]);
 });
 
+test("someday tasks never re-enter the Clean-up step", () => {
+  const today = "2026-03-27"; // Friday of 2026-W13
+  const tasks: ReviewTask[] = [
+    { id: "shelf", title: "On the someday shelf", completed: false, deadline: "2026-03-20", someday: true },
+    { id: "stale", title: "Still stale", completed: false, deadline: "2026-03-20" },
+  ];
+  const candidates = cleanupCandidates({ tasks, blocks: [], today, timeZone: MADRID });
+  assert.deepEqual(candidates.map(candidate => candidate.task.id), ["stale"]);
+});
+
 /* ---------------------------------------------------------------- snooze */
 
 test("a snooze is an instant two hours out by default", () => {
@@ -351,14 +384,16 @@ test("the reflection note reads only what a note is, within the length cap", () 
 
 /* ------------------------------------------------------ moment edge cases */
 
-test("a moment at the day's end only opens at the day's last minute", () => {
+test("a moment at the day's last minute only opens for that minute", () => {
   const settings: { nudges: boolean; moments: WeeklyMoment[] } = {
     nudges: true,
-    moments: [{ day: 5, time: 1440, steps: ["review"] }],
+    moments: [{ day: 5, time: 1439, steps: ["review"] }],
   };
-  // Friday 22:00 Madrid: the moment's position (7200) is still ahead.
+  // Friday 22:00 Madrid: the moment's position is still ahead.
   assert.equal(dueMoment(new Date(Date.parse("2026-03-27T21:00:00Z")), MADRID, settings, undefined), null);
-  // Saturday 10:00 Madrid: the Friday 24:00 moment is now the last one due.
+  // Friday 23:59 Madrid (22:59Z): the day's last minute opens it.
+  assert.ok(dueMoment(new Date(Date.parse("2026-03-27T22:59:00Z")), MADRID, settings, undefined));
+  // Saturday 10:00 Madrid: the Friday 23:59 moment is now the last one due.
   assert.deepEqual(dueMoment(new Date(SATURDAY_09_00Z), MADRID, settings, undefined), {
     week: "2026-W13",
     moment: settings.moments[0],
