@@ -26,14 +26,21 @@ export function useWeeklyReview(
   now: Date,
 ): { week: WeekIdentity; state: WeeklyReviewState; note?: WeeklyReviewNote; loading: boolean } {
   const [read, setRead] = useState<StoredWeeklyReview | undefined>(undefined);
+  // Loading is "no snapshot yet", not "no document": an absent week document
+  // is a week that has not started, and its empty snapshot must end the wait.
+  const [ready, setReady] = useState(false);
   const week = weekOfInstant(now, timeZone);
 
   useEffect(() => {
     setRead(undefined);
+    setReady(false);
     return onSnapshot(
       weeklyReviewDocument(uid, week.week),
-      snapshot => setRead(snapshot.data() as StoredWeeklyReview | undefined),
-      () => setRead(undefined),
+      snapshot => {
+        setRead(snapshot.data() as StoredWeeklyReview | undefined);
+        setReady(true);
+      },
+      () => setReady(true),
     );
     // The week key only changes at a week boundary; `now` re-renders every
     // 30 s, and re-subscribing each tick would tear the listener down for
@@ -45,6 +52,6 @@ export function useWeeklyReview(
     week,
     state: parseWeeklyReviewState(read, week.week),
     note: parseWeeklyReviewNote(read, week.week),
-    loading: read === undefined,
+    loading: !ready,
   };
 }
