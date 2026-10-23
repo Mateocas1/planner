@@ -16,7 +16,7 @@ test("buildMessages: a plain conversation is system, user and assistant turns", 
       ["assistant", "hello"],
     ],
   );
-  assert.ok(messages.every(message => message.tools === undefined));
+  assert.ok(messages.every(message => message.toolCalls === undefined && message.toolCallId === undefined));
 });
 
 test("buildMessages: an empty assistant turn (a stop before any text) is not sent", () => {
