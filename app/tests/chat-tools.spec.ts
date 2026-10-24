@@ -300,6 +300,14 @@ test("reads run without confirmation and their data rides the next request (S4)"
   await page.reload();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible({ timeout: 30_000 });
 
+  // The read must see the seeded tasks: wait until the live snapshot carries
+  // them (the Tasks view reads the same store) before sending — otherwise the
+  // read can race the first Firestore sync after the reload and honestly
+  // answer "No matching tasks found." (observed flaking on the base commit).
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByText("Buy milk")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Pay rent")).toBeVisible({ timeout: 30_000 });
+
   await openPanel(page);
   await field(page).fill("What do I have?");
   await field(page).press("Enter");
