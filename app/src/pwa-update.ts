@@ -1,6 +1,7 @@
 /// <reference types="vite-plugin-pwa/client" />
 import { useSyncExternalStore } from "react";
 import { registerSW } from "virtual:pwa-register";
+import { isTauri } from "./desktop.ts";
 
 /**
  * The PWA update prompt's state (value roadmap §2 row 1).
@@ -30,8 +31,10 @@ function publish(): void {
 }
 
 /** Registers the app-shell worker and watches for a waiting update. Safe to call
- * once per document; a browser without service workers simply never announces. */
+ * once per document; a browser without service workers simply never announces.
+ * The desktop shell ships its assets inside the binary, so it registers none. */
 export function installUpdatePrompt(): void {
+  if (isTauri(window)) return;
   if (!("serviceWorker" in navigator)) return;
   activate = registerSW({
     immediate: true,

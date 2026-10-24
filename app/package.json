@@ -7,14 +7,18 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/domain/focus.test.ts src/domain/model.test.ts src/domain/quickAdd.test.ts src/domain/gcalImport.test.ts src/domain/sync.test.ts src/data/pending.test.ts src/data/google-client.test.ts src/ui/grid.test.ts src/ui/time.test.ts src/ui/palette.test.ts src/ui/pageTurn.test.ts src/ui/shortcuts.test.ts src/ui/shutdownRitual.test.ts src/planning/window.test.ts src/planning/bias.test.ts src/planning/place.test.ts src/planning/capacity.test.ts src/planning/shutdown.test.ts",
+    "test": "node --experimental-strip-types --test src/domain/focus.test.ts src/domain/model.test.ts src/domain/quickAdd.test.ts src/domain/gcalImport.test.ts src/domain/sync.test.ts src/data/pending.test.ts src/data/google-client.test.ts src/desktop.test.ts src/ui/grid.test.ts src/ui/time.test.ts src/ui/palette.test.ts src/ui/pageTurn.test.ts src/ui/shortcuts.test.ts src/ui/shutdownRitual.test.ts src/planning/window.test.ts src/planning/bias.test.ts src/planning/place.test.ts src/planning/capacity.test.ts src/planning/shutdown.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "dev": "vite",
     "test:emulator": "firebase emulators:exec --config firebase.emulator.json --project demo-calendar-app --only auth,firestore \"node --experimental-strip-types --test tests/emulator.test.ts\"",
     "test:browser": "firebase emulators:exec --config firebase.emulator.json --project demo-calendar-app --only auth,firestore \"playwright test\"",
     "test:smoke": "playwright test --config=playwright.smoke.config.ts",
-    "emulators": "firebase emulators:start --config firebase.emulator.json --project demo-calendar-app --only auth,firestore"
+    "emulators": "firebase emulators:start --config firebase.emulator.json --project demo-calendar-app --only auth,firestore",
+    "desktop:dev": "bash scripts/desktop-dev.sh",
+    "desktop:build": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc",
+    "desktop:copy": "bash scripts/desktop-copy.sh",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@fontsource-variable/onest": "^5.3.1",
@@ -25,6 +29,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "22.20.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
