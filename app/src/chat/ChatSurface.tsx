@@ -300,11 +300,18 @@ export function ChatSurface({
         if (call.name === "remember") {
           const value = check.value as NormalizedRemember;
           const topicKey = value.topicKey ?? deriveTopicKey(value.title);
+          // The outcome matches the card: when the key was already in the
+          // live notes, this replaced that note's content (review finding 3).
+          const current = await backend.list();
+          const existing = current.find(memory => memory.topicKey === topicKey);
           setLatestMemories(await backend.apply([{ op: "upsert", topicKey, title: value.title, content: value.content }]));
           notifyMemoriesChanged();
           return {
             status: "confirmed",
-            message: `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
+            message:
+              existing === undefined
+                ? `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`
+                : `Replaced the note "${existing.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
           };
         }
         if (call.name === "forget") {

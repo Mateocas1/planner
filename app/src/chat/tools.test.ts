@@ -336,6 +336,31 @@ test("buildListTasksResult filters, reports ids and respects the caps", () => {
   assert.equal(capped.result.split("\n").length, 31);
 });
 
+test("read lines are bounded: at most 10 blocks per task and 120-char titles", () => {
+  // 14 placements for one task: the read shows 10 and counts the rest.
+  const blocks = Array.from({ length: 14 }, (_, index) => ({
+    id: `b${index}`,
+    start: `2026-11-${String(10 + index).padStart(2, "0")}T14:00:00Z`,
+    end: `2026-11-${String(10 + index).padStart(2, "0")}T15:00:00Z`,
+    taskId: "t1",
+  }));
+  const placed = buildListTasksResult({ includeCompleted: false }, { ...readContext, blocks });
+  assert.match(placed.result, /\(\+4 more\)/);
+  assert.equal((placed.result.match(/14:00–15:00/g) ?? []).length, 10, "only 10 block stamps on the line");
+  // get_task (all past placements included) is capped the same way.
+  const one = buildGetTaskResult("t1", { ...readContext, blocks });
+  assert.match(one.result, /\(\+4 more\)/);
+  assert.equal((one.result.match(/14:00–15:00/g) ?? []).length, 10);
+  // A title longer than 120 characters is truncated in the read output.
+  const longTitle = "x".repeat(130);
+  const long = buildListTasksResult(
+    { includeCompleted: false },
+    { ...readContext, tasks: [{ id: "t9", title: longTitle }] },
+  );
+  assert.ok(!long.result.includes(longTitle), "the full 130-char title never rides the read");
+  assert.match(long.result, /"x{119}…"/);
+});
+
 test("buildGetTaskResult reports one task with its blocks; list_holidays flags hidden ones", () => {
   const one = buildGetTaskResult("t1", readContext);
   assert.equal(one.summary, '"Pay the invoice"');
@@ -508,6 +533,22 @@ test("remember validates bounded title/content and an optional topic key", () =>
   assert.ok(checkRemember(JSON.stringify({ title: "T", content: "C".repeat(800) })).ok, "800 chars is the cap");
   assert.ok(!checkRemember('{"title":"T","content":"C","topicKey":""}').ok);
   assert.ok(!checkRemember(JSON.stringify({ title: "T", content: "C", topicKey: "k".repeat(121) })).ok);
+});
+
+test("remember over an existing key describes the replacement, not a silent overwrite", () => {
+  const memoryTopics = [{ topicKey: "planning-style", title: "Prefers short answers" }];
+  // A derived key colliding with an existing note names the note it will
+  // replace (review finding 3) — the card cannot say just "Remember X".
+  const derived = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}', { ...readContext, memoryTopics });
+  assert.ok(derived.ok);
+  assert.match(derived.ok ? derived.description : "", /Replace note "Prefers short answers"/);
+  const explicit = checkRemember('{"title":"T","content":"C","topicKey":"planning-style"}', { ...readContext, memoryTopics });
+  assert.ok(explicit.ok);
+  assert.match(explicit.ok ? explicit.description : "", /Replace note "Prefers short answers"/);
+  // An unknown key stays a plain Remember.
+  const fresh = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}', readContext);
+  assert.ok(fresh.ok);
+  assert.match(fresh.ok ? fresh.description : "", /^Remember "/);
 });
 
 test("deriveTopicKey slugs the title the way the store keys notes", () => {

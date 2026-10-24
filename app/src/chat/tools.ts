@@ -584,19 +584,31 @@ export type ReadResult = { summary: string; result: string };
 
 const emptyResult = (noun: string): ReadResult => ({ summary: `No ${noun} found.`, result: `No ${noun} found.` });
 
+/** The read lines' caps (review finding 4): at most this many block stamps
+ * per task, and titles longer than this are truncated. Everything here is
+ * fed back to the model, so it stays bounded. */
+const TASK_BLOCKS_CAP = 10;
+const READ_TITLE_MAX_CHARS = 120;
+
+function readTitle(title: string): string {
+  return title.length <= READ_TITLE_MAX_CHARS ? title : `${title.slice(0, READ_TITLE_MAX_CHARS - 1)}…`;
+}
+
 function taskLine(
   task: ChatToolContext["tasks"][number],
   blocks: ReadonlyArray<{ start: string; end: string; taskId?: string }>,
   context: ChatToolContext,
 ): string {
-  const parts = [`[${task.id}] "${task.title}"`];
+  const parts = [`[${task.id}] "${readTitle(task.title)}"`];
   parts.push(task.deadline === undefined ? "no due date" : `due ${formatDateKey(task.deadline, context.todayKey)}`);
   const linked = blocks.filter(block => block.taskId === task.id);
   if (linked.length > 0) {
+    const shown = linked.slice(0, TASK_BLOCKS_CAP);
+    const more = linked.length > shown.length ? ` (+${linked.length - shown.length} more)` : "";
     parts.push(
-      linked
+      shown
         .map(block => `${formatDateKey(dateKey(new Date(block.start), context.timeZone), context.todayKey)} ${timeLabel(new Date(block.start), context.timeZone)}–${timeLabel(new Date(block.end), context.timeZone)}`)
-        .join(", "),
+        .join(", ") + more,
     );
   }
   if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
@@ -883,9 +895,12 @@ export function deriveTopicKey(title: string): string {
 }
 
 /** Validates `remember`: bounded title and content (the store's own caps), a
- * bounded topic key when given. Existence checks are the executor's job (it
- * sees the live notes). */
-export function checkRemember(raw: string): ToolCheck<NormalizedRemember> {
+ * bounded topic key when given. When the note's key (explicit or derived
+ * from the title) matches an existing note, the card says so — the user
+ * must see that confirming replaces that note's content, not that it adds
+ * a new one (review finding 3). Whether the key is still free is re-checked
+ * against the live store at confirm time. */
+export function checkRemember(raw: string, context?: ChatToolContext): ToolCheck<NormalizedRemember> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
   const title = optionalString(parsed.value.title);
@@ -898,16 +913,23 @@ export function checkRemember(raw: string): ToolCheck<NormalizedRemember> {
   if (content.length > MEMORY_CONTENT_MAX) {
     return { ok: false, error: `The note content is too long (at most ${MEMORY_CONTENT_MAX} characters).` };
   }
+  let topicKey: string | undefined;
   const rawKey = parsed.value.topicKey;
   if (rawKey !== undefined && rawKey !== null) {
     if (typeof rawKey !== "string" || rawKey.trim() === "") return { ok: false, error: "The topic key must be non-empty text." };
     if (rawKey.trim().length > MEMORY_TOPIC_MAX) {
       return { ok: false, error: `The topic key is too long (at most ${MEMORY_TOPIC_MAX} characters).` };
     }
-    const topicKey = rawKey.trim();
-    return { ok: true, value: { title, content, topicKey }, description: `Remember "${title}" — ${content}` };
+    topicKey = rawKey.trim();
   }
-  return { ok: true, value: { title, content }, description: `Remember "${title}" — ${content}` };
+  const effectiveKey = topicKey ?? deriveTopicKey(title);
+  const known = (context?.memoryTopics ?? []).find(entry => entry.topicKey === effectiveKey);
+  const description = known === undefined ? `Remember "${title}" — ${content}` : `Replace note "${known.title}" — ${content}`;
+  return {
+    ok: true,
+    value: topicKey === undefined ? { title, content } : { title, content, topicKey },
+    description,
+  };
 }
 
 /** Validates `forget`: a bounded topic key; whether the note exists is
@@ -985,7 +1007,7 @@ export function validateToolCall(
     case "hide_holiday":
       return checkHideHoliday(call.arguments, context);
     case "remember":
-      return checkRemember(call.arguments);
+      return checkRemember(call.arguments, context);
     case "forget":
       return checkForget(call.arguments, context);
     case "list_tasks":
