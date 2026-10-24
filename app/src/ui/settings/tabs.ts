@@ -22,7 +22,7 @@ export const settingsTabs: readonly SettingsTabDef[] = [
   {
     id: "general",
     label: "General",
-    description: "One working window for every day, in your planner's time zone.",
+    description: "When your day starts, ends and shuts down.",
     desktopOnly: false,
   },
   {
