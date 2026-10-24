@@ -46,3 +46,49 @@ test("an invalid move throws before any write exists", () => {
     assert.throws(() => chatMoveWrites("u1", move, "b1"), JSON.stringify(move));
   }
 });
+
+/* ---------- createChatTask (ronda4 T4, S4): one batch, task plus block ---------- */
+
+import { createChatTaskWrites, type ChatCreate } from "./chatMove.ts";
+
+test("a create with a start time is one task document plus one linked block, ids minted upfront", () => {
+  const create: ChatCreate = {
+    title: "Water the plants",
+    deadline: "2026-10-30",
+    estimateMinutes: 30,
+    block: { start: "2026-10-30T14:00:00Z", end: "2026-10-30T14:30:00Z" },
+  };
+  const { taskId, blockId, writes } = createChatTaskWrites("u1", create, "t-mint", "b-mint");
+  assert.equal(taskId, "t-mint");
+  assert.equal(blockId, "b-mint");
+  assert.deepEqual(writes, [
+    {
+      kind: "set",
+      path: "users/u1/tasks/t-mint",
+      fields: { title: "Water the plants", completed: false, deadline: "2026-10-30", estimate: 30 },
+    },
+    {
+      kind: "set",
+      path: "users/u1/blocks/b-mint",
+      fields: { start: "2026-10-30T14:00:00Z", end: "2026-10-30T14:30:00Z", taskId: "t-mint" },
+    },
+  ]);
+});
+
+test("a create without a start time is exactly one task document", () => {
+  const { blockId, writes } = createChatTaskWrites("u1", { title: "Solo" }, "t-mint", "b-mint");
+  assert.equal(blockId, undefined);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0]?.fields, { title: "Solo", completed: false });
+});
+
+test("an invalid create throws before any write exists", () => {
+  for (const create of [
+    { title: "   " },
+    { title: "X", deadline: "30/10/2026" },
+    { title: "X", estimateMinutes: 0 },
+    { title: "X", block: { start: "2026-10-30T14:00:00Z", end: "2026-10-30T14:00:00Z" } },
+  ] as ChatCreate[]) {
+    assert.throws(() => createChatTaskWrites("u1", create, "t-mint", "b-mint"), JSON.stringify(create));
+  }
+});

@@ -1,20 +1,29 @@
 /**
- * The chat surface (task C3a): the composition layer between App's single
- * mount point and the ChatPanel. It owns everything C3 wires — the real
- * Tauri transport on desktop, the planner snapshot feed, the memory backend
- * (Rust file on desktop, in-memory behind `?chatMock`) and the
+ * The chat surface (task C3a; ronda4 T4): the composition layer between App's
+ * single mount point and the ChatPanel. It owns everything C3 wires — the
+ * real Tauri transport on desktop, the planner snapshot feed, the memory
+ * backend (Rust file on desktop, in-memory behind `?chatMock`) and the
  * end-of-conversation extraction — while the panel keeps its own look and
  * motion. App renders this instead of ChatPanel directly; on the web without
  * `?chatMock` no transport exists and the panel falls back to its unwired
  * error transport, exactly as before C3a.
+ *
+ * Freshness (ronda4 S4 diagnosis): every request and every confirm rebuilds
+ * its view of the planner from the live snapshot, the live clock and the live
+ * notes — never from a value frozen at some earlier render. The latest
+ * snapshot, zone and notes are mirrored into refs on every render, and the
+ * prompt builder, the tool-validation context and the read executor read
+ * those refs at call time, so a request sent right after a data change (or a
+ * card confirmed minutes after it was proposed) sees the planner as it is
+ * now, and `todayKey` can never go stale across midnight.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel, type ToolOutcome } from "../ui/ChatPanel.tsx";
-import { addTask } from "../data/tasks.ts";
-import { moveTaskWithBlock } from "../data/chatMove.ts";
+import { moveTaskWithBlock, createChatTask } from "../data/chatMove.ts";
 import { db } from "../data/client.ts";
 import { isTauri } from "../desktop.ts";
+import { formatDateKey } from "../ui/format.ts";
 import { dateKey, localValue, toZonedInstant } from "../ui/time.ts";
 import { getChatModel, mockMode } from "./config.ts";
 import type { ChatTurn } from "./conversation.ts";
@@ -73,68 +82,111 @@ export function ChatSurface({
     void refreshMemories();
   }, [refreshMemories]);
 
-  // Rebuilt per request: fresh clock, fresh snapshot, fresh notes (S4).
+  // The live view of the planner, mirrored on every render so per-request
+  // builders read the latest committed store state (see the header comment).
+  const liveRef = useRef({ snapshot, timeZone });
+  liveRef.current = { snapshot, timeZone };
+
+  // Rebuilt per request from the live refs: fresh clock, fresh snapshot,
+  // fresh notes (S4). The callback itself stays stable, so nothing above
+  // re-arms when data changes — only reads at call time.
   const buildPrompt = useCallback(
-    () => buildSystemPrompt({ snapshot, memories: memoriesRef.current, now: new Date(), timeZone }),
-    [snapshot, timeZone],
+    () =>
+      buildSystemPrompt({
+        snapshot: liveRef.current.snapshot,
+        memories: memoriesRef.current,
+        now: new Date(),
+        timeZone: liveRef.current.timeZone,
+      }),
+    [],
   );
 
-  // R1 (spec S1): the confirm flow. Validation is pure (tools.ts) — every
-  // check, including the midnight room check for a start time, runs before
-  // any data call — and the write goes through the app's own data functions
-  // for the signed-in user only. `move_task` maps onto what the app already
-  // does: a target day is `setTaskDeadline`'s deadline (null = unschedule),
-  // and a start time — the app's primitive for placing a task at a time —
-  // adds a task-linked work block for the estimate's duration. Both land in
-  // ONE writeBatch (`moveTaskWithBlock`), so a move is atomic. Invalid
-  // proposals fail before any write; a failed write leaves the card failed
-  // and data untouched by this flow.
-  const toolContext = useMemo<ChatToolContext>(
-    () => ({ tasks: snapshot.tasks, timeZone, todayKey: dateKey(new Date(), timeZone) }),
-    [snapshot.tasks, timeZone],
-  );
+  /** The tool context as of NOW: the caller builds it per request or per
+   * confirm from the live refs, so ids, titles and `todayKey` are current. */
+  const buildToolContext = useCallback((): ChatToolContext => {
+    const live = liveRef.current;
+    return { tasks: live.snapshot.tasks, timeZone: live.timeZone, todayKey: dateKey(new Date(), live.timeZone) };
+  }, []);
 
+  // R1 (spec S1) + ronda4 (S4): the confirm flow. Validation is pure
+  // (tools.ts) and runs against the LIVE context at confirm time; the write
+  // goes through the app's own data functions for the signed-in user only.
+  // `move_task` maps onto what the app already does: a target day is
+  // `setTaskDeadline`'s deadline (null = unschedule), and a start time — the
+  // app's primitive for placing a task at a time — adds a task-linked work
+  // block for the estimate's duration. Both land in ONE writeBatch
+  // (`moveTaskWithBlock`), so a move is atomic; `create_task` with a start
+  // time lands its task and its block in ONE batch (`createChatTask`). Every
+  // outcome carries the created/changed task's id and fields in `result`,
+  // which rides the next request's `tool` message so the model can reference
+  // what it just changed. Invalid proposals fail before any write.
   const executeToolCall = useCallback(
     async (call: ChatToolCall): Promise<ToolOutcome> => {
       if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
+      const toolContext = buildToolContext();
       const check = validateToolCall(call, toolContext);
       if (!check.ok) return { status: "failed", message: check.error };
       try {
         if (call.name === "create_task") {
           const value = check.value as NormalizedCreateTask;
-          await addTask(uid, value.title, value.day, value.estimateMinutes);
-          return { status: "confirmed", message: "Task created." };
-        }
-        if (call.name === "move_task") {
-          const value = check.value as NormalizedMoveTask;
-          const estimate = toolContext.tasks.find(task => task.id === value.taskId)?.estimateMinutes ?? 60;
-          await moveTaskWithBlock(uid, {
-            taskId: value.taskId,
+          const estimate = value.estimateMinutes ?? 60;
+          const { taskId } = await createChatTask(uid, {
             title: value.title,
-            ...(value.day === null ? {} : { deadline: value.day }),
-            ...(value.startMinutes !== undefined && value.day !== null
+            ...(value.day === undefined ? {} : { deadline: value.day }),
+            ...(value.estimateMinutes === undefined ? {} : { estimateMinutes: value.estimateMinutes }),
+            ...(value.startMinutes !== undefined && value.day !== undefined
               ? {
                   block: {
-                    start: toZonedInstant(localValue(value.day, value.startMinutes), timeZone),
-                    end: toZonedInstant(localValue(value.day, value.startMinutes + estimate), timeZone),
+                    start: toZonedInstant(localValue(value.day, value.startMinutes), toolContext.timeZone),
+                    end: toZonedInstant(localValue(value.day, value.startMinutes + estimate), toolContext.timeZone),
                   },
                 }
               : {}),
           }, db);
-          const message =
-            value.day === null
-              ? "The task was unscheduled."
-              : value.startMinutes !== undefined
-                ? "The task was moved and placed on the schedule."
-                : "The task was moved.";
-          return { status: "confirmed", message };
+          // The outcome is one line for both audiences: the user reads what
+          // happened, and the model reads the id it must use to reference
+          // this task in a follow-up (S4 diagnosis D2.1).
+          const when = value.day === undefined ? "" : ` · ${formatDateKey(value.day, toolContext.todayKey)}`;
+          const at = value.startMinutes === undefined ? "" : ` ${timeLabel(value.startMinutes)}`;
+          const duration = value.estimateMinutes === undefined ? "" : ` · ${value.estimateMinutes} min`;
+          return {
+            status: "confirmed",
+            message: `Created task id=${taskId} — "${value.title}"${when}${at}${duration}`,
+          };
+        }
+        if (call.name === "move_task") {
+          const value = check.value as NormalizedMoveTask;
+          const task = toolContext.tasks.find(entry => entry.id === value.taskId);
+          const estimate = task?.estimateMinutes ?? 60;
+          await moveTaskWithBlock(uid, {
+            taskId: value.taskId,
+            title: task?.title ?? value.title,
+            ...(value.day === null ? {} : { deadline: value.day }),
+            ...(value.startMinutes !== undefined && value.day !== null
+              ? {
+                  block: {
+                    start: toZonedInstant(localValue(value.day, value.startMinutes), toolContext.timeZone),
+                    end: toZonedInstant(localValue(value.day, value.startMinutes + estimate), toolContext.timeZone),
+                  },
+                }
+              : {}),
+          }, db);
+          const target = value.day === null ? "no date" : formatDateKey(value.day, toolContext.todayKey);
+          const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
+          return {
+            status: "confirmed",
+            message:
+              value.day === null
+                ? `Unscheduled task id=${value.taskId} — "${task?.title ?? value.title}" (due date cleared)`
+                : `Moved task id=${value.taskId} — "${task?.title ?? value.title}" to ${target}${at}`,
+          };
         }
         return { status: "failed", message: `Unknown action "${call.name}".` };
       } catch (error) {
         return { status: "failed", message: error instanceof Error ? error.message : String(error) };
       }
     },
-    [uid, toolContext, timeZone],
+    [uid, buildToolContext],
   );
 
   const onConversationEnd = useCallback(
@@ -161,6 +213,16 @@ export function ChatSurface({
     [backend, transport, setLatestMemories],
   );
 
+  // Display-only context for the panel's card descriptions (the words a card
+  // shows while pending). The authoritative validation at confirm time and
+  // every request's prompt read the live refs instead, so this memo only
+  // needs to track the snapshot for re-rendering descriptions.
+  const displayToolContext = useMemo<ChatToolContext>(
+    () => buildToolContext(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot identity changes on every store event
+    [snapshot, timeZone, buildToolContext],
+  );
+
   return (
     <ChatPanel
       signedIn={signedIn}
@@ -168,8 +230,13 @@ export function ChatSurface({
       buildSystemPrompt={buildPrompt}
       onConversationEnd={onConversationEnd}
       onSetupKey={onSetupKey}
-      toolContext={toolContext}
+      toolContext={displayToolContext}
       onConfirmToolCall={executeToolCall}
     />
   );
+}
+
+/** Minutes since midnight as wall-clock HH:MM (outcomes and descriptions). */
+function timeLabel(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }

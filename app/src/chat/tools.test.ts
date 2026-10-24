@@ -96,6 +96,35 @@ test("create_task: a bad estimate fails; null is absent", () => {
   assert.ok(checkCreateTask('{"title":"X","estimateMinutes":null}').ok);
 });
 
+test("create_task: a start time schedules the task at a wall-clock time (S4)", () => {
+  const ok = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"14:00"}', context.todayKey);
+  assert.ok(ok.ok);
+  assert.equal(ok.ok && ok.value.startMinutes, 14 * 60);
+  // The description names the time so the card shows what will change.
+  assert.match(ok.ok ? ok.description : "", /14:00/);
+});
+
+test("create_task: a start time needs a day and a valid HH:MM", () => {
+  const noDay = checkCreateTask('{"title":"X","startTime":"14:00"}');
+  assert.ok(!noDay.ok);
+  assert.match(noDay.ok ? "" : noDay.error, /needs a day/);
+  const bad = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"24:30"}');
+  assert.ok(!bad.ok);
+  const malformed = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"2pm"}');
+  assert.ok(!malformed.ok);
+});
+
+test("create_task: a start time must leave room before midnight for the duration", () => {
+  // Without an estimate the app assumes 60 minutes: 23:30 leaves no room.
+  const assumed = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"23:30"}');
+  assert.ok(!assumed.ok);
+  assert.match(assumed.ok ? "" : assumed.error, /no room before midnight/);
+  const overflow = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"23:30","estimateMinutes":90}');
+  assert.ok(!overflow.ok);
+  const edge = checkCreateTask('{"title":"X","day":"2026-10-30","startTime":"23:00","estimateMinutes":60}');
+  assert.ok(edge.ok, "ending exactly at midnight is fine");
+});
+
 test("create_task: arguments that are not a JSON object fail cleanly", () => {
   assert.ok(!checkCreateTask("not json").ok);
   assert.ok(!checkCreateTask('["title"]').ok);
@@ -171,4 +200,16 @@ test("toolResultContent maps every card state to a tool message", () => {
   assert.match(toolResultContent({ status: "failed", outcome: "offline" }), /failed: offline/);
   assert.match(toolResultContent({ status: "discarded" }), /discarded/i);
   assert.match(toolResultContent({ status: "pending" }), /not answered/);
+});
+
+test("toolResultContent: a write outcome's result (ids and fields) rides to the model (S4)", () => {
+  const content = toolResultContent({
+    status: "confirmed",
+    outcome: "Task created.",
+    result: 'Created task id=t9 "Buy milk" due 2026-10-30 at 14:00, 30 min.',
+  });
+  assert.match(content, /applied/i);
+  assert.match(content, /id=t9/);
+  // Without a result the outcome is the fallback, exactly as before.
+  assert.match(toolResultContent({ status: "confirmed", outcome: "Task created." }), /Task created\./);
 });

@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, deleteField, doc, setDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { blockFields, createTask, createWorkBlock } from "../domain/model.ts";
 
 /**
@@ -75,4 +75,76 @@ export async function moveTaskWithBlock(uid: string, move: ChatMove, database: F
     else batch.set(reference, write.fields);
   }
   await batch.commit();
+}
+
+/* ---------- create (ronda4 T4, S4): a task and its schedule block in one batch ---------- */
+
+/** One confirmed chat create: a new task, optionally due on a day, optionally
+ * placed on that day's schedule by a task-linked work block. The block's
+ * duration is the task's estimate — the caller computes its instants the way
+ * `ChatMove`'s block does. */
+export type ChatCreate = {
+  title: string;
+  deadline?: string;
+  estimateMinutes?: number;
+  block?: { start: string; end: string };
+};
+
+/** What one create consists of, as pure data: the minted task id (and block
+ * id, when a block is part of it) plus the batch's writes. Validation runs
+ * here and throws before any write exists, so a rejected create produces no
+ * batch at all — the caller's card then fails and nothing was written. */
+export function createChatTaskWrites(
+  uid: string,
+  create: ChatCreate,
+  taskId: string,
+  blockId: string,
+): { taskId: string; blockId?: string; writes: ChatMoveWrite[] } {
+  // The domain builder validates title, deadline and estimate (throws before
+  // any write exists), exactly like `addTask` does. The stored fields mirror
+  // `data/tasks.ts` `taskFields` for a new task (the closed schema: title,
+  // completed, optional deadline and estimate) — this module stays importable
+  // without the browser-only client, so it cannot call that helper; the
+  // payload test pins the shape, so a schema drift fails here first.
+  const task = createTask(taskId, create.title, create.deadline, create.estimateMinutes);
+  const fields = {
+    title: task.title,
+    completed: false,
+    ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
+    ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
+  };
+  const writes: ChatMoveWrite[] = [
+    { kind: "set", path: `users/${uid}/tasks/${taskId}`, fields },
+  ];
+  if (create.block !== undefined) {
+    const block = createWorkBlock(blockId, create.block.start, create.block.end, taskId);
+    writes.push({ kind: "set", path: `users/${uid}/blocks/${blockId}`, fields: blockFields(block) });
+    return { taskId, blockId, writes };
+  }
+  return { taskId, writes };
+}
+
+/**
+ * Writes one confirmed chat create in one atomic `writeBatch` and returns the
+ * minted task id (plus the block id, when a block was part of it) so the
+ * card's outcome can name what now exists. The ids are minted before the
+ * batch so the documents and the returned value can never drift apart.
+ * Throws (writing nothing) when the create does not validate.
+ */
+export async function createChatTask(
+  uid: string,
+  create: ChatCreate,
+  database: Firestore,
+): Promise<{ taskId: string; blockId?: string }> {
+  const taskId = doc(collection(database, `users/${uid}/tasks`)).id;
+  const blockId = create.block === undefined ? "" : doc(collection(database, `users/${uid}/blocks`)).id;
+  const { blockId: blockIdOut, writes } = createChatTaskWrites(uid, create, taskId, blockId);
+  const batch = writeBatch(database);
+  for (const write of writes) {
+    const reference = doc(database, write.path);
+    if (write.kind === "update") batch.update(reference, write.fields);
+    else batch.set(reference, write.fields);
+  }
+  await batch.commit();
+  return { taskId, ...(blockIdOut === undefined ? {} : { blockId: blockIdOut }) };
 }

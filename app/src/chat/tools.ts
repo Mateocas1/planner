@@ -29,7 +29,7 @@ const CREATE_TASK: ChatToolSpec = {
   function: {
     name: "create_task",
     description:
-      "Create a task in the user's planner. The user must confirm before anything is created.",
+      "Create a task in the user's planner, optionally due on a day and optionally placed on that day's schedule at a start time. The user must confirm before anything is created.",
     parameters: {
       type: "object",
       properties: {
@@ -38,9 +38,14 @@ const CREATE_TASK: ChatToolSpec = {
           type: "string",
           description: "Optional due day as YYYY-MM-DD (the planner's timezone). Omit for no date.",
         },
+        startTime: {
+          type: "string",
+          description:
+            "Optional wall-clock HH:MM (24 h) to place the task on that day's schedule; needs a day. The block runs for the estimate (60 min without one).",
+        },
         estimateMinutes: {
           type: "integer",
-          description: "Optional estimate in whole minutes (1–1440).",
+          description: "Optional estimate (duration) in whole minutes (1–1440).",
         },
       },
       required: ["title"],
@@ -93,6 +98,8 @@ export type ToolCheck<T> = { ok: true; value: T; description: string } | { ok: f
 export type NormalizedCreateTask = {
   title: string;
   day?: string;
+  /** Minutes since midnight when a start time was given (needs a day). */
+  startMinutes?: number;
   estimateMinutes?: number;
 };
 
@@ -157,8 +164,22 @@ function checkEstimate(value: unknown): { estimateMinutes?: number } | { error: 
   return { estimateMinutes: value as number };
 }
 
-/** Validates `create_task` arguments (spec S1: empty title, bad date).
- * `todayKey` only feeds the description's "today"/"tomorrow" wording. */
+/** Validates a raw `HH:MM` string into minutes since midnight, or an error.
+ * Shared by every tool that can place work at a wall-clock time. */
+function checkStartTime(value: unknown): { startMinutes: number } | { error: string } {
+  if (typeof value !== "string") return { error: "The start time must be HH:MM." };
+  const match = TIME_RE.exec(value.trim());
+  const hour = match === null ? -1 : Number(match[1]);
+  const minute = match === null ? -1 : Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { error: `"${value}" is not a valid start time (HH:MM).` };
+  }
+  return { startMinutes: hour * 60 + minute };
+}
+
+/** Validates `create_task` arguments (spec S1: empty title, bad date; S4:
+ * start time with midnight room). `todayKey` only feeds the description's
+ * "today"/"tomorrow" wording. */
 export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<NormalizedCreateTask> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
@@ -167,11 +188,28 @@ export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<Normalize
   if (title.length > MAX_TOOL_TITLE_CHARS) return { ok: false, error: TITLE_TOO_LONG };
   const day = checkDay(parsed.value.day, "optional");
   if ("error" in day) return { ok: false, error: day.error };
+  let startMinutes: number | undefined;
+  if (parsed.value.startTime !== undefined && parsed.value.startTime !== null) {
+    if (day.day === undefined) return { ok: false, error: "A start time needs a day." };
+    const time = checkStartTime(parsed.value.startTime);
+    if ("error" in time) return { ok: false, error: time.error };
+    startMinutes = time.startMinutes;
+  }
   const estimate = checkEstimate(parsed.value.estimateMinutes);
   if ("error" in estimate) return { ok: false, error: estimate.error };
+  // The block a start time creates runs for the estimate (the app's assumed
+  // 60 minutes without one) and must end before midnight — checked here,
+  // before any write, exactly like the estimate bounds.
+  if (startMinutes !== undefined) {
+    const estimateForRoom = estimate.estimateMinutes ?? ASSUMED_ESTIMATE_MINUTES;
+    if (startMinutes + estimateForRoom > 1440) {
+      return { ok: false, error: "The start time leaves no room before midnight for this task's duration." };
+    }
+  }
   const value: NormalizedCreateTask = {
     title,
     ...(day.day === undefined ? {} : { day: day.day }),
+    ...(startMinutes === undefined ? {} : { startMinutes }),
     ...estimate,
   };
   return { ok: true, value, description: describeCreateTask(value, todayKey) };
@@ -182,6 +220,9 @@ const TITLE_TOO_LONG = `The title is too long (at most ${MAX_TOOL_TITLE_CHARS} c
 function describeCreateTask(value: NormalizedCreateTask, todayKey: string): string {
   const parts = [`Create task "${value.title}"`];
   if (value.day !== undefined) parts.push(formatDateKey(value.day, todayKey));
+  if (value.startMinutes !== undefined) {
+    parts.push(`${String(Math.floor(value.startMinutes / 60)).padStart(2, "0")}:${String(value.startMinutes % 60).padStart(2, "0")}`);
+  }
   if (value.estimateMinutes !== undefined) parts.push(`${value.estimateMinutes} min`);
   return parts.join(" · ");
 }
@@ -270,13 +311,17 @@ export function describeToolCall(call: Pick<ChatToolCall, "name" | "arguments">,
 }
 
 /** The `tool` message content each card state sends back to the model, so the
- * OpenAI protocol stays valid (S1: one tool message per call). */
-export function toolResultContent(card: { status: string; outcome?: string }): string {
+ * OpenAI protocol stays valid (S1: one tool message per call). A resolved
+ * write's `result` line — ids and fields — rides to the model so it can
+ * reference the task it just changed (S4); the `outcome` stays the card's
+ * short user-facing line. */
+export function toolResultContent(card: { status: string; outcome?: string; result?: string }): string {
+  const detail = card.result ?? card.outcome;
   switch (card.status) {
     case "confirmed":
-      return `The user confirmed and it was applied. ${card.outcome ?? ""}`.trim();
+      return `The user confirmed and it was applied. ${detail ?? ""}`.trim();
     case "failed":
-      return `The user confirmed but it failed: ${card.outcome ?? "unknown error"}`;
+      return `The user confirmed but it failed: ${detail ?? "unknown error"}`;
     case "discarded":
       return "The user discarded this proposal. Nothing was changed.";
     default:

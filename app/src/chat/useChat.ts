@@ -25,8 +25,9 @@ export type ChatController = {
   retry: () => void;
   newChat: () => void;
   /** Resolves one action card (the user confirmed, discarded, or the write
-   * failed). Resolving never triggers a new model call (spec S1). */
-  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => void;
+   * failed). Resolving never triggers a new model call (spec S1). `result`
+   * is the model-facing detail (ids, fields) that rides the `tool` message. */
+  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string, result?: string) => void;
 };
 
 let requestCounter = 0;
@@ -191,8 +192,8 @@ export function useChat(options: {
   }, [transport, fireConversationEnd]);
 
   const resolveToolCall = useCallback(
-    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => {
-      dispatch({ type: "toolCallResolved", callId, status, outcome });
+    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string, result?: string) => {
+      dispatch({ type: "toolCallResolved", callId, status, outcome, result });
     },
     [],
   );

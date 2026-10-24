@@ -29,6 +29,10 @@ export type ToolCallCard = {
   status: ToolCallStatus;
   /** The outcome line shown on the card once resolved (result or error). */
   outcome?: string;
+  /** The model-facing detail line that rides the `tool` message: the
+   * created/changed task's id and fields (S4), or a read's result. Absent
+   * for a discarded card and for writes whose executor could not name them. */
+  result?: string;
 };
 
 export type ChatTurn =
@@ -68,7 +72,7 @@ export type ConversationAction =
   | { type: "stop" }
   | { type: "retry"; id: string }
   | { type: "newChat" }
-  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed"; outcome?: string };
+  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed"; outcome?: string; result?: string };
 
 export const emptyConversation: ConversationState = { turns: [], phase: "idle", requestId: null, error: null };
 
@@ -210,7 +214,12 @@ export function reduceConversation(state: ConversationState, action: Conversatio
             ...turn,
             toolCalls: turn.toolCalls.map(card =>
               card.callId === action.callId
-                ? { ...card, status: action.status, ...(action.outcome === undefined ? {} : { outcome: action.outcome }) }
+                ? {
+                    ...card,
+                    status: action.status,
+                    ...(action.outcome === undefined ? {} : { outcome: action.outcome }),
+                    ...(action.result === undefined ? {} : { result: action.result }),
+                  }
                 : card,
             ),
           };
