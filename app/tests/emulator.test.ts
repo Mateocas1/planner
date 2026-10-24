@@ -6,7 +6,7 @@ import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut }
 import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
 import { calendarKey, planHolidayCleanup, selectHolidayTasks } from "../src/domain/gcalImport.ts";
 import { subtractActualMinutesIn } from "../src/data/actualMinutes.ts";
-import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
+import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, parseActualByDay, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
 const authHost = "127.0.0.1:9199";
@@ -146,8 +146,9 @@ test("a queued offline subtraction lands once on the server", async () => {
     await setDoc(doc(owner.db, path), { title: "Away task", completed: false, actualMinutes: 30 });
 
     await disableNetwork(owner.db);
-    // The one write a confirmed Subtract produces, queued while offline.
-    const subtraction = subtractActualMinutesIn(owner.db, account.user.uid, "away", 12);
+    // The one write a confirmed Subtract produces, queued while offline. The
+    // away span this subtraction belongs to is on the task's own day.
+    const subtraction = subtractActualMinutesIn(owner.db, account.user.uid, "away", 12, "2026-03-24");
     // The local cache applies the transform at once, which is what keeps the
     // visible counter honest while the app is offline.
     assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 18);
@@ -164,8 +165,8 @@ test("a queued offline subtraction lands once on the server", async () => {
     assert.equal(stored, 18);
 
     // The helper refuses what is not a whole positive minute count.
-    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "away", 0), /whole minute/);
-    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "a/b", 5), /task ID/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "away", 0, "2026-03-24"), /whole minute/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "a/b", 5, "2026-03-24"), /task ID/);
 
     // Keep: the same offline cycle with no confirmed write changes nothing.
     await disableNetwork(owner.db);
@@ -932,6 +933,188 @@ test("weekly review settings are written normalized", async () => {
     }, owner.db);
     const stored = (await getDoc(profileDocument(uid, owner.db))).data()?.weeklyReview;
     assert.deepEqual(stored, { nudges: false, moments: [{ day: 5, time: 1000, steps: ["review"] }] });
+  } finally {
+    await close(owner);
+  }
+});
+
+/* ------------------------- actual minutes per day (ronda 2, S3/L6) -------- */
+
+/**
+ * The per-day map a task may hold next to its cumulative counter. The reader
+ * is tolerant (a hand-edited document may hold anything): only whole-day keys
+ * with finite numbers survive, and values are floored to whole minutes and
+ * capped at the counter bound. The map stays SIGNED: storage may hold a
+ * negative day (an older build attributed an away subtraction to the span's
+ * own day, so a cross-midnight span could land where its credit did not), and
+ * the reviewer clamps once at each task's in-week sum — clamping here would
+ * hide a real negative and make the weekly total wrong, and undo would
+ * persist the clamped map over the stored one.
+ */
+test("a per-day actual map reads only real days with signed whole-minute counts", () => {
+  assert.equal(parseActualByDay(undefined), undefined);
+  assert.equal(parseActualByDay("nope"), undefined);
+  assert.equal(parseActualByDay([]), undefined);
+  assert.equal(parseActualByDay({}), undefined); // empty is no data
+  assert.deepEqual(parseActualByDay({ "2026-03-24": 45, "2026-03-28": 1 }), { "2026-03-24": 45, "2026-03-28": 1 });
+  // Floors, caps and drops, but does NOT clamp: a negative day survives as
+  // the negative it is; non-days and non-numbers never survive.
+  assert.deepEqual(
+    parseActualByDay({ "2026-03-24": -15, "2026-03-25": 30.9, "2026-2-24": 10, "not-a-day": 5, "2026-03-26": "x", "2026-03-27": Number.NaN }),
+    { "2026-03-24": -15, "2026-03-25": 30 },
+  );
+  assert.deepEqual(parseActualByDay({ "2026-03-24": MAX_ACTUAL_MINUTES + 1 }), { "2026-03-24": MAX_ACTUAL_MINUTES });
+});
+
+/**
+ * Every focus-session write records the cumulative counter AND the day map in
+ * the SAME updateDoc (L6): two field transforms, one atomic write, so a
+ * device that sees one sees the other and an offline queue drains both
+ * together. The day key is the profile-zone day the session started.
+ */
+test("a session's increment lands on the total and its day in one atomic write", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { addActualMinutes } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`byday-owner-${suffix}`);
+  const other = client(`byday-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `byday-owner-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/tracked`;
+    await setDoc(doc(owner.db, path), { title: "Tracked task", completed: false });
+
+    await addActualMinutes(uid, "tracked", 20, "2026-03-24", owner.db);
+    const stored = (await getDocFromServer(doc(owner.db, path))).data();
+    assert.equal(stored?.actualMinutes, 20);
+    assert.equal(stored?.actualByDay?.["2026-03-24"], 20);
+
+    // Two sessions on two days, queued offline, drain as four independent
+    // transforms: each day sums what its sessions spent.
+    await disableNetwork(owner.db);
+    const first = addActualMinutes(uid, "tracked", 10, "2026-03-24", owner.db);
+    const second = addActualMinutes(uid, "tracked", 5, "2026-03-25", owner.db);
+    await enableNetwork(owner.db);
+    await Promise.all([first, second]);
+    const drained = (await getDocFromServer(doc(owner.db, path))).data();
+    assert.equal(drained?.actualMinutes, 35);
+    assert.equal(drained?.actualByDay?.["2026-03-24"], 30);
+    assert.equal(drained?.actualByDay?.["2026-03-25"], 5);
+
+    // Rejected input writes nothing at all: neither field moves.
+    await assert.rejects(addActualMinutes(uid, "tracked", 0, "2026-03-24", owner.db), /whole minute/);
+    await assert.rejects(addActualMinutes(uid, "tracked", 10, "24-03-2026", owner.db), /day key/);
+    await assert.rejects(addActualMinutes(uid, "a/b", 10, "2026-03-24", owner.db), /task ID/);
+    const unchanged = (await getDocFromServer(doc(owner.db, path))).data();
+    assert.equal(unchanged?.actualMinutes, 35);
+    assert.deepEqual(unchanged?.actualByDay, { "2026-03-24": 30, "2026-03-25": 5 });
+
+    // Another authenticated user cannot write someone else's day map either.
+    await createUserWithEmailAndPassword(other.auth, `byday-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(addActualMinutes(uid, "tracked", 10, "2026-03-24", other.db), { code: "permission-denied" });
+    await signOut(other.auth);
+    await assert.rejects(addActualMinutes(uid, "tracked", 10, "2026-03-24", other.db), { code: "permission-denied" });
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/**
+ * The idle-away subtraction (T9 S8.5) is the same two-transform write as the
+ * session's increment, with a negative value on both fields: the total loses
+ * the away minutes and the day the away span belongs to loses them too. The
+ * day key is a parameter of the helper (the hook passes the away span's day),
+ * never "now" at write time.
+ */
+test("an idle subtraction decrements the total and the away day in one write", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`away-day-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `away-day-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/away`;
+    await setDoc(doc(owner.db, path), { title: "Away task", completed: false, actualMinutes: 30, actualByDay: { "2026-03-24": 20, "2026-03-25": 10 } });
+
+    await subtractActualMinutesIn(owner.db, uid, "away", 12, "2026-03-24");
+    const stored = (await getDocFromServer(doc(owner.db, path))).data();
+    assert.equal(stored?.actualMinutes, 18);
+    assert.equal(stored?.actualByDay?.["2026-03-24"], 8);
+    assert.equal(stored?.actualByDay?.["2026-03-25"], 10); // the other day is untouched
+
+    // The helper refuses what it refuses today, plus a malformed day key.
+    await assert.rejects(subtractActualMinutesIn(owner.db, uid, "away", 0, "2026-03-24"), /whole minute/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, uid, "away", 5, "nope"), /day key/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, uid, "away", 5, "2026-13-40"), /day key/);
+  } finally {
+    await close(owner);
+  }
+});
+
+/**
+ * Delete → undo keeps the day map like every other tracked field: the restore
+ * rewrites the closed task schema through `taskFields`, so the map must ride
+ * the deleted snapshot (`DeletedTask`), the field list and the restore. The
+ * read path (`toTask`) maps it back so the next delete's snapshot carries it.
+ */
+test("a task's day map survives delete and undo, and the read path maps it", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTask } = await import("../src/data/tasks.ts");
+  const { toTask } = await import("../src/data/store.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`undo-byday-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `undo-byday-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/tracked`;
+    await setDoc(doc(owner.db, path), { title: "Tracked", completed: false, actualMinutes: 35, actualByDay: { "2026-03-24": 30, "2026-03-25": 5 } });
+
+    // The store's read path maps the map, so the snapshot a delete captures
+    // carries it.
+    const snapshot = await getDoc(doc(owner.db, path));
+    const deleted = toTask(snapshot as never);
+    assert.deepEqual(deleted.actualByDay, { "2026-03-24": 30, "2026-03-25": 5 });
+
+    await deleteTask(uid, "tracked", owner.db);
+    assert.equal((await getDoc(doc(owner.db, path))).exists(), false);
+    await restoreTask(uid, deleted, owner.db);
+    const restored = (await getDoc(doc(owner.db, path))).data();
+    assert.equal(restored?.actualMinutes, 35);
+    assert.deepEqual(restored?.actualByDay, { "2026-03-24": 30, "2026-03-25": 5 });
+  } finally {
+    await close(owner);
+  }
+});
+
+/**
+ * Undo writes the map back UNCHANGED, negatives included (review fix 3): the
+ * restore normalizes through the same signed reader, so a stored negative day
+ * — an older build's cross-midnight away subtraction — is preserved exactly,
+ * never rewritten as the clamped zero while the total stays at 40.
+ */
+test("a negative legacy day round-trips delete and undo unchanged", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTask } = await import("../src/data/tasks.ts");
+  const { toTask } = await import("../src/data/store.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`undo-negative-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `undo-negative-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const path = `users/${uid}/tasks/legacy`;
+    // The review's shape: a 23:30 → 00:40 session credited 70 to day 1; an
+    // older build's away subtraction put −30 on day 2. Total is 40.
+    await setDoc(doc(owner.db, path), { title: "Legacy", completed: false, actualMinutes: 40, actualByDay: { "2026-03-24": 70, "2026-03-25": -30 } });
+
+    const snapshot = await getDoc(doc(owner.db, path));
+    const deleted = toTask(snapshot as never);
+    assert.deepEqual(deleted.actualByDay, { "2026-03-24": 70, "2026-03-25": -30 });
+
+    await deleteTask(uid, "legacy", owner.db);
+    await restoreTask(uid, deleted, owner.db);
+    const restored = (await getDoc(doc(owner.db, path))).data();
+    assert.equal(restored?.actualMinutes, 40);
+    assert.deepEqual(restored?.actualByDay, { "2026-03-24": 70, "2026-03-25": -30 });
   } finally {
     await close(owner);
   }

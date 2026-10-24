@@ -1,8 +1,8 @@
 import { addDoc, collection, deleteDoc, deleteField, doc, increment, setDoc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
-import { createTask, MAX_ACTUAL_MINUTES, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
+import { createTask, MAX_ACTUAL_MINUTES, parseActualByDay, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
 import { planUndo, type ShutdownPlan, type ShutdownState, type UndoRefusal } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
-import { subtractActualMinutesIn } from "./actualMinutes.ts";
+import { requireActualDayKey, subtractActualMinutesIn } from "./actualMinutes.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 import { profileDocument } from "./profile.ts";
 
@@ -19,7 +19,9 @@ import { profileDocument } from "./profile.ts";
  * path that rewrites a whole document (create, restore, import) goes through
  * here, so a restored task is the document that was deleted. `someday` is the
  * weekly review's Clean-up shelf flag (S3); it rides the same closed list so
- * a delete → undo does not silently un-shelve the task.
+ * a delete → undo does not silently un-shelve the task. So does
+ * `actualByDay` (ronda 2 S3/L6): the per-day map is tracked data, and undo
+ * must no more drop it than the counter it belongs to.
  */
 export function taskFields(task: Task, completed: boolean, completedAt?: string, someday?: boolean): Record<string, unknown> {
   return {
@@ -28,6 +30,7 @@ export function taskFields(task: Task, completed: boolean, completedAt?: string,
     ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
     ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
     ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
+    ...(task.actualByDay === undefined ? {} : { actualByDay: task.actualByDay }),
     ...(completedAt === undefined ? {} : { completedAt }),
     ...(someday === true ? { someday: true } : {}),
   };
@@ -60,37 +63,46 @@ export async function setTaskEstimate(uid: string, taskId: string, estimate?: nu
 /**
  * Adds minutes of real work to a task (F2b), one focus session at a time.
  *
- * The write is a Firestore `increment()` transform, never a read-then-write:
- * two devices may both be counting, and the counter must sum what each of them
- * spent instead of one overwriting the other. It is also offline-safe by
- * construction -- a transform is queued locally like any other write and is
- * applied by the server when the connection returns, so no read is needed to
- * record a session and nothing is lost while offline.
+ * The write is a pair of Firestore `increment()` transforms in ONE
+ * `updateDoc` — the cumulative counter and the day map entry
+ * `actualByDay.<dayKey>` — so they land atomically, commute with every other
+ * device's increments and queue offline like any other write (ronda 2 S3/L6).
+ * No read is needed to record a session and nothing is lost while offline.
  *
- * Only whole positive minutes are accepted: the caller (the focus timer) is
- * what decides whether a session is worth recording at all.
+ * `dayKey` is the profile-zone `YYYY-MM-DD` the tracked minutes belong to:
+ * for a focus session, the day the session started (domain/focus.ts
+ * `sessionDayKey`), never "now" at write time. Only whole positive minutes
+ * are accepted: the caller (the focus timer) is what decides whether a
+ * session is worth recording at all.
  */
-export async function addActualMinutes(uid: string, taskId: string, minutes: number) {
+export async function addActualMinutes(uid: string, taskId: string, minutes: number, dayKey: string, database: Firestore = db) {
   if (typeof taskId !== "string" || taskId === "" || taskId.includes("/")) throw new Error("task ID is invalid");
   if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_ACTUAL_MINUTES) {
     throw new Error(`actual minutes to add must be a whole minute count between 1 and ${MAX_ACTUAL_MINUTES}`);
   }
-  await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { actualMinutes: increment(minutes) });
+  requireActualDayKey(dayKey);
+  await updateDoc(doc(database, `users/${uid}/tasks/${taskId}`), {
+    actualMinutes: increment(minutes),
+    [`actualByDay.${dayKey}`]: increment(minutes),
+  });
 }
 
 /**
  * Removes minutes from a task's counter (T9 idle away, spec S8.5): a session
  * the user spent mostly away, confirmed after its own minutes already landed.
  *
- * It is the same write path as `addActualMinutes` -- one `increment()`
- * transform with a negative value -- so it queues offline, commutes with every
- * other device's increments and never needs a read. What it cannot do is see
- * the counter: keeping the result non-negative is the caller's clamp
- * (domain/idle.ts `clampSubtraction`), exactly once by the applied ledger, and
- * this helper only refuses anything that is not a whole positive minute.
+ * It is the same write path as `addActualMinutes` -- one `updateDoc` with a
+ * negative transform on both `actualMinutes` and the away day's map entry --
+ * so it queues offline, commutes with every other device's increments and
+ * never needs a read. `dayKey` is the day the away span belongs to (the hook
+ * passes it from the confirmed spans), not "now" at write time. What it
+ * cannot do is see the counter: keeping the result non-negative is the
+ * caller's clamp (domain/idle.ts `clampSubtraction`), exactly once by the
+ * applied ledger, and this helper only refuses anything that is not a whole
+ * positive minute.
  */
-export async function subtractActualMinutes(uid: string, taskId: string, minutes: number) {
-  await subtractActualMinutesIn(db, uid, taskId, minutes);
+export async function subtractActualMinutes(uid: string, taskId: string, minutes: number, dayKey: string) {
+  await subtractActualMinutesIn(db, uid, taskId, minutes, dayKey);
 }
 
 export async function setTaskCompleted(uid: string, taskId: string, completed: boolean) {
@@ -212,6 +224,8 @@ export type DeletedTask = {
   estimate?: number;
   /** The tracked minutes the focus timer accumulated; undo must not lose them. */
   actualMinutes?: number;
+  /** The same minutes attributed per day (S3/L6); undo must not lose them. */
+  actualByDay?: Record<string, number>;
   completedAt?: string;
   /** The weekly review's Clean-up shelf flag (S3); undo must not un-shelve
    *  the task any more than it may drop its deadline. */
@@ -231,9 +245,19 @@ export async function restoreTask(uid: string, task: DeletedTask, database: Fire
   if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
   const validated = createTask(task.id, task.title, task.deadline, task.estimate);
   if (task.actualMinutes !== undefined) requireActualMinutes(task.actualMinutes);
+  // The map is normalized through the domain reader, exactly like the read
+  // path: the snapshot usually comes from `toTask`, so this only re-asserts
+  // what a reader would accept.
+  const actualByDay = task.actualByDay === undefined ? undefined : parseActualByDay(task.actualByDay);
   if (task.completedAt !== undefined) requireInstant(task.completedAt);
   const path = `users/${uid}/tasks/${task.id}`;
-  const restored: Task = task.actualMinutes === undefined ? validated : { ...validated, actualMinutes: task.actualMinutes };
+  const restored: Task = task.actualMinutes === undefined && actualByDay === undefined
+    ? validated
+    : {
+        ...validated,
+        ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
+        ...(actualByDay === undefined ? {} : { actualByDay }),
+      };
   const write = setDoc(doc(database, path), taskFields(restored, task.completed, task.completedAt, task.someday));
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.

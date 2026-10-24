@@ -22,6 +22,7 @@ import {
   type WeeklyMoment,
   type WeeklyReviewState,
 } from "./weekly.ts";
+import { sessionDayKey } from "../domain/focus.ts";
 
 const MADRID = "Europe/Madrid";
 const TOKYO = "Asia/Tokyo";
@@ -321,6 +322,156 @@ test("clipping keeps real elapsed minutes across the spring-forward night", () =
   assert.equal(numbersWith([], crossing).plannedMinutes, 60);
   const nextWeek = weeklyNumbers({ now: new Date(Date.parse("2026-03-30T11:00:00Z")), timeZone: MADRID, tasks: [], blocks: crossing });
   assert.equal(nextWeek.plannedMinutes, 60);
+});
+
+/* ------------------------------------------------ actual-minute attribution */
+
+/**
+ * A session's tracked minutes belong to the profile-zone day the session
+ * *started* (L6): a timer running 23:30 → 00:15 counts for the day the work
+ * began, so one session never splits its minutes across two days and the day
+ * a weekly number lands on is stable. "Now" at stop time never decides it.
+ */
+test("tracked minutes are attributed to the session's start day, even across midnight", () => {
+  // 23:30 → 00:15 Madrid (the stop lands on the next day): still Monday.
+  const started = Date.parse("2026-03-23T22:30:00Z"); // Monday 23:30 Madrid (CET, UTC+1)
+  const stopped = Date.parse("2026-03-23T23:15:00Z"); // Tuesday 00:15 Madrid
+  assert.equal(sessionDayKey(started, MADRID), "2026-03-23");
+  assert.notEqual(sessionDayKey(stopped, MADRID), sessionDayKey(started, MADRID)); // the stop is on the 24th
+  // The zone decides, not the browser: the same instant is Tuesday in Tokyo.
+  assert.equal(sessionDayKey(started, TOKYO), "2026-03-24");
+  // A DST boundary keeps the wall-clock day: 01:30 wall clock on Madrid's
+  // spring-forward night (2026-03-29, 02:00 → 03:00) is the 29th.
+  assert.equal(sessionDayKey(Date.parse("2026-03-29T00:30:00Z"), MADRID), "2026-03-29");
+});
+
+/* ---------------------------------------- weekly numbers from actualByDay */
+
+/** Two day keys of week 2026-W13, one of the day after TUE, one of the week after. */
+const TUE = "2026-03-24";
+const WED = "2026-03-25";
+const SAT = "2026-03-28";
+const NEXT_MONDAY = "2026-03-30";
+
+function taskWith(overrides: Partial<ReviewTask> & { id: string; title: string }): ReviewTask {
+  return { completed: false, ...overrides } as ReviewTask;
+}
+
+test("a task with per-day data counts this week's days exactly, open or completed", () => {
+  const numbers = numbersWith(
+    [
+      // Open task: minutes tracked this week count even though nothing completed.
+      taskWith({ id: "open", title: "Open work", actualByDay: { [TUE]: 45, [NEXT_MONDAY]: 90 } }),
+      // Completed this week: only the week's days count, not the whole map.
+      taskWith({
+        id: "done",
+        title: "Report",
+        completed: true,
+        completedAt: "2026-03-27T10:00:00+01:00",
+        actualByDay: { [TUE]: 30, [SAT]: 60, [NEXT_MONDAY]: 120 },
+      }),
+    ],
+    [],
+  );
+  assert.equal(numbers.actualMinutes, 135); // 45 + (30 + 60); next Monday belongs to the next week
+  assert.equal(numbers.actualIsPartial, false); // every counted minute is exact
+  assert.deepEqual(numbers.topTasks, [
+    { title: "Report", minutes: 90 },
+    { title: "Open work", minutes: 45 },
+  ]);
+});
+
+test("a task without per-day data falls back to the cumulative approximation and marks the numbers partial", () => {
+  const numbers = numbersWith(
+    [
+      // Legacy task: completed this week, cumulative counter holds earlier weeks too.
+      taskWith({
+        id: "legacy",
+        title: "Legacy",
+        completed: true,
+        completedAt: "2026-03-26T10:00:00+01:00",
+        estimate: 60,
+        actualMinutes: 500,
+      }),
+      // Open, no map, tracked minutes: the old model cannot place them in any week.
+      taskWith({ id: "open", title: "Open work", actualMinutes: 30 }),
+    ],
+    [],
+  );
+  assert.equal(numbers.actualMinutes, 500); // only the completed task's counter; the open 30 stay invisible
+  assert.equal(numbers.actualIsPartial, true);
+  assert.equal(numbers.biasRatio, 500 / 60);
+});
+
+test("exact and approximate tasks mix, and empty or unreadable day maps read as absent", () => {
+  const numbers = numbersWith(
+    [
+      taskWith({ id: "exact", title: "Exact", completed: false, actualByDay: { [TUE]: 25 } }),
+      // An empty map is no data: the fallback decides, like a missing field.
+      taskWith({ id: "empty", title: "Empty", completed: true, completedAt: "2026-03-26T10:00:00+01:00", actualMinutes: 40, actualByDay: {} }),
+      // Signed days clamp ONCE at the task's in-week sum: -15 + 10 is still
+      // negative, so the task contributes nothing rather than a clamped 10.
+      taskWith({ id: "clamped", title: "Clamped", completed: false, actualByDay: { [TUE]: -15, [SAT]: 10 } }),
+    ],
+    [],
+  );
+  assert.equal(numbers.actualMinutes, 65); // 25 + 40 + 0 (−15 + 10 clamps once, at the sum)
+  assert.equal(numbers.actualIsPartial, true); // the empty-map task fell back
+  assert.deepEqual(numbers.topTasks, [
+    { title: "Empty", minutes: 40 },
+    { title: "Exact", minutes: 25 },
+  ]);
+});
+
+test("pre-map minutes a mapped task still holds ride the fallback and mark the week partial", () => {
+  // Legacy 40 min tracked before the map existed, then a 25 min session wrote
+  // {TUE: 25} (total 65). The week counts the mapped 25 exactly plus the 40
+  // unplaceable remainder through the same fallback rule as an unmapped task
+  // (review fix 1) — dropping the remainder made the week wrong and unflagged.
+  const numbers = numbersWith(
+    [taskWith({
+      id: "mixed",
+      title: "Mixed",
+      completed: true,
+      completedAt: "2026-03-26T10:00:00+01:00",
+      estimate: 120,
+      actualMinutes: 65,
+      actualByDay: { [TUE]: 25 },
+    })],
+    [],
+  );
+  assert.equal(numbers.actualMinutes, 65); // 25 mapped + 40 remainder
+  assert.equal(numbers.actualIsPartial, true); // the remainder is approximate
+  assert.deepEqual(numbers.topTasks, [{ title: "Mixed", minutes: 65 }]);
+  // Mapped and remainder each join the bias samples through the one credit
+  // path, so the median is the mean of their two ratios against the estimate.
+  assert.equal(numbers.biasRatio, (25 / 120 + 40 / 120) / 2);
+});
+
+test("a cross-midnight session's away correction lands on the start day and the week sums signed days once", () => {
+  // The review's session: 23:30 → 00:40 Madrid (70 min). The credit is the
+  // start day (TUE); the 00:10–00:40 away correction rides the SAME day (fix
+  // 2 — one attribution rule for a session's credit and its corrections), so
+  // storage holds {TUE: 40} and the week shows 40 exactly.
+  const startedAt = Date.parse("2026-03-24T22:30:00Z"); // 23:30 Madrid (CET)
+  const awayFrom = Date.parse("2026-03-24T23:10:00Z"); // 00:10 Madrid on WED
+  assert.equal(sessionDayKey(startedAt, MADRID), TUE);
+  assert.notEqual(sessionDayKey(awayFrom, MADRID), TUE); // the span's own day is WED
+  const numbers = numbersWith([taskWith({ id: "night", title: "Night", actualByDay: { [TUE]: 40 } })], []);
+  assert.equal(numbers.actualMinutes, 40);
+  assert.equal(numbers.actualIsPartial, false);
+  // A map an older build wrote ({TUE: 70, WED: −30}) still sums to the same
+  // 40: the days stay signed and the clamp happens once at the task's sum.
+  const legacy = numbersWith([taskWith({ id: "legacy", title: "Legacy", actualByDay: { [TUE]: 70, [WED]: -30 } })], []);
+  assert.equal(legacy.actualMinutes, 40);
+  assert.equal(legacy.actualIsPartial, false);
+});
+
+test("a week with no tracked work at all is exact, not partial", () => {
+  const numbers = numbersWith([taskWith({ id: "plain", title: "Plain" })], []);
+  assert.equal(numbers.actualMinutes, 0);
+  assert.equal(numbers.actualIsPartial, false);
+  assert.equal(numbers.biasRatio, null);
 });
 
 /* ----------------------------------------------------- cleanup candidates */

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { startFocus, type FocusSession } from "./focus.ts";
+import { startFocus, sessionDayKey, type FocusSession } from "./focus.ts";
 import {
   MAX_IDLE_THRESHOLD_MINUTES,
   MIN_IDLE_THRESHOLD_MINUTES,
@@ -17,6 +17,7 @@ import {
   readIdleThreshold,
   savePendingSubtraction,
   sessionKeyOf,
+  subtractionDayKey,
   writeIdleThreshold,
   type KeyValueStorage,
 } from "./idle.ts";
@@ -215,4 +216,33 @@ test("corrupted storage reads as empty, never as a throw", () => {
   assert.equal(isApplied("b1@1", storage), false);
   markApplied("b1@1", storage); // overwrites the corrupted ledger
   assert.equal(isApplied("b1@1", storage), true);
+});
+
+/* ----------------- attribution of a confirmed subtraction (ronda 2 fix) --- */
+
+const MADRID = "Europe/Madrid";
+
+test("an away subtraction is attributed to the session's start day, not the span's own day", () => {
+  // The review's session: starts 23:30 Madrid on the 24th and runs to 00:40
+  // on the 25th; the away span 00:10–00:40 lives on the 25th. One attribution
+  // rule for a session's credit and its corrections (review fix 2): the
+  // subtraction rides the session's start day — the day that received the
+  // 70 minutes pays the 30 — so a cross-midnight span can never drive the
+  // span's own day negative.
+  const startedAt = Date.parse("2026-03-24T22:30:00Z"); // 23:30 Madrid (CET)
+  const spanFrom = Date.parse("2026-03-24T23:10:00Z"); // 00:10 Madrid on the 25th
+  assert.equal(sessionDayKey(spanFrom, MADRID), "2026-03-25"); // the span's own day
+  assert.equal(subtractionDayKey(startedAt, MADRID), sessionDayKey(startedAt, MADRID));
+  assert.equal(subtractionDayKey(startedAt, MADRID), "2026-03-24");
+});
+
+test("a prompt without a usable session start names no day, so the write is refused", () => {
+  // The old fallback parsed a malformed prompt into epoch 0 and would have
+  // written an `actualByDay.1970-01-01` key (review fix 4). No usable start,
+  // no day key: the caller refuses the write instead.
+  assert.equal(subtractionDayKey(undefined, MADRID), undefined);
+  assert.equal(subtractionDayKey(Number.NaN, MADRID), undefined);
+  assert.equal(subtractionDayKey("lately" as never, MADRID), undefined);
+  assert.equal(subtractionDayKey(0, MADRID), undefined); // the epoch is not a session start
+  assert.equal(subtractionDayKey(-1, MADRID), undefined);
 });
