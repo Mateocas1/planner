@@ -115,6 +115,14 @@ export function formatRemaining(ms: number): string {
   return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
 }
 
+/**
+ * The storage key, shared by the sidebar hook (`useFocusTimer.ts`, including
+ * the browser tests that assert a reload resumes) and the desktop pill window
+ * (`ui/FocusPill.tsx`): both windows load the same origin, so one
+ * `localStorage` entry is the single source of truth for the running session.
+ */
+export const focusStorageKey = "planner-focus";
+
 /** The stored form. One key, one JSON object, read back by parseSession. */
 export function serializeSession(session: FocusSession): string {
   return JSON.stringify(session);

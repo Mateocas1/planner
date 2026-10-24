@@ -1,0 +1,140 @@
+/* T8 — the mini floating focus pill (spec S8.4, motion per AGENTS.md flow).
+ *
+ * A transparent frameless window whose whole surface is this one element: a
+ * 220×44 glass chip that floats above other apps while a focus session runs
+ * and the planner is not the foreground window. The page paints the rounded
+ * glass itself — the window behind it is fully transparent — so the pill reads
+ * like a Windows 11 flyout over any app, in the app's light and dark themes
+ * alike. The fill is fixed dark glass on purpose: the pill lives over *other*
+ * apps, where the planner's theme says nothing about the backdrop it sits on.
+ *
+ * Motion budget (find-animation-opportunities): one entrance, because a
+ * surface that appears over your work must not pop; nothing else moves — the
+ * digits are plain tabular text and the ring eases its own stroke-dashoffset
+ * (a captured stroke, not layout), so a second's progress glides without a
+ * rAF loop. Reduced motion drops the entrance; the ring transition is progress
+ * feedback, not decoration, and stays.
+ */
+
+.focus-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 220px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 14px;
+  background: rgb(27 30 38 / 0.94); /* --ink-925, near-opaque dark glass */
+  color: var(--ink-50);
+  font-size: var(--text-caption);
+  user-select: none;
+  animation: focus-pill-in var(--dur-enter, 160ms) var(--ease-out, ease-out) both;
+}
+
+@keyframes focus-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-pill {
+    animation: none;
+  }
+}
+
+/* The countdown ring: a captured stroke whose dash offset eases, so each
+   second's tick glides instead of stepping. Transform/opacity/stroke only —
+   nothing here can thrash layout. */
+.focus-pill-ring {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  transform: rotate(-90deg); /* start (and empty) at 12 o'clock */
+}
+
+.focus-pill-ring circle {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.focus-pill-ring-track {
+  stroke: rgb(255 255 255 / 0.14);
+}
+
+.focus-pill-ring-fill {
+  stroke: var(--brand-400);
+  transition: stroke-dashoffset 1s linear;
+}
+
+.focus-pill.is-paused .focus-pill-ring-fill {
+  stroke: var(--ink-400);
+}
+
+.focus-pill-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ink-100);
+}
+
+/* Fixed width, tabular digits: the countdown cannot push the buttons as it
+   counts (the same rule the sidebar's focus card follows). */
+.focus-pill-time {
+  flex: none;
+  min-width: 4.5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink-50);
+}
+
+.focus-pill.is-paused .focus-pill-time {
+  color: var(--ink-300);
+}
+
+.focus-pill-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.focus-pill-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: pointer;
+  transition: transform var(--dur-press, 80ms) var(--ease-out, ease-out),
+    background-color var(--dur-hover, 120ms) ease, color var(--dur-hover, 120ms) ease;
+}
+
+.focus-pill-button:active {
+  transform: scale(0.94);
+}
+
+.focus-pill-button:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-50);
+}
+
+.focus-pill-button svg {
+  width: 13px;
+  height: 13px;
+}
