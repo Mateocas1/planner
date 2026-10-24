@@ -42,6 +42,7 @@ import {
   buildListTasksResult,
   deriveTopicKey,
   isReadTool,
+  createConfirmGuard,
   moveTaskRemovals,
   validateToolCall,
   type ChatToolContext,
@@ -162,9 +163,19 @@ export function ChatSurface({
   // changed task's id and fields in the message, which rides the next
   // request's `tool` message so the model can reference what it just
   // changed. Invalid proposals fail before any write.
+  //
+  // Confirms also carry a per-callId once-guard (review finding 7): the first
+  // confirm attempt claims the id, so the same card can never write twice.
+  const confirmGuard = useMemo(() => createConfirmGuard(), []);
   const executeToolCall = useCallback(
     async (call: ChatToolCall): Promise<ToolOutcome> => {
       if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
+      // One Confirm, one write (review finding 7): the per-callId guard
+      // claims the id before any await, so a repeated confirm can never run
+      // a second write even if the panel's own busy guard is bypassed.
+      if (!confirmGuard.claim(call.id)) {
+        return { status: "failed", message: "This action was already confirmed once." };
+      }
       const toolContext = buildToolContext();
       const check = validateToolCall(call, toolContext);
       if (!check.ok) return { status: "failed", message: check.error };
@@ -330,7 +341,7 @@ export function ChatSurface({
         return { status: "failed", message: error instanceof Error ? error.message : String(error) };
       }
     },
-    [uid, buildToolContext, backend, notifyMemoriesChanged],
+    [uid, buildToolContext, backend, notifyMemoriesChanged, confirmGuard],
   );
 
   /** Reads (S4): run the moment the model proposes them — no confirmation.
@@ -392,14 +403,19 @@ export function ChatSurface({
   );
 
   // Display-only context for the panel's card descriptions (the words a card
-  // shows while pending). The authoritative validation at confirm time and
-  // every request's prompt read the live refs instead, so this memo only
-  // needs to track the snapshot and the notes for re-rendering descriptions.
-  const displayToolContext = useMemo<ChatToolContext>(
-    () => buildToolContext(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot identity changes on every store event
-    [snapshot, timeZone, memories, buildToolContext],
-  );
+  // shows while pending). Built per render — a cheap object — so the "today"
+  // wording is computed at describe time instead of frozen in a memo from
+  // whatever render first built it (review finding 6). The authoritative
+  // confirm-time validation and every request's prompt still read the live
+  // refs via buildToolContext.
+  const displayToolContext: ChatToolContext = {
+    tasks: snapshot.tasks,
+    blocks: snapshot.blocks,
+    holidays: snapshot.holidays,
+    memoryTopics: (memories ?? []).map(memory => ({ topicKey: memory.topicKey, title: memory.title })),
+    timeZone,
+    todayKey: dateKey(new Date(), timeZone),
+  };
 
   return (
     <ChatPanel

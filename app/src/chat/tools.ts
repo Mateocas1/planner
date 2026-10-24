@@ -1023,6 +1023,21 @@ export function validateToolCall(
   }
 }
 
+/** A per-callId once-guard for the confirm path (review finding 7): the
+ * first confirm attempt for a callId claims it; any later attempt with the
+ * same id is refused, so one card can never drive two writes, even if the
+ * panel's own busy guard is bypassed. */
+export function createConfirmGuard(): { claim: (callId: string) => boolean } {
+  const claimed = new Set<string>();
+  return {
+    claim: (callId: string) => {
+      if (claimed.has(callId)) return false;
+      claimed.add(callId);
+      return true;
+    },
+  };
+}
+
 /** The plain-words description of a still-pending proposal, or a neutral line
  * when the arguments do not parse (the card never invents a description from
  * unvalidated data). */

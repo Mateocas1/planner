@@ -11,6 +11,7 @@ import {
   checkGetTask,
   checkListTasks,
   checkMoveTask,
+  createConfirmGuard,
   moveTaskRemovals,
   describeToolCall,
   isReadTool,
@@ -251,6 +252,13 @@ test("validateToolCall describes both tools and rejects unknown names", () => {
 test("describeToolCall falls back to a neutral line for invalid arguments", () => {
   assert.match(describeToolCall({ name: "create_task", arguments: "not json" }, context), /not valid/);
   assert.match(describeToolCall({ name: "create_task", arguments: '{"title":"OK"}' }, context), /Create task "OK"/);
+});
+
+test("createConfirmGuard claims a callId exactly once, so a card can never write twice", () => {
+  const guard = createConfirmGuard();
+  assert.equal(guard.claim("c1"), true);
+  assert.equal(guard.claim("c1"), false, "a repeated confirm with the same id never reaches a write");
+  assert.equal(guard.claim("c2"), true, "a different card still confirms");
 });
 
 test("toolResultContent maps every card state to a tool message", () => {
