@@ -7,12 +7,14 @@ import { createMockTransport } from "../chat/mockTransport.ts";
 import type { ChatTransport } from "../chat/types.ts";
 import { useChat } from "../chat/useChat.ts";
 import { isTauri } from "../desktop.ts";
+import { matchesEvent, parseAccelerator, useShortcutBinding } from "./settings/shortcutRegistry.ts";
 import { CloseIcon } from "./icons.tsx";
 import "./ChatPanel.css";
 
 /**
  * The floating chat panel (task C2, S1+S2): a ≈400×600 glass card in the
- * bottom-right corner, opened with `Ctrl+J` (preventDefault — WebView2 opens
+ * bottom-right corner, opened with its rebindable chord (default `Ctrl+J`,
+ * read live from the shortcut registry; preventDefault — WebView2 opens
  * Downloads on it), the launcher button, and closed with Esc, the launcher or
  * the close button. Desktop only, signed in; on the web it renders only while
  * developing with `?chatMock`, so a production web build never mounts it.
@@ -113,6 +115,20 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
   }, [appendKey, reduced, columnRef]);
 }
 
+/** The aria form of the current chord ("Control+Shift+J"), for assistive
+ * tech that announces the launcher's shortcut. */
+function ariaKeyShortcuts(accelerator: string): string {
+  const combo = parseAccelerator(accelerator);
+  if (combo === null) return "Control+J";
+  const parts = [
+    combo.ctrl && "Control",
+    combo.alt && "Alt",
+    combo.shift && "Shift",
+    combo.meta && "Meta",
+  ].filter(Boolean) as string[];
+  return [...parts, combo.code.replace(/^Key/, "").replace(/^Digit/, "")].join("+");
+}
+
 export function ChatPanel({
   transport,
   buildSystemPrompt,
@@ -155,6 +171,10 @@ export function ChatPanel({
   // out flips the launcher and panel on the next App render.
   const dev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
   const visible = chatPanelVisible({ desktop: isTauri(), dev, mockQuery, signedIn });
+  // The panel's chord, read live from the shortcut registry (S2): a rebind in
+  // Settings → Shortcuts takes effect at once, on every listening surface and
+  // tab, without a reload.
+  const chatChord = useShortcutBinding("chat");
 
   const launcherRef = useRef<HTMLButtonElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -235,19 +255,20 @@ export function ChatPanel({
     scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduced ? "auto" : "smooth" });
   }, [reduced]);
 
-  // Ctrl+J toggles the panel from anywhere, fields included (the app's single-key
-  // router ignores modified keys, so there is no conflict to arbitrate).
+  // The chat chord toggles the panel from anywhere, fields included (the
+  // app's single-key router ignores modified keys, so there is no conflict to
+  // arbitrate). The default is Ctrl+J; the registry owns the current value.
   useEffect(() => {
     if (!visible) return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.metaKey || event.key.toLowerCase() !== "j") return;
+      if (!matchesEvent(chatChord, event)) return;
       event.preventDefault();
       event.stopPropagation();
       setOpen(current => !current);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible]);
+  }, [visible, chatChord]);
 
   // Esc closes while the panel is up; focus returns to the launcher.
   useEffect(() => {
@@ -349,7 +370,7 @@ export function ChatPanel({
         className="chat-launcher glass glass-float"
         aria-label="Chat"
         aria-expanded={open}
-        aria-keyshortcuts="Control+J"
+        aria-keyshortcuts={ariaKeyShortcuts(chatChord)}
         onClick={() => setOpen(current => !current)}
       >
         <ChatIcon />

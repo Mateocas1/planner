@@ -204,6 +204,41 @@ test("reduced motion: the panel and the stream still work without movement", asy
   await expect(stopButton(page)).toBeHidden({ timeout: 25_000 });
 });
 
+test("the chat chord is rebindable: the stored binding opens the panel and the default no longer does (C3b, S2)", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // Seed the registry's storage with a chat binding — exactly the shape
+  // Settings → Shortcuts writes (task W1's recorder) — before the app boots.
+  await page.addInitScript(() => {
+    window.localStorage.setItem("planner.shortcuts.bindings", JSON.stringify({ chat: "ctrl+Shift+KeyJ" }));
+  });
+  await page.goto(`${base}/?chatMock=1`);
+  await expect(launcher(page)).toBeVisible();
+  // The launcher announces the current chord, not a hardcoded default.
+  await expect(launcher(page)).toHaveAttribute("aria-keyshortcuts", "Control+Shift+J");
+  // The default chord no longer opens the panel.
+  await page.keyboard.press("Control+j");
+  await expect(panel(page)).toBeHidden();
+  // The rebinded chord does, with the composer focused.
+  await page.keyboard.press("Control+Shift+j");
+  await expect(panel(page)).toHaveAttribute("data-open", "true");
+  await expect(field(page)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeHidden();
+  // A rebind takes effect live, without a reload: update the storage and fire
+  // the registry's change event the way a Settings save does, then check that
+  // the previous chord is dead and the new one works.
+  await page.evaluate(() => {
+    window.localStorage.setItem("planner.shortcuts.bindings", JSON.stringify({ chat: "ctrl+Alt+KeyK" }));
+    window.dispatchEvent(new Event("planner:shortcut-binding-changed"));
+  });
+  await page.keyboard.press("Control+Shift+j");
+  await expect(panel(page)).toBeHidden();
+  await page.keyboard.press("Control+Alt+k");
+  await expect(panel(page)).toHaveAttribute("data-open", "true");
+  await expect(field(page)).toBeFocused();
+});
+
 test("memory extraction: canned ops from the mock ride into the next conversation's prompt (S5)", async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });

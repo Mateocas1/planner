@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "../ui/ChatPanel.tsx";
 import { isTauri } from "../desktop.ts";
-import { DEFAULT_CHAT_MODEL, mockMode } from "./config.ts";
+import { getChatModel, mockMode } from "./config.ts";
 import type { ChatTurn } from "./conversation.ts";
 import { createInMemoryMemoryBackend, tauriMemoryBackend, type ChatMemoryBackend } from "./memoryBackend.ts";
 import { buildExtractionRequest, parseMemoryOps } from "./memoryExtract.ts";
@@ -83,7 +83,7 @@ export function ChatSurface({
           const request = buildExtractionRequest(turns, current);
           const raw = await transport.complete({
             id: `x${Date.now()}`,
-            model: DEFAULT_CHAT_MODEL,
+            model: getChatModel(),
             messages: request.messages,
           });
           const ops = parseMemoryOps(raw);

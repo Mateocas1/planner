@@ -57,6 +57,24 @@ export default function App() {
   useKeyboardInset();
   const { loading, user } = useSession();
   const [view, setView] = useState<View>("home");
+  // Settings (Ronda 2, S1) is a view in the shell; the tab it opens on lives
+  // here — not in the shell — so `openSettings(tab?)` stays the single entry
+  // point for the shell's doors (palette, `Ctrl+,`, account menus) AND for the
+  // chat panel's no-key empty state (C3b), which mounts outside the shell.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  // The view Settings was opened from is remembered for Back; Escape and every
+  // sidebar nav item return the ordinary way.
+  const previousView = useRef<View>("home");
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+  const openSettings = useCallback((tab?: SettingsTab) => {
+    setSettingsTab(resolveSettingsTab(tab, isTauri()));
+    if (viewRef.current !== "settings") previousView.current = viewRef.current;
+    setView("settings");
+  }, []);
+  const closeSettings = useCallback(() => {
+    setView(previousView.current === "settings" ? "home" : previousView.current);
+  }, []);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -68,7 +86,15 @@ export default function App() {
       ) : !user ? (
         <AuthForm />
       ) : (
-        <Shell user={user} view={view} onNavigate={setView} />
+        <Shell
+          user={user}
+          view={view}
+          onNavigate={setView}
+          settingsTab={settingsTab}
+          onSettingsTab={setSettingsTab}
+          openSettings={openSettings}
+          closeSettings={closeSettings}
+        />
       )}
       {/* Announced outside the shell: an update is just as available on the
           sign-in screen as inside the app. */}
@@ -81,16 +107,33 @@ export default function App() {
       <ChatSurface
         signedIn={user !== null}
         uid={user?.uid ?? null}
-        onSetupKey={() => {
-          // TODO(W1 integration): openSettings("ai")
-        }}
+        onSetupKey={() => openSettings("ai")}
       />
     </MotionConfig>
   );
 }
 
 const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar", settings: "Settings" };
-function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate: (view: View) => void }) {
+function Shell({
+  user,
+  view,
+  onNavigate,
+  settingsTab,
+  onSettingsTab,
+  openSettings,
+  closeSettings,
+}: {
+  user: User;
+  view: View;
+  onNavigate: (view: View) => void;
+  /** Settings' tab state lives in App so the chat panel can deep-link (C3b). */
+  settingsTab: SettingsTab;
+  onSettingsTab: (tab: SettingsTab) => void;
+  /** The single entry point: opens Settings on a tab (default General). */
+  openSettings: (tab?: SettingsTab) => void;
+  /** Returns to the view Settings was opened from. */
+  closeSettings: () => void;
+}) {
   const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
   // A sign-in launch (T10) shows the window only when today's brief applies.
@@ -163,23 +206,8 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     importOrigin.current = origin;
     setImportOpen(true);
   };
-  // Settings (Ronda 2, S1) is a view in the shell, not a sheet: the tab it
-  // opens on is the shell's state so `openSettings(tab?)` stays the single
-  // entry point the palette, the phone account menu and the later deep links
-  // (rituals, ai) all use. The view Settings was opened from is remembered
-  // for Back; Escape and every sidebar nav item return the ordinary way.
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
-  const previousView = useRef<View>("home");
-  const viewRef = useRef<View>(view);
-  viewRef.current = view;
-  const openSettings = useCallback(
-    (tab?: SettingsTab) => {
-      setSettingsTab(resolveSettingsTab(tab, isTauri()));
-      if (viewRef.current !== "settings") previousView.current = viewRef.current;
-      onNavigate("settings");
-    },
-    [onNavigate],
-  );
+  // Settings (Ronda 2, S1) is a view in the shell, not a sheet; its tab state
+  // and `openSettings(tab?)` live in App — see the comment there.
   // Actionable native notifications (T7, S8.3): block-start toasts with
   // [Start focus] / [+5 min] and the shutdown nudge. Desktop only, the web
   // build runs nothing. The actions reuse the shell's own doors: the timer's
@@ -459,8 +487,8 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
                   shutdownTime={profile.shutdownTime}
                   shortcutsEnabled={profile.shortcutsEnabled}
                   tab={settingsTab}
-                  onTab={setSettingsTab}
-                  onBack={() => onNavigate(previousView.current === "settings" ? "home" : previousView.current)}
+                  onTab={onSettingsTab}
+                  onBack={closeSettings}
                 />
               )}
             </motion.div>
