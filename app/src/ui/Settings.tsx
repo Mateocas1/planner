@@ -1,56 +1,16 @@
-import { useEffect, useState } from "react";
-import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { isTauri } from "../desktop.ts";
-import {
-  notifySettingsStorageKey,
-  parseNotifySettings,
-  type NotifySettings,
-} from "../desktop-notify.ts";
-import { setProfileDaySettings, type DaySettingsPatch } from "../data/profile.ts";
-import { QuickAddShortcut } from "./QuickAddShortcut.tsx";
-import {
-  MAX_IDLE_THRESHOLD_MINUTES,
-  MIN_IDLE_THRESHOLD_MINUTES,
-  readIdleThreshold,
-  writeIdleThreshold,
-} from "../domain/idle.ts";
-import { readPillEnabled, writePillEnabled } from "./focusPillState.ts";
-import { minutesPerDay, type WorkWindow } from "../planning/window.ts";
-import { CloseIcon } from "./icons.tsx";
-import { Sheet } from "./Sheet.tsx";
-import { settle } from "./write.ts";
-import "./Settings.css";
-
 /**
- * S1 — Day settings (odd/research/distinctive-roadmap.md §3, F3/F6).
+ * Shared pieces of the settings surface (Ronda 2, S1).
  *
- * One sheet, opened from the account entry (the desktop sidebar's account row
- * and the phone's account menu), holding the three values the planner reads
- * about a day: the working window, the hour the day shuts down, and whether
- * keyboard shortcuts are on. One window for all seven days (§5.4): a
- * per-weekday schedule waits for demand.
- *
- * Each control saves itself. Leaving a time field writes it; a value the reader
- * would refuse -- an end before its start, a time outside the day, or something
- * that is not a time at all -- is never written and says so in one calm line
- * that stays until the fields are valid. The fields keep what was typed, so a
- * rejected range is one correction away, not a reset. There is no Save button
- * and therefore no half-saved sheet to close by accident.
- *
- * Nothing here animates: the panel's entrance and exit belong to ui/Sheet.tsx,
- * and the switch's state is read at a glance (knob position and fill, never
- * colour alone) rather than performed. Reduced motion is moot for that reason.
+ * The Day settings sheet became the Settings view (ui/settings/); what lives
+ * here now is what several modules share: the clock parsers the General tab
+ * validates with, the gear icon the sidebar mounts, and the time field the
+ * work-day rows render. The switch and the row primitives live in
+ * ui/settings/.
  */
 
-/** The product's wording for input the sheet refuses. One line each, no blame. */
-const notATime = "Use a time like 09:00.";
-const outsideDay = "Stay inside the day: 00:00 to 24:00.";
-const inverted = "Work ends before it starts. Set an end later than the start.";
-
-/** The idle setting's own sentence, for a value outside the 5–60 range. */
-const outsideThreshold = `Pick between ${MIN_IDLE_THRESHOLD_MINUTES} and ${MAX_IDLE_THRESHOLD_MINUTES} minutes.`;
-
-/** "HH:MM" for minutes after midnight. The end of the day reads as 24:00. */
+/**
+ * "HH:MM" for minutes after midnight. The end of the day reads as 24:00.
+ */
 export function formatClock(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -59,7 +19,7 @@ export function formatClock(minutes: number): string {
 
 /**
  * Minutes after midnight for a typed time, or null when the text is not a time.
- * The range is the caller's rule: 25:00 parses to 1500 so the sheet can reject
+ * The range is the caller's rule: 25:00 parses to 1500 so the caller can reject
  * it as outside the day, which is a different sentence from "not a time".
  * `9`, `09`, `9:30`, `09:30` and `0930` all read; `9:5` does not.
  */
@@ -72,9 +32,9 @@ export function parseClock(text: string): number | null {
   return hours * 60 + rest;
 }
 
-/** The gear that opens Day settings from the sidebar's account row. Drawn in
+/** The gear that opens Settings from the sidebar's account row. Drawn in
  * ui/icons.tsx's stroke family on the same 24 px grid; it lives here because
- * this sheet is its only surface, and the sidebar imports it from this module. */
+ * the sidebar is its only surface, and the sidebar imports it from this module. */
 export function SettingsIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -94,389 +54,43 @@ export function SettingsIcon({ className }: { className?: string }) {
 }
 
 /**
- * The time field. A plain "HH:MM" box rather than a native time picker: the
- * rule this sheet enforces is "the whole day, and an end after the start", and
- * a text field lets the sheet say which of the two was broken instead of the
- * browser silently emptying a value it did not like. The numeric keypad on a
- * phone is what a time is typed with anyway.
+ * The time field: a plain "HH:MM" box rather than a native time picker, the
+ * rule the work-day rows enforce being "the whole day, and an end after the
+ * start", and a text field lets the row say which of the two was broken
+ * instead of the browser silently emptying a value it did not like. The
+ * numeric keypad on a phone is what a time is typed with anyway. The row's
+ * label (a real `<label htmlFor>` in ui/settings/SettingRow.tsx) names it.
  */
-function TimeField({
+export function TimeField({
   id,
-  label,
   value,
-  autoFocus = false,
   onChange,
   onCommit,
 }: {
   id: string;
-  label: string;
   value: string;
-  /** The sheet's first field takes the caret, the way every other sheet's
-   * primary control does: the keyboard reaches the panel, not the page behind. */
-  autoFocus?: boolean;
   onChange: (value: string) => void;
   onCommit: () => void;
 }) {
   return (
-    <div className="form-row">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        className="form-control day-time"
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        spellCheck={false}
-        maxLength={5}
-        autoFocus={autoFocus}
-        value={value}
-        onChange={event => onChange(event.target.value)}
-        onBlur={onCommit}
-        onKeyDown={event => {
-          // Enter commits the field it is in, the same as leaving it; Escape is
-          // the sheet's (ui/Sheet.tsx closes on it).
-          if (event.key === "Enter") {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-      />
-    </div>
-  );
-}
-
-/** This device's notification toggles (T7, S8.3): desktop only, never synced. */
-function readNotifySettings(): NotifySettings {
-  try {
-    return parseNotifySettings(window.localStorage.getItem(notifySettingsStorageKey));
-  } catch {
-    return parseNotifySettings(null);
-  }
-}
-
-function writeNotifySettings(next: NotifySettings): void {
-  try {
-    window.localStorage.setItem(notifySettingsStorageKey, JSON.stringify(next));
-  } catch {
-    /* storage denied: the toggles then live only until the page closes */
-  }
-}
-
-/**
- * Desktop only (T10, spec S8.6): "Open Planner when I sign in to Windows". The
- * switch shows the operating system's own state (the HKCU Run entry), read when
- * the sheet opens and again after every change, never a cached flag. It starts
- * off, and the parent renders it only inside the desktop shell.
- */
-function SignInStartupRow() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    isEnabled()
-      .then(value => {
-        if (live) setEnabled(value);
-      })
-      .catch(() => {
-        if (live) setError("Windows did not report the startup setting.");
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const toggle = () => {
-    if (enabled === null || busy) return;
-    setBusy(true);
-    setError(null);
-    void (enabled ? disable() : enable())
-      .catch(() => setError("Windows did not change the startup setting. Try again."))
-      .then(() => isEnabled())
-      .then(value => setEnabled(value))
-      .catch(() => setError("Windows did not report the startup setting."))
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <div className="form-group">
-      <div className="form-row">
-        <span id="desktop-startup-label">Open Planner when I sign in to Windows</span>
-        <button
-          type="button"
-          role="switch"
-          className="day-switch"
-          aria-checked={enabled === true}
-          aria-labelledby="desktop-startup-label"
-          disabled={enabled === null || busy}
-          onClick={toggle}
-        >
-          <span className="day-switch-track" aria-hidden="true">
-            <span className="day-switch-knob" />
-          </span>
-        </button>
-      </div>
-      <p className="day-settings-note">It starts in the background and shows the window only when today's morning brief applies.</p>
-      {error && <p className="inline-error" role="alert">{error}</p>}
-    </div>
-  );
-}
-
-export function DaySettingsSheet({
-  uid,
-  workWindow,
-  shutdownTime,
-  shortcutsEnabled,
-  origin,
-  onClose,
-}: {
-  uid: string;
-  workWindow: WorkWindow;
-  shutdownTime: number;
-  shortcutsEnabled: boolean;
-  origin: HTMLElement | null;
-  onClose: () => void;
-}) {
-  /* The fields start at whatever the profile holds and follow it until this
-     sheet is edited: a profile that arrives a beat after the sheet opened still
-     fills it in, and a value written from another device still lands here. */
-  const [windowDraft, setWindowDraft] = useState<{ start: string; end: string } | null>(null);
-  const [shutdownDraft, setShutdownDraft] = useState<string | null>(null);
-  const [shortcutsDraft, setShortcutsDraft] = useState<boolean | null>(null);
-  const [idleDraft, setIdleDraft] = useState<string | null>(null);
-  const [notify, setNotify] = useState<NotifySettings>(() => (isTauri() ? readNotifySettings() : { ...parseNotifySettings(null) }));
-  // The desktop pill's toggle is per device (the pill reads the same entry),
-  // so it is a draft over localStorage, not the profile (S8.4, L15).
-  const [pillDraft, setPillDraft] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const startText = windowDraft?.start ?? formatClock(workWindow.startMinutes);
-  const endText = windowDraft?.end ?? formatClock(workWindow.endMinutes);
-  const shutdownText = shutdownDraft ?? formatClock(shutdownTime);
-  const enabled = shortcutsDraft ?? shortcutsEnabled;
-  // Desktop only (S8.5): the away threshold lives in localStorage, not the
-  // profile -- it is a preference of this machine's input habits, not a fact
-  // about the plan, and detection is a desktop-only feature anyway.
-  const desktop = isTauri();
-  const idleText = idleDraft ?? String(readIdleThreshold(window.localStorage));
-  const pillEnabled = pillDraft ?? readPillEnabled();
-
-  const editWindow = (field: "start" | "end", value: string) => {
-    const next = { start: startText, end: endText };
-    next[field] = value;
-    setWindowDraft(next);
-  };
-
-  /** One write path: only the fields this control changed, so a stale copy of
-   * another field can never travel with it. A rejected write is the sheet's
-   * own sentence; the fields keep what the user typed. */
-  const save = (patch: DaySettingsPatch) => {
-    void settle(setProfileDaySettings(uid, patch)).catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : "That could not be saved. Try again.");
-    });
-  };
-
-  const commitWindow = () => {
-    const start = parseClock(startText);
-    const end = parseClock(endText);
-    if (start === null || end === null) return setError(notATime);
-    if (start > minutesPerDay || end > minutesPerDay) return setError(outsideDay);
-    if (end <= start) return setError(inverted);
-    setError(null);
-    if (start === workWindow.startMinutes && end === workWindow.endMinutes) return;
-    save({ workWindow: { startMinutes: start, endMinutes: end } });
-  };
-
-  const commitShutdown = () => {
-    const minutes = parseClock(shutdownText);
-    if (minutes === null) return setError(notATime);
-    if (minutes > minutesPerDay) return setError(outsideDay);
-    setError(null);
-    if (minutes === shutdownTime) return;
-    save({ shutdownTime: minutes });
-  };
-
-  const toggleShortcuts = () => {
-    const next = !enabled;
-    setShortcutsDraft(next);
-    setError(null);
-    save({ shortcutsEnabled: next });
-  };
-
-  /** Persists the away threshold locally. Out-of-range values say so and keep
-   * what was typed, like every other field in this sheet. */
-  const commitIdle = () => {
-    const minutes = Number(idleText);
-    if (!Number.isInteger(minutes) || minutes < MIN_IDLE_THRESHOLD_MINUTES || minutes > MAX_IDLE_THRESHOLD_MINUTES) {
-      return setError(outsideThreshold);
-    }
-    setError(null);
-    setIdleDraft(null);
-    writeIdleThreshold(minutes, window.localStorage);
-  };
-
-  const toggleNotify = (field: keyof NotifySettings) => {
-    const next = { ...notify, [field]: !notify[field] };
-    setNotify(next);
-    writeNotifySettings(next);
-  };
-
-  const togglePill = () => {
-    const next = !pillEnabled;
-    setPillDraft(next);
-    writePillEnabled(next);
-  };
-
-  return (
-    <Sheet label="Day settings" className="day-settings-sheet" origin={origin} onClose={onClose}>
-      <header className="sheet-head">
-        <span className="sheet-kind">Day settings</span>
-        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
-          <CloseIcon />
-        </button>
-      </header>
-      <div className="sheet-form">
-        <p className="day-settings-lead">One working window for every day, in your planner's time zone.</p>
-        <div className="form-group">
-          <TimeField
-            id="day-work-start"
-            label="Work starts"
-            value={startText}
-            autoFocus
-            onChange={value => editWindow("start", value)}
-            onCommit={commitWindow}
-          />
-          <TimeField
-            id="day-work-end"
-            label="Work ends"
-            value={endText}
-            onChange={value => editWindow("end", value)}
-            onCommit={commitWindow}
-          />
-        </div>
-        <div className="form-group">
-          <TimeField
-            id="day-shutdown"
-            label="Shut down at"
-            value={shutdownText}
-            onChange={setShutdownDraft}
-            onCommit={commitShutdown}
-          />
-          <p className="day-settings-note">When the day is meant to close.</p>
-        </div>
-        <div className="form-group">
-          <div className="form-row">
-            <span id="day-shortcuts-label">Keyboard shortcuts</span>
-            <button
-              type="button"
-              role="switch"
-              className="day-switch"
-              aria-checked={enabled}
-              aria-labelledby="day-shortcuts-label"
-              onClick={toggleShortcuts}
-            >
-              <span className="day-switch-track" aria-hidden="true">
-                <span className="day-switch-knob" />
-              </span>
-            </button>
-          </div>
-        </div>
-        {desktop && (
-          <div className="form-group">
-            <div className="form-row">
-              <label htmlFor="day-idle-threshold">Away after</label>
-              <input
-                id="day-idle-threshold"
-                className="form-control day-time"
-                type="number"
-                inputMode="numeric"
-                autoComplete="off"
-                min={MIN_IDLE_THRESHOLD_MINUTES}
-                max={MAX_IDLE_THRESHOLD_MINUTES}
-                step={1}
-                value={idleText}
-                onChange={event => setIdleDraft(event.target.value)}
-                onBlur={commitIdle}
-                onKeyDown={event => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    event.currentTarget.blur();
-                  }
-                }}
-              />
-            </div>
-            <p className="day-settings-note">
-              Minutes of no input during focus before the app asks whether to subtract them. This device only.
-            </p>
-          </div>
-        )}
-        {/* Desktop only (T7, S8.3): the toasts are a Windows shell feature, so
-            the web build never shows the section. Per-device on purpose: what
-            this computer reminds is not part of the synced profile. */}
-        {isTauri() && (
-          <div className="form-group">
-            <p className="day-settings-note">Windows notifications, on this computer.</p>
-            <div className="form-row">
-              <span id="notify-blocks-label">Block reminders</span>
-              <button
-                type="button"
-                role="switch"
-                className="day-switch"
-                aria-checked={notify.blockReminders}
-                aria-labelledby="notify-blocks-label"
-                onClick={() => toggleNotify("blockReminders")}
-              >
-                <span className="day-switch-track" aria-hidden="true">
-                  <span className="day-switch-knob" />
-                </span>
-              </button>
-            </div>
-            <div className="form-row">
-              <span id="notify-shutdown-label">Shutdown nudge</span>
-              <button
-                type="button"
-                role="switch"
-                className="day-switch"
-                aria-checked={notify.shutdownNudge}
-                aria-labelledby="notify-shutdown-label"
-                onClick={() => toggleNotify("shutdownNudge")}
-              >
-                <span className="day-switch-track" aria-hidden="true">
-                  <span className="day-switch-knob" />
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-        {isTauri() && <SignInStartupRow />}
-        {isTauri() && (
-          <div className="form-group">
-            <div className="form-row">
-              <span id="desktop-pill-label">Show floating timer</span>
-              <button
-                type="button"
-                role="switch"
-                className="day-switch"
-                aria-checked={pillEnabled}
-                aria-labelledby="desktop-pill-label"
-                onClick={togglePill}
-              >
-                <span className="day-switch-track" aria-hidden="true">
-                  <span className="day-switch-knob" />
-                </span>
-              </button>
-            </div>
-            <p className="day-settings-note">
-              A mini timer above other windows while a focus session runs.
-            </p>
-          </div>
-        )}
-        {error && <p className="inline-error" role="alert">{error}</p>}
-        {/* Desktop only: the global quick-add hotkey exists in the Tauri shell;
-            the web build has no window to summon, so the row never renders. */}
-        {isTauri() && <QuickAddShortcut />}
-      </div>
-    </Sheet>
+    <input
+      id={id}
+      className="form-control day-time"
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      spellCheck={false}
+      maxLength={5}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      onBlur={onCommit}
+      onKeyDown={event => {
+        // Enter commits the field it is in, the same as leaving it.
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }

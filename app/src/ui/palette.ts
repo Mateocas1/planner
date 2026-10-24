@@ -1,5 +1,6 @@
 import type { View } from "../App.tsx";
 import type { FocusStatus } from "../domain/focus.ts";
+import { availableSettingsTabs, type SettingsTab } from "./settings/tabs.ts";
 import { shortcutHelp, type ShortcutAction } from "./shortcuts.ts";
 import type { ThemePreference } from "./theme.ts";
 
@@ -65,6 +66,7 @@ export type PaletteCommand =
   | { kind: "task"; id: string; taskId: string; label: string }
   | PaletteThemeCommand
   | PaletteActionCommand
+  | PaletteSettingsCommand
   | PaletteFocusCommand;
 
 /**
@@ -76,6 +78,28 @@ export type PaletteCommand =
  * concern's vocabulary, and widening the model is that unit's decision.
  */
 export type PaletteFocusCommand = { kind: "focus"; id: string; verb: "start" | "pause" | "resume" | "stop"; label: string };
+
+/**
+ * Opens the Settings view on a tab (Ronda 2, S1): one generic command plus one
+ * per tab, so "settings" finds the view and "shortcuts" finds its tab. The
+ * per-tab list is the rail's own table, so Desktop and AI drop off on the web
+ * with everything else that is hidden there.
+ */
+export type PaletteSettingsCommand = { kind: "settings"; id: string; tab?: SettingsTab; label: string; keywords: string[] };
+
+export function settingsCommands(desktop: boolean): PaletteSettingsCommand[] {
+  const tabs = availableSettingsTabs(desktop);
+  return [
+    { kind: "settings", id: "settings", label: "Settings", keywords: ["settings", "preferences", "options"] },
+    ...tabs.map(tab => ({
+      kind: "settings" as const,
+      id: `settings-${tab.id}`,
+      tab: tab.id,
+      label: `Settings: ${tab.label}`,
+      keywords: ["settings", tab.label.toLowerCase(), tab.id],
+    })),
+  ];
+}
 
 /** What the palette needs to know about the timer to offer the right rows. */
 export type FocusCommandState = { canStart: boolean; status: FocusStatus | null };
@@ -173,9 +197,16 @@ export type PaletteContext = {
   shortcuts: boolean;
   /** A task row held focus when the palette opened, so the task actions apply. */
   focusedTask: boolean;
+  /** The Settings commands this device offers (Desktop and AI drop on web).
+   * Absent in contexts that never render them (tests, older callers). */
+  settingsCommands?: PaletteSettingsCommand[];
 };
 
-const defaultPaletteContext: PaletteContext = { shortcuts: true, focusedTask: false };
+const defaultPaletteContext: PaletteContext = {
+  shortcuts: true,
+  focusedTask: false,
+  settingsCommands: [],
+};
 
 export function buildCommands(
   rawQuery: string,
@@ -202,6 +233,9 @@ export function buildCommands(
   const matchedActions = actions
     .filter(command => command.keywords.some(keyword => keyword.includes(needle)))
     .map(command => withHint(command, context.shortcuts));
+  const matchedSettings = (context.settingsCommands ?? []).filter(command =>
+    command.keywords.some(keyword => keyword.includes(needle)),
+  );
   const matchedFocus = focus.filter(command => command.label.toLowerCase().includes(needle));
   return [
     { kind: "create", id: "create", title: query },
@@ -209,6 +243,7 @@ export function buildCommands(
     ...matchedDestinations,
     ...matchedThemes,
     ...matchedActions,
+    ...matchedSettings,
     ...matchedFocus,
   ];
 }

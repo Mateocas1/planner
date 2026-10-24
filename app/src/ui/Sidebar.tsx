@@ -70,8 +70,9 @@ export function Sidebar({
   onSignOut: () => void;
   /** Opens the Google Calendar import; the pressed control is its origin. */
   onImport: (origin: HTMLElement) => void;
-  /** Opens Day settings (S1) from the account row; same origin contract. */
-  onOpenSettings: (origin: HTMLElement) => void;
+  /** Opens the Settings view (Ronda 2, S1); it is a view now, so it takes no
+   * origin — the shell navigates, nothing flies out of this row. */
+  onOpenSettings: () => void;
 }) {
   return (
     <aside className="sidebar glass glass-regular">
@@ -113,13 +114,15 @@ export function Sidebar({
               the line for itself when the column cannot hold it beside the
               controls, which is every desktop width. */}
           <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
-          {/* Day settings, one press from the account whose day it describes.
-              The row is the account row, so the entry lives in it. */}
+          {/* Settings, one press from the account whose preferences they are.
+              The row is the account row, so the entry lives in it. While the
+              view is open the gear carries the nav's current marker. */}
           <button
             type="button"
             className="icon-button side-settings"
-            aria-label="Day settings"
-            onClick={event => onOpenSettings(event.currentTarget)}
+            aria-label="Settings"
+            aria-current={view === "settings" ? "page" : undefined}
+            onClick={() => onOpenSettings()}
           >
             <SettingsIcon />
           </button>
