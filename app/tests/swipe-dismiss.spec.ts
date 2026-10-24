@@ -162,6 +162,54 @@ test.describe("mouse", () => {
     await expect(page.locator(".sheet")).toHaveCount(0);
   });
 
+  /** The translate(x, y) the gesture wrote, parsed off the inline transform. */
+  function translateOf(transform: string): { x: number; y: number } | null {
+    const match = transform.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/);
+    return match ? { x: parseFloat(match[1]), y: parseFloat(match[2]) } : null;
+  }
+
+  test("a diagonal drag follows the pointer on both axes and closes", async ({ page }) => {
+    await signUp(page, newEmail("swipe-diagonal"));
+    await addTask(page, "Diagonal drag");
+    await openTaskDetails(page, "Diagonal drag");
+    const from = await handlePoint(page);
+
+    // A slow down-left drag: past the slop the surface follows the pointer
+    // freely on both axes (S7), so mid-drag the transform carries a non-zero
+    // x AND y at once -- the old axis lock could never produce that.
+    let mid: Awaited<ReturnType<typeof swipeState>> = null;
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 6; step += 1) {
+      await page.mouse.move(from.x - (300 * step) / 6, from.y + (200 * step) / 6);
+      // Slow moves: the release must dismiss through the distance gate (the
+      // dominant axis carries 300 px), not through a flick.
+      await page.waitForTimeout(130);
+    }
+    mid = await swipeState(page);
+    await page.mouse.up();
+
+    expect(mid, "the gesture wrote its state mid-drag").not.toBeNull();
+    const translation = translateOf(mid!.transform);
+    expect(translation, "a translate mid-drag").not.toBeNull();
+    expect(Math.abs(translation!.x)).toBeGreaterThan(50);
+    expect(Math.abs(translation!.y)).toBeGreaterThan(50);
+    await expect(page.locator(".sheet")).toHaveCount(0);
+    await expect(page.locator(".task-open", { hasText: "Diagonal drag" })).toBeFocused();
+  });
+
+  test("an up-dominant diagonal drag never closes the sheet", async ({ page }) => {
+    await signUp(page, newEmail("swipe-diagonal-up"));
+    await addTask(page, "Diagonal up");
+    await openTaskDetails(page, "Diagonal up");
+    const from = await handlePoint(page);
+    // The release vector points up-dominantly (300 px up over 100 px left), so
+    // it lands in the up sector and never dismisses, however far it travelled.
+    await dragMouse(page, from, { x: from.x - 100, y: from.y - 300 });
+    await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
+    await clearedUp(page);
+  });
+
   test("a fast flick left closes from a distance the threshold alone would reject", async ({ page }) => {
     await signUp(page, newEmail("swipe-flick"));
     await addTask(page, "Flick");
