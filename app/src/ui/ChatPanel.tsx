@@ -190,7 +190,7 @@ function useSendFlight(
     }, () => {}); // cancelled (bubble unmounted): nothing to restore
     const text = bubble.querySelector<HTMLElement>(".chat-user-text");
     if (text !== null) {
-      text.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], {
+      text.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], {
         duration: config.duration,
         easing: "ease-out",
       });

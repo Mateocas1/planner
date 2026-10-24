@@ -52,7 +52,7 @@ export const dur = {
  * short spring as this curve — the pill overshoots its slot by a hair and
  * settles.
  */
-export const easeOutBackCss = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+export const easeOutBackCss = "cubic-bezier(0.22, 1.2, 0.36, 1)";
 
 /**
  * How far out of focus the content of a panel starts (in px), before the card

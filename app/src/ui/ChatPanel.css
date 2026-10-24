@@ -275,7 +275,7 @@
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.97);
-    filter: blur(8px);
+    filter: blur(4px);
   }
 }
 
