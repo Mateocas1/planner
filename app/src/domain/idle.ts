@@ -80,6 +80,15 @@ export function awayStart(nowMs: number, idleSeconds: number): number {
   return nowMs - idleSeconds * 1000;
 }
 
+/**
+ * The instant an away span ended: the user's last input, which the OS reports
+ * as `idleSeconds` before the poll that noticed the return. Ending at the poll
+ * itself would overstate every absence by up to one poll interval (L18).
+ */
+export function awayEnd(nowMs: number, idleSeconds: number): number {
+  return nowMs - idleSeconds * 1000;
+}
+
 /** True when the OS idle time has reached the threshold: the user is away. */
 export function isIdle(idleSeconds: number, thresholdMinutes: number): boolean {
   return idleSeconds * 1000 >= thresholdMinutes * 60_000;

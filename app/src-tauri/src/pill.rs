@@ -162,6 +162,8 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .resizable(false)
         .focused(false)
         .visible(false)
+        // Must match the config windows or WebView2 refuses to create it.
+        .additional_browser_args(planner_core::webview::BROWSER_ARGS)
         .initialization_script("window.__PILL__ = true;")
         .build()?;
     apply_position(app, &pill);
