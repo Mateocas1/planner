@@ -11,6 +11,7 @@ import {
   checkGetTask,
   checkListTasks,
   checkMoveTask,
+  moveTaskRemovals,
   describeToolCall,
   isReadTool,
   isValidDayKey,
@@ -19,6 +20,28 @@ import {
   type ChatToolContext,
 } from "./tools.ts";
 import type { Memory } from "./memoryStore.ts";
+
+test("move_task: a start time replaces same-day blocks, and the card says so", () => {
+  // t1 has block b1 on 2026-10-30 14:00–14:45; moving it to 16:00 that day
+  // replaces it — the description must state it, exactly like update_task's.
+  const check = checkMoveTask('{"taskId":"t1","day":"2026-10-30","startTime":"16:00"}', readContext);
+  assert.ok(check.ok);
+  assert.match(check.ok ? check.description : "", /replaces 1 block: .*14:00–14:45/);
+  // The executor computes the same removals from the same pure rule, so the
+  // write matches the card word for word.
+  const removals = moveTaskRemovals(check.ok ? check.value : { taskId: "t1", title: "", day: null }, readContext);
+  assert.deepEqual(removals.map(entry => entry.id), ["b1"]);
+});
+
+test("move_task: null day clears only the due date and removes NO blocks", () => {
+  // Parent decision: move_task keeps setTaskDeadline's contract. t1's block
+  // on 2026-10-30 is upcoming; unscheduling must leave it alone (removing
+  // placements is update_task's job, whose card lists them).
+  const check = checkMoveTask('{"taskId":"t1","day":null}', readContext);
+  assert.ok(check.ok);
+  assert.doesNotMatch(check.ok ? check.description : "", /removes|replaces/);
+  assert.deepEqual(moveTaskRemovals(check.ok ? check.value : { taskId: "t1", title: "", day: null }, readContext), []);
+});
 
 const context: ChatToolContext = {
   tasks: [

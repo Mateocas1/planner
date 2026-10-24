@@ -42,6 +42,7 @@ import {
   buildListTasksResult,
   deriveTopicKey,
   isReadTool,
+  moveTaskRemovals,
   validateToolCall,
   type ChatToolContext,
   type NormalizedCompleteTask,
@@ -199,11 +200,10 @@ export function ChatSurface({
           const value = check.value as NormalizedMoveTask;
           const task = toolContext.tasks.find(entry => entry.id === value.taskId);
           const estimate = task?.estimateMinutes ?? 60;
-          const removals = affectedBlockIds(
-            value.taskId,
-            { clearDay: value.day === null, ...(value.startMinutes !== undefined && value.day !== null ? { startDay: value.day } : {}) },
-            toolContext,
-          );
+          // The removals the card described (moveTaskRemovals): a start-time
+          // move replaces the task's same-day blocks; `day: null` clears only
+          // the due date and removes NO blocks (that is update_task's job).
+          const removals = moveTaskRemovals(value, toolContext);
           await applyChatTaskUpdate(uid, {
             taskId: value.taskId,
             title: task?.title ?? value.title,
@@ -221,13 +221,13 @@ export function ChatSurface({
           const title = task?.title ?? value.title;
           const target = value.day === null ? "no date" : value.day === undefined ? undefined : formatDateKey(value.day, toolContext.todayKey);
           const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
-          const removed = removals.length > 0 ? `, removed ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
+          const replaced = removals.length > 0 ? `, replaced ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
           return {
             status: "confirmed",
             message:
               value.day === null
-                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared${removed})`
-                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${removed}`,
+                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared; its placed blocks stay)`
+                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${replaced}`,
           };
         }
         if (call.name === "update_task") {

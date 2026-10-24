@@ -71,12 +71,12 @@ const MOVE_TASK: ChatToolSpec = {
         day: {
           type: ["string", "null"],
           description:
-            "The target day as YYYY-MM-DD, or null to unschedule the task (clear its date).",
+            "The target day as YYYY-MM-DD, or null to unschedule (clears the due date only — placed blocks stay; use update_task with day: null to also remove its upcoming placements).",
         },
         startTime: {
           type: "string",
           description:
-            "Optional wall-clock HH:MM (24 h) to also place the task on that day's schedule; needs a day.",
+            "Optional wall-clock HH:MM (24 h) to also place the task on that day's schedule; needs a day. Replaces the task's existing blocks on that day.",
         },
       },
       required: ["taskId", "day"],
@@ -427,11 +427,28 @@ function describeCreateTask(value: NormalizedCreateTask, todayKey: string): stri
   return parts.join(" · ");
 }
 
+/** The task-linked blocks a confirmed `move_task` removes, computed from the
+ * live context — the same rule the card's description states, so the
+ * executor writes exactly what the card described. A start-time move
+ * replaces the task's blocks on the target day; `day: null` clears only the
+ * due date and removes NO blocks (unscheduling WITH block removal is
+ * `update_task`'s job, whose card lists the affected blocks). */
+export function moveTaskRemovals(value: NormalizedMoveTask, context: ChatToolContext): Array<{ id: string; label: string }> {
+  if (value.day === null || value.startMinutes === undefined) return [];
+  return affectedBlockIds(value.taskId, { startDay: value.day }, context);
+}
+
 function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["tasks"][number], context: ChatToolContext): string {
   const label = (day: string | undefined | null) =>
     day === undefined || day === null ? "No date" : formatDateKey(day, context.todayKey);
   const parts = [`Move "${task.title}"`, `${label(task.deadline)} → ${value.day === null ? "No date" : label(value.day)}`];
-  if (value.startMinutes !== undefined) parts.push(hhmm(value.startMinutes));
+  if (value.startMinutes !== undefined) {
+    parts.push(hhmm(value.startMinutes));
+    // Same wording as describeUpdateTask: the card names the placements a
+    // start-time move replaces, so the user sees the whole change.
+    const replaced = moveTaskRemovals(value, context);
+    if (replaced.length > 0) parts.push(`replaces ${replaced.length} ${replaced.length === 1 ? "block" : "blocks"}: ${replaced.map(entry => entry.label).join(", ")}`);
+  }
   return parts.join(" · ");
 }
 
@@ -747,7 +764,8 @@ export function checkUpdateTask(raw: string, context: ChatToolContext): ToolChec
 /** The task-linked blocks an update or unschedule would remove, computed
  * from the context so the card names them exactly. A placement replaces the
  * task's blocks on the target day; an unschedule (day: null) removes the
- * task's upcoming blocks (today onwards) and leaves past history alone. */
+ * task's upcoming blocks (today onwards) and leaves past history alone.
+ * `move_task` never uses the unschedule branch — see `moveTaskRemovals`. */
 export function affectedBlockIds(
   taskId: string,
   change: { clearDay?: boolean; startDay?: string },
