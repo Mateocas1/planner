@@ -24,6 +24,12 @@ export type MemoryOp =
   | { op: "upsert"; topicKey: string; title: string; content: string }
   | { op: "delete"; topicKey: string };
 
+/** The window event the chat dispatches whenever the durable notes change
+ * under the UI (a confirmed remember/forget tool call or an end-of-
+ * conversation extraction); the AI settings memory list listens for it and
+ * refreshes when shown. */
+export const MEMORIES_CHANGED_EVENT = "planner:chat-memories-changed";
+
 export function chatMemoriesList(): Promise<Memory[]> {
   return invoke<Memory[]>("chat_memories_list");
 }

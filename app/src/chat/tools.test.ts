@@ -49,7 +49,7 @@ const readContext: ChatToolContext = {
 test("the tools carry OpenAI function schemas; reads are marked and ride every request", () => {
   assert.deepEqual(
     CHAT_TOOLS.map(tool => tool.function.name),
-    ["create_task", "move_task", "update_task", "complete_task", "delete_task", "hide_holiday", "list_tasks", "get_task", "list_holidays", "list_memories"],
+    ["create_task", "move_task", "update_task", "complete_task", "delete_task", "hide_holiday", "remember", "forget", "list_tasks", "get_task", "list_holidays", "list_memories"],
   );
   for (const tool of CHAT_TOOLS) {
     assert.equal(tool.type, "function");
@@ -361,7 +361,7 @@ test("validateToolCall routes the reads", () => {
 
 /* ---------- write tools beyond create/move (S4) ---------- */
 
-import { checkCompleteTask, checkDeleteTask, checkHideHoliday, checkUpdateTask } from "./tools.ts";
+import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deriveTopicKey } from "./tools.ts";
 
 const updateContext: ChatToolContext = {
   ...readContext,
@@ -468,4 +468,42 @@ test("hide_holiday validates against the known holidays and rejects no-ops", () 
   const ghost = checkHideHoliday('{"holidayId":"ghost"}', updateContext);
   assert.ok(!ghost.ok);
   assert.match(ghost.ok ? "" : ghost.error, /not in your planner/);
+});
+
+/* ---------- memory tools (S5) ---------- */
+
+test("remember validates bounded title/content and an optional topic key", () => {
+  const ok = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}');
+  assert.ok(ok.ok);
+  assert.deepEqual(ok.value, { title: "Planning style", content: "Plans before 09:00." });
+  assert.match(ok.ok ? ok.description : "", /Remember "Planning style"/);
+  const keyed = checkRemember('{"title":"T","content":"C","topicKey":"planning-style"}');
+  assert.ok(keyed.ok && keyed.value.topicKey === "planning-style");
+  assert.ok(!checkRemember('{"content":"C"}').ok);
+  assert.ok(!checkRemember('{"title":"T"}').ok);
+  assert.ok(!checkRemember(JSON.stringify({ title: "T", content: "C".repeat(801) })).ok);
+  assert.ok(checkRemember(JSON.stringify({ title: "T", content: "C".repeat(800) })).ok, "800 chars is the cap");
+  assert.ok(!checkRemember('{"title":"T","content":"C","topicKey":""}').ok);
+  assert.ok(!checkRemember(JSON.stringify({ title: "T", content: "C", topicKey: "k".repeat(121) })).ok);
+});
+
+test("deriveTopicKey slugs the title the way the store keys notes", () => {
+  assert.equal(deriveTopicKey("Planning style"), "planning-style");
+  assert.equal(deriveTopicKey("  ¡Mañana, temprano!  "), "manana-temprano");
+  assert.equal(deriveTopicKey("###"), "note", "degenerate titles get a stable fallback");
+  assert.ok(deriveTopicKey("x".repeat(300)).length <= 120);
+});
+
+test("forget validates the topic key; the card names the note when the context knows it", () => {
+  const known = checkForget('{"topicKey":"planning-style"}', {
+    ...readContext,
+    memoryTopics: [{ topicKey: "planning-style", title: "Prefers short answers" }],
+  });
+  assert.ok(known.ok);
+  assert.match(known.ok ? known.description : "", /Forget the note "Prefers short answers"/);
+  const unknownTitle = checkForget('{"topicKey":"ghost-key"}', readContext);
+  assert.ok(unknownTitle.ok, "existence is checked live at confirm, not here");
+  assert.match(unknownTitle.ok ? unknownTitle.description : "", /ghost-key/);
+  assert.ok(!checkForget("{}", readContext).ok);
+  assert.ok(!checkForget(JSON.stringify({ topicKey: "k".repeat(121) }), readContext).ok);
 });

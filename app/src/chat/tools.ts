@@ -217,6 +217,42 @@ const HIDE_HOLIDAY: ChatToolSpec = {
   },
 };
 
+const REMEMBER: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "remember",
+    description:
+      "Save a durable note about the user into your memory (it rides along in every future chat). For durable facts only — preferences, habits, context — never secrets or anything sensitive. The user must confirm before anything is saved.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short title for the note." },
+        content: { type: "string", description: "One or two sentences of what to remember." },
+        topicKey: {
+          type: "string",
+          description: "Optional stable key; giving an existing note's key updates that note in place instead of adding a new one.",
+        },
+      },
+      required: ["title", "content"],
+    },
+  },
+};
+
+const FORGET: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "forget",
+    description: "Remove one of your notes about the user, by its topic key. The user must confirm before anything is removed.",
+    parameters: {
+      type: "object",
+      properties: {
+        topicKey: { type: "string", description: "The note's topic key, exactly as it appears in the notes block or a list_memories result." },
+      },
+      required: ["topicKey"],
+    },
+  },
+};
+
 /** The tools every chat request carries (extraction requests carry none).
  * Reads run without confirmation (S4); writes render confirmation cards. */
 export const CHAT_TOOLS: ChatToolSpec[] = [
@@ -226,6 +262,8 @@ export const CHAT_TOOLS: ChatToolSpec[] = [
   COMPLETE_TASK,
   DELETE_TASK,
   HIDE_HOLIDAY,
+  REMEMBER,
+  FORGET,
   LIST_TASKS,
   GET_TASK,
   LIST_HOLIDAYS,
@@ -804,6 +842,71 @@ export function checkDeleteTask(raw: string, context: ChatToolContext): ToolChec
 
 export type NormalizedHideHoliday = { holidayId: string; title: string; show: boolean };
 
+export type NormalizedRemember = { title: string; content: string; topicKey?: string };
+
+export type NormalizedForget = { topicKey: string };
+
+const MEMORY_TOPIC_MAX = 120;
+const MEMORY_TITLE_MAX = 200;
+const MEMORY_CONTENT_MAX = 800;
+
+/** The topic key a `remember` without one gets: a stable slug of the title
+ * (same shape the Rust store accepts: at most 120 chars, not empty). */
+export function deriveTopicKey(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MEMORY_TOPIC_MAX)
+    .replace(/-+$/g, "");
+  return slug === "" ? "note" : slug;
+}
+
+/** Validates `remember`: bounded title and content (the store's own caps), a
+ * bounded topic key when given. Existence checks are the executor's job (it
+ * sees the live notes). */
+export function checkRemember(raw: string): ToolCheck<NormalizedRemember> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const title = optionalString(parsed.value.title);
+  if (title === undefined) return { ok: false, error: "The note needs a title." };
+  if (title.length > MEMORY_TITLE_MAX) {
+    return { ok: false, error: `The note title is too long (at most ${MEMORY_TITLE_MAX} characters).` };
+  }
+  const content = optionalString(parsed.value.content);
+  if (content === undefined) return { ok: false, error: "The note needs content to remember." };
+  if (content.length > MEMORY_CONTENT_MAX) {
+    return { ok: false, error: `The note content is too long (at most ${MEMORY_CONTENT_MAX} characters).` };
+  }
+  const rawKey = parsed.value.topicKey;
+  if (rawKey !== undefined && rawKey !== null) {
+    if (typeof rawKey !== "string" || rawKey.trim() === "") return { ok: false, error: "The topic key must be non-empty text." };
+    if (rawKey.trim().length > MEMORY_TOPIC_MAX) {
+      return { ok: false, error: `The topic key is too long (at most ${MEMORY_TOPIC_MAX} characters).` };
+    }
+    const topicKey = rawKey.trim();
+    return { ok: true, value: { title, content, topicKey }, description: `Remember "${title}" — ${content}` };
+  }
+  return { ok: true, value: { title, content }, description: `Remember "${title}" — ${content}` };
+}
+
+/** Validates `forget`: a bounded topic key; whether the note exists is
+ * checked live at confirm time (the notes can change after the proposal). */
+export function checkForget(raw: string, context: ChatToolContext): ToolCheck<NormalizedForget> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const topicKey = optionalString(parsed.value.topicKey);
+  if (topicKey === undefined) return { ok: false, error: "The proposal needs a topic key." };
+  if (topicKey.length > MEMORY_TOPIC_MAX) {
+    return { ok: false, error: `The topic key is too long (at most ${MEMORY_TOPIC_MAX} characters).` };
+  }
+  const known = (context.memoryTopics ?? []).find(entry => entry.topicKey === topicKey);
+  const title = known?.title ?? topicKey;
+  return { ok: true, value: { topicKey }, description: `Forget the note "${title}"` };
+}
+
 /** Validates `hide_holiday`: the holiday must be one the context knows, and
  * the requested visibility must actually change something. */
 export function checkHideHoliday(raw: string, context: ChatToolContext): ToolCheck<NormalizedHideHoliday> {
@@ -837,7 +940,19 @@ export function checkHideHoliday(raw: string, context: ChatToolContext): ToolChe
 export function validateToolCall(
   call: Pick<ChatToolCall, "name" | "arguments">,
   context: ChatToolContext,
-): ToolCheck<NormalizedCreateTask | NormalizedMoveTask | NormalizedUpdateTask | NormalizedCompleteTask | NormalizedDeleteTask | NormalizedHideHoliday | NormalizedListTasks | NormalizedGetTask | NormalizedNoArgs> {
+): ToolCheck<
+  | NormalizedCreateTask
+  | NormalizedMoveTask
+  | NormalizedUpdateTask
+  | NormalizedCompleteTask
+  | NormalizedDeleteTask
+  | NormalizedHideHoliday
+  | NormalizedRemember
+  | NormalizedForget
+  | NormalizedListTasks
+  | NormalizedGetTask
+  | NormalizedNoArgs
+> {
   switch (call.name) {
     case "create_task":
       return checkCreateTask(call.arguments, context.todayKey);
@@ -851,6 +966,10 @@ export function validateToolCall(
       return checkDeleteTask(call.arguments, context);
     case "hide_holiday":
       return checkHideHoliday(call.arguments, context);
+    case "remember":
+      return checkRemember(call.arguments);
+    case "forget":
+      return checkForget(call.arguments, context);
     case "list_tasks":
       return checkListTasks(call.arguments, context);
     case "get_task":
