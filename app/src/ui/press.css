@@ -18,7 +18,7 @@
   --press-release-dur: 420ms;
   --ease-press-down: var(--ease-out);
   /* Damped spring (zeta 0.404, omega_d 26.2 rad/s, sampled every 20 ms). From
-   * a 0.96 press it passes 1 at ~100 ms, peaks at ~1.01 around 120 ms, dips
+   * a 0.96 press it passes 1 at ~75 ms, peaks at ~1.01 around 120 ms, dips
    * back to ~0.998 and settles -- one bump, never a wobble. The values are
    * progress along the release (0 = pressed, 1 = at rest), so the overshoot
    * scales with the press depth: rows, which only sink 1%, overshoot ~0.25%.
@@ -71,18 +71,24 @@
  */
 
 /* The release: every pressable returns through the spring. Element-level on
- * purpose, so a pressable nobody styled still speaks the language; class rules
- * that own a transition beat it, and each of them carries the same tokens. */
-button:not(:disabled):not([aria-disabled="true"]),
-[role="button"]:not([aria-disabled="true"]) {
+ * purpose, so a pressable nobody styled still speaks the language. `:where`
+ * keeps it at zero specificity: CSS cannot merge transition lists, so a class
+ * rule that owns a transition wins outright and must carry the spring itself
+ * (`transform var(--press-release-dur) var(--ease-press-spring)`). */
+:where(button:not(:disabled):not([aria-disabled="true"]),
+       [role="button"]:not([aria-disabled="true"])) {
   transition: transform var(--press-release-dur) var(--ease-press-spring);
 }
 
-/* The press: instant scale-down. */
+/* The press: instant scale-down. Specificity stays as it was on purpose: a
+ * `:where` here would let class rules that own a transition win, so their
+ * press would sink on the 420 ms release spring instead of instantly (S2).
+ * The colour transitions stay, so tints still ease while the control is held. */
 button:not(:disabled):not([aria-disabled="true"]):not(.row-main):active,
 [role="button"]:not([aria-disabled="true"]):not(.row-main):active {
   transform: scale(var(--press-scale));
-  transition: transform var(--press-down-dur) var(--ease-press-down);
+  transition: transform var(--press-down-dur) var(--ease-press-down),
+    background-color var(--dur-hover) ease, color var(--dur-hover) ease;
 }
 
 /* Reduced motion: no scale at all -- the press reads through the existing

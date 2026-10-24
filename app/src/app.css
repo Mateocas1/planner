@@ -650,7 +650,7 @@ time,
   border-radius: var(--r-control);
   color: var(--label-2);
   font-weight: 500;
-  transition: color var(--dur-hover) ease;
+  transition: color var(--dur-hover) ease, transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .nav-pill {

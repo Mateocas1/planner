@@ -161,7 +161,8 @@
   font-size: var(--text-caption);
   font-weight: 500;
   cursor: pointer;
-  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease, opacity var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease, opacity var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .chat-new-chat:hover {
@@ -185,7 +186,8 @@
   background: transparent;
   color: var(--label-2);
   cursor: pointer;
-  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .chat-icon-button:hover {

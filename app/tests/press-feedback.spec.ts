@@ -103,3 +103,37 @@ test("reduced motion keeps identity on press", async ({ page }) => {
   ).toEqual([]);
   await page.mouse.up();
 });
+
+test("a class rule with its own colour transition still springs on release", async ({ page }) => {
+  // `.chat-icon-button` owns a background/colour transition (ChatPanel.css). It
+  // sits behind the chat, so a probe with the same class is mounted instead:
+  // the production stylesheet decides the cascade either way.
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+  await page.evaluate(() => {
+    const probe = document.createElement("button");
+    probe.type = "button";
+    probe.className = "chat-icon-button";
+    probe.setAttribute("aria-label", "Press probe");
+    probe.style.cssText = "position:fixed;left:16px;top:16px;width:32px;height:32px;z-index:9999";
+    document.body.append(probe);
+  });
+  const probe = page.getByRole("button", { name: "Press probe" });
+
+  const properties = await probe.evaluate((el) => getComputedStyle(el).transitionProperty);
+  expect(properties, "the class keeps its colour transition").toContain("background-color");
+  expect(properties, "the release spring is carried by the class").toContain("transform");
+
+  await probe.hover();
+  await page.mouse.down();
+  // Held first, so the press lands and the release starts from press depth.
+  await expect
+    .poll(() => computedTransform(probe), { message: "the probe sits at press depth while held" })
+    .toBe("matrix(0.96, 0, 0, 0.96, 0, 0)");
+  await page.mouse.up();
+  const scales = await sampleScales(probe, 700);
+  expect(
+    Math.max(...scales),
+    "the class rule still overshoots identity on release",
+  ).toBeGreaterThan(1.002);
+});

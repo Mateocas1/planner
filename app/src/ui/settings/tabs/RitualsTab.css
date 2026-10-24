@@ -60,7 +60,8 @@
   font-size: var(--text-caption);
   font-weight: 500;
   color: var(--label-2);
-  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .rituals-step-chip[aria-pressed="true"] {
