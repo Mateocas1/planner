@@ -319,7 +319,10 @@ test("reads run without confirmation and their data rides the next request (S4)"
   await expect(readCard.locator(".chat-card-outcome")).toHaveText("2 tasks found.", { timeout: 15_000 });
 
   // The read's result rode the conversation: the next request carries the
-  // tool message with the ids and titles.
+  // tool message with the ids and titles. Wait for the first answer to
+  // finish first — submit is a no-op while a request is in flight, so an
+  // early Enter would silently swallow this message.
+  await expect(panel(page).locator("[data-live]")).toHaveCount(0, { timeout: 15_000 });
   await field(page).fill("Thanks");
   await field(page).press("Enter");
   await expect
