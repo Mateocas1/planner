@@ -13,6 +13,7 @@ import {
   shouldDismiss,
   sheetRadius,
   sheetScale,
+  SWIPE_SLOP,
   type SwipeDirection,
 } from "./swipeDismiss.ts";
 
@@ -315,10 +316,14 @@ export function useSwipeDismiss({
      */
     const apply = (dx: number, dy: number) => {
       const height = surface.offsetHeight;
-      const dimension = Math.max(surface.offsetWidth, height);
       const x = dx;
       const y = dy < 0 ? -rubberBand(-dy, height) : dy;
-      const p = progress(Math.hypot(x, y), dimension);
+      // Visual progress reads the dominant axis's size -- the same dimension
+      // the commit threshold uses -- over the 2D distance (finding 3): the
+      // old max(width, height) made a full commit read as barely half-done,
+      // leaving the backdrop half visible at the dismissal.
+      const axis = Math.abs(x) > Math.abs(y) ? surface.offsetWidth : height;
+      const p = progress(Math.hypot(x, y), axis);
       surface.dataset.swiping = "active";
       surface.style.transformOrigin = "center";
       surface.style.transform = dragTransform(x, y, sheetScale(p));
@@ -344,8 +349,8 @@ export function useSwipeDismiss({
     const onPointerMove = (event: PointerEvent) => {
       if (!gesture || event.pointerId !== gesture.pointerId) return;
       velocity.add(event.clientX, event.clientY, event.timeStamp);
-      const dx = event.clientX - gesture.startX + gesture.baseX;
-      const dy = event.clientY - gesture.startY + gesture.baseY;
+      let dx = event.clientX - gesture.startX + gesture.baseX;
+      let dy = event.clientY - gesture.startY + gesture.baseY;
       if (!gesture.eligible) {
         // The slop only decides whether the gesture starts: the drag's
         // initial dominant direction picks the scroller test, and a scroller
@@ -357,7 +362,28 @@ export function useSwipeDismiss({
           clearInline();
           return;
         }
+        // A diagonal first slop also respects the other axis's scroller
+        // (finding 6): when the vertical component cleared the slop too, a
+        // scroller that can still move that way keeps its scroll instead of
+        // losing it to the sheet. (When the initial direction is already
+        // vertical this repeats the check above and reads the same.)
+        if (
+          Math.abs(dy) >= SWIPE_SLOP &&
+          scrollerBlocks(gesture.target, dy < 0 ? "up" : "down", event.pointerType)
+        ) {
+          gesture = null;
+          clearInline();
+          return;
+        }
         gesture.eligible = true;
+        // Re-base the gesture at the lock (finding 2): the pre-lock slop
+        // travel must not jump onto the surface in one step -- from here the
+        // follow is 1:1 from the lock point. `baseX/baseY` (a retargeted
+        // snap-back) survive: they are already on the surface.
+        gesture.startX = event.clientX;
+        gesture.startY = event.clientY;
+        dx = gesture.baseX;
+        dy = gesture.baseY;
         // The gesture just claimed the drag: any text selection the press had
         // begun dies here, where `user-select: none` takes over too.
         document.getSelection()?.removeAllRanges();
@@ -504,17 +530,22 @@ export function useSwipeDismiss({
       // that stopped holding its flick before lifting throws nothing.
       const rawX = velocity.velocity("x", event.timeStamp);
       const rawY = velocity.velocity("y", event.timeStamp);
+      // The release reads the y the surface is actually showing (finding 4):
+      // upward travel is rubber-banded, so the raw pointer travel and the
+      // drawn offset disagree past the band's slope-1 start -- the commit
+      // decision, exit vector and release speed must use the shown offset.
+      const shownY = dy < 0 ? -rubberBand(-dy, surface.offsetHeight) : dy;
       // The release vector decides (S7): its dominant sector must be
       // dismissible -- an up-dominant release never is -- and the displacement
       // or flick along that sector's axis must pass the thresholds.
-      if (shouldDismiss(dx, dy, rawX, rawY, surface.offsetWidth, surface.offsetHeight)) {
+      if (shouldDismiss(dx, shownY, rawX, rawY, surface.offsetWidth, surface.offsetHeight)) {
         if (reducedMotion) {
           // Reduced motion: no flight of ours; the close path's reduced fade runs.
           clearInline();
           onDismissRef.current();
           return;
         }
-        commit(dx, dy, rawX, rawY);
+        commit(dx, shownY, rawX, rawY);
         return;
       }
       if (reducedMotion) {
