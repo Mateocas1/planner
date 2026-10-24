@@ -1,4 +1,5 @@
 mod autostart;
+mod chat;
 mod deeplink;
 mod google_oauth;
 mod quickadd;
@@ -30,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(autostart::plugin())
         .manage(deeplink::PendingRoute::default())
+        .manage(chat::ChatStreams::default())
         .manage(google_oauth::OAuthFlow::default())
         .manage(quickadd::QuickAddState::default())
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +51,16 @@ pub fn run() {
             pill::pill_focus_main,
             pill::pill_main_focused,
             pill::pill_visibility_changed,
+            chat::chat_key_status,
+            chat::chat_key_set,
+            chat::chat_key_clear,
+            chat::chat_stream,
+            chat::chat_cancel,
+            chat::chat_complete,
+            chat::memory_store::chat_memories_list,
+            chat::memory_store::chat_memories_apply,
+            chat::memory_store::chat_memories_delete,
+            chat::memory_store::chat_memories_clear,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;
