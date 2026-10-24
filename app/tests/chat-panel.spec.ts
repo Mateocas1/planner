@@ -208,6 +208,42 @@ test("send: user pill, waiting spinner, streamed text grows to a markdown answer
   await page.screenshot({ path: `${shots}done-light.png` });
 });
 
+test("send flight: the user bubble lands at rest — identity transform, no blur (S3)", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openPanel(page);
+  await field(page).fill("What is left of my day?");
+  await field(page).press("Enter");
+  const bubble = panel(page).locator(".chat-user").last();
+  await expect(bubble).toBeVisible();
+  // The flight ran: it replaces the mount entrance (data-flown) for this
+  // bubble, and the WAAPI flight leaves no fill, so the bubble ends at rest.
+  await expect(bubble).toHaveAttribute("data-flown", "");
+  await expect(stopButton(page)).toBeHidden({ timeout: 25_000 });
+  await settleAnimations(page);
+  const rest = await bubble.evaluate(element => ({
+    transform: getComputedStyle(element).transform,
+    filter: getComputedStyle(element).filter,
+  }));
+  expect(rest.transform === "none" || rest.transform === "").toBe(true);
+  expect(rest.filter === "none" || rest.filter === "").toBe(true);
+  // A second send flies a fresh bubble from the button; the one at rest keeps
+  // its identity transform (two flights never stack on one element).
+  await field(page).fill("And tomorrow?");
+  await field(page).press("Enter");
+  const second = panel(page).locator(".chat-user").last();
+  await expect(second).toBeVisible();
+  await expect(second).toHaveAttribute("data-flown", "");
+  await expect(stopButton(page)).toBeHidden({ timeout: 25_000 });
+  await settleAnimations(page);
+  const firstRest = await bubble.evaluate(element => ({
+    transform: getComputedStyle(element).transform,
+    filter: getComputedStyle(element).filter,
+  }));
+  expect(firstRest.transform === "none" || firstRest.transform === "").toBe(true);
+  expect(firstRest.filter === "none" || firstRest.filter === "").toBe(true);
+});
+
 test("stop cancels the stream and the send button returns", async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -264,6 +300,18 @@ test("reduced motion: the panel and the stream still work without movement", asy
   expect(panelTransform === "none" || panelTransform === "").toBe(true);
   await field(page).fill("What is left of my day?");
   await field(page).press("Enter");
+  // The send flight is skipped (S3): the user bubble never carries the
+  // flight marker and stays at rest — transform none, no blur; only the
+  // opacity fade plays.
+  const userBubble = panel(page).locator(".chat-user").last();
+  await expect(userBubble).toBeVisible();
+  await expect(userBubble).not.toHaveAttribute("data-flown");
+  const bubbleStyle = await userBubble.evaluate(element => ({
+    transform: getComputedStyle(element).transform,
+    filter: getComputedStyle(element).filter,
+  }));
+  expect(bubbleStyle.transform === "none" || bubbleStyle.transform === "").toBe(true);
+  expect(bubbleStyle.filter === "none" || bubbleStyle.filter === "").toBe(true);
   await expect(liveAnswer(page)).toBeVisible();
   await expect.poll(() => answerLength(page), { timeout: 15_000 }).toBeGreaterThan(0);
   await expect(stopButton(page)).toBeHidden({ timeout: 25_000 });

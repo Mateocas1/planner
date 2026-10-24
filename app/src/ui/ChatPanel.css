@@ -15,8 +15,15 @@
    - Content focus-pull: .chat-inner sharpens from blur(6px) as the card lands
      (the Sheet.tsx pattern, on the inner body — never a filter on the glass
      element itself, which would repaint the backdrop flat).
-   - User bubble: blur(8px) + 6px rise + slight scale to sharp, 200 ms, one
-     animation at mount. Reduced motion: opacity fade only.
+   - User bubble: the send flight (Ronda 4 S3) — a JS FLIP in useSendFlight:
+     the pill leaves the send button's position/size (transform only,
+     top-left anchored) with a short spring (easeOutBack, `dur.sendFlight`),
+     while a subtle blur (4 px ≤ 6 px) and opacity resolve; the text
+     cross-fades in instead of riding the scale. The composer clears in the
+     same commit. `data-flown` keeps the CSS mount entrance from replaying
+     under the flight. Reduced motion: opacity fade only (`chat-fade-in`),
+     the flight is skipped. The CSS entrance below covers the paths that do
+     not fly (Retry re-sends the last message without an origin).
    - Content glide: FLIP is applied in JS (useGlideOnAppend) as compensating
      transforms via WAAPI — layout is never animated.
    - Waiting spinner: rotating captured stroke, linear (constant motion).
@@ -26,7 +33,8 @@
      No container animation: the bubble's growth is a single-frame layout
      change, bridged by the cross-fade, so text is never scaled or distorted.
    - Streamed text: each reveal chunk is a span that blurs in once (keyed by
-     chunk index, so re-renders never restart it). Reduced motion: none.
+     chunk index, so re-renders never restart it); 180 ms keeps the reveal
+     fluid without lagging the pacer. Reduced motion: none.
    - Nothing on the completed answer bubble: it replaces the live bubble in the
      same frame at `done`, and an entrance here would flash. */
 
@@ -251,6 +259,12 @@
   animation: chat-user-in 200ms var(--ease-out) both;
 }
 
+/* A bubble that flew from the send button never replays the mount entrance
+   under it: the flight (WAAPI, useSendFlight) *is* its entrance. */
+.chat-user[data-flown] {
+  animation: none;
+}
+
 /* On the dark glass the near-black pill needs a rim, or it disappears. */
 :root[data-theme="dark"] .chat-user,
 :root[data-theme="dark"] .chat-send {
@@ -417,7 +431,7 @@
 
 .chat-reveal {
   display: inline;
-  animation: chat-reveal-in 240ms var(--ease-out) both;
+  animation: chat-reveal-in 180ms var(--ease-out) both;
 }
 
 @keyframes chat-reveal-in {
