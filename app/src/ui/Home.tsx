@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { completeOccurrence } from "../data/series.ts";
-import { setBlockTimes } from "../data/blocks.ts";
+import { linkedBlocks, setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
-import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
+import { deleteTask, renameTask, restoreTaskWithBlocks, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
 import { WeekRadar } from "./CapacityBar.tsx";
 import { completedSamples } from "./BiasHint.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
@@ -23,7 +23,7 @@ import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wa
 import type { UndoableDelete } from "./UndoToast.tsx";
 import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import type { WorkWindow } from "../planning/window.ts";
-import { settle } from "./write.ts";
+import { settle, writeErrorEvent } from "./write.ts";
 
 /**
  * Today: the surface that answers "what do I do now, and what comes next?"
@@ -422,12 +422,26 @@ function TodayPage({
             onEstimateChange={next => void settle(setTaskEstimate(uid, selectedTask.id, next)).catch(() => undefined)}
             onDelete={() => {
               // The row's exact fields travel with the offer, as on Tasks: undo
-              // rewrites them under the same document id.
+              // rewrites them under the same document id. The task's work
+              // blocks are resolved from Firestore at delete time (offline the
+              // cache serves the query; review finding 2), so a block another
+              // device created after this page rendered still dies with the
+              // task — and the query's result is the undo payload (S8).
               const deleted = selectedTask;
               setSelected(null);
-              void settle(deleteTask(uid, deleted.id))
-                .then(() => onOfferUndo?.({ message: "Task deleted", restore: () => restoreTask(uid, deleted) }))
-                .catch(() => undefined);
+              void linkedBlocks(uid, deleted.id)
+                .then(deletedBlocks =>
+                  settle(deleteTask(uid, deleted.id, deletedBlocks)).then(() => {
+                    onOfferUndo?.({ message: "Task deleted", restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) });
+                  }),
+                )
+                .catch((cause: unknown) => {
+                  // The batch guard and the rules must be seen: a delete that
+                  // changed nothing is reported, not swallowed silently.
+                  window.dispatchEvent(
+                    new CustomEvent(writeErrorEvent, { detail: cause instanceof Error ? cause.message : "A change could not be saved." }),
+                  );
+                });
             }}
           />
         )}

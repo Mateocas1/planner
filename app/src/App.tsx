@@ -515,6 +515,7 @@ function Shell({
                   uid={user.uid}
                   loading={loading}
                   tasks={tasks}
+                  blocks={blocks}
                   series={series}
                   completions={completions}
                   today={today}
