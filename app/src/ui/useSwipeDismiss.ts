@@ -49,7 +49,12 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
  * fields, buttons and any scroller that can still move in the locked direction
  * never enter the gesture, so selection and scrolling keep working, and
  * pointer capture is taken only after the direction locks so a tap's click
- * keeps its target. Reduced motion keeps the commit/cancel decision but
+ * keeps its target. A surface a call site stamps `data-swipe-dismiss="off"`
+ * owns its own gestures: an embedded page turn (ShutdownSheet, ronda4 F3b) is
+ * itself a swipe, and it wins over the dismissal -- after the 8 px slop both
+ * gestures lock at once and whoever captures the pointer first steals it from
+ * the other, which turned a page drag into a whole-sheet dismissal. Reduced
+ * motion keeps the commit/cancel decision but
  * follows nothing: a past-threshold release falls through to the caller's
  * reduced close. A pointerdown mid-snap-back retargets from the spring's
  * current value instead of restarting it. The math itself lives in
@@ -126,6 +131,14 @@ export function useSwipeDismiss({
       );
     const onHandle = (target: EventTarget | null): boolean =>
       target instanceof Element && !!target.closest("[data-drag-handle]");
+
+    /**
+     * A surface that opted out owns its own gestures (see the doc comment):
+     * the call site stamps it `data-swipe-dismiss="off"`; everything outside
+     * it still dismisses (S1).
+     */
+    const optedOut = (target: EventTarget | null): boolean =>
+      target instanceof Element && !!target.closest('[data-swipe-dismiss="off"]');
 
     /**
      * Mouse text rule: a mouse gesture starts on the drag handle or on surface
@@ -231,6 +244,7 @@ export function useSwipeDismiss({
       if (surface.getAnimations().length > 0) return;
       const target = event.target;
       if (interactive(target)) return;
+      if (optedOut(target)) return;
       if (!(target instanceof Element)) return;
       // Mouse: the drag handle or a surface that is not text. Touch and pen
       // start from any surface.

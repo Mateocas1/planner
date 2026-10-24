@@ -316,6 +316,10 @@ export function PageTurn({
       className={`page-turn${className ? ` ${className}` : ""}`}
       data-page-turn-state={phase}
       data-page-turn-next={nextPage === undefined ? "false" : "true"}
+      /* The page turn is itself a swipe: it must win over the sheet's
+         swipe-to-dismiss (Sheet.tsx reads this opt-out), wherever a page is
+         embedded in one -- Home's page is not, the shutdown sheet's is. */
+      data-swipe-dismiss="off"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
