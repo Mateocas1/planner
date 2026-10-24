@@ -986,9 +986,18 @@ export function validateToolCall(
 /** The plain-words description of a still-pending proposal, or a neutral line
  * when the arguments do not parse (the card never invents a description from
  * unvalidated data). */
-export function describeToolCall(call: Pick<ChatToolCall, "name" | "arguments">, context: ChatToolContext): string {
+export function describeToolCall(
+  call: Pick<ChatToolCall, "name" | "arguments"> & { status?: string },
+  context: ChatToolContext,
+): string {
   const check = validateToolCall(call, context);
-  return check.ok ? check.description : "The assistant proposed an action, but its details are not valid.";
+  if (check.ok) return check.description;
+  // A RESOLVED card whose proposal no longer validates — the write itself
+  // changed or removed the data it described (a deleted task, a hidden
+  // holiday) — keeps a neutral line instead of claiming the proposal was
+  // invalid: the outcome line carries what actually happened.
+  if (call.status !== undefined && call.status !== "pending") return "This action was already resolved.";
+  return "The assistant proposed an action, but its details are not valid.";
 }
 
 /** The `tool` message content each card state sends back to the model, so the

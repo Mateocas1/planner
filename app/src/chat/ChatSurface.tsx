@@ -91,8 +91,12 @@ export function ChatSurface({
    * without re-creating `startStream` on every apply. */
   const memoriesRef = useRef<Memory[]>([]);
   const setLatestMemories = useCallback((list: Memory[]) => {
-    memoriesRef.current = list;
-    setMemories(list);
+    // The store contract is an array; a transport that answers null (a Tauri
+    // stub, a drifted Rust shape) must not poison every render that reads the
+    // notes. One choke point keeps the ref and the state shape-true.
+    const safe = Array.isArray(list) ? list : [];
+    memoriesRef.current = safe;
+    setMemories(safe);
   }, []);
 
   const refreshMemories = useCallback(async () => {
@@ -141,6 +145,7 @@ export function ChatSurface({
       tasks: live.snapshot.tasks,
       blocks: live.snapshot.blocks,
       holidays: live.snapshot.holidays,
+      memoryTopics: (memoriesRef.current ?? []).map(memory => ({ topicKey: memory.topicKey, title: memory.title })),
       timeZone: live.timeZone,
       todayKey: dateKey(new Date(), live.timeZone),
     };
@@ -382,11 +387,11 @@ export function ChatSurface({
   // Display-only context for the panel's card descriptions (the words a card
   // shows while pending). The authoritative validation at confirm time and
   // every request's prompt read the live refs instead, so this memo only
-  // needs to track the snapshot for re-rendering descriptions.
+  // needs to track the snapshot and the notes for re-rendering descriptions.
   const displayToolContext = useMemo<ChatToolContext>(
     () => buildToolContext(),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot identity changes on every store event
-    [snapshot, timeZone, buildToolContext],
+    [snapshot, timeZone, memories, buildToolContext],
   );
 
   return (

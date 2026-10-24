@@ -11,7 +11,7 @@ import { submitAuthForm } from "./browser-helpers.ts";
  * panel mounts outside the auth gate, so no account is needed.
  */
 
-const PORT = 4199;
+const PORT = Number(process.env.CHAT_PANEL_PORT ?? 4199);
 const base = `http://127.0.0.1:${PORT}`;
 const shots = new URL("../../odd/runs/chat-c2-shots/", import.meta.url).pathname;
 
@@ -368,7 +368,9 @@ test("tool cards: Confirm writes the task into the planner, Discard writes nothi
   // today, so Home's due list (checkbox row) must show it once the snapshot
   // lands.
   await confirmCard.getByRole("button", { name: "Confirm" }).dblclick();
-  await expect(confirmCard.locator(".chat-card-outcome")).toHaveText("Task created.", { timeout: 15_000 });
+  // The outcome names what now exists — id included, so the model can
+  // reference the task it just created (ronda4 S4).
+  await expect(confirmCard.locator(".chat-card-outcome")).toContainText("Created task id=", { timeout: 15_000 });
   await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toBeVisible({ timeout: 15_000 });
   // Exactly one: the rapid second confirm wrote nothing.
   await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toHaveCount(1);
@@ -393,7 +395,7 @@ test("tool cards: the outcome rides to the next request as tool messages (R1, S1
   const confirmCard = actionCard(page, "Water the plants");
   await expect(confirmCard).toBeVisible({ timeout: 30_000 });
   await confirmCard.getByRole("button", { name: "Confirm" }).click();
-  await expect(confirmCard.locator(".chat-card-outcome")).toHaveText("Task created.", { timeout: 15_000 });
+  await expect(confirmCard.locator(".chat-card-outcome")).toContainText("Created task id=", { timeout: 15_000 });
   await expect(stopButton(page)).toBeHidden({ timeout: 20_000 });
 
   // The next request carries the assistant's tool_calls and one tool message

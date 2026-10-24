@@ -71,6 +71,11 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
     return chunks;
   };
 
+  /** Unique call-id suffix per stream: the conversation resolves exactly one
+   * card per call id, so a scenario that streams twice (discard → confirm)
+   * must not repeat one. */
+  let streamCounter = 0;
+
   const transport: MockChatTransport = {
     __lastStreamRequest: null,
     __lastCompleteRequest: null,
@@ -114,7 +119,7 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           const today = dateKey(new Date(), browserTimeZone);
           let call: { id: string; name: string; args: string };
           if (scenario === "agent-read") {
-            call = { id: "call_read", name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
+            call = { id: `call_read-${++streamCounter}`, name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
           } else if (scenario === "agent-memory") {
             // First call saves a note; once its card is confirmed, the
             // follow-up call forgets it by the topic key from the tool
@@ -122,8 +127,8 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
             const remembered = request.messages.map(message => message.content).find(content => content.includes("(topic ")) ?? "";
             const topicKey = /\(topic ([\w-]+)\)/.exec(remembered)?.[1];
             call = topicKey === undefined
-              ? { id: "call_remember", name: "remember", args: JSON.stringify({ title: "Prefers morning planning", content: "The user plans their day before 09:00." }) }
-              : { id: "call_forget", name: "forget", args: JSON.stringify({ topicKey }) };
+              ? { id: `call_remember-${++streamCounter}`, name: "remember", args: JSON.stringify({ title: "Prefers morning planning", content: "The user plans their day before 09:00." }) }
+              : { id: `call_forget-${++streamCounter}`, name: "forget", args: JSON.stringify({ topicKey }) };
           } else if (scenario === "agent-delete" || scenario === "agent-holiday") {
             // The id comes from the planner context, exactly like the real
             // model's: the seeded row must already be visible to the request.
@@ -131,16 +136,16 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
             const pattern = scenario === "agent-delete" ? /\[([\w-]+)\] Delete me/ : /\[([\w-]+)\] [^\n]*Independence/;
             const foundId = pattern.exec(system)?.[1];
             call = foundId === undefined
-              ? { id: "call_none", name: "list_tasks", args: "{}" }
+              ? { id: `call_none-${++streamCounter}`, name: "list_tasks", args: "{}" }
               : scenario === "agent-delete"
-                ? { id: "call_delete", name: "delete_task", args: JSON.stringify({ taskId: foundId }) }
-                : { id: "call_hide", name: "hide_holiday", args: JSON.stringify({ holidayId: foundId }) };
+                ? { id: `call_delete-${++streamCounter}`, name: "delete_task", args: JSON.stringify({ taskId: foundId }) }
+                : { id: `call_hide-${++streamCounter}`, name: "hide_holiday", args: JSON.stringify({ holidayId: foundId }) };
           } else {
             const createResult = request.messages.map(message => message.content).find(content => content.includes("Created task id=")) ?? "";
             const createdId = /id=([\w-]+)/.exec(createResult)?.[1];
             call = createdId === undefined
-              ? { id: "call_create", name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, startTime: "14:00", estimateMinutes: 30 }) }
-              : { id: "call_move", name: "move_task", args: JSON.stringify({ taskId: createdId, day: today, startTime: "16:00" }) };
+              ? { id: `call_create-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, startTime: "14:00", estimateMinutes: 30 }) }
+              : { id: `call_move-${++streamCounter}`, name: "move_task", args: JSON.stringify({ taskId: createdId, day: today, startTime: "16:00" }) };
           }
           clock += 250;
           schedule(id, clock, () => emit({ type: "tool_call", call: { id: call.id, name: call.name, arguments: call.args } }));
@@ -165,8 +170,8 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           }
           const today = dateKey(new Date(), browserTimeZone);
           const calls: Array<{ id: string; name: string; args: string }> = [
-            { id: "call_confirm", name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, estimateMinutes: 30 }) },
-            { id: "call_discard", name: "create_task", args: JSON.stringify({ title: "Return library books" }) },
+            { id: `call_confirm-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, estimateMinutes: 30 }) },
+            { id: `call_discard-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Return library books" }) },
           ];
           for (const call of calls) {
             clock += 250;
