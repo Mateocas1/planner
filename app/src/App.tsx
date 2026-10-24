@@ -8,6 +8,7 @@ import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
 import { useDeepLink } from "./desktop-deeplink.ts";
+import { useDesktopNotifications } from "./ui/useDesktopNotifications.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
@@ -146,6 +147,23 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
     settingsOrigin.current = origin;
     setSettingsOpen(true);
   };
+  // Actionable native notifications (T7, S8.3): block-start toasts with
+  // [Start focus] / [+5 min] and the shutdown nudge. Desktop only, the web
+  // build runs nothing. The actions reuse the shell's own doors: the timer's
+  // one start, the calendar's day, the shutdown sheet the banner opens.
+  useDesktopNotifications({
+    blocks,
+    tasks,
+    timeZone: profile.timeZone,
+    shutdownTime: profile.shutdownTime,
+    lastShutdown: profile.lastShutdown,
+    focus,
+    onOpenBlock: date => {
+      setCalendarDay(date);
+      onNavigate("calendar");
+    },
+    onOpenShutdown: () => openShutdown(null),
+  });
   // The keyboard's reference sheet (F6): `?` opens it, Esc closes it.
   const [helpOpen, setHelpOpen] = useState(false);
   // One router for the shell, so the pending `g` of a sequence survives a

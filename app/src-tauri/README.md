@@ -23,6 +23,12 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Window state.** `tauri-plugin-window-state` remembers size, position, maximized state and monitor; it only restores a saved position when some connected monitor contains it, so off-screen states are never restored.
 - **Drag region.** The app's top bar carries `data-tauri-drag-region` (header + title span only, so its buttons stay clickable); it is inert in the browser.
 
+## Actionable notifications (T7)
+
+- **Windows toasts with buttons.** `tauri-plugin-notification` cannot add action buttons on desktop, so `notify.rs` draws toasts with `tauri-winrt-notification` (the Tauri-org fork of `winrt-notification` that adds buttons plus an in-process `Activated` handler). The block-start toast carries [Start focus] and [+5 min]; the shutdown nudge carries [Close the day]. Pressed actions are reported to the webview as `notify-action` events; what to notify when, dedupe and snooze live in the frontend's pure half (`src/desktop-notify.ts`), so no decision exists twice.
+- **AppUserModelID.** A desktop toast only shows for a registered AUMID. The NSIS installer stamps its shortcuts with the bundle identifier, so the installed app's AUMID is `com.picala.planner` (read from the app config). An exe run from a `target/` build directory is not registered, so dev builds fall back to the PowerShell AUMID (same guard `tauri-plugin-notification` uses): the toast shows with PowerShell's identity and the in-process activation still works.
+- **Focus Assist / Do Not Disturb** is the OS's own toast behaviour; the app does nothing about it on purpose (S10).
+
 ## Notes
 
 - **Unsigned.** There is no code-signing certificate. Files copied locally carry no Mark-of-the-Web, so SmartScreen normally stays quiet. If Defender flags a build, submit it to Microsoft for analysis.
