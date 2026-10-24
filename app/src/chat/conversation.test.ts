@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatEvent } from "./types.ts";
-import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ConversationState } from "./conversation.ts";
+import { createAnswerCallGate, emptyConversation, hasExchange, lastUserText, reduceConversation, type ConversationState } from "./conversation.ts";
 
 const send = (state: ConversationState, id: string, text: string) => reduceConversation(state, { type: "send", id, text });
 const event = (state: ConversationState, chatEvent: ChatEvent) => reduceConversation(state, { type: "event", event: chatEvent });
@@ -176,6 +176,30 @@ test("at most five cards render; extras are dropped and counted for the note", (
   const state = streamWithCalls(...calls);
   assert.equal(pendingCards(state).length, 5);
   assert.equal((state.turns[1] as { callsDropped?: number }).callsDropped, 2);
+});
+
+test("a call id repeated inside one answer is dropped like an over-cap call", () => {
+  // A provider that reuses an id within one answer must not get a second
+  // card: it would resolve with the first (one Confirm resolves the first
+  // match) and its tool message would claim a write that never happened.
+  const state = streamWithCalls(toolCall("call_1"), toolCall("call_1", "delete_task"));
+  const cards = state.turns.flatMap(turn => (turn.role === "assistant" ? turn.toolCalls ?? [] : []));
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]?.name, "create_task");
+  assert.equal((state.turns[1] as { callsDropped?: number }).callsDropped, 1);
+});
+
+test("createAnswerCallGate mirrors the reducer's cap and duplicate decisions for reads", () => {
+  // The hook consults this before executing a proposed read, because the
+  // reducer may not have processed the answer's earlier events yet when the
+  // next one arrives (the 6th read must never execute).
+  const gate = createAnswerCallGate();
+  const accepted = ["c1", "c2", "c3", "c4", "c5"].map(id => gate(id));
+  assert.deepEqual(accepted, [true, true, true, true, true]);
+  assert.equal(gate("c6"), false, "the 6th proposal is past the cap");
+  assert.equal(gate("c1"), false, "a duplicate id never renders a second card");
+  assert.equal(gate("c7"), false, "the cap stays closed");
+  assert.equal(gate("c1"), false, "duplicates stay rejected after the cap too");
 });
 
 test("a card resolved while a later request streams keeps its state", () => {
