@@ -21,16 +21,89 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": [
+          "'self'"
+        ],
+        "script-src": [
+          "'self'"
+        ],
+        "style-src": [
+          "'self'",
+          "'unsafe-inline'"
+        ],
+        "style-src-attr": [
+          "'unsafe-inline'"
+        ],
+        "img-src": [
+          "'self'",
+          "data:",
+          "blob:"
+        ],
+        "font-src": [
+          "'self'",
+          "data:"
+        ],
+        "connect-src": [
+          "'self'",
+          "ipc:",
+          "http://ipc.localhost",
+          "https://firestore.googleapis.com",
+          "wss://firestore.googleapis.com",
+          "https://identitytoolkit.googleapis.com",
+          "https://securetoken.googleapis.com",
+          "https://www.googleapis.com"
+        ],
+        "frame-src": [
+          "https://cumbia-4ca6e.firebaseapp.com"
+        ],
+        "worker-src": [
+          "'self'",
+          "blob:"
+        ],
+        "object-src": [
+          "'none'"
+        ],
+        "base-uri": [
+          "'self'"
+        ],
+        "form-action": [
+          "'self'"
+        ]
+      },
+      "devCsp": null,
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "calendar"
+        ]
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
     "windows": {
-      "webviewInstallMode": { "type": "skip" },
-      "nsis": { "installMode": "currentUser" }
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
 import { toZonedInstant } from "../domain/instant.ts";
 import type { GcalEvent } from "../domain/gcalImport.ts";
+import { isTauri } from "../desktop.ts";
 import { googleClientId } from "./firebase-config.ts";
 
 /**
@@ -20,6 +21,11 @@ import { googleClientId } from "./firebase-config.ts";
  * warmed when the import sheet opens and awaited again by the first click, so a
  * cold cache does not eat the user gesture the consent popup needs. The only
  * trace of it in the build is the URL string below.
+ *
+ * Inside the Tauri desktop shell the GIS popup cannot work (WebView2), so
+ * `requestToken` asks the Rust side for the same kind of token: Google's own
+ * sign-in in the system browser (loopback redirect, PKCE; see
+ * `src-tauri/src/google_oauth.rs`). Everything downstream is identical.
  */
 
 /** The two read-only scopes: events to import, and the list of calendars. */
@@ -53,6 +59,9 @@ export const googleMessages = {
   unavailable: "Google sign-in could not load. Check your connection and try again.",
   expired: "The Google session expired. Connect again.",
   failed: "Google Calendar could not be read. Try again.",
+  notConfigured: "Google import is not configured in this build.",
+  timedOut: "Google sign-in took too long. Nothing was changed. Try again.",
+  signInFailed: "Google sign-in could not be completed. Nothing was changed. Try again.",
 } as const;
 
 /**
@@ -65,6 +74,32 @@ export function authMessage(code: string | undefined): string {
   if (code === "popup_closed" || code === "popup_closed_by_user") return googleMessages.closed;
   if (code === "popup_failed_to_open") return googleMessages.blocked;
   return googleMessages.denied;
+}
+
+/**
+ * The sentence for a desktop sign-in failure. The Rust command rejects with a
+ * short code (`src-tauri/core/src/oauth.rs`); any other value, including a
+ * transport error from `invoke`, is the generic failure.
+ */
+export function desktopAuthMessage(code: unknown): string {
+  switch (code) {
+    case "not_configured":
+      return googleMessages.notConfigured;
+    case "cancelled":
+      return googleMessages.closed;
+    case "timeout":
+      return googleMessages.timedOut;
+    case "denied":
+      return googleMessages.denied;
+    default:
+      return googleMessages.signInFailed;
+  }
+}
+
+/** The access token in a desktop command result, or null for any other shape. */
+export function desktopTokenFrom(result: unknown): string | null {
+  const token = (result as { accessToken?: unknown } | null)?.accessToken;
+  return typeof token === "string" && token !== "" ? token : null;
 }
 
 /** The sentence for a failed REST read. A 401/403 means the token is gone. */
@@ -331,11 +366,37 @@ export function loadGis(): Promise<OAuth2> {
  * browser that never loaded GIS has nothing to revoke, which is not a failure.
  */
 export function revokeToken(token: string): void {
+  if (isTauri()) {
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("google_oauth_revoke", { token }))
+      .catch(() => undefined);
+    return;
+  }
   try {
     gisApi()?.revoke?.(token);
   } catch {
     // Revocation is best effort: the token has already been dropped from memory.
   }
+}
+
+/**
+ * Abandons a sign-in in progress when the sheet closes: the desktop shell stops
+ * listening on its loopback port at once. A no-op in a browser.
+ */
+export function cancelSignIn(): void {
+  if (!isTauri()) return;
+  void import("@tauri-apps/api/core").then(({ invoke }) => invoke("google_oauth_cancel")).catch(() => undefined);
+}
+
+/**
+ * What to do with a token that arrived: keep it while the sheet is still open,
+ * otherwise hand it back to Google and drop it, so a sheet closed mid-sign-in
+ * leaves no live token behind. Returns whether the token was kept.
+ */
+export function keepTokenIfLive(token: string, live: boolean, revoke: (token: string) => void = revokeToken): boolean {
+  if (live) return true;
+  revoke(token);
+  return false;
 }
 
 /**
@@ -347,6 +408,7 @@ export function revokeToken(token: string): void {
  * show what happened without knowing anything about GIS error codes.
  */
 export async function requestToken(clientId: string = googleClientId): Promise<string> {
+  if (isTauri()) return requestDesktopToken();
   const oauth2 = await loadGis();
   return new Promise<string>((resolve, reject) => {
     // GIS may call the callback and the error callback; only the first answer
@@ -371,4 +433,20 @@ export async function requestToken(clientId: string = googleClientId): Promise<s
     });
     client.requestAccessToken();
   });
+}
+
+/**
+ * The desktop shell's token: Rust opens the system browser, runs the PKCE flow
+ * and returns only the access token and its lifetime. The token stays in the
+ * caller's memory, like the GIS one; Rust never stores it.
+ */
+async function requestDesktopToken(): Promise<string> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const token = desktopTokenFrom(await invoke("google_oauth_start"));
+    if (token === null) throw "failed";
+    return token;
+  } catch (cause) {
+    throw new Error(desktopAuthMessage(cause));
+  }
 }

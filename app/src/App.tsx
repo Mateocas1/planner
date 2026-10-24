@@ -7,6 +7,7 @@ import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
 import { parseQuickAdd } from "./domain/quickAdd.ts";
+import { useDeepLink } from "./desktop-deeplink.ts";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
 import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
@@ -214,6 +215,15 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [view]);
+
+  // `calendar://` links (desktop shell): today is Home, a day opens the Calendar on it.
+  useDeepLink({
+    today: () => onNavigate("home"),
+    day: key => {
+      setCalendarDay(key === dateKey(new Date(), profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone) ? null : key);
+      onNavigate("calendar");
+    },
+  });
 
   useEffect(() => {
     const onError = (event: Event) => setLateError((event as CustomEvent<string>).detail);

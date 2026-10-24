@@ -15,7 +15,8 @@ copy() { cp -f "$1" "$dest/$2" && echo "copied $2 ($(du -h "$1" | cut -f1))" && 
 
 installer="$(ls -t "$release"/bundle/nsis/*-setup.exe 2>/dev/null | head -n1 || true)"
 [ -n "$installer" ] && copy "$installer" "$(basename "$installer")"
-[ -f "$release/planner.exe" ] && copy "$release/planner.exe" "Planner.exe"
+# Only the installer: a loose release exe on the Desktop runs beside the installed
+# app and looked like a single-instance failure (two windows).
 
 if [ "$copied" = 0 ]; then
   echo "desktop-copy: nothing to copy; run 'npm run desktop:build' first" >&2
