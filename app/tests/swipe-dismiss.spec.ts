@@ -282,6 +282,47 @@ test.describe("mouse", () => {
     expect(events.indexOf("opacity0"), JSON.stringify(events)).toBeLessThan(events.indexOf("removed"));
   });
 
+  test("a diagonal first slop over a vertical scroller leaves the gesture to the scroller", async ({ page }) => {
+    await signUp(page, newEmail("swipe-scroller-diagonal"));
+    await addTask(page, "Scroller diagonal");
+    await openTaskDetails(page, "Scroller diagonal");
+    // A vertically scrollable body at its top edge (finding 6): its first
+    // slop reading left must not steal the vertical scroll it also carries.
+    await page.evaluate(() => {
+      const scroller = document.createElement("div");
+      scroller.id = "test-scroller";
+      scroller.style.cssText = "height: 200px; overflow-y: auto;";
+      const content = document.createElement("div");
+      // No text: a mouse gesture refuses text-bearing surfaces.
+      content.style.cssText = "height: 600px;";
+      scroller.appendChild(content);
+      document.querySelector(".sheet-body")!.appendChild(scroller);
+      // In the document first: a detached element has no layout to scroll.
+      scroller.scrollTop = 40;
+    });
+    const box = (await page.locator("#test-scroller").boundingBox())!;
+    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+    // A slightly diagonal start whose first slop-crossing step is exactly the
+    // finding's shape (-9, -8): dominant left, vertical component already at
+    // the slop. The scroller can still scroll down, so it keeps the gesture
+    // and the sheet never follows.
+    let mid: Awaited<ReturnType<typeof swipeState>> = null;
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 5; step += 1) {
+      await page.mouse.move(from.x - 9 * step, from.y - 8 * step);
+    }
+    mid = await swipeState(page);
+    await page.mouse.up();
+
+    expect(mid, "the gesture wrote its state mid-drag").not.toBeNull();
+    expect(mid!.transform, "the sheet never followed the diagonal start").toBe("");
+    const scrollTop = await page.evaluate(() => document.getElementById("test-scroller")!.scrollTop);
+    expect(scrollTop, "the scroller kept its scroll position").toBe(40);
+    await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
+  });
+
   test("a mouse drag on body copy selects text and never moves the sheet", async ({ page }) => {
     await signUp(page, newEmail("swipe-body-text"));
     const nav = page.getByRole("navigation", { name: "Main" });
