@@ -254,6 +254,18 @@ test("describeToolCall falls back to a neutral line for invalid arguments", () =
   assert.match(describeToolCall({ name: "create_task", arguments: '{"title":"OK"}' }, context), /Create task "OK"/);
 });
 
+test("a resolved remember card keeps the description it was confirmed with", () => {
+  const memoryTopics = [{ topicKey: "prefers-morning-planning", title: "Prefers morning planning" }];
+  const args = '{"title":"Prefers morning planning","content":"Plans before 09:00."}';
+  // Pending: the live context names the note the confirm will replace.
+  const pending = describeToolCall({ name: "remember", arguments: args }, { ...readContext, memoryTopics });
+  assert.match(pending, /Replace note "Prefers morning planning"/);
+  // Resolved: the note now exists because this very confirm created it — the
+  // card must not flip to "Replace note" against its own "Remembered" outcome.
+  const resolved = describeToolCall({ name: "remember", arguments: args, status: "confirmed" }, { ...readContext, memoryTopics });
+  assert.match(resolved, /^Remember "/);
+});
+
 test("createConfirmGuard claims a callId exactly once, so a card can never write twice", () => {
   const guard = createConfirmGuard();
   assert.equal(guard.claim("c1"), true);

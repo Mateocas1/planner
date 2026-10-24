@@ -197,9 +197,9 @@ test("create at a time lands on the schedule, and the follow-up moves it by id (
   const moveCard = actionCard(page, 'Move "Water the plants"');
   await expect(moveCard).toBeVisible({ timeout: 30_000 });
   await expect(moveCard.locator(".chat-card-action")).toContainText("16:00");
-  // The card states the replacement (review finding 1): the 14:00 placement
-  // this move replaces is named before the user confirms.
-  await expect(moveCard.locator(".chat-card-action")).toContainText(/replaces 1 block.*14:00–14:45/);
+  // The replacement wording works against the live context: the 14:00 block
+  // (30 min — the mock's create estimate) is named before the user confirms.
+  await expect(moveCard.locator(".chat-card-action")).toContainText(/replaces 1 block.*14:00–14:30/);
   await moveCard.getByRole("button", { name: "Confirm" }).click();
   await expect(moveCard.locator(".chat-card-outcome")).toContainText(/Moved task id=/, { timeout: 15_000 });
 

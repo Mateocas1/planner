@@ -1045,13 +1045,20 @@ export function describeToolCall(
   call: Pick<ChatToolCall, "name" | "arguments"> & { status?: string },
   context: ChatToolContext,
 ): string {
-  const check = validateToolCall(call, context);
+  // A resolved card keeps the description it was confirmed with: the write it
+  // describes already changed the live state (a created note makes the same
+  // remember proposal re-validate as a replacement), so re-reading the live
+  // memory topics would contradict the card's own outcome line. Pending
+  // cards keep the live context — naming an existing note before the user
+  // confirms is the point (review finding 3).
+  const resolved = call.status !== undefined && call.status !== "pending";
+  const check = validateToolCall(call, resolved ? { ...context, memoryTopics: [] } : context);
   if (check.ok) return check.description;
   // A RESOLVED card whose proposal no longer validates — the write itself
   // changed or removed the data it described (a deleted task, a hidden
   // holiday) — keeps a neutral line instead of claiming the proposal was
   // invalid: the outcome line carries what actually happened.
-  if (call.status !== undefined && call.status !== "pending") return "This action was already resolved.";
+  if (resolved) return "This action was already resolved.";
   return "The assistant proposed an action, but its details are not valid.";
 }
 
