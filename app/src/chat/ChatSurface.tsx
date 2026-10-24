@@ -23,6 +23,7 @@ import { ChatPanel, type ToolOutcome } from "../ui/ChatPanel.tsx";
 import { createChatTask, applyChatTaskUpdate } from "../data/chatMove.ts";
 import { setHolidayHidden } from "../data/holidays.ts";
 import { setTaskCompleted, deleteTask } from "../data/tasks.ts";
+import { linkedBlocks } from "../data/blocks.ts";
 import { db } from "../data/client.ts";
 import { isTauri } from "../desktop.ts";
 import { formatDateKey } from "../ui/format.ts";
@@ -40,6 +41,7 @@ import {
   buildListHolidaysResult,
   buildListMemoriesResult,
   buildListTasksResult,
+  deleteTaskKeptNote,
   deriveTopicKey,
   isReadTool,
   createConfirmGuard,
@@ -295,16 +297,22 @@ export function ChatSurface({
         }
         if (call.name === "delete_task") {
           const value = check.value as NormalizedDeleteTask;
-          // The executor deletes exactly the blocks the card named (the live
-          // context's task-linked set), and the outcome says so (S8).
+          // The executor deletes exactly the blocks the card names when the
+          // user confirms (the live context's task-linked set, which the card
+          // re-renders live) — no more, no fewer.
           const removed = await deleteTask(uid, value.taskId, value.blocks);
+          // Anything still linked to the task reached the database after the
+          // confirm-time check (another device or surface). It was never
+          // confirmed, so it is kept — and the outcome says so.
+          const keptNote = deleteTaskKeptNote(value.blocks, await linkedBlocks(uid, value.taskId));
           return {
             status: "confirmed",
             message:
               `Deleted task id=${value.taskId} — "${value.title}"` +
               (removed.length > 0
                 ? ` and its ${removed.length} ${removed.length === 1 ? "work block" : "work blocks"}`
-                : ""),
+                : "") +
+              keptNote,
           };
         }
         if (call.name === "hide_holiday") {

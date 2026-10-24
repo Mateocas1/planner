@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
-import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
+import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromCache, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
 import { calendarKey, planHolidayCleanup, selectHolidayTasks } from "../src/domain/gcalImport.ts";
 import { subtractActualMinutesIn } from "../src/data/actualMinutes.ts";
 import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, parseActualByDay, requireActualMinutes } from "../src/domain/model.ts";
@@ -998,6 +998,220 @@ test("a rules-rejected task delete leaves the task and its blocks untouched", as
     assert.equal((await getDocFromServer(doc(owner.db, blockPath))).exists(), true);
   } finally {
     await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/** The undo of a task delete is atomic too (review finding 1): the task and
+ * its blocks go back in ONE `writeBatch`, so a rules-denied restore leaves
+ * both absent — never a task back without its schedule. */
+test("a rules-denied restore leaves the task and its blocks absent", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTaskWithBlocks } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-undo-denied-${suffix}`);
+  const other = client(`delblocks-undo-denied-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-undo-denied-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/guarded-undo`;
+    await setDoc(doc(owner.db, taskPath), { title: "Guarded undo", completed: false, deadline: "2026-11-20" });
+    const blockPath = `users/${uid}/blocks/bguarded-undo`;
+    await setDoc(doc(owner.db, blockPath), { start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "guarded-undo" });
+
+    const removed = await deleteTask(uid, "guarded-undo", [
+      { id: "bguarded-undo", start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "guarded-undo" },
+    ], owner.db);
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), false);
+
+    await createUserWithEmailAndPassword(other.auth, `delblocks-undo-denied-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(
+      restoreTaskWithBlocks(
+        uid,
+        { id: "guarded-undo", title: "Guarded undo", completed: false, deadline: "2026-11-20" },
+        removed,
+        other.db,
+      ),
+      { code: "permission-denied" },
+    );
+    // Nothing came back: the restore either lands whole or not at all.
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), false);
+    assert.equal((await getDocFromServer(doc(owner.db, blockPath))).exists(), false);
+
+    // The owner's own restore still lands, task and blocks together.
+    await restoreTaskWithBlocks(
+      uid,
+      { id: "guarded-undo", title: "Guarded undo", completed: false, deadline: "2026-11-20" },
+      removed,
+      owner.db,
+    );
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, blockPath))).exists(), true);
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/** Offline, the restore is ONE queued write: the task set and the block sets
+ * ride the same batch, so the local cache holds both before the network
+ * returns (review finding 1). The old sequential undo queued the task and
+ * then never reached the blocks, because the task's await never resolves
+ * offline. */
+test("an offline restore queues the task and its blocks as one write", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTaskWithBlocks } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-undo-offline-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-undo-offline-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/offline-undo`;
+    await setDoc(doc(owner.db, taskPath), { title: "Offline undo", completed: false, deadline: "2026-11-20" });
+    const pastPath = `users/${uid}/blocks/boffline-past`;
+    await setDoc(doc(owner.db, pastPath), { start: "2026-10-20T09:00:00Z", end: "2026-10-20T10:00:00Z", taskId: "offline-undo" });
+    const futurePath = `users/${uid}/blocks/boffline-future`;
+    await setDoc(doc(owner.db, futurePath), { start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "offline-undo" });
+
+    const removed = await deleteTask(uid, "offline-undo", [
+      { id: "boffline-past", start: "2026-10-20T09:00:00Z", end: "2026-10-20T10:00:00Z", taskId: "offline-undo" },
+      { id: "boffline-future", start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "offline-undo" },
+    ], owner.db);
+
+    await disableNetwork(owner.db);
+    const restoring = restoreTaskWithBlocks(
+      uid,
+      { id: "offline-undo", title: "Offline undo", completed: false, deadline: "2026-11-20" },
+      removed,
+      owner.db,
+    );
+    // A beat for the local queue: the restore's writes land in the persistent
+    // cache at once, while their acknowledgement waits for the network.
+    await new Promise(resolve => setTimeout(resolve, 500));
+    assert.equal((await getDocFromCache(doc(owner.db, taskPath))).exists(), true, "the restored task is queued locally");
+    assert.equal((await getDocFromCache(doc(owner.db, pastPath))).exists(), true, "the restored past block is queued locally");
+    assert.equal((await getDocFromCache(doc(owner.db, futurePath))).exists(), true, "the restored future block is queued locally");
+
+    await enableNetwork(owner.db);
+    await restoring;
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, pastPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, futurePath))).exists(), true);
+  } finally {
+    await close(owner);
+  }
+});
+
+/** The UI's delete-time block query (review finding 2): the delete does not
+ * trust the page's last render — a block written to the database after that
+ * snapshot still dies with the task, because the resolution happens at
+ * delete time. */
+test("a block written after the UI's last snapshot is still deleted by the delete-time query", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask } = await import("../src/data/tasks.ts");
+  const { linkedBlocks } = await import("../src/data/blocks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-fresh-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-fresh-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/fresh`;
+    await setDoc(doc(owner.db, taskPath), { title: "Fresh", completed: false });
+    const earlyPath = `users/${uid}/blocks/bearly`;
+    await setDoc(doc(owner.db, earlyPath), { start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z", taskId: "fresh" });
+
+    // What the page rendered: one block. Then another device writes a second
+    // one, which this page has not seen.
+    const stale = await linkedBlocks(uid, "fresh", owner.db);
+    assert.deepEqual(stale.map(block => block.id), ["bearly"]);
+    const latePath = `users/${uid}/blocks/blate`;
+    await setDoc(doc(owner.db, latePath), { start: "2026-11-21T09:00:00Z", end: "2026-11-21T10:00:00Z", taskId: "fresh" });
+
+    // The delete resolves the blocks again, at delete time: both go.
+    const resolved = await linkedBlocks(uid, "fresh", owner.db);
+    assert.deepEqual(resolved.map(block => block.id), ["bearly", "blate"]);
+    await deleteTask(uid, "fresh", resolved, owner.db);
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), false);
+    assert.equal((await getDocFromServer(doc(owner.db, earlyPath))).exists(), false);
+    assert.equal((await getDocFromServer(doc(owner.db, latePath))).exists(), false);
+    // The undo payload carries the closed stored fields, links included.
+    assert.deepEqual(resolved, [
+      { id: "bearly", start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z", taskId: "fresh" },
+      { id: "blate", start: "2026-11-21T09:00:00Z", end: "2026-11-21T10:00:00Z", taskId: "fresh" },
+    ]);
+  } finally {
+    await close(owner);
+  }
+});
+
+/** The batch-size guard (review finding 3): a task whose blocks would push
+ * the batch past its limit is refused before anything is built or written —
+ * no chunking, no silent half-delete. The block snapshots are in-memory
+ * only: the guard fires before the batch is built, so no documents are
+ * needed. */
+test("a task with more blocks than one batch holds is refused before anything is deleted", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTask } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-oversize-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-oversize-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/oversize`;
+    await setDoc(doc(owner.db, taskPath), { title: "Oversize", completed: false });
+
+    const tooMany = Array.from({ length: 499 }, (_, index) => ({
+      id: `bover-${index}`,
+      start: "2026-11-20T09:00:00Z",
+      end: "2026-11-20T10:00:00Z",
+      taskId: "oversize",
+    }));
+    await assert.rejects(deleteTask(uid, "oversize", tooMany, owner.db), /at most 499/);
+    // Nothing was deleted anywhere.
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), true);
+
+    // The boundary itself still fits: 498 blocks plus the task is under the
+    // guard, so a big-but-legal delete goes through.
+    const fits = tooMany.slice(0, 498);
+    await deleteTask(uid, "oversize", fits, owner.db);
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), false);
+    await restoreTask(uid, { id: "oversize", title: "Oversize", completed: false }, owner.db);
+  } finally {
+    await close(owner);
+  }
+});
+
+/** Foreign blocks are refused (review finding 4): `deleteTask` deletes the
+ * task it is given and only the blocks linked to it, so a caller passing an
+ * unfiltered snapshot cannot take another task's schedule down. */
+test("a block linked to another task is refused by deleteTask", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-foreign-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-foreign-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/mine`;
+    await setDoc(doc(owner.db, taskPath), { title: "Mine", completed: false });
+    const ownPath = `users/${uid}/blocks/bown`;
+    await setDoc(doc(owner.db, ownPath), { start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z", taskId: "mine" });
+    const foreignPath = `users/${uid}/blocks/bforeign`;
+    await setDoc(doc(owner.db, foreignPath), { start: "2026-11-21T09:00:00Z", end: "2026-11-21T10:00:00Z", taskId: "other" });
+
+    // A foreign block (and a block with no task link at all) is thrown out
+    // before the batch is built; nothing at all was deleted.
+    await assert.rejects(
+      deleteTask(uid, "mine", [{ id: "bforeign", start: "2026-11-21T09:00:00Z", end: "2026-11-21T10:00:00Z", taskId: "other" }], owner.db),
+      /not linked to this task/,
+    );
+    await assert.rejects(
+      deleteTask(uid, "mine", [{ id: "bown", start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z" }], owner.db),
+      /not linked to this task/,
+    );
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, ownPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, foreignPath))).exists(), true);
+  } finally {
+    await close(owner);
   }
 });
 

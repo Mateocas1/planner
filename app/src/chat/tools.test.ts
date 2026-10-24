@@ -429,7 +429,7 @@ test("validateToolCall routes the reads", () => {
 
 /* ---------- write tools beyond create/move (S4) ---------- */
 
-import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deriveTopicKey } from "./tools.ts";
+import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deleteTaskKeptNote, deriveTopicKey } from "./tools.ts";
 
 const updateContext: ChatToolContext = {
   ...readContext,
@@ -528,6 +528,23 @@ test("delete_task validates the id and the card names every work block it remove
   assert.ok(bare.ok && bare.value.blocks.length === 0);
   const ghost = checkDeleteTask('{"taskId":"ghost"}', updateContext);
   assert.ok(!ghost.ok);
+});
+
+test("delete_task's kept note reports only blocks the card did not name, with count and plurals (S8)", () => {
+  const card = [{ id: "b1" }, { id: "b2" }];
+  // Everything left was named by the card: nothing to report.
+  assert.equal(deleteTaskKeptNote(card, [{ id: "b2" }, { id: "b1" }]), "");
+  assert.equal(deleteTaskKeptNote(card, []), "");
+  // One unconfirmed survivor: the exact sentence the outcome appends.
+  assert.equal(
+    deleteTaskKeptNote(card, [{ id: "b9" }]),
+    ". 1 more block linked to this task was created after the card and was kept",
+  );
+  // Two or more: plural verb and count.
+  assert.equal(
+    deleteTaskKeptNote(card, [{ id: "b9" }, { id: "b8" }]),
+    ". 2 more blocks linked to this task were created after the card and were kept",
+  );
 });
 
 test("hide_holiday validates against the known holidays and rejects no-ops", () => {

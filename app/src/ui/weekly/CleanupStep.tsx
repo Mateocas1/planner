@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import { deleteTask, restoreTaskWithBlocks, setTaskDeadline } from "../../data/tasks.ts";
-import { deletedBlockSnapshot } from "../../data/blocks.ts";
+import { linkedBlocks } from "../../data/blocks.ts";
 import { setTaskSomeday } from "../../data/weeklyReview.ts";
 import { cleanupCandidates, type CleanupAction } from "../../planning/weekly.ts";
 import { cleanupActionLabels, cleanupReasonLabel } from "./weeklyFlow.ts";
@@ -70,17 +70,19 @@ export function CleanupStep({
     }
     // Delete offers the exact undo the row was deleted with, like Tasks and
     // Home do — the whole task travels with the offer, and so do its work
-    // blocks (S8): they are deleted with the task and undo restores both.
+    // blocks (S8): the blocks are resolved from Firestore at delete time
+    // (offline the cache serves the query; review finding 2), so a block
+    // another device created after this step rendered still dies with the
+    // task, and the query's result is the undo payload.
     const deleted = tasks.find(entry => entry.id === taskId);
-    const deletedBlocks = blocks
-      .filter(block => block.taskId === taskId)
-      .map(deletedBlockSnapshot);
-    void settle(deleteTask(uid, taskId, deletedBlocks))
-      .then(() => {
-        if (deleted !== undefined) {
-          onOfferUndo({ message: "Task deleted", restore: () => settle(restoreTaskWithBlocks(uid, deleted, deletedBlocks)) });
-        }
-      })
+    void linkedBlocks(uid, taskId)
+      .then(deletedBlocks =>
+        settle(deleteTask(uid, taskId, deletedBlocks)).then(() => {
+          if (deleted !== undefined) {
+            onOfferUndo({ message: "Task deleted", restore: () => settle(restoreTaskWithBlocks(uid, deleted, deletedBlocks)) });
+          }
+        }),
+      )
       .catch(onProblem);
   };
 

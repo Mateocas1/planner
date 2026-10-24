@@ -458,3 +458,39 @@ test("screenshots of every step, light and dark", async ({ page }) => {
   await page.getByLabel("What worked, what did not, and one intention for next week.").fill("The flow is calm.");
   await shot(page, "step-reflect-dark");
 });
+
+test("the Clean-up step's delete takes the task's work blocks with it (S8)", async ({ page }) => {
+  const email = newEmail("weekly-cleanup-delete");
+  const uid = await seed(email, {
+    weeklyReview: true,
+    tasks: [{ title: "Stale deck", deadline: "2026-10-18" }],
+    // One work block linked to the overdue task: the delete must take it too,
+    // and undo would put both back (the UI path is the one wired to the
+    // delete-time block query; review finding 2).
+    blocks: [{ start: "2026-10-22T09:00:00Z", end: "2026-10-22T10:30:00Z", task: "Stale-deck" }],
+  });
+  await enter(page, email, FRIDAY_EVENING);
+
+  // Opened by hand through the palette, like the full-flow walk.
+  await page.keyboard.press("Control+k");
+  await page.getByRole("combobox", { name: "Search tasks or run a command" }).fill("weekly");
+  await page.getByRole("option", { name: "Weekly review" }).click();
+  await expect(flow(page)).toBeVisible();
+  await next(page); // Review
+
+  // The overdue candidate is deleted with its block; the undo toast offers
+  // the shell's one offer, exactly like Home and Tasks.
+  const cleanupRow = flow(page).locator(".weekly-cleanup-row", { hasText: "Stale deck" });
+  await expect(cleanupRow).toBeVisible();
+  await cleanupRow.getByRole("button", { name: "Delete" }).click();
+  await expect(cleanupRow).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("Task deleted");
+
+  const poll = { timeout: 15_000, intervals: [250, 500, 1_000] };
+  await expect
+    .poll(async () => (await listDocs(uid, "tasks")).some(fields => text(fields.title) === "Stale deck"), poll)
+    .toBe(false);
+  await expect
+    .poll(async () => (await listDocs(uid, "blocks")).filter(fields => (text(fields.start) ?? "").startsWith("2026-10-22")).length, poll)
+    .toBe(0);
+});

@@ -2,7 +2,7 @@ import { addDoc, collection, deleteDoc, deleteField, doc, increment, setDoc, upd
 import { createTask, MAX_ACTUAL_MINUTES, parseActualByDay, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
 import { planUndo, type ShutdownPlan, type ShutdownState, type UndoRefusal } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
-import { restoreBlocks, type DeletedBlock } from "./blocks.ts";
+import { assertBatchFits, blockRestoreWrite, type DeletedBlock } from "./blocks.ts";
 import { requireActualDayKey, subtractActualMinutesIn } from "./actualMinutes.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 import { profileDocument } from "./profile.ts";
@@ -145,6 +145,12 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
  * restores. Every id is checked before the batch is built, so a rejected
  * batch is also a thrown batch: nothing was deleted anywhere.
  *
+ * Two guards fire before the batch is built. A block whose `taskId` is not
+ * this task is refused (a caller passing an unfiltered snapshot must never
+ * take another task's schedule down), and a delete whose blocks would push
+ * the batch past `MAX_BATCH_OPS` is refused too — with a clear error the
+ * caller's surface can show, never a silent chunking.
+ *
  * The database is a parameter with the app's client as its default so the
  * emulator suite can drive this real batch against its own authenticated
  * client; every surface calls it with two or three arguments.
@@ -158,8 +164,11 @@ export async function deleteTask(
   if (typeof taskId !== "string" || taskId === "" || taskId.includes("/")) throw new Error("task ID is invalid");
   const blockPaths = blocks.map(block => {
     if (typeof block.id !== "string" || block.id === "" || block.id.includes("/")) throw new Error("block ID is invalid");
+    if (block.taskId !== taskId) throw new Error(`Block ${block.id} is not linked to this task; nothing was deleted.`);
     return `users/${uid}/blocks/${block.id}`;
   });
+  // The task document itself is one operation of the batch.
+  assertBatchFits(blockPaths.length + 1, "work blocks to delete");
   const taskPath = `users/${uid}/tasks/${taskId}`;
   const batch = writeBatch(database);
   batch.delete(doc(database, taskPath));
@@ -273,6 +282,32 @@ export type DeletedTask = {
   someday?: boolean;
 };
 
+/** Validates one deleted task snapshot into the write its restore needs: the
+ * document path and the exact closed fields to rewrite. Shared by
+ * `restoreTask` and the one-batch undo (`restoreTaskWithBlocks`), so both
+ * validate identically. */
+function taskRestoreWrite(uid: string, task: DeletedTask): { path: string; fields: Record<string, unknown> } {
+  if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
+  const validated = createTask(task.id, task.title, task.deadline, task.estimate);
+  if (task.actualMinutes !== undefined) requireActualMinutes(task.actualMinutes);
+  // The map is normalized through the domain reader, exactly like the read
+  // path: the snapshot usually comes from `toTask`, so this only re-asserts
+  // what a reader would accept.
+  const actualByDay = task.actualByDay === undefined ? undefined : parseActualByDay(task.actualByDay);
+  if (task.completedAt !== undefined) requireInstant(task.completedAt);
+  const restored: Task = task.actualMinutes === undefined && actualByDay === undefined
+    ? validated
+    : {
+        ...validated,
+        ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
+        ...(actualByDay === undefined ? {} : { actualByDay }),
+      };
+  return {
+    path: `users/${uid}/tasks/${task.id}`,
+    fields: taskFields(restored, task.completed, task.completedAt, task.someday),
+  };
+}
+
 /**
  * Puts a deleted task back under its original document id and with the exact
  * fields it held, which is what undo promises. The document schema for a task
@@ -283,36 +318,26 @@ export type DeletedTask = {
  * validated only when present.
  */
 export async function restoreTask(uid: string, task: DeletedTask, database: Firestore = db) {
-  if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
-  const validated = createTask(task.id, task.title, task.deadline, task.estimate);
-  if (task.actualMinutes !== undefined) requireActualMinutes(task.actualMinutes);
-  // The map is normalized through the domain reader, exactly like the read
-  // path: the snapshot usually comes from `toTask`, so this only re-asserts
-  // what a reader would accept.
-  const actualByDay = task.actualByDay === undefined ? undefined : parseActualByDay(task.actualByDay);
-  if (task.completedAt !== undefined) requireInstant(task.completedAt);
-  const path = `users/${uid}/tasks/${task.id}`;
-  const restored: Task = task.actualMinutes === undefined && actualByDay === undefined
-    ? validated
-    : {
-        ...validated,
-        ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
-        ...(actualByDay === undefined ? {} : { actualByDay }),
-      };
-  const write = setDoc(doc(database, path), taskFields(restored, task.completed, task.completedAt, task.someday));
+  const restore = taskRestoreWrite(uid, task);
+  const write = setDoc(doc(database, restore.path), restore.fields);
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.
-  forgetRemoval(path);
+  forgetRemoval(restore.path);
   await write;
 }
 
 /**
  * The undo of a task delete that took its work blocks with it (S8): the task
  * goes back under its original id exactly as `restoreTask` does, and the
- * blocks go back in ONE batch (`restoreBlocks`), so a restored task never
- * reappears with half its schedule missing. The blocks are the snapshots the
- * delete returned; they keep their own ids, task links, titles and import
- * sources. An empty block list is a plain task restore.
+ * blocks go back with it — in ONE `writeBatch` (review finding 1), so the
+ * undo either lands whole or not at all. The earlier sequential undo (task
+ * set, then a blocks batch) could leave the task restored with none of its
+ * schedule when the second write was denied — and offline, where the first
+ * await never resolves, it never even queued the blocks. One batch fixes
+ * both: a denied restore restores nothing, and offline everything queues
+ * together. The blocks are the snapshots the delete returned; they keep
+ * their own ids, task links, titles and import sources. An empty block list
+ * is a plain task restore.
  */
 export async function restoreTaskWithBlocks(
   uid: string,
@@ -320,6 +345,18 @@ export async function restoreTaskWithBlocks(
   blocks: readonly DeletedBlock[],
   database: Firestore = db,
 ) {
-  await restoreTask(uid, task, database);
-  await restoreBlocks(uid, blocks, database);
+  if (blocks.length === 0) return restoreTask(uid, task, database);
+  const restore = taskRestoreWrite(uid, task);
+  const blockWrites = blocks.map(block => blockRestoreWrite(uid, block));
+  // The task document itself is one operation of the batch.
+  assertBatchFits(blockWrites.length + 1, "work blocks to restore");
+  const batch = writeBatch(database);
+  batch.set(doc(database, restore.path), restore.fields);
+  for (const write of blockWrites) batch.set(doc(database, write.path), write.fields);
+  const commit = batch.commit();
+  // The restore is the pending write now: the delete it undoes no longer counts
+  // on its own (see forgetRemoval), so one document is one pending change.
+  forgetRemoval(restore.path);
+  for (const write of blockWrites) forgetRemoval(write.path);
+  await commit;
 }

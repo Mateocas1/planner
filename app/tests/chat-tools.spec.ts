@@ -127,6 +127,38 @@ async function seedDeletableTask(email: string): Promise<void> {
   });
 }
 
+/** One more block linked to the delete scenario's task, written directly
+ * through the REST API — the way another device's block would appear after
+ * the card was already proposed. `daysOut` keeps it a distinct document. */
+async function seedExtraBlock(email: string, id: string, daysOut: number): Promise<void> {
+  const uid = await remoteUid(email);
+  const day = new Date(Date.now() + daysOut * 86_400_000).toISOString().slice(0, 10);
+  const response = await fetch(`${FIRESTORE_REST}/users/${uid}/blocks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${await idToken(email)}` },
+    body: JSON.stringify({
+      fields: {
+        start: { stringValue: `${day}T14:00:00Z` },
+        end: { stringValue: `${day}T15:00:00Z` },
+        taskId: { stringValue: "t-delblocks" },
+      },
+    }),
+  });
+  if (!response.ok) throw new Error(`seed write failed for blocks/${id}: ${response.status}`);
+}
+
+/** The raw block documents (id included), read through the REST API. */
+async function readRemoteBlockIds(email: string): Promise<Array<{ id: string; taskId?: string }>> {
+  const uid = await remoteUid(email);
+  const response = await fetch(`${FIRESTORE_REST}/users/${uid}/blocks`, { headers: { Authorization: `Bearer ${await idToken(email)}` } });
+  if (!response.ok) throw new Error(`blocks read failed: ${response.status}`);
+  const body = (await response.json()) as { documents?: Array<{ name: string; fields?: { taskId?: { stringValue?: string } } }> };
+  return (body.documents ?? []).map(document => ({
+    id: document.name.split("/").pop() ?? "",
+    taskId: document.fields?.taskId?.stringValue,
+  }));
+}
+
 async function readHolidayHidden(email: string, id: string): Promise<boolean | undefined> {
   const uid = await remoteUid(email);
   const response = await fetch(`${FIRESTORE_REST}/users/${uid}/holidays/${id}`, { headers: { Authorization: `Bearer ${await idToken(email)}` } });
@@ -282,6 +314,42 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   await page.keyboard.press("Escape");
   // The hidden panel keeps its own card text; the view itself is clean.
   await expect(page.locator(".view").getByText("Delete me")).toHaveCount(0);
+});
+
+test("delete: a block created after the card joins the card's named set and goes with the task (S8)", async ({ page }) => {
+  test.setTimeout(120_000);
+  const email = `chat-delete-extra-${Date.now()}@example.test`;
+  const zone = await browserZone(page);
+  await createRemoteAccount(email);
+  await updateRemoteProfile(email, zone);
+  await seedDeletableTask(email);
+  await signInMock(page, email, "agent-delete");
+
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByText("Delete me")).toBeVisible({ timeout: 30_000 });
+  await openPanel(page);
+  await field(page).fill("Clean up the test task");
+  await field(page).press("Enter");
+
+  const deleteCard = panel(page).locator(".chat-card").last();
+  await expect(deleteCard).toBeVisible({ timeout: 30_000 });
+  // The card first names exactly what the live context held: the task and its
+  // one block.
+  await expect(deleteCard.locator(".chat-card-action")).toContainText(/and its 1 work block/);
+
+  // A second block linked to the task appears after the card was proposed —
+  // the way another device's write would. The card's description is computed
+  // from the live context (R1), so it now names both blocks, and confirming
+  // deletes both: the card never promises less than what it shows.
+  await seedExtraBlock(email, "b-after-card", 4);
+  await expect(deleteCard.locator(".chat-card-action")).toContainText(/and its 2 work blocks/);
+
+  await deleteCard.getByRole("button", { name: "Confirm" }).click();
+  await expect(deleteCard.locator(".chat-card-outcome")).toContainText("Deleted task id=", { timeout: 15_000 });
+  await expect(deleteCard.locator(".chat-card-outcome")).toContainText("and its 2 work blocks");
+  // Both blocks are gone from the store, and nothing was left to report.
+  await expect.poll(async () => (await readRemoteBlockIds(email)).filter(block => block.taskId === "t-delblocks"), { timeout: 15_000 }).toEqual([]);
+  await page.keyboard.press("Escape");
 });
 
 test("hiding a holiday through the chat matches the Holidays sheet (S4)", async ({ page }) => {

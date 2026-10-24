@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, query, setDoc, updateDoc, where, writeBatch, type Firestore } from "firebase/firestore";
 import { blockFields, createWorkBlock, type BlockSource } from "../domain/model.ts";
 import { db } from "./client.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
@@ -95,6 +95,27 @@ export type DeletedBlock = {
   source?: BlockSource;
 };
 
+/**
+ * The most operations one write batch here may carry. Firestore refuses a
+ * batch over 500 operations, and an overflow rejects the batch whole — the
+ * task and none of its blocks deleted, with the rejection free to disappear
+ * into a caller's `.catch`. The guard refuses one operation earlier (499),
+ * and it throws before the batch is built: nothing is written anywhere, and
+ * the error reaches the caller's surface as a message instead of an emulator
+ * rejection. Batches are never chunked to fit: chunking would break the
+ * atomicity the delete (and its undo) promises — half of a task's schedule
+ * deleted is exactly the bug this code exists to prevent.
+ */
+export const MAX_BATCH_OPS = 499;
+
+/** Throws a caller-facing error when `operations` writes would not fit in one
+ * batch; `what` names them in the message. */
+export function assertBatchFits(operations: number, what: string): void {
+  if (operations > MAX_BATCH_OPS) {
+    throw new Error(`Too many ${what} for one write batch (at most ${MAX_BATCH_OPS} operations); nothing was written.`);
+  }
+}
+
 /** Captures a live block view as the closed snapshot undo restores: only the
  * stored block fields travel, so view-only flags (like `pending`) never leak
  * into a restored document. */
@@ -133,6 +154,50 @@ export async function restoreBlock(uid: string, block: DeletedBlock, database: F
 }
 
 /**
+ * Every work block linked to a task, resolved from Firestore at the moment
+ * the caller asks (the UI's task delete, and the chat executor's check after
+ * its own write). The caller's store snapshot can be stale — a block created
+ * on another device after the last render, or after a chat card was
+ * proposed — so the delete path asks the database instead of trusting the
+ * view. Offline, the query is served from the persistent local cache, which
+ * is the same data the store snapshot held. A single-field equality query
+ * needs no index beyond the automatic one.
+ *
+ * The results are closed snapshots under their own ids: exactly what undo
+ * restores, and what `deleteTask` accepts (each block's `taskId` is the
+ * queried task, so the foreign-block guard never fires).
+ */
+export async function linkedBlocks(uid: string, taskId: string, database: Firestore = db): Promise<DeletedBlock[]> {
+  const snapshot = await getDocs(query(collection(database, `users/${uid}/blocks`), where("taskId", "==", taskId)));
+  return snapshot.docs.map(entry => {
+    const fields = entry.data() as { start?: string; end?: string; taskId?: string; title?: string; source?: BlockSource };
+    return deletedBlockSnapshot({
+      id: entry.id,
+      start: fields.start ?? "",
+      end: fields.end ?? "",
+      taskId: fields.taskId,
+      title: fields.title,
+      source: fields.source,
+    });
+  });
+}
+
+/** One block going back where it was: the document path and the closed
+ * stored fields to write. */
+export type BlockRestore = { path: string; fields: Record<string, unknown> };
+
+/** Validates one deleted block snapshot into the write its restore needs
+ * (the shared body of `restoreBlocks` and the one-batch undo in tasks.ts). */
+export function blockRestoreWrite(uid: string, block: DeletedBlock): BlockRestore {
+  if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
+  const validated = createWorkBlock(block.id, block.start, block.end, block.taskId, {
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.source === undefined ? {} : { source: block.source }),
+  });
+  return { path: `users/${uid}/blocks/${block.id}`, fields: blockFields(validated) };
+}
+
+/**
  * Puts several deleted work blocks back under their original document ids in
  * ONE `writeBatch`, with the exact instants, task links, titles and import
  * sources they held (the undo of a task delete that removed those blocks, S8).
@@ -144,14 +209,8 @@ export async function restoreBlock(uid: string, block: DeletedBlock, database: F
  */
 export function restoreBlocks(uid: string, blocks: readonly DeletedBlock[], database: Firestore = db): Promise<void> {
   if (blocks.length === 0) return Promise.resolve();
-  const writes = blocks.map(block => {
-    if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
-    const validated = createWorkBlock(block.id, block.start, block.end, block.taskId, {
-      ...(block.title === undefined ? {} : { title: block.title }),
-      ...(block.source === undefined ? {} : { source: block.source }),
-    });
-    return { path: `users/${uid}/blocks/${block.id}`, fields: blockFields(validated) };
-  });
+  assertBatchFits(blocks.length, "work blocks to restore");
+  const writes = blocks.map(block => blockRestoreWrite(uid, block));
   const batch = writeBatch(database);
   for (const write of writes) batch.set(doc(database, write.path), write.fields);
   const commit = batch.commit();

@@ -859,6 +859,24 @@ export type NormalizedDeleteTask = {
   blocks: ReadonlyArray<{ id: string; start: string; end: string; taskId?: string; title?: string }>;
 };
 
+/** The sentence the delete_task outcome appends when task-linked blocks the
+ * card did not name still exist after the write. The card names the set the
+ * live context held when the user confirmed; anything still linked to the
+ * task afterwards reached the database after that moment (another device or
+ * surface). It was never confirmed, so it is never deleted — the outcome
+ * reports it instead, so the user learns the kept orphans exist. Empty when
+ * everything left matches the card. */
+export function deleteTaskKeptNote(
+  cardBlocks: ReadonlyArray<{ id: string }>,
+  remaining: ReadonlyArray<{ id: string }>,
+): string {
+  const named = new Set(cardBlocks.map(block => block.id));
+  const kept = remaining.filter(block => !named.has(block.id));
+  if (kept.length === 1) return ". 1 more block linked to this task was created after the card and was kept";
+  if (kept.length > 1) return `. ${kept.length} more blocks linked to this task were created after the card and were kept`;
+  return "";
+}
+
 /** Validates `delete_task`: the task must exist, and the card names exactly
  * what will be removed — the task itself and every work block linked to it
  * (S8), computed from the live context like the card of every other write. */
