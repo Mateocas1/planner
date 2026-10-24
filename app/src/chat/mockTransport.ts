@@ -35,7 +35,7 @@ You have **two blocks** left, and the *Deep Work* session on the chat panel is n
 
 If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [the planner guide](https://example.com/planner-guide).`;
 
-export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit";
+export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit" | "agent-delete" | "agent-holiday";
 
 export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
@@ -100,7 +100,7 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           return;
         }
         clock += 700; // ≈1.2 s of reasoning before the first word
-        if (scenario === "agent-read" || scenario === "agent-edit") {
+        if (scenario.startsWith("agent-")) {
           // ronda4 agentic flow. `agent-read` proposes one read (it runs
           // without confirmation); `agent-edit` proposes a create at a time
           // first and, once that card is confirmed, uses the created task's
@@ -115,6 +115,17 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           let call: { id: string; name: string; args: string };
           if (scenario === "agent-read") {
             call = { id: "call_read", name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
+          } else if (scenario === "agent-delete" || scenario === "agent-holiday") {
+            // The id comes from the planner context, exactly like the real
+            // model's: the seeded row must already be visible to the request.
+            const system = request.messages[0]?.content ?? "";
+            const pattern = scenario === "agent-delete" ? /\[([\w-]+)\] Delete me/ : /\[([\w-]+)\] [^\n]*Independence/;
+            const foundId = pattern.exec(system)?.[1];
+            call = foundId === undefined
+              ? { id: "call_none", name: "list_tasks", args: "{}" }
+              : scenario === "agent-delete"
+                ? { id: "call_delete", name: "delete_task", args: JSON.stringify({ taskId: foundId }) }
+                : { id: "call_hide", name: "hide_holiday", args: JSON.stringify({ holidayId: foundId }) };
           } else {
             const createResult = request.messages.map(message => message.content).find(content => content.includes("Created task id=")) ?? "";
             const createdId = /id=([\w-]+)/.exec(createResult)?.[1];

@@ -15,9 +15,14 @@ const memory = (topicKey: string, title: string, updatedAt: number): Memory => (
 
 test("the role text offers the confirmation-gated tools and forbids invented ids", () => {
   const prompt = buildSystemPrompt({ snapshot: emptySnapshot, memories: [], now: new Date("2026-10-29T12:00:00Z"), timeZone: "UTC" });
-  assert.ok(prompt.includes("create_task and move_task"), prompt);
+  // Truthful capabilities (S4): the full tool set, reads vs confirmed writes.
+  for (const tool of ["list_tasks", "get_task", "list_holidays", "list_memories", "create_task", "update_task", "move_task", "complete_task", "delete_task", "hide_holiday", "remember", "forget"]) {
+    assert.ok(prompt.includes(tool), `${tool} is named truthfully`);
+  }
+  assert.ok(prompt.includes("persistent memory"), prompt);
   assert.ok(prompt.includes("confirmation"), prompt);
   assert.ok(prompt.includes("never invent ids"), prompt);
+  assert.ok(prompt.includes("one delete at a time"), prompt);
 });
 
 test("the planner context rides inside the prompt as data", () => {
