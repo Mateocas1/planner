@@ -7,7 +7,9 @@ import { useCalendarDropTarget, useTaskDrag, DragGrip } from "./drag.tsx";
 import { draggedEdge, dropLengthMinutes, dropStart, instantForEdge, movedEdge, stepMinutes } from "./grid.ts";
 import "./Calendar.css";
 import { DayLoad, useDayLoads } from "./CapacityBar.tsx";
+import type { Holiday } from "../domain/holidays.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
+import { HolidayChips, HolidaySheet, visibleHolidays } from "./Holidays.tsx";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, narrowQuery, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
 import { Sheet } from "./Sheet.tsx";
@@ -63,6 +65,7 @@ export function Calendar({
   uid,
   blocks,
   tasks,
+  holidays,
   loading,
   timeZone,
   profileError,
@@ -73,6 +76,7 @@ export function Calendar({
   uid: string;
   blocks: BlockView[];
   tasks: TaskView[];
+  holidays: Holiday[];
   loading: boolean;
   timeZone: string | null;
   profileError: string | null;
@@ -95,6 +99,7 @@ export function Calendar({
       uid={uid}
       blocks={blocks}
       tasks={tasks}
+      holidays={holidays}
       loading={loading}
       timeZone={timeZone}
       day={day}
@@ -108,6 +113,7 @@ function CalendarView({
   uid,
   blocks,
   tasks,
+  holidays,
   loading,
   timeZone,
   day,
@@ -117,6 +123,7 @@ function CalendarView({
   uid: string;
   blocks: BlockView[];
   tasks: TaskView[];
+  holidays: Holiday[];
   loading: boolean;
   timeZone: string;
   day: string | null;
@@ -133,6 +140,7 @@ function CalendarView({
   const [direction, setDirection] = useState(0);
   const [creating, setCreating] = useState<{ start: string; end: string; origin: HTMLElement | null; draft: { key: string; minutes: number } | null } | null>(null);
   const [openBlock, setOpenBlock] = useState<{ id: string; origin: HTMLElement } | null>(null);
+  const [openHoliday, setOpenHoliday] = useState<{ id: string; origin: HTMLElement } | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   // Direct manipulation: the resize in flight (raw pointer position, snapped on
   // release) and the last thing the grid changed, announced politely.
@@ -413,6 +421,7 @@ function CalendarView({
       .catch(fail);
   }
 
+  const selectedHoliday = openHoliday ? holidays.find(holiday => holiday.id === openHoliday.id) : undefined;
   const selectedBlock = openBlock ? blocks.find(block => block.id === openBlock.id) : undefined;
   const monthUtc = selectedUtc;
 
@@ -516,6 +525,7 @@ function CalendarView({
               const due = tasks.filter(task => !task.completed && task.deadline === key);
               return (
                 <div key={key} className="due-cell">
+                  <HolidayChips holidays={visibleHolidays(holidays, key)} onOpen={(holiday, origin) => setOpenHoliday({ id: holiday.id, origin })} />
                   {due.map(task => (
                     <span key={task.id} className={`due-chip${isPastDateKey(key, todayKey) ? " is-overdue" : ""}`} title={task.title}>
                       <FlagIcon className="meta-icon" />
@@ -721,6 +731,17 @@ function CalendarView({
             initialEnd={creating.end}
             origin={creating.origin}
             onClose={() => setCreating(null)}
+          />
+        )}
+        {selectedHoliday && openHoliday && selectedHoliday.hidden !== true && (
+          <HolidaySheet
+            key={selectedHoliday.id}
+            uid={uid}
+            holiday={selectedHoliday}
+            todayKey={todayKey}
+            origin={openHoliday.origin}
+            onClose={() => setOpenHoliday(null)}
+            onOfferUndo={onDeleted}
           />
         )}
         {selectedBlock && openBlock && (

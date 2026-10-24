@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "../desktop.ts";
 import { removeImported, writeImportPlan } from "../data/gcal.ts";
+import { cleanupHolidayTasks, removeHolidays } from "../data/holidays.ts";
 import {
   eventWindow,
   googleMessages,
@@ -16,9 +17,16 @@ import {
   type GcalCalendar,
 } from "../data/google-client.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
+import type { Holiday } from "../domain/holidays.ts";
 import {
+  importDocId,
   importedIds,
+  planHolidayCleanup,
+  splitCleanupByCalendars,
+  cleanupOutcomeMessage,
   planImport,
+  selectHolidayTasks,
+  type GcalEvent,
   type ImportPlan,
   type ImportSkipReason,
   type ImportSkips,
@@ -78,18 +86,20 @@ function plural(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
-/** "2 work blocks and 1 task", or the one noun when the other count is zero. */
-function itemsSentence(blocks: number, tasks: number): string {
+/** "2 work blocks and 1 task", or the one noun when the other count is zero.
+ * Holiday labels come last and only when there are some. */
+function itemsSentence(blocks: number, tasks: number, holidays = 0): string {
   const parts = [
     ...(blocks === 0 ? [] : [plural(blocks, "work block")]),
     ...(tasks === 0 ? [] : [plural(tasks, "task")]),
+    ...(holidays === 0 ? [] : [plural(holidays, "holiday label")]),
   ];
-  return parts.length === 0 ? "" : parts.join(" and ");
+  return parts.length <= 2 ? parts.join(" and ") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /** What the import button is about to do, in one sentence. */
-function previewSentence(blocks: number, tasks: number): string {
-  const items = itemsSentence(blocks, tasks);
+function previewSentence(blocks: number, tasks: number, holidays: number): string {
+  const items = itemsSentence(blocks, tasks, holidays);
   return items === "" ? "Nothing new to import." : `${items} to import`;
 }
 
@@ -103,12 +113,12 @@ function skippedSentence(skips: ImportSkips): string {
 }
 
 /** The toast sentence after a successful import. */
-export function importedMessage(counts: { blocks: number; tasks: number }): string {
-  return `Imported ${itemsSentence(counts.blocks, counts.tasks)}`;
+export function importedMessage(counts: { blocks: number; tasks: number; holidays?: number }): string {
+  return `Imported ${itemsSentence(counts.blocks, counts.tasks, counts.holidays ?? 0)}`;
 }
 
-function removedMessage(counts: { blocks: number; tasks: number }): string {
-  const items = itemsSentence(counts.blocks, counts.tasks);
+function removedMessage(counts: { blocks: number; tasks: number; holidays: number }): string {
+  const items = itemsSentence(counts.blocks, counts.tasks, counts.holidays);
   return items === "" ? "There was nothing imported to remove." : `Removed ${items}.`;
 }
 
@@ -120,6 +130,7 @@ export function GcalImportSheet({
   uid,
   blocks,
   tasks,
+  holidays,
   timeZone,
   origin,
   onClose,
@@ -128,6 +139,7 @@ export function GcalImportSheet({
   uid: string;
   blocks: BlockView[];
   tasks: TaskView[];
+  holidays: Holiday[];
   timeZone: string;
   origin: HTMLElement | null;
   onClose: () => void;
@@ -144,6 +156,7 @@ export function GcalImportSheet({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
   // The day the sheet was opened on: the window is a decision the user made by
   // opening this sheet, not one that moves while they read the preview.
   const [today] = useState(() => dateKey(new Date(), timeZone));
@@ -154,8 +167,9 @@ export function GcalImportSheet({
       blockIds: blocks.map(block => block.id),
       taskIds: tasks.map(task => task.id),
       eventIds: blocks.flatMap(block => (block.source === undefined ? [] : [block.source.eventId])),
+      holidays,
     }),
-    [blocks, tasks],
+    [blocks, tasks, holidays],
   );
 
   // One mapper call per selected calendar: the calendar id is part of every
@@ -191,17 +205,34 @@ export function GcalImportSheet({
     const skipped = emptySkips();
     let blockCount = 0;
     let taskCount = 0;
+    let holidayCount = 0;
     for (const plan of plans) {
       blockCount += plan.blocks.length;
       taskCount += plan.tasks.length;
+      holidayCount += plan.holidays.length;
       for (const reason of Object.keys(skipped) as ImportSkipReason[]) skipped[reason] += plan.skipped[reason];
     }
-    return { blocks: blockCount, tasks: taskCount, skipped };
+    return { blocks: blockCount, tasks: taskCount, holidays: holidayCount, skipped };
   }, [plans]);
 
+  /** Tasks an earlier import made out of a Google holiday calendar, proven by the
+   * calendar key in their id and the account's own calendar list, and what
+   * replacing them with labels would write and delete. Nothing is deleted
+   * without the confirmation below. */
+  const cleanup = useMemo(() => {
+    const read = new Map<string, GcalEvent>();
+    for (const id of chosen) {
+      for (const event of events[id]?.events ?? []) {
+        if (typeof event?.id === "string") read.set(importDocId(id, event.id), event);
+      }
+    }
+    const { ready, waiting } = splitCleanupByCalendars(selectHolidayTasks(tasks, calendars), chosen);
+    return { selected: ready, waiting, plan: planHolidayCleanup(ready, read, holidays.map(holiday => holiday.id)) };
+  }, [tasks, calendars, chosen, events, holidays]);
+
   /** Everything imported so far, for the removal safety net. */
-  const imported = useMemo(() => importedIds(blocks, tasks), [blocks, tasks]);
-  const importedTotal = imported.blockIds.length + imported.taskIds.length;
+  const imported = useMemo(() => importedIds(blocks, tasks, holidays), [blocks, tasks, holidays]);
+  const importedTotal = imported.blockIds.length + imported.taskIds.length + imported.holidayIds.length;
 
   // Warm the GIS script as the sheet opens, not when Connect is pressed: the
   // consent popup has to open inside the click's user gesture, and a cold cache
@@ -303,22 +334,29 @@ export function GcalImportSheet({
     if (busy || !online) return;
     setBusy(true);
     setNotice(null);
-    const batch: { blocks: ImportPlan["blocks"]; tasks: ImportPlan["tasks"] } = { blocks: [], tasks: [] };
-    const counts = { blocks: 0, tasks: 0 };
+    const batch: { blocks: ImportPlan["blocks"]; tasks: ImportPlan["tasks"]; holidays: ImportPlan["holidays"] } = { blocks: [], tasks: [], holidays: [] };
+    const counts = { blocks: 0, tasks: 0, holidays: 0 };
     try {
       for (const plan of plans) {
-        if (plan.blocks.length === 0 && plan.tasks.length === 0) continue;
+        if (plan.blocks.length === 0 && plan.tasks.length === 0 && plan.holidays.length === 0) continue;
         const written = await writeImportPlan(uid, plan);
         counts.blocks += written.blocks;
         counts.tasks += written.tasks;
+        counts.holidays += written.holidays;
         batch.blocks.push(...plan.blocks);
         batch.tasks.push(...plan.tasks);
+        // Only labels that did not exist before: undoing the import must never
+        // delete a label the user already had (and may have reclassified).
+        batch.holidays.push(...plan.holidays.filter(holiday => !holidays.some(stored => stored.id === holiday.id)));
       }
       // The undo is exactly this batch, not everything ever imported: the ids
       // are already known, so the compensating delete is bounded to these.
       onOfferUndo({
         message: importedMessage(counts),
-        restore: () => removeImported(uid, batch.blocks, batch.tasks).then(() => undefined),
+        restore: async () => {
+          await removeImported(uid, batch.blocks, batch.tasks);
+          await removeHolidays(uid, batch.holidays.map(holiday => holiday.id));
+        },
       });
       onClose();
     } catch {
@@ -331,12 +369,28 @@ export function GcalImportSheet({
     }
   }
 
+  async function runCleanup() {
+    if (busy || !online) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const counts = await cleanupHolidayTasks(uid, cleanup.plan);
+      const outcome = cleanupOutcomeMessage(counts.tasks, counts.total);
+      if (outcome.ok) setConfirmCleanup(false);
+      setNotice({ tone: outcome.ok ? "ok" : "error", text: outcome.text });
+    } catch {
+      setNotice({ tone: "error", text: "Nothing was deleted. Try again." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runRemove() {
     if (busy) return;
     setBusy(true);
     setNotice(null);
     try {
-      const counts = await removeImported(uid, blocks, tasks);
+      const counts = await removeImported(uid, blocks, tasks, holidays);
       setConfirmRemove(false);
       setNotice({ tone: "ok", text: removedMessage(counts) });
     } catch {
@@ -430,7 +484,7 @@ export function GcalImportSheet({
                 <p className="inline-error" role="alert">{planning.error}</p>
               ) : (
                 <>
-                  <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks)}</p>
+                  <p className="gcal-summary">{previewSentence(totals.blocks, totals.tasks, totals.holidays)}</p>
                   {skippedSentence(totals.skipped) !== "" && (
                     <p className="gcal-note">{skippedSentence(totals.skipped)}</p>
                   )}
@@ -445,10 +499,10 @@ export function GcalImportSheet({
               type="button"
               className="button-primary"
               autoFocus
-              disabled={busy || !online || totals.blocks + totals.tasks === 0}
+              disabled={busy || !online || totals.blocks + totals.tasks + totals.holidays === 0}
               onClick={() => void runImport()}
             >
-              {busy ? "Importing…" : `Import ${plural(totals.blocks + totals.tasks, "item")}`}
+              {busy ? "Importing…" : `Import ${plural(totals.blocks + totals.tasks + totals.holidays, "item")}`}
             </button>
           </>
         )}
@@ -457,6 +511,39 @@ export function GcalImportSheet({
           <p className={notice.tone === "error" ? "inline-error" : "gcal-note"} role={notice.tone === "error" ? "alert" : "status"}>
             {notice.text}
           </p>
+        )}
+
+        {phase === "preview" && cleanup.selected.length > 0 && !confirmCleanup && (
+          <button type="button" className="link-button gcal-remove" onClick={() => setConfirmCleanup(true)}>
+            Clean up holiday tasks ({cleanup.selected.length})
+          </button>
+        )}
+
+        {phase === "preview" && cleanup.waiting > 0 && (
+          <p className="gcal-note">Select the holiday calendar to clean up its old tasks</p>
+        )}
+
+        {confirmCleanup && (
+          <div className="gcal-confirm" role="group" aria-label="Clean up holiday tasks">
+            <p className="gcal-confirm-text">
+              Delete {plural(cleanup.plan.deletable.length, "task")} an earlier import made from your Google holiday
+              calendars? They become holiday labels first. Completed or edited holiday tasks are removed too. Tasks you created and tasks from other calendars are not touched.
+              {cleanup.plan.kept > 0 && ` ${plural(cleanup.plan.kept, "holiday task")} without a usable date will stay.`}
+            </p>
+            <div className="gcal-confirm-actions">
+              <button
+                type="button"
+                className="button-danger"
+                disabled={busy || !online || cleanup.plan.deletable.length === 0}
+                onClick={() => void runCleanup()}
+              >
+                Clean up
+              </button>
+              <button type="button" className="button" onClick={() => setConfirmCleanup(false)}>
+                Keep
+              </button>
+            </div>
+          </div>
         )}
 
         {importedTotal > 0 && !confirmRemove && (

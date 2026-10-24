@@ -4,6 +4,7 @@ import test from "node:test";
 import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
+import { calendarKey, planHolidayCleanup, selectHolidayTasks } from "../src/domain/gcalImport.ts";
 import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
@@ -611,5 +612,99 @@ test("a plan is one batch of blocks, and its undo removes exactly those document
     assert.equal((await stored()).length, 1);
   } finally {
     await close(owner);
+  }
+});
+
+/**
+ * Holiday labels (S11) against real Firestore: the owner reads and writes
+ * `users/{uid}/holidays`, nobody else does, and an import's merge write
+ * refreshes Google's fields without touching the user's override or hidden
+ * flag. The helpers take the test's authenticated database, as `addBlocks` does.
+ */
+test("holiday labels are owner-only and a re-import keeps the user's choices", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { setHolidayHidden, setHolidayKindOverride, writeHolidays } = await import("../src/data/holidays.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`holiday-owner-${suffix}`);
+  const other = client(`holiday-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `holiday-owner-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const source = { provider: "gcal" as const, calendarId: "es.ar#holiday@group.v.calendar.google.com", eventId: "20261207_a" };
+    const holiday = { id: "gcal_es-ar-holiday_20261207_a", date: "2026-12-07", title: "Puente turístico", kind: "nonWorking" as const, source };
+    const path = `users/${uid}/holidays/${holiday.id}`;
+
+    assert.equal(await writeHolidays(uid, [holiday], owner.db), 1);
+    assert.deepEqual((await getDoc(doc(owner.db, path))).data(), { date: "2026-12-07", title: "Puente turístico", kind: "nonWorking", source });
+
+    await setHolidayKindOverride(uid, holiday.id, "public", owner.db);
+    await setHolidayHidden(uid, holiday.id, true, owner.db);
+    // Google renames the event and reclassifies it; the user's choices stay.
+    await writeHolidays(uid, [{ ...holiday, title: "Feriado puente", kind: "observance" }], owner.db);
+    assert.deepEqual((await getDoc(doc(owner.db, path))).data(), {
+      date: "2026-12-07", title: "Feriado puente", kind: "observance", source, kindOverride: "public", hidden: true,
+    });
+    await setHolidayKindOverride(uid, holiday.id, undefined, owner.db);
+    await setHolidayHidden(uid, holiday.id, false, owner.db);
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.kindOverride, undefined);
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.hidden, undefined);
+    await assert.rejects(setHolidayKindOverride(uid, holiday.id, "bogus" as never, owner.db), /holiday kind is invalid/);
+
+    await createUserWithEmailAndPassword(other.auth, `holiday-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(getDoc(doc(other.db, path)), { code: "permission-denied" });
+    await assert.rejects(writeHolidays(uid, [holiday], other.db), { code: "permission-denied" });
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/**
+ * The holiday cleanup (S11) against real Firestore. It deletes stored data, so
+ * this pins the whole guarantee: of a mixed task list only the tasks the
+ * selection proves came from a holiday calendar are deleted, each after its
+ * label is stored, and a failing label write deletes nothing.
+ */
+test("cleanup deletes only holiday-calendar tasks, labels first, and nothing when the label write fails", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { cleanupHolidayTasks } = await import("../src/data/holidays.ts");
+  const { collection, getDocs } = await import("firebase/firestore");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`cleanup-owner-${suffix}`);
+  const other = client(`cleanup-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `cleanup-owner-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const holidayCalendar = "es.ar#holiday@group.v.calendar.google.com";
+    const normalCalendar = "abc123@group.calendar.google.com";
+    const holidayTaskId = `gcal_${calendarKey(holidayCalendar)}_20261207_a`;
+    const sameTitle = "Puente turístico";
+    const seeded: Record<string, Record<string, unknown>> = {
+      [holidayTaskId]: { title: sameTitle, completed: false, deadline: "2026-12-07" },
+      [`gcal_${calendarKey(holidayCalendar)}_20261225_nodate`]: { title: "Sin fecha", completed: false },
+      [`gcal_${calendarKey(normalCalendar)}_x1`]: { title: sameTitle, completed: false, deadline: "2026-12-07" },
+      [`gcal_${calendarKey("primary")}_a1`]: { title: "Renew passport", completed: false, deadline: "2026-12-07" },
+      "kJ3x9QmZpT0aLw2vB7nC": { title: sameTitle, completed: false, deadline: "2026-12-07" },
+    };
+    for (const [id, data] of Object.entries(seeded)) await setDoc(doc(owner.db, `users/${uid}/tasks/${id}`), data);
+    const stored = async (name: string) => (await getDocs(collection(owner.db, `users/${uid}/${name}`))).docs.map(entry => ({ ...entry.data(), id: entry.id }) as Record<string, unknown> & { id: string });
+    const tasks = (await stored("tasks")).map(task => ({ id: task.id, title: String(task.title), ...(typeof task.deadline === "string" ? { deadline: task.deadline } : {}) }));
+    const selected = selectHolidayTasks(tasks, [{ id: "primary" }, { id: normalCalendar }, { id: holidayCalendar }]);
+    assert.deepEqual(selected.map(item => item.task.id).sort(), [holidayTaskId, `gcal_${calendarKey(holidayCalendar)}_20261225_nodate`].sort());
+    const plan = planHolidayCleanup(selected, new Map(), []);
+    assert.deepEqual(plan.deletable, [holidayTaskId]);
+
+    // A write the server refuses (another account's subtree) stops before any delete.
+    await createUserWithEmailAndPassword(other.auth, `cleanup-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(cleanupHolidayTasks(uid, plan, other.db), { code: "permission-denied" });
+    assert.equal((await stored("tasks")).length, 5);
+    assert.deepEqual(await stored("holidays"), []);
+
+    assert.deepEqual(await cleanupHolidayTasks(uid, plan, owner.db), { labels: 1, tasks: 1, total: 1 });
+    const remaining = (await stored("tasks")).map(task => task.id).sort();
+    assert.deepEqual(remaining, Object.keys(seeded).filter(id => id !== holidayTaskId).sort());
+    const labels = await stored("holidays");
+    assert.deepEqual(labels.map(label => [label.id, label.date, label.title]), [[holidayTaskId, "2026-12-07", sameTitle]]);
+  } finally {
+    await Promise.all([close(owner), close(other)]);
   }
 });
