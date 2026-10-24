@@ -95,6 +95,22 @@ export type DeletedBlock = {
   source?: BlockSource;
 };
 
+/** Captures a live block view as the closed snapshot undo restores: only the
+ * stored block fields travel, so view-only flags (like `pending`) never leak
+ * into a restored document. */
+export function deletedBlockSnapshot(
+  block: { id: string; start: string; end: string; taskId?: string; title?: string; source?: BlockSource },
+): DeletedBlock {
+  return {
+    id: block.id,
+    start: block.start,
+    end: block.end,
+    ...(block.taskId === undefined ? {} : { taskId: block.taskId }),
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.source === undefined ? {} : { source: block.source }),
+  };
+}
+
 /**
  * Puts a deleted work block back under its original document id with the exact
  * instants, task link, title and import source it held. The block schema is
@@ -102,16 +118,43 @@ export type DeletedBlock = {
  * the original document. The instants and the import source are validated
  * through the domain module before any write.
  */
-export async function restoreBlock(uid: string, block: DeletedBlock) {
+export async function restoreBlock(uid: string, block: DeletedBlock, database: Firestore = db) {
   const validated = createWorkBlock(block.id, block.start, block.end, block.taskId, {
     ...(block.title === undefined ? {} : { title: block.title }),
     ...(block.source === undefined ? {} : { source: block.source }),
   });
   if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
   const path = `users/${uid}/blocks/${block.id}`;
-  const write = setDoc(doc(db, path), blockFields(validated));
+  const write = setDoc(doc(database, path), blockFields(validated));
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.
   forgetRemoval(path);
   await write;
+}
+
+/**
+ * Puts several deleted work blocks back under their original document ids in
+ * ONE `writeBatch`, with the exact instants, task links, titles and import
+ * sources they held (the undo of a task delete that removed those blocks, S8).
+ * Every block is validated through the domain module before the batch is
+ * built, so a rejected snapshot leaves nothing queued; the batch either lands
+ * whole or not at all, which keeps an undo from splitting a task's schedule
+ * in two. Each path stops counting its delete as pending (forgetRemoval).
+ * An empty list writes nothing and resolves at once.
+ */
+export function restoreBlocks(uid: string, blocks: readonly DeletedBlock[], database: Firestore = db): Promise<void> {
+  if (blocks.length === 0) return Promise.resolve();
+  const writes = blocks.map(block => {
+    if (!block.id || block.id.includes("/")) throw new Error("block ID is invalid");
+    const validated = createWorkBlock(block.id, block.start, block.end, block.taskId, {
+      ...(block.title === undefined ? {} : { title: block.title }),
+      ...(block.source === undefined ? {} : { source: block.source }),
+    });
+    return { path: `users/${uid}/blocks/${block.id}`, fields: blockFields(validated) };
+  });
+  const batch = writeBatch(database);
+  for (const write of writes) batch.set(doc(database, write.path), write.fields);
+  const commit = batch.commit();
+  for (const write of writes) forgetRemoval(write.path);
+  return commit;
 }

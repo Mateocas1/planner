@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { MAX_OCCURRENCE_WINDOW_DAYS, expandOccurrences, type Occurrence, type Recurrence } from "../domain/model.ts";
 import { completeOccurrence, deleteSeries, renameSeries, restoreSeries, setSeriesAnchor, setSeriesEstimate, setSeriesFrequency } from "../data/series.ts";
-import type { SeriesView, TaskView } from "../data/store.ts";
-import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
+import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
+import { deleteTask, renameTask, restoreTaskWithBlocks, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
+import { deletedBlockSnapshot } from "../data/blocks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { DragGrip } from "./drag.tsx";
 import { completedSamples } from "./BiasHint.tsx";
@@ -78,6 +79,7 @@ const settleMs = 160;
 export function Tasks({
   uid,
   tasks,
+  blocks,
   series,
   completions,
   loading,
@@ -88,6 +90,9 @@ export function Tasks({
 }: {
   uid: string;
   tasks: TaskView[];
+  /** Every work block in the live store: deleting a task also deletes its
+   * task-linked blocks (S8), and undo restores the snapshots captured here. */
+  blocks: BlockView[];
   series: SeriesView[];
   completions: Record<string, string>;
   loading: boolean;
@@ -465,11 +470,16 @@ export function Tasks({
             onEstimateChange={next => void run(() => setTaskEstimate(uid, selectedTask.id, next))}
             onDelete={() => {
               // The row's exact fields (title, completion, deadline) travel with
-              // the offer: undo rewrites them under the same document id.
+              // the offer: undo rewrites them under the same document id. The
+              // task's work blocks are deleted with it (S8), so their
+              // snapshots travel too — undo restores task and blocks together.
               const deleted = selectedTask;
+              const deletedBlocks = blocks
+                .filter(block => block.taskId === deleted.id)
+                .map(deletedBlockSnapshot);
               setSelected(null);
-              void settle(deleteTask(uid, deleted.id))
-                .then(() => onDeleted({ message: "Task deleted", restore: () => restoreTask(uid, deleted) }))
+              void settle(deleteTask(uid, deleted.id, deletedBlocks))
+                .then(() => onDeleted({ message: "Task deleted", restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) }))
                 .catch(() => undefined);
             }}
           />

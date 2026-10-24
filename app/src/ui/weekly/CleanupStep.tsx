@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BlockView, TaskView } from "../../data/store.ts";
-import { deleteTask, restoreTask, setTaskDeadline } from "../../data/tasks.ts";
+import { deleteTask, restoreTaskWithBlocks, setTaskDeadline } from "../../data/tasks.ts";
+import { deletedBlockSnapshot } from "../../data/blocks.ts";
 import { setTaskSomeday } from "../../data/weeklyReview.ts";
 import { cleanupCandidates, type CleanupAction } from "../../planning/weekly.ts";
 import { cleanupActionLabels, cleanupReasonLabel } from "./weeklyFlow.ts";
@@ -68,12 +69,16 @@ export function CleanupStep({
       return;
     }
     // Delete offers the exact undo the row was deleted with, like Tasks and
-    // Home do — the whole task travels with the offer.
+    // Home do — the whole task travels with the offer, and so do its work
+    // blocks (S8): they are deleted with the task and undo restores both.
     const deleted = tasks.find(entry => entry.id === taskId);
-    void settle(deleteTask(uid, taskId))
+    const deletedBlocks = blocks
+      .filter(block => block.taskId === taskId)
+      .map(deletedBlockSnapshot);
+    void settle(deleteTask(uid, taskId, deletedBlocks))
       .then(() => {
         if (deleted !== undefined) {
-          onOfferUndo({ message: "Task deleted", restore: () => settle(restoreTask(uid, deleted)) });
+          onOfferUndo({ message: "Task deleted", restore: () => settle(restoreTaskWithBlocks(uid, deleted, deletedBlocks)) });
         }
       })
       .catch(onProblem);

@@ -2,6 +2,7 @@ import { addDoc, collection, deleteDoc, deleteField, doc, increment, setDoc, upd
 import { createTask, MAX_ACTUAL_MINUTES, parseActualByDay, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
 import { planUndo, type ShutdownPlan, type ShutdownState, type UndoRefusal } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
+import { restoreBlocks, type DeletedBlock } from "./blocks.ts";
 import { requireActualDayKey, subtractActualMinutesIn } from "./actualMinutes.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 import { profileDocument } from "./profile.ts";
@@ -126,9 +127,49 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { deadline });
 }
 
-export async function deleteTask(uid: string, taskId: string, database: Firestore = db) {
-  const path = `users/${uid}/tasks/${taskId}`;
-  await trackRemoval(path, deleteDoc(doc(database, path)));
+/**
+ * Deletes a task AND every work block linked to it (ronda4 T8, spec S8) in
+ * ONE atomic `writeBatch`. Before this batch, a task delete orphaned its
+ * blocks on the calendar; now nothing survives the delete half-applied. The
+ * blocks come from the caller's live snapshot (the store subscribes to the
+ * whole `users/{uid}/blocks` collection, so the caller always holds every
+ * block whose `taskId` is this task) — the same no-read, write-what-you-know
+ * rule every other helper here follows, and the reason the write stays one
+ * batch: a Firestore transaction could read the blocks itself, but it fails
+ * offline, and deleting a task on a train has to keep working.
+ *
+ * Past and future blocks are deleted alike: the task's schedule dies with the
+ * task, and a delete that kept future blocks would resurrect the old orphan
+ * bug one day at a time. What the batch removed is returned — the exact block
+ * snapshots the caller passed, in the order given — which is what undo
+ * restores. Every id is checked before the batch is built, so a rejected
+ * batch is also a thrown batch: nothing was deleted anywhere.
+ *
+ * The database is a parameter with the app's client as its default so the
+ * emulator suite can drive this real batch against its own authenticated
+ * client; every surface calls it with two or three arguments.
+ */
+export async function deleteTask(
+  uid: string,
+  taskId: string,
+  blocks: readonly DeletedBlock[],
+  database: Firestore = db,
+): Promise<DeletedBlock[]> {
+  if (typeof taskId !== "string" || taskId === "" || taskId.includes("/")) throw new Error("task ID is invalid");
+  const blockPaths = blocks.map(block => {
+    if (typeof block.id !== "string" || block.id === "" || block.id.includes("/")) throw new Error("block ID is invalid");
+    return `users/${uid}/blocks/${block.id}`;
+  });
+  const taskPath = `users/${uid}/tasks/${taskId}`;
+  const batch = writeBatch(database);
+  batch.delete(doc(database, taskPath));
+  for (const path of blockPaths) batch.delete(doc(database, path));
+  const commit = batch.commit();
+  // Firestore does not flag a removal in the snapshot (see data/pending.ts),
+  // so each document's delete is counted pending until the one commit lands.
+  for (const path of [taskPath, ...blockPaths]) void trackRemoval(path, commit).catch(() => undefined);
+  await commit;
+  return [...blocks];
 }
 
 /**
@@ -263,4 +304,22 @@ export async function restoreTask(uid: string, task: DeletedTask, database: Fire
   // on its own (see forgetRemoval), so one document is one pending change.
   forgetRemoval(path);
   await write;
+}
+
+/**
+ * The undo of a task delete that took its work blocks with it (S8): the task
+ * goes back under its original id exactly as `restoreTask` does, and the
+ * blocks go back in ONE batch (`restoreBlocks`), so a restored task never
+ * reappears with half its schedule missing. The blocks are the snapshots the
+ * delete returned; they keep their own ids, task links, titles and import
+ * sources. An empty block list is a plain task restore.
+ */
+export async function restoreTaskWithBlocks(
+  uid: string,
+  task: DeletedTask,
+  blocks: readonly DeletedBlock[],
+  database: Firestore = db,
+) {
+  await restoreTask(uid, task, database);
+  await restoreBlocks(uid, blocks, database);
 }

@@ -295,8 +295,17 @@ export function ChatSurface({
         }
         if (call.name === "delete_task") {
           const value = check.value as NormalizedDeleteTask;
-          await deleteTask(uid, value.taskId);
-          return { status: "confirmed", message: `Deleted task id=${value.taskId} — "${value.title}"` };
+          // The executor deletes exactly the blocks the card named (the live
+          // context's task-linked set), and the outcome says so (S8).
+          const removed = await deleteTask(uid, value.taskId, value.blocks);
+          return {
+            status: "confirmed",
+            message:
+              `Deleted task id=${value.taskId} — "${value.title}"` +
+              (removed.length > 0
+                ? ` and its ${removed.length} ${removed.length === 1 ? "work block" : "work blocks"}`
+                : ""),
+          };
         }
         if (call.name === "hide_holiday") {
           const value = check.value as NormalizedHideHoliday;

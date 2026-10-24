@@ -189,7 +189,7 @@ const DELETE_TASK: ChatToolSpec = {
   function: {
     name: "delete_task",
     description:
-      "Permanently delete one task. Say what it was and, when the user seems to mean several tasks, confirm the list with them first. The user must confirm before anything is deleted.",
+      "Permanently delete one task AND every work block linked to it (they come off the calendar together). Say what it was and, when the user seems to mean several tasks, confirm the list with them first. The user must confirm before anything is deleted.",
     parameters: {
       type: "object",
       properties: {
@@ -849,10 +849,19 @@ export function checkCompleteTask(raw: string, context: ChatToolContext): ToolCh
   };
 }
 
-export type NormalizedDeleteTask = { taskId: string; title: string };
+export type NormalizedDeleteTask = {
+  taskId: string;
+  title: string;
+  /** Every task-linked work block the live context holds (past and future),
+   * with the card's label for each. Deleting a task deletes its blocks (S8):
+   * the card names exactly these and the executor removes exactly these, so
+   * the two can never drift apart. */
+  blocks: ReadonlyArray<{ id: string; start: string; end: string; taskId?: string; title?: string }>;
+};
 
 /** Validates `delete_task`: the task must exist, and the card names exactly
- * what will be removed — the task itself, and what stays behind. */
+ * what will be removed — the task itself and every work block linked to it
+ * (S8), computed from the live context like the card of every other write. */
 export function checkDeleteTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedDeleteTask> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
@@ -863,11 +872,16 @@ export function checkDeleteTask(raw: string, context: ChatToolContext): ToolChec
   const parts = [`Delete task "${task.title}"`];
   if (task.deadline !== undefined) parts.push(`due ${formatDateKey(task.deadline, context.todayKey)}`);
   if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
-  const blocks = (context.blocks ?? []).filter(block => block.taskId === taskId);
+  const blocks = (context.blocks ?? [])
+    .filter(block => block.taskId === taskId)
+    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
   if (blocks.length > 0) {
-    parts.push(`${blocks.length} ${blocks.length === 1 ? "block stays" : "blocks stay"} on the calendar`);
+    parts.push(
+      `and its ${blocks.length} ${blocks.length === 1 ? "work block" : "work blocks"}: ` +
+        blocks.map(block => blockLabel(block, context)).join(", "),
+    );
   }
-  return { ok: true, value: { taskId, title: task.title }, description: parts.join(" · ") };
+  return { ok: true, value: { taskId, title: task.title, blocks }, description: parts.join(" · ") };
 }
 
 export type NormalizedHideHoliday = { holidayId: string; title: string; show: boolean };

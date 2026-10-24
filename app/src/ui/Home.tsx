@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { completeOccurrence } from "../data/series.ts";
-import { setBlockTimes } from "../data/blocks.ts";
+import { deletedBlockSnapshot, setBlockTimes } from "../data/blocks.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
-import { deleteTask, renameTask, restoreTask, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
+import { deleteTask, renameTask, restoreTaskWithBlocks, setTaskCompleted, setTaskDeadline, setTaskEstimate } from "../data/tasks.ts";
 import { WeekRadar } from "./CapacityBar.tsx";
 import { completedSamples } from "./BiasHint.tsx";
 import { formatDateKey, isPastDateKey } from "./format.ts";
@@ -422,11 +422,16 @@ function TodayPage({
             onEstimateChange={next => void settle(setTaskEstimate(uid, selectedTask.id, next)).catch(() => undefined)}
             onDelete={() => {
               // The row's exact fields travel with the offer, as on Tasks: undo
-              // rewrites them under the same document id.
+              // rewrites them under the same document id. The task's work
+              // blocks are deleted with it (S8), so their snapshots travel
+              // too — undo restores task and blocks together.
               const deleted = selectedTask;
+              const deletedBlocks = blocks
+                .filter(block => block.taskId === deleted.id)
+                .map(deletedBlockSnapshot);
               setSelected(null);
-              void settle(deleteTask(uid, deleted.id))
-                .then(() => onOfferUndo?.({ message: "Task deleted", restore: () => restoreTask(uid, deleted) }))
+              void settle(deleteTask(uid, deleted.id, deletedBlocks))
+                .then(() => onOfferUndo?.({ message: "Task deleted", restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) }))
                 .catch(() => undefined);
             }}
           />

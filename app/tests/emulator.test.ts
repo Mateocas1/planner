@@ -904,7 +904,7 @@ test("a someday task survives delete and undo, and the read path maps the flag",
     const deleted = toTask(snapshot as never);
     assert.equal(deleted.someday, true);
 
-    await deleteTask(uid, "shelf", owner.db);
+    await deleteTask(uid, "shelf", [], owner.db);
     assert.equal((await getDoc(doc(owner.db, path))).exists(), false);
     await restoreTask(uid, deleted, owner.db);
     const restored = (await getDoc(doc(owner.db, path))).data();
@@ -917,8 +917,93 @@ test("a someday task survives delete and undo, and the read path maps the flag",
   }
 });
 
-/** The Rituals settings write the parsed, normalized shape (review nit #7):
- *  duplicate steps collapse and unknown keys never reach the profile. */
+/**
+ * Deleting a task deletes its work blocks (ronda4 T8, spec S8): one atomic
+ * `writeBatch` removes the task document and every block linked to it — past
+ * and future, since a task's history dies with it — and nothing else. Undo
+ * puts the task and exactly those blocks back under the same ids and fields.
+ */
+test("deleting a task deletes its past and future blocks in one batch, and undo restores both", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask, restoreTaskWithBlocks } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/limited`;
+    await setDoc(doc(owner.db, taskPath), { title: "Report", completed: false, deadline: "2026-11-20", estimate: 90 });
+    const pastPath = `users/${uid}/blocks/bpast`;
+    await setDoc(doc(owner.db, pastPath), { start: "2026-10-20T09:00:00Z", end: "2026-10-20T10:30:00Z", taskId: "limited", title: "Report draft" });
+    const futurePath = `users/${uid}/blocks/bfuture`;
+    await setDoc(doc(owner.db, futurePath), { start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:30:00Z", taskId: "limited" });
+    const otherPath = `users/${uid}/blocks/bother`;
+    await setDoc(doc(owner.db, otherPath), { start: "2026-11-21T09:00:00Z", end: "2026-11-21T10:00:00Z", taskId: "other" });
+
+    const removed = await deleteTask(uid, "limited", [
+      { id: "bpast", start: "2026-10-20T09:00:00Z", end: "2026-10-20T10:30:00Z", taskId: "limited", title: "Report draft" },
+      { id: "bfuture", start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:30:00Z", taskId: "limited" },
+    ], owner.db);
+    assert.deepEqual(removed.map(block => block.id), ["bpast", "bfuture"]);
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), false);
+    assert.equal((await getDocFromServer(doc(owner.db, pastPath))).exists(), false);
+    assert.equal((await getDocFromServer(doc(owner.db, futurePath))).exists(), false);
+    // A block of another task is nobody's business here.
+    assert.equal((await getDocFromServer(doc(owner.db, otherPath))).exists(), true);
+
+    // Undo restores the task and exactly those blocks, under the same ids.
+    await restoreTaskWithBlocks(
+      uid,
+      { id: "limited", title: "Report", completed: false, deadline: "2026-11-20", estimate: 90 },
+      removed,
+      owner.db,
+    );
+    const taskBack = (await getDocFromServer(doc(owner.db, taskPath))).data();
+    assert.equal(taskBack?.title, "Report");
+    assert.equal(taskBack?.deadline, "2026-11-20");
+    const pastBack = (await getDocFromServer(doc(owner.db, pastPath))).data();
+    assert.equal(pastBack?.taskId, "limited");
+    assert.equal(pastBack?.title, "Report draft");
+    assert.equal(pastBack?.start, "2026-10-20T09:00:00Z");
+    const futureBack = (await getDocFromServer(doc(owner.db, futurePath))).data();
+    assert.equal(futureBack?.taskId, "limited");
+    assert.equal((await getDocFromServer(doc(owner.db, otherPath))).exists(), true);
+  } finally {
+    await close(owner);
+  }
+});
+
+/** The batch is atomic: a rejected write (the security rules, here) deletes
+ * neither the task nor any of its blocks. */
+test("a rules-rejected task delete leaves the task and its blocks untouched", async () => {
+  (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
+  const { deleteTask } = await import("../src/data/tasks.ts");
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`delblocks-denied-${suffix}`);
+  const other = client(`delblocks-denied-other-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `delblocks-denied-${suffix}@example.invalid`, "password1");
+    const uid = account.user.uid;
+    const taskPath = `users/${uid}/tasks/guarded`;
+    await setDoc(doc(owner.db, taskPath), { title: "Guarded", completed: false });
+    const blockPath = `users/${uid}/blocks/bguarded`;
+    await setDoc(doc(owner.db, blockPath), { start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "guarded" });
+
+    await createUserWithEmailAndPassword(other.auth, `delblocks-denied-other-${suffix}@example.invalid`, "password1");
+    await assert.rejects(
+      deleteTask(uid, "guarded", [{ id: "bguarded", start: "2026-11-20T14:00:00Z", end: "2026-11-20T15:00:00Z", taskId: "guarded" }], other.db),
+      { code: "permission-denied" },
+    );
+    assert.equal((await getDocFromServer(doc(owner.db, taskPath))).exists(), true);
+    assert.equal((await getDocFromServer(doc(owner.db, blockPath))).exists(), true);
+  } finally {
+    await Promise.all([close(owner), close(other)]);
+  }
+});
+
+/**
+ * The Rituals settings write the parsed, normalized shape (review nit #7):
+ * duplicate steps collapse and unknown keys never reach the profile. */
 test("weekly review settings are written normalized", async () => {
   (globalThis as { window?: unknown }).window = { location: { hostname: "localhost" } };
   const { profileDocument, setProfileWeeklyReview } = await import("../src/data/profile.ts");
@@ -1075,7 +1160,7 @@ test("a task's day map survives delete and undo, and the read path maps it", asy
     const deleted = toTask(snapshot as never);
     assert.deepEqual(deleted.actualByDay, { "2026-03-24": 30, "2026-03-25": 5 });
 
-    await deleteTask(uid, "tracked", owner.db);
+    await deleteTask(uid, "tracked", [], owner.db);
     assert.equal((await getDoc(doc(owner.db, path))).exists(), false);
     await restoreTask(uid, deleted, owner.db);
     const restored = (await getDoc(doc(owner.db, path))).data();
@@ -1110,7 +1195,7 @@ test("a negative legacy day round-trips delete and undo unchanged", async () => 
     const deleted = toTask(snapshot as never);
     assert.deepEqual(deleted.actualByDay, { "2026-03-24": 70, "2026-03-25": -30 });
 
-    await deleteTask(uid, "legacy", owner.db);
+    await deleteTask(uid, "legacy", [], owner.db);
     await restoreTask(uid, deleted, owner.db);
     const restored = (await getDoc(doc(owner.db, path))).data();
     assert.equal(restored?.actualMinutes, 40);
