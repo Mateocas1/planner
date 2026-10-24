@@ -85,13 +85,6 @@ async function touchSwipe(
 
 const withId = (point: Point) => ({ ...point, id: 1 });
 
-/** The rounded corner the gesture wrote on the sheet's clip-path, or 0 when
- * there is no clip (the resting state: the radius lives in CSS). */
-function clipRadius(clipPath: string): number {
-  const match = clipPath.match(/inset\(0px round ([\d.]+)px\)/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
 /** What the gesture wrote on the sheet and its scrim, read mid-drag. */
 function swipeState(page: Page) {
   return page.evaluate(() => {
@@ -99,9 +92,10 @@ function swipeState(page: Page) {
     const scrim = document.querySelector<HTMLElement>(".scrim");
     if (!sheet || !scrim) return null;
     const computed = getComputedStyle(sheet);
+    const clip = computed.clipPath.match(/inset\(0px round ([\d.]+)px\)/);
     return {
       transform: sheet.style.transform,
-      radius: clipRadius(computed.clipPath),
+      radius: clip ? parseFloat(clip[1]) : 0,
       // The resting border-radius must stay untouched while the gesture
       // rounds the corners on clip-path instead.
       borderRadius: parseFloat(computed.borderTopLeftRadius),
@@ -197,9 +191,15 @@ test.describe("mouse", () => {
   });
 
   test("a committed swipe holds the sheet invisible from the flight's end to the unmount", async ({ page }) => {
+    // A creation sheet: not shared, so the commit takes the real flight path
+    // (a task-details sheet closes through the view transition, which owns
+    // the close and never flies).
     await signUp(page, newEmail("swipe-invisible-exit"));
-    await addTask(page, "Invisible exit");
-    await openTaskDetails(page, "Invisible exit");
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await nav.getByRole("button", { name: "Tasks" }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    await expect(page.getByRole("complementary", { name: "New task" })).toBeVisible();
+    await settle(page);
     // The commit flight's `done` (useSwipeDismiss) cancels the flight, clears
     // its `fill: forwards` hold and leaves the sheet holding an inline
     // `opacity: 0` before the close path runs, so the presence exit starts
@@ -224,7 +224,7 @@ test.describe("mouse", () => {
       observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
     });
     const from = await handlePoint(page);
-    await dragMouse(page, from, { x: from.x - 300, y: from.y });
+    await dragMouse(page, from, { x: from.x + 300, y: from.y });
     await expect(page.locator(".sheet")).toHaveCount(0);
     const events = await page.evaluate(() => (window as unknown as { __sheetExitEvents?: string[] }).__sheetExitEvents ?? []);
     // The sheet went to inline opacity 0 before anything removed it: the exit

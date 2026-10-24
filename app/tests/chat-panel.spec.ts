@@ -494,21 +494,15 @@ async function dragMouse(page: Page, from: Point, to: Point, steps = 6): Promise
   await page.mouse.up();
 }
 
-/** The rounded corner the gesture wrote on the panel's clip-path, or 0 when
- * there is no clip (the resting state). */
-function clipRadius(clipPath: string): number {
-  const match = clipPath.match(/inset\(0px round ([\d.]+)px\)/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
 /** What the gesture wrote on the panel, read mid-drag. */
 function swipeState(page: Page) {
   return page.evaluate(() => {
     const element = document.querySelector<HTMLElement>(".chat-panel");
     if (!element) return null;
+    const clip = getComputedStyle(element).clipPath.match(/inset\(0px round ([\d.]+)px\)/);
     return {
       transform: element.style.transform,
-      radius: clipRadius(getComputedStyle(element).clipPath),
+      radius: clip ? parseFloat(clip[1]) : 0,
       opacity: element.style.opacity,
     };
   });
