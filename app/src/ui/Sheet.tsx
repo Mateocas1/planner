@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { animate, usePresence, useReducedMotion } from "motion/react";
+import { animate, usePresence, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
 import { dur, easeOut, easeOutCss, expandBlur, ms, phoneQuery } from "./motion.ts";
 import { keepFocusedFieldVisible } from "./viewport.ts";
@@ -362,12 +362,16 @@ export function Sheet({
    * on release either commits (the sheet leaves in the drag direction carrying
    * the release velocity, then the ordinary close path runs: same `onClose`,
    * same focus return, and for a shared sheet the same view transition) or
-   * springs back. Text fields, buttons and any scroller that can still move in
-   * the locked direction never enter the gesture, so selection and scrolling
-   * keep working. Reduced motion keeps the commit/cancel decision but follows
-   * nothing: a past-threshold release falls through to the existing reduced
-   * fade. A pointerdown mid-snap-back retargets from the spring's current
-   * value instead of restarting it. The math itself lives in swipeDismiss.ts.
+   * springs back on a motion spring that starts at the release velocity.
+   * Mouse gestures start on the handle or on surface that is not text: a press
+   * on body copy selects, it never moves the sheet. Text fields, buttons and
+   * any scroller that can still move in the locked direction never enter the
+   * gesture, so selection and scrolling keep working, and pointer capture is
+   * taken only after the direction locks so a tap's click keeps its target.
+   * Reduced motion keeps the commit/cancel decision but follows nothing: a
+   * past-threshold release falls through to the existing reduced fade. A
+   * pointerdown mid-snap-back retargets from the spring's current value
+   * instead of restarting it. The math itself lives in swipeDismiss.ts.
    */
   useEffect(() => {
     const sheet = sheetRef.current;
@@ -384,6 +388,27 @@ export function Sheet({
       );
     const onHandle = (target: EventTarget | null): boolean =>
       target instanceof Element && !!target.closest("[data-drag-handle]");
+
+    /**
+     * Mouse text rule: a mouse gesture starts on the drag handle or on surface
+     * that is not text. A pointerdown on (or under) a text-bearing element --
+     * one that matches a text tag or carries its own non-empty text nodes --
+     * belongs to selection, so the gesture refuses it and the drag selects
+     * copy instead of moving the sheet. Touch and pen keep the whole-surface
+     * behavior: there, selection is not the primary pointer role.
+     */
+    const TEXT_TAGS = "p, h1, h2, h3, h4, h5, h6, label, li, dd, dt, blockquote, pre, code, [contenteditable]";
+    const carriesText = (node: Element): boolean =>
+      Array.from(node.childNodes).some(
+        child => child.nodeType === Node.TEXT_NODE && (child.textContent ?? "").trim() !== "",
+      );
+    const textBlocksMouse = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return true;
+      for (let node: Element | null = target; node && node !== sheet; node = node.parentElement) {
+        if (node.matches(TEXT_TAGS) || carriesText(node)) return true;
+      }
+      return false;
+    };
 
     /**
      * A scroller that can still move in the locked direction keeps the gesture:
@@ -438,14 +463,20 @@ export function Sheet({
       direction: SwipeDirection | null;
     };
     let gesture: Gesture | null = null;
-    let snapback: Animation | null = null;
-    let snapbackScrim: Animation | null = null;
+    let snapback: AnimationPlaybackControls | null = null;
+    let snapbackScrim: AnimationPlaybackControls | null = null;
+    /** The rounded phone radius already written this gesture (finding: a
+     * border-radius write per move repaints the glass for nothing). */
+    let lastRadius: number | null = null;
 
     const clearInline = () => {
       delete sheet.dataset.swiping;
       sheet.style.transform = "";
       sheet.style.transformOrigin = "";
       sheet.style.borderRadius = "";
+      // The Motion spring manages will-change while it runs; drop it so the
+      // resting sheet holds no promoted layer.
+      sheet.style.willChange = "";
       scrim.style.opacity = "";
     };
 
@@ -453,27 +484,37 @@ export function Sheet({
       if (gesture || !event.isPrimary) return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
       // An entry or exit flight owns the transform; only a snap-back is
-      // retargetable.
-      if (sheet.getAnimations().some(animation => animation !== snapback)) return;
+      // retargetable. The spring is Motion-driven and never shows up in
+      // getAnimations, so any animation here is one of those flights.
+      if (sheet.getAnimations().length > 0) return;
       const target = event.target;
       if (interactive(target)) return;
-      if (!onHandle(target) && !(target instanceof Element)) return;
+      if (!(target instanceof Element)) return;
+      // Mouse: the drag handle or a surface that is not text. Touch and pen
+      // start from any surface.
+      if (event.pointerType === "mouse" && !onHandle(target) && textBlocksMouse(target)) return;
 
       let baseX = 0;
       let baseY = 0;
       if (snapback) {
-        // Retarget from wherever the spring is now, and freeze that value into
-        // the inline styles so cancelling the animations changes nothing.
+        // Retarget from wherever the spring is now. The freeze must happen
+        // around the stop: cancelling a Motion spring rewrites its start
+        // value, so read the current matrix and scrim first, cancel, then
+        // write the frozen values back and continue the drag from them.
         const matrix = sheetMatrix(sheet);
+        const frozenScrim = getComputedStyle(scrim).opacity;
+        const frozenRadius = getComputedStyle(sheet).borderTopLeftRadius;
+        const controls = snapback;
+        const scrimControls = snapbackScrim;
+        snapback = null;
+        snapbackScrim = null;
+        controls.cancel();
+        scrimControls?.cancel();
         baseX = matrix.e;
         baseY = matrix.f;
         sheet.style.transform = dragTransform(baseX, baseY, matrix.a || 1);
-        scrim.style.opacity = getComputedStyle(scrim).opacity;
-        sheet.style.borderRadius = getComputedStyle(sheet).borderTopLeftRadius;
-        snapback.cancel();
-        snapbackScrim?.cancel();
-        snapback = null;
-        snapbackScrim = null;
+        scrim.style.opacity = frozenScrim;
+        sheet.style.borderRadius = frozenRadius;
       }
       gesture = {
         pointerId: event.pointerId,
@@ -485,13 +526,12 @@ export function Sheet({
         direction: null,
       };
       velocity.reset();
+      lastRadius = null;
       sheet.dataset.swiping = "pending";
-      try {
-        sheet.setPointerCapture(event.pointerId);
-      } catch {
-        // A synthetic pointer has nothing to capture; the tracked moves on the
-        // sheet still drive the gesture.
-      }
+      // No pointer capture here: capture before the slop lock would retarget
+      // the click of a tap on a clickable element to the sheet, so its onClick
+      // never runs. The gesture takes capture only once it has locked a
+      // direction and is really moving the sheet.
     };
 
     const apply = (direction: SwipeDirection, dx: number, dy: number) => {
@@ -518,10 +558,15 @@ export function Sheet({
       scrim.style.opacity = String(1 - p);
       // Phone only: the corners round as the sheet shrinks (S1). A full-viewport
       // sheet rests at radius 0, the inset phone sheets at --r-sheet; desktop
-      // never touches its radius. The write is a paint of the sheet's own
-      // composited layer (will-change is held by data-swiping), never a layout.
+      // never touches its radius. The write happens only when the rounded value
+      // changes: a border-radius write per move repaints the backdrop-filter
+      // glass every frame for a sub-pixel change nobody can see.
       if (window.matchMedia(phoneQuery).matches) {
-        sheet.style.borderRadius = `${sheetRadius(restRadius(), p)}px`;
+        const radius = Math.round(sheetRadius(restRadius(), p));
+        if (radius !== lastRadius) {
+          lastRadius = radius;
+          sheet.style.borderRadius = `${radius}px`;
+        }
       }
     };
 
@@ -540,30 +585,45 @@ export function Sheet({
           return;
         }
         gesture.direction = direction;
+        // The gesture just claimed the drag: any text selection the press had
+        // begun dies here, where `user-select: none` takes over too.
+        document.getSelection()?.removeAllRanges();
+        // Capture only now, after the lock: before it, a tap's click would be
+        // retargeted to the sheet and a clickable element would lose it.
+        try {
+          sheet.setPointerCapture(event.pointerId);
+        } catch {
+          // A synthetic pointer has nothing to capture; the tracked moves on
+          // the sheet still drive the gesture.
+        }
       }
       if (reduced) return; // reduced motion: decide on release, never follow
       apply(gesture.direction, dx, dy);
     };
 
-    const springBack = () => {
-      const from = sheet.style.transform || restTransform;
-      const fromRadius = sheet.style.borderRadius || restRadius();
-      const fromScrim = scrim.style.opacity || "1";
-      const anim = sheet.animate(
-        [
-          { transform: from, borderRadius: `${fromRadius}px` },
-          { transform: restTransform, borderRadius: `${restRadius()}px` },
-        ],
-        { duration: 280, easing: easeOutCss },
-      );
-      // The backdrop comes back with the sheet, from the same value.
-      const scrimAnim = scrim.animate([{ opacity: fromScrim }, { opacity: "1" }], {
-        duration: 280,
-        easing: easeOutCss,
+    /**
+     * Spring back from wherever the sheet was released, starting at the
+     * release velocity so the return reads as one continuous gesture instead
+     * of a keyframe restart. A motion spring (bounce ~0.15) keeps a beat of
+     * overshoot-and-settle; a retargeting pointerdown still freezes it from
+     * the matrix, exactly as before.
+     */
+    const springBack = (velocityXPxPerMs = 0, velocityYPxPerMs = 0) => {
+      const spring = { type: "spring", bounce: 0.15 } as const;
+      // Motion reads the current transform (the drag's translate + scale) as
+      // the start, so the spring leaves at the velocity the pointer arrived
+      // with -- px/ms here, px/s for Motion.
+      const anim = animate(sheet, { x: 0, y: 0, scale: 1, borderRadius: `${restRadius()}px` }, {
+        x: { ...spring, velocity: velocityXPxPerMs * 1000 },
+        y: { ...spring, velocity: velocityYPxPerMs * 1000 },
+        scale: { ...spring },
+        borderRadius: { ...spring },
       });
+      // The backdrop comes back with the sheet, from the same value.
+      const scrimAnim = animate(scrim, { opacity: 1 }, { ...spring });
       snapback = anim;
       snapbackScrim = scrimAnim;
-      anim.finished.then(
+      anim.then(
         () => {
           if (snapback === anim) {
             snapback = null;
@@ -571,7 +631,27 @@ export function Sheet({
             clearInline();
           }
         },
-        () => {}, // cancelled by a retargeting pointerdown: nothing to clean
+        () => {}, // stopped by a retargeting pointerdown: nothing to clean
+      );
+    };
+
+    /**
+     * A commit that the parent declines (it never sets the state that removes
+     * the sheet) must not leave the panel invisible under the flight's
+     * `fill: forwards`: if the presence exit has not started a frame or two
+     * after `onClose`, put the sheet back where the drag left it.
+     */
+    const restoreIfDeclined = (flight?: Animation, scrimFlight?: Animation) => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (!sheet.isConnected || !present.current || !dismissed.current) return;
+          dismissed.current = false;
+          flight?.cancel();
+          scrimFlight?.cancel();
+          sheet.style.pointerEvents = "";
+          scrim.style.pointerEvents = "";
+          clearInline();
+        }),
       );
     };
 
@@ -587,6 +667,7 @@ export function Sheet({
         // browser captures the dragged sheet as the old side and shrinks it
         // into the row, so the live panel must not fly on its own.
         closeRef.current();
+        restoreIfDeclined();
         return;
       }
       // Fly out along the drag direction, carrying the release velocity: linear
@@ -613,7 +694,10 @@ export function Sheet({
         easing: "linear",
         fill: "forwards",
       });
-      const done = () => closeRef.current();
+      const done = () => {
+        closeRef.current();
+        restoreIfDeclined(flight);
+      };
       flight.finished.then(done, done);
     };
 
@@ -637,7 +721,11 @@ export function Sheet({
       const horizontal = direction === "left" || direction === "right";
       const dimension = horizontal ? sheet.offsetWidth : sheet.offsetHeight;
       const distance = horizontal ? Math.abs(dx) : Math.abs(dy);
-      const raw = velocity.velocity(horizontal ? "x" : "y");
+      // The release velocity is read at the release's own timestamp: a pointer
+      // that stopped holding its flick before lifting throws nothing.
+      const rawX = velocity.velocity("x", event.timeStamp);
+      const rawY = velocity.velocity("y", event.timeStamp);
+      const raw = horizontal ? rawX : rawY;
       // The release velocity only counts when it moves the way the sheet is
       // dragged: a release decelerating against the drag is the user pulling
       // the sheet back, not throwing it.
@@ -657,7 +745,7 @@ export function Sheet({
         clearInline();
         return;
       }
-      springBack();
+      springBack(rawX, rawY);
     };
 
     const onPointerCancel = (event: PointerEvent) => {
@@ -670,14 +758,20 @@ export function Sheet({
     };
 
     sheet.addEventListener("pointerdown", onPointerDown);
-    sheet.addEventListener("pointermove", onPointerMove);
-    sheet.addEventListener("pointerup", onPointerUp);
-    sheet.addEventListener("pointercancel", onPointerCancel);
+    // Moves, the release and cancellation are tracked on the document: a touch
+    // pointer implicitly captures to its target, but a mouse has no implicit
+    // capture, so a drag that leaves the sheet -- which is what a dismissal is
+    // -- would stop being tracked before the gesture ever locks a direction.
+    // The handlers are no-ops without an active gesture, and no capture is
+    // taken before the lock, so a tap's click still keeps its own target.
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerCancel);
     return () => {
       sheet.removeEventListener("pointerdown", onPointerDown);
-      sheet.removeEventListener("pointermove", onPointerMove);
-      sheet.removeEventListener("pointerup", onPointerUp);
-      sheet.removeEventListener("pointercancel", onPointerCancel);
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
       snapback?.cancel();
       snapbackScrim?.cancel();
     };

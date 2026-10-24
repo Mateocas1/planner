@@ -6,13 +6,21 @@
    The header is the drag handle: no scroller lives inside it, so it opts out of
    native panning entirely and every direction is available to the gesture from
    there. */
-.sheet { touch-action: pan-y; }
+.sheet {
+  touch-action: pan-y;
+  /* A down-drag from scrollTop 0 must reach the gesture, not the browser's
+     overscroll: on touch, pull-to-refresh or scroll chaining would claim the
+     drag and send pointercancel before the 8 px slop lock. */
+  overscroll-behavior: contain;
+}
 .sheet-head { touch-action: none; }
 
-/* From pointerdown until the gesture ends, nothing under the finger may start
-   a native selection the swipe would have to fight. Text fields, buttons and
+/* Once the gesture has locked a direction (data-swiping="active"), nothing
+   under the pointer may start a native selection the swipe would fight. While
+   the pointer is only pending (inside the slop) selection keeps working: a
+   mouse press on text must still be able to select. Text fields, buttons and
    links never enter the gesture (Sheet.tsx), so their selection is untouched. */
-.sheet[data-swiping] {
+.sheet[data-swiping="active"] {
   user-select: none;
   -webkit-user-select: none;
 }
