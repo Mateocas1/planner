@@ -1,0 +1,17 @@
+/* Desktop-only shell adjustments (task T3). Imported by DesktopShell.tsx (the
+   import is unconditional so the rules ship in the bundle); every selector is
+   gated on the `desktop-shell`/`desktop-mica` classes, which only the Tauri
+   shell ever sets, so the web build is unaffected. */
+
+/* Mica confirmed: let the DWM backdrop through. The html canvas paints the
+   page background in the web design (app.css); here it must be transparent.
+   The body keeps a strong wash of the designed background so text contrast
+   stays close to the audited values while the wallpaper-tinted Mica still
+   reads through. */
+html.desktop-mica {
+  background: transparent;
+}
+
+html.desktop-mica body {
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+}
