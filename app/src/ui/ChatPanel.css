@@ -174,14 +174,16 @@
 
 /* The gesture moves the panel on the compositor; the hint holds the layer for
    the whole drag so each per-move write (transform, and the phone-only corner
-   radius) is a paint of the panel's own layer -- never a layout pass and
-   never a promote/demote cycle. */
+   rounding on clip-path) is a paint of the panel's own layer -- never a layout
+   pass and never a promote/demote cycle. */
 .chat-panel[data-swiping="active"] { will-change: transform; }
 
-/* Phone (the same query as motion.ts phoneQuery): the panel is the full
-   viewport (S1) -- a whole screen of drag surface, resting radius 0 -- so the
-   drag rounds its corners 0 → 28 px while the card shrinks (sheetRadius).
-   Desktop keeps the inset card and its --r-sheet corners untouched. */
+/* Phone (the same breakpoint as `phoneQuery` in src/ui/motion.ts): the panel
+   is the full viewport (S1) -- a whole screen of drag surface, resting radius
+   0 -- so the drag rounds its corners 0 → 28 px on clip-path while the card
+   shrinks (sheetRadius, useSwipeDismiss). Desktop keeps the inset card and
+   its --r-sheet corners untouched. The border-radius here is the resting
+   style, not motion; the gesture's animated rounding never touches it. */
 @media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
   .chat-panel {
     inset: 0;

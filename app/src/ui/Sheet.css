@@ -27,6 +27,6 @@
 
 /* The gesture moves the sheet on the compositor; the hint holds the layer for
    the whole drag so each per-move write (transform, and the phone-only corner
-   radius) is a paint of the sheet's own layer -- never a layout pass and never
-   a promote/demote cycle. */
+   rounding on clip-path) is a paint of the sheet's own layer -- never a layout
+   pass and never a promote/demote cycle. */
 .sheet[data-swiping="active"] { will-change: transform; }

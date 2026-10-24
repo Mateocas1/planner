@@ -494,6 +494,13 @@ async function dragMouse(page: Page, from: Point, to: Point, steps = 6): Promise
   await page.mouse.up();
 }
 
+/** The rounded corner the gesture wrote on the panel's clip-path, or 0 when
+ * there is no clip (the resting state). */
+function clipRadius(clipPath: string): number {
+  const match = clipPath.match(/inset\(0px round ([\d.]+)px\)/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
 /** What the gesture wrote on the panel, read mid-drag. */
 function swipeState(page: Page) {
   return page.evaluate(() => {
@@ -501,7 +508,8 @@ function swipeState(page: Page) {
     if (!element) return null;
     return {
       transform: element.style.transform,
-      radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
+      radius: clipRadius(getComputedStyle(element).clipPath),
+      opacity: element.style.opacity,
     };
   });
 }
@@ -589,8 +597,62 @@ test.describe("swipe to dismiss (T5, S1)", () => {
     await expect(panel(page)).toBeVisible();
     await expect(field(page)).toBeFocused();
     expect((await swipeState(page))!.transform).toBe("");
+    // The hook reactivated clean (dismissed state and styles reset): a second
+    // swipe commit still closes the panel through the same path.
+    await settleAnimations(page); // the reopened entrance owns the box until it lands
+    const second = await headerPoint(page);
+    await dragMouse(page, second, { x: second.x - 300, y: second.y });
+    await expect(panel(page)).toBeHidden();
+    await expect(launcher(page)).toBeFocused();
+    // And the panel opens a third time, still clean.
+    await page.keyboard.press("Control+j");
+    await expect(panel(page)).toBeVisible();
+    expect((await swipeState(page))!.transform).toBe("");
     await page.keyboard.press("Escape");
     await expect(panel(page)).toBeHidden();
+  });
+
+  test("a commit flight cancelled mid-flight never runs the close path's hold", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    // Record the panel's inline opacity-0 write (the commit flight's end hold)
+    // and the exit's data-closing, in order. The close path's hold belongs
+    // before the exit; a flight the cleanup cancelled (Escape mid-flight) must
+    // never run `done` and write it afterwards.
+    await page.evaluate(() => {
+      const events: string[] = [];
+      (window as unknown as { __panelFlightEvents?: string[] }).__panelFlightEvents = events;
+      const observer = new MutationObserver(records => {
+        for (const record of records) {
+          const target = record.target as HTMLElement;
+          if (record.type === "attributes" && target.classList.contains("chat-panel")) {
+            if (target.style.opacity === "0") events.push("opacity0");
+            if (target.hasAttribute("data-closing")) events.push("closing");
+          }
+        }
+      });
+      observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["style", "data-closing"] });
+    });
+    const from = await headerPoint(page);
+    // A long left drag commits with a flight of up to 300 ms; Escape lands
+    // inside it, the panel closes through the ordinary path, and the hook's
+    // cleanup cancels the flight. Either way the hold write, if any, must
+    // precede the exit.
+    await dragMouse(page, from, { x: from.x - 400, y: from.y });
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+    const events = await page.evaluate(
+      () => (window as unknown as { __panelFlightEvents?: string[] }).__panelFlightEvents ?? [],
+    );
+    const hold = events.indexOf("opacity0");
+    if (hold !== -1) {
+      expect(events.indexOf("closing"), JSON.stringify(events)).toBeGreaterThan(hold);
+    }
+    // Whatever happened mid-flight, the close was the ordinary one: the
+    // launcher has the caret back.
+    await expect(launcher(page)).toBeFocused();
   });
 
   test("a fast flick down closes the panel from a distance the threshold alone would reject", async ({ page }) => {

@@ -25,7 +25,7 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
   delete surface.dataset.swiping;
   surface.style.transform = "";
   surface.style.transformOrigin = "";
-  surface.style.borderRadius = "";
+  surface.style.clipPath = "";
   surface.style.opacity = "";
   surface.style.willChange = "";
   surface.style.pointerEvents = "";
@@ -37,7 +37,15 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
 
 /**
  * Swipe-to-dismiss pointer wiring, shared by the Sheet and the ChatPanel
- * (odd/tasks/ronda4.md, S1). Extracted verbatim from Sheet.tsx (task T5): a
+ * (odd/tasks/ronda4.md, S1). Extracted from Sheet.tsx (task T5) -- the gesture
+ * itself is the same code, but the commit-flight end deliberately differs from
+ * the removed Sheet version: when the flight lands, the hook cancels it, clears
+ * its `fill: forwards` hold, and leaves the surface holding an inline
+ * `opacity: 0` before running the caller's close path, so the caller's own
+ * exit (the closing card's CSS animation, the sheet's presence exit) starts
+ * from a hidden surface instead of flashing back to rest for its duration.
+ * The Sheet spec pins this ("a committed swipe holds the sheet invisible").
+ *
  * pointer drag on the drag handle (stamped `data-drag-handle`, by default the
  * surface's header) or on plain, non-scrolled surface content follows the
  * finger 1:1, locks to left, right or down after an 8 px slop -- up
@@ -112,6 +120,10 @@ export function useSwipeDismiss({
   const reducedMotion = reduced === true;
   /** The commit flight, so an `active` flip mid-flight can stop it. */
   const flightRef = useRef<Animation | null>(null);
+  /** The commit flight's scrim fade, cancelled beside the flight (finding: an
+   * uncaptured `fill: forwards` scrim animation would hold the backdrop at
+   * opacity 0 with nothing left to stop it). */
+  const scrimFlightRef = useRef<Animation | null>(null);
   /** The swipe already flew this mount out of the viewport (or the view
    * transition captured it): the caller's exit has nothing left to animate. */
   const dismissedRef = useRef(false);
@@ -260,7 +272,7 @@ export function useSwipeDismiss({
         const computed = getComputedStyle(surface).transform;
         const matrix = computed === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(computed);
         const frozenScrim = scrim ? getComputedStyle(scrim).opacity : null;
-        const frozenRadius = getComputedStyle(surface).borderTopLeftRadius;
+        const frozenClip = getComputedStyle(surface).clipPath;
         const controls = snapback;
         const scrimControls = snapbackScrim;
         snapback = null;
@@ -271,7 +283,7 @@ export function useSwipeDismiss({
         baseY = matrix.f;
         surface.style.transform = dragTransform(baseX, baseY, matrix.a || 1);
         if (scrim && frozenScrim !== null) scrim.style.opacity = frozenScrim;
-        surface.style.borderRadius = frozenRadius;
+        surface.style.clipPath = frozenClip;
       }
       gesture = {
         pointerId: event.pointerId,
@@ -315,15 +327,17 @@ export function useSwipeDismiss({
       if (scrim) scrim.style.opacity = String(1 - p);
       // Phone only: the corners round as the surface shrinks (S1). A
       // full-viewport surface rests at radius 0, the inset phone sheets at
-      // --r-sheet; desktop never touches its radius. The write happens only
-      // when the rounded value changes: a border-radius write per move
-      // repaints the backdrop-filter glass every frame for a sub-pixel change
-      // nobody can see.
+      // --r-sheet; desktop never touches its corners. The rounding rides
+      // `clip-path: inset(0 round …)`, not `border-radius`: motion stays on
+      // transform/opacity/filter/clip-path (AGENTS.md), and a per-move radius
+      // write repaints the backdrop-filter glass for a sub-pixel change
+      // nobody can see. The write happens only when the rounded value changes,
+      // and a rounded 0 means no clip at all.
       if (window.matchMedia(phoneQuery).matches) {
         const radius = Math.round(sheetRadius(restRadius(), p));
         if (radius !== lastRadius) {
           lastRadius = radius;
-          surface.style.borderRadius = `${radius}px`;
+          surface.style.clipPath = radius > 0 ? `inset(0px round ${radius}px)` : "none";
         }
       }
     };
@@ -371,12 +385,25 @@ export function useSwipeDismiss({
       // Motion reads the current transform (the drag's translate + scale) as
       // the start, so the spring leaves at the velocity the pointer arrived
       // with -- px/ms here, px/s for Motion.
-      const anim = animate(surface, { x: 0, y: 0, scale: 1, borderRadius: `${restRadius()}px` }, {
-        x: { ...spring, velocity: velocityXPxPerMs * 1000 },
-        y: { ...spring, velocity: velocityYPxPerMs * 1000 },
-        scale: { ...spring },
-        borderRadius: { ...spring },
-      });
+      const anim = animate(
+        surface,
+        // The corner rounding comes home too (phone only -- finding: on
+        // desktop the radius never left rest, so there is nothing to animate).
+        // Motion reads the current `inset(0px round Npx)` off the element and
+        // interpolates the radius back to the resting one.
+        {
+          x: 0,
+          y: 0,
+          scale: 1,
+          ...(window.matchMedia(phoneQuery).matches ? { clipPath: `inset(0px round ${restRadius()}px)` } : {}),
+        },
+        {
+          x: { ...spring, velocity: velocityXPxPerMs * 1000 },
+          y: { ...spring, velocity: velocityYPxPerMs * 1000 },
+          scale: { ...spring },
+          ...(window.matchMedia(phoneQuery).matches ? { clipPath: { ...spring } } : {}),
+        },
+      );
       // The backdrop comes back with the surface, from the same value.
       const scrimAnim = scrim ? animate(scrim, { opacity: 1 }, { ...spring }) : null;
       snapback = anim;
@@ -429,26 +456,34 @@ export function useSwipeDismiss({
         { duration, easing: "linear", fill: "forwards" },
       );
       flightRef.current = flight;
-      scrim?.animate([{ opacity: scrim.style.opacity || "1" }, { opacity: "0" }], {
+      const scrimFlight = scrim?.animate([{ opacity: scrim.style.opacity || "1" }, { opacity: "0" }], {
         duration,
         easing: "linear",
         fill: "forwards",
       });
+      if (scrimFlight) scrimFlightRef.current = scrimFlight;
       const done = () => {
+        // The guard: a flight the cleanup cancelled rejects its `finished`, and
+        // that must never run the close path -- the caller already closed (or
+        // is unmounting) and a second `onDismiss` could double-close.
+        if (flightRef.current !== flight) return;
         flightRef.current = null;
+        scrimFlightRef.current = null;
         // The flight is over: stop holding the end state with `fill` and hold
         // it with an inline opacity instead, so the caller's own exit (the
         // closing card's CSS animation) starts from a hidden surface instead
         // of flashing back to rest for its duration. The gesture's inline
-        // transform and radius are cleared here -- the surface is invisible,
-        // so nothing can flash.
+        // transform and clip are cleared here -- the surface is invisible, so
+        // nothing can flash.
         flight.cancel();
+        scrimFlight?.cancel();
         clearInline();
         surface.style.opacity = "0";
         onDismissRef.current();
         restoreIfDeclined();
       };
-      flight.finished.then(done, done);
+      flight.finished.then(done, () => {});
+      scrimFlight?.finished.catch(() => {}); // cancelled beside the flight: nothing to do
     };
 
     const onPointerUp = (event: PointerEvent) => {
@@ -534,6 +569,8 @@ export function useSwipeDismiss({
       snapbackScrim?.cancel();
       flightRef.current?.cancel();
       flightRef.current = null;
+      scrimFlightRef.current?.cancel();
+      scrimFlightRef.current = null;
     };
     // The gesture reads geometry live; the commit path is read through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -545,6 +582,9 @@ export function useSwipeDismiss({
   useLayoutEffect(() => {
     const surface = surfaceRef.current;
     if (!active || !surface) return;
+    // A reopen always starts clean -- the dismissed state included: a mount
+    // that already flew once must still run its next exit normally.
+    dismissedRef.current = false;
     clearGestureStyles(surface, scrimRef?.current ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, surfaceRef, scrimRef]);

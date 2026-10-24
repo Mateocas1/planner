@@ -81,8 +81,8 @@ export const VELOCITY_WINDOW_MS = 100;
 /**
  * A release this long after the last sample is a hold, not a throw: whatever
  * flick speed the pointer carried earlier is stale, and the release velocity
- * is zero (Sheet.tsx only reports velocity for throws the pointer is still
- * making when it lifts).
+ * is zero (the pointer wiring in useSwipeDismiss only reports velocity for
+ * throws the pointer is still making when it lifts).
  */
 export const VELOCITY_STALE_MS = 60;
 

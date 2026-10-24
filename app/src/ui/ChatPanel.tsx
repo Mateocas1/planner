@@ -44,8 +44,9 @@ import "./ChatPanel.css";
  * the panel invisible inline, so the CSS exit starts hidden instead of
  * flashing back to rest; the hook clears its styles when the panel is
  * active again. On the phone breakpoint the panel is the full viewport
- * (radius 0), so the drag rounds its corners 0 → 28 px as it shrinks;
- * desktop keeps its `--r-sheet` corners.
+ * (radius 0), so the drag rounds its corners 0 → 28 px with a
+ * `clip-path: inset(0 round …)` as it shrinks; desktop keeps its
+ * `--r-sheet` corners.
  */
 
 /** The result of one confirmed (or failed) proposal, rendered on the card and
