@@ -15,6 +15,8 @@
 
 import { ASSUMED_ESTIMATE_MINUTES } from "../domain/model.ts";
 import { formatDateKey } from "../ui/format.ts";
+import { dateKey, timeLabel } from "../ui/time.ts";
+import type { Memory } from "./memoryStore.ts";
 import type { ChatToolCall, ChatToolSpec } from "./types.ts";
 
 /** At most 5 tool calls per answer; extras are dropped with a note (S1). */
@@ -83,11 +85,89 @@ const MOVE_TASK: ChatToolSpec = {
 };
 
 /** The tools every chat request carries (extraction requests carry none). */
-export const CHAT_TOOLS: ChatToolSpec[] = [CREATE_TASK, MOVE_TASK];
+const LIST_TASKS: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "list_tasks",
+    description:
+      "Read tasks from the user's planner without asking. Filter by due-day range and/or a title text; task ids come back so you can reference them in other tools.",
+    parameters: {
+      type: "object",
+      properties: {
+        fromDay: { type: "string", description: "Optional first due day, YYYY-MM-DD (inclusive)." },
+        toDay: { type: "string", description: "Optional last due day, YYYY-MM-DD (inclusive)." },
+        query: { type: "string", description: "Optional case-insensitive text the title must contain." },
+        includeCompleted: { type: "boolean", description: "Include completed tasks (default false)." },
+      },
+      required: [],
+    },
+  },
+};
+
+const GET_TASK: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "get_task",
+    description: "Read one task by id, including its scheduled blocks, without asking.",
+    parameters: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task's id, exactly as it appears in the context or in a tool result." },
+      },
+      required: ["taskId"],
+    },
+  },
+};
+
+const LIST_HOLIDAYS: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "list_holidays",
+    description: "Read the user's holiday labels (id, date, title, kind, hidden) without asking.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
+const LIST_MEMORIES: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "list_memories",
+    description: "Read the notes you keep about the user (topicKey, title, content) without asking.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
+/** The tools every chat request carries (extraction requests carry none).
+ * Reads run without confirmation (S4); writes render confirmation cards. */
+export const CHAT_TOOLS: ChatToolSpec[] = [
+  CREATE_TASK,
+  MOVE_TASK,
+  LIST_TASKS,
+  GET_TASK,
+  LIST_HOLIDAYS,
+  LIST_MEMORIES,
+];
+
+const READ_TOOL_NAMES: ReadonlySet<string> = new Set(["list_tasks", "get_task", "list_holidays", "list_memories"]);
+
+/** Whether a tool name is a read: reads execute at once, never behind a
+ * confirmation card. Unknown names are not reads. */
+export function isReadTool(name: string): boolean {
+  return READ_TOOL_NAMES.has(name);
+}
 
 /** The planner data validation and descriptions read: the context's tasks. */
 export type ChatToolContext = {
-  tasks: ReadonlyArray<{ id: string; title: string; deadline?: string; estimateMinutes?: number }>;
+  tasks: ReadonlyArray<{ id: string; title: string; deadline?: string; estimateMinutes?: number; completed?: boolean }>;
+  /** Task-linked work blocks, so reads can report when a task is placed and
+   * writes can describe what they replace or remove. Absent in a context
+   * built without blocks (the panel's display-only fallback). */
+  blocks?: ReadonlyArray<{ id: string; start: string; end: string; taskId?: string }>;
+  /** Holiday labels (S4: the model may list and hide them like the Holidays
+   * sheet does). */
+  holidays?: ReadonlyArray<{ id: string; date: string; title: string; kind: string; hidden?: boolean }>;
+  /** The notes the model may forget (topicKey → title), for descriptions. */
+  memoryTopics?: ReadonlyArray<{ topicKey: string; title: string }>;
   timeZone: string;
   /** The profile zone's today (`YYYY-MM-DD`), for "today" wording. */
   todayKey: string;
@@ -286,17 +366,205 @@ export function checkMoveTask(raw: string, context: ChatToolContext): ToolCheck<
   return { ok: true, value, description: describeMoveTask(value, task, context) };
 }
 
+/* ---------- read tools (S4): run without confirmation, validate purely ---------- */
+
+export type NormalizedListTasks = {
+  fromDay?: string;
+  toDay?: string;
+  query?: string;
+  includeCompleted: boolean;
+};
+
+export type NormalizedGetTask = { taskId: string };
+
+export type NormalizedNoArgs = Record<string, never>;
+
+const QUERY_MAX_CHARS = 120;
+const LIST_RESULTS_CAP = 30;
+const HOLIDAY_RESULTS_CAP = 40;
+
+/** Validates `list_tasks` arguments: absent/null/empty filters are absent;
+ * days must be real day keys in order; the query is a bounded string. */
+export function checkListTasks(raw: string, context: ChatToolContext): ToolCheck<NormalizedListTasks> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const value: NormalizedListTasks = { includeCompleted: parsed.value.includeCompleted === true };
+  if (parsed.value.includeCompleted !== undefined && typeof parsed.value.includeCompleted !== "boolean") {
+    return { ok: false, error: "includeCompleted must be true or false." };
+  }
+  for (const [key, target] of [["fromDay", "fromDay"], ["toDay", "toDay"]] as const) {
+    const raw2 = parsed.value[key];
+    if (raw2 === undefined || raw2 === null || raw2 === "") continue;
+    if (typeof raw2 !== "string" || !isValidDayKey(raw2.trim())) {
+      return { ok: false, error: `"${String(raw2)}" is not a valid day (YYYY-MM-DD).` };
+    }
+    value[target] = raw2.trim();
+  }
+  if (value.fromDay !== undefined && value.toDay !== undefined && value.fromDay > value.toDay) {
+    return { ok: false, error: "fromDay must not be after toDay." };
+  }
+  const rawQuery = parsed.value.query;
+  if (rawQuery !== undefined && rawQuery !== null && rawQuery !== "") {
+    if (typeof rawQuery !== "string") return { ok: false, error: "The query must be text." };
+    if (rawQuery.trim().length > QUERY_MAX_CHARS) {
+      return { ok: false, error: `The query is too long (at most ${QUERY_MAX_CHARS} characters).` };
+    }
+    value.query = rawQuery.trim();
+  }
+  return { ok: true, value, description: describeListTasks(value, context) };
+}
+
+function describeListTasks(value: NormalizedListTasks, context: ChatToolContext): string {
+  const parts = ["Look up tasks"];
+  if (value.fromDay !== undefined || value.toDay !== undefined) {
+    const from = value.fromDay === undefined ? "the beginning" : formatDateKey(value.fromDay, context.todayKey);
+    const to = value.toDay === undefined ? "onwards" : formatDateKey(value.toDay, context.todayKey);
+    parts.push(`due ${from} – ${to}`);
+  }
+  if (value.query !== undefined) parts.push(`matching "${value.query}"`);
+  if (value.includeCompleted) parts.push("including completed");
+  return parts.join(" · ");
+}
+
+/** Validates `get_task`: an id is required, and it must be one the context
+ * knows — a read of an unknown id fails before anything runs. */
+export function checkGetTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedGetTask> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const taskId = optionalString(parsed.value.taskId);
+  if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
+  const task = context.tasks.find(entry => entry.id === taskId);
+  if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
+  return { ok: true, value: { taskId }, description: `Look up task "${task.title}"` };
+}
+
+/** Validates the no-argument reads (`list_holidays`, `list_memories`): extra
+ * arguments are tolerated (the schema keeps them out), nothing to reject. */
+export function checkNoArgs(raw: string, description: string): ToolCheck<NormalizedNoArgs> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  return { ok: true, value: {}, description };
+}
+
+/** The read results are plain lines the model quotes back. */
+export type ReadResult = { summary: string; result: string };
+
+const emptyResult = (noun: string): ReadResult => ({ summary: `No ${noun} found.`, result: `No ${noun} found.` });
+
+function taskLine(
+  task: ChatToolContext["tasks"][number],
+  blocks: ReadonlyArray<{ start: string; end: string; taskId?: string }>,
+  context: ChatToolContext,
+): string {
+  const parts = [`[${task.id}] "${task.title}"`];
+  parts.push(task.deadline === undefined ? "no due date" : `due ${formatDateKey(task.deadline, context.todayKey)}`);
+  const linked = blocks.filter(block => block.taskId === task.id);
+  if (linked.length > 0) {
+    parts.push(
+      linked
+        .map(block => `${formatDateKey(dateKey(new Date(block.start), context.timeZone), context.todayKey)} ${timeLabel(new Date(block.start), context.timeZone)}–${timeLabel(new Date(block.end), context.timeZone)}`)
+        .join(", "),
+    );
+  }
+  if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
+  if (task.completed === true) parts.push("done");
+  return `- ${parts.join(" · ")}`;
+}
+
+/** Builds the `list_tasks` result from the live context (pure; unit-tested). */
+export function buildListTasksResult(value: NormalizedListTasks, context: ChatToolContext): ReadResult {
+  const blocks = context.blocks ?? [];
+  const query = value.query === undefined ? undefined : value.query.toLowerCase();
+  const matches = context.tasks.filter(task => {
+    if (value.includeCompleted !== true && task.completed === true) return false;
+    if (query !== undefined && !task.title.toLowerCase().includes(query)) return false;
+    if (value.fromDay === undefined && value.toDay === undefined) return true;
+    const deadlineInRange =
+      task.deadline !== undefined && (value.fromDay === undefined || task.deadline >= value.fromDay) && (value.toDay === undefined || task.deadline <= value.toDay);
+    if (deadlineInRange) return true;
+    // A task with no matching deadline still matches when one of its blocks
+    // starts inside the range (the schedule placement, not just the due day).
+    return blocks.some(block => {
+      if (block.taskId !== task.id) return false;
+      const blockDay = dateKey(new Date(block.start), context.timeZone);
+      return (value.fromDay === undefined || blockDay >= value.fromDay) && (value.toDay === undefined || blockDay <= value.toDay);
+    });
+  });
+  if (matches.length === 0) return emptyResult("matching tasks");
+  const ordered = [...matches].sort((left, right) => {
+    if (left.deadline !== right.deadline) return (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999");
+    return left.title.localeCompare(right.title);
+  });
+  const shown = ordered.slice(0, LIST_RESULTS_CAP);
+  const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
+  return {
+    summary: `${ordered.length} ${ordered.length === 1 ? "task" : "tasks"} found.`,
+    result: `${shown.map(task => taskLine(task, blocks, context)).join("\n")}${more}`,
+  };
+}
+
+/** Builds the `get_task` result: the one task line, plus every block placed
+ * for it (past placements included — the full truth about one task). */
+export function buildGetTaskResult(taskId: string, context: ChatToolContext): ReadResult {
+  const task = context.tasks.find(entry => entry.id === taskId);
+  if (task === undefined) return { summary: "Task not found.", result: `Task id=${taskId} is not in the planner.` };
+  const blocks = (context.blocks ?? []).filter(block => block.taskId === taskId);
+  const line = taskLine(task, blocks, context);
+  const extras = blocks.length > 0 ? "" : " · not placed on the schedule";
+  return { summary: `"${task.title}"`, result: `${line}${extras}` };
+}
+
+/** Builds the `list_holidays` result (hidden ones flagged, never dropped —
+ * the model needs their ids to show them again). */
+export function buildListHolidaysResult(context: ChatToolContext): ReadResult {
+  const holidays = context.holidays ?? [];
+  if (holidays.length === 0) return emptyResult("holidays");
+  const ordered = [...holidays].sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title));
+  const shown = ordered.slice(0, HOLIDAY_RESULTS_CAP);
+  const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
+  return {
+    summary: `${ordered.length} ${ordered.length === 1 ? "holiday" : "holidays"} found.`,
+    result: `${shown
+      .map(holiday => `- [${holiday.id}] ${formatDateKey(holiday.date, context.todayKey)} · "${holiday.title}" · ${holiday.kind}${holiday.hidden === true ? " · hidden" : ""}`)
+      .join("\n")}${more}`,
+  };
+}
+
+/** Builds the `list_memories` result from the live notes store (pure; the
+ * topicKeys are what `forget` removes by). */
+export function buildListMemoriesResult(memories: ReadonlyArray<Memory>): ReadResult {
+  if (memories.length === 0) return emptyResult("notes");
+  const ordered = [...memories].sort((left, right) => right.updatedAt - left.updatedAt);
+  const shown = ordered.slice(0, NOTES_RESULTS_CAP);
+  const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
+  return {
+    summary: `${ordered.length} ${ordered.length === 1 ? "note" : "notes"} found.`,
+    result: `${shown.map(memory => `- [${memory.topicKey}] ${memory.title} — ${memory.content}`).join("\n")}${more}`,
+  };
+}
+
+const NOTES_RESULTS_CAP = 20;
+
 /** Validates one proposed call; `ok` carries the plain-words description the
- * card shows. Unsupported tool names fail (never render as a write). */
+ * card shows. Unsupported tool names fail (never render as a write). Reads
+ * validate against the same pure rules the executor re-runs. */
 export function validateToolCall(
   call: Pick<ChatToolCall, "name" | "arguments">,
   context: ChatToolContext,
-): ToolCheck<NormalizedCreateTask | NormalizedMoveTask> {
+): ToolCheck<NormalizedCreateTask | NormalizedMoveTask | NormalizedListTasks | NormalizedGetTask | NormalizedNoArgs> {
   switch (call.name) {
     case "create_task":
       return checkCreateTask(call.arguments, context.todayKey);
     case "move_task":
       return checkMoveTask(call.arguments, context);
+    case "list_tasks":
+      return checkListTasks(call.arguments, context);
+    case "get_task":
+      return checkGetTask(call.arguments, context);
+    case "list_holidays":
+      return checkNoArgs(call.arguments, "Look up holidays");
+    case "list_memories":
+      return checkNoArgs(call.arguments, "Look up the saved notes");
     default:
       return { ok: false, error: `Unknown action "${call.name}".` };
   }
@@ -314,10 +582,12 @@ export function describeToolCall(call: Pick<ChatToolCall, "name" | "arguments">,
  * OpenAI protocol stays valid (S1: one tool message per call). A resolved
  * write's `result` line — ids and fields — rides to the model so it can
  * reference the task it just changed (S4); the `outcome` stays the card's
- * short user-facing line. */
+ * short user-facing line. A read's result is the data itself. */
 export function toolResultContent(card: { status: string; outcome?: string; result?: string }): string {
   const detail = card.result ?? card.outcome;
   switch (card.status) {
+    case "read":
+      return `The assistant looked this up on its own. Result: ${detail ?? "no data"}`;
     case "confirmed":
       return `The user confirmed and it was applied. ${detail ?? ""}`.trim();
     case "failed":

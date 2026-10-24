@@ -35,7 +35,7 @@ You have **two blocks** left, and the *Deep Work* session on the chat panel is n
 
 If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [the planner guide](https://example.com/planner-guide).`;
 
-export type MockScenario = "answer" | "error" | "tools";
+export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit";
 
 export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
@@ -100,6 +100,39 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           return;
         }
         clock += 700; // ≈1.2 s of reasoning before the first word
+        if (scenario === "agent-read" || scenario === "agent-edit") {
+          // ronda4 agentic flow. `agent-read` proposes one read (it runs
+          // without confirmation); `agent-edit` proposes a create at a time
+          // first and, once that card is confirmed, uses the created task's
+          // id from the tool result to move it — the exact behavior the S4
+          // diagnosis found missing.
+          for (const chunk of chunkPlan("On it.")) {
+            clock += chunk.gapMs;
+            const text = chunk.text;
+            schedule(id, clock, () => emit({ type: "delta", text }));
+          }
+          const today = dateKey(new Date(), browserTimeZone);
+          let call: { id: string; name: string; args: string };
+          if (scenario === "agent-read") {
+            call = { id: "call_read", name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
+          } else {
+            const createResult = request.messages.map(message => message.content).find(content => content.includes("Created task id=")) ?? "";
+            const createdId = /id=([\w-]+)/.exec(createResult)?.[1];
+            call = createdId === undefined
+              ? { id: "call_create", name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, startTime: "14:00", estimateMinutes: 30 }) }
+              : { id: "call_move", name: "move_task", args: JSON.stringify({ taskId: createdId, day: today, startTime: "16:00" }) };
+          }
+          clock += 250;
+          schedule(id, clock, () => emit({ type: "tool_call", call: { id: call.id, name: call.name, arguments: call.args } }));
+          clock += 120;
+          schedule(id, clock, () => {
+            clearTimers(id);
+            emit({ type: "done" });
+            listeners.delete(id);
+            resolve();
+          });
+          return;
+        }
         if (scenario === "tools") {
           // R1 (spec S1): the mock proposes two planner changes — one dated
           // today (the confirm test's visible task), one undated (the discard

@@ -15,8 +15,9 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { DEFAULT_CHAT_MODEL } from "./config.ts";
 import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
 import { createPacer, type StreamPacer } from "./pacer.ts";
-import { CHAT_TOOLS, toolResultContent } from "./tools.ts";
-import type { ChatEvent, ChatMessage, ChatTransport } from "./types.ts";
+import { getChatReadExecutor, type ChatReadExecutor } from "./readTools.ts";
+import { CHAT_TOOLS, isReadTool, toolResultContent } from "./tools.ts";
+import type { ChatEvent, ChatMessage, ChatToolCall, ChatTransport } from "./types.ts";
 
 export type ChatController = {
   state: ConversationState;
@@ -77,6 +78,10 @@ export function useChat(options: {
    * with the transcript turns, before anything is cleared. */
   onConversationEnd?: (turns: ChatTurn[]) => void;
   idleExtractMs?: number;
+  /** Runs a read tool call the model proposed (S4: reads need no
+   * confirmation). Takes precedence over the executor installed in the
+   * `readTools` registry. */
+  executeReadTool?: ChatReadExecutor;
 }): ChatController {
   const { transport, buildSystemPrompt, panelOpen, onConversationEnd, idleExtractMs = IDLE_EXTRACT_MS } = options;
   const [state, dispatch] = useReducer(reduceConversation, emptyConversation);
@@ -94,6 +99,38 @@ export function useChat(options: {
   // need to re-arm because App re-created the closure.
   const onEndRef = useRef(onConversationEnd);
   onEndRef.current = onConversationEnd;
+
+  /** Mirrors the read executor option so `startStream` never needs to depend
+   * on it; the registry is the fallback (see readTools.ts). */
+  const readExecutorRef = useRef<ChatReadExecutor | undefined>(options.executeReadTool);
+  readExecutorRef.current = options.executeReadTool;
+
+  /** Runs a proposed read at once and resolves its card with what came back
+   * (S4): no buttons, no user click. Resolution is a `toolCallResolved`
+   * dispatch, so it applies even after the stream ended, and the reducer's
+   * known-id guard drops it if the turn is already gone. */
+  const runReadTool = useCallback((call: ChatToolCall) => {
+    void (async () => {
+      try {
+        const execute = readExecutorRef.current ?? getChatReadExecutor();
+        const outcome = execute === null
+          ? ({ ok: false, error: "The assistant cannot read the planner right now." } as const)
+          : await execute(call);
+        if (outcome.ok) {
+          dispatch({ type: "toolCallResolved", callId: call.id, status: "read", outcome: outcome.summary, result: outcome.result });
+        } else {
+          dispatch({ type: "toolCallResolved", callId: call.id, status: "failed", outcome: outcome.error });
+        }
+      } catch (error) {
+        dispatch({
+          type: "toolCallResolved",
+          callId: call.id,
+          status: "failed",
+          outcome: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  }, []);
 
   /** Fires the end-of-conversation hook at most once per conversation, and
    * only when there is a real exchange to extract memories from. */
@@ -132,6 +169,12 @@ export function useChat(options: {
         if (activeIdRef.current !== id) return;
         if (event.type === "delta") {
           pacer.push(event.text);
+          return;
+        }
+        if (event.type === "tool_call") {
+          dispatchEvent(event);
+          // Reads run at once (S4); writes wait for the user on their card.
+          if (isReadTool(event.call.name)) runReadTool(event.call);
           return;
         }
         if (event.type === "done" || event.type === "cancelled" || event.type === "error") {
