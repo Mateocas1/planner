@@ -85,7 +85,8 @@
   color: var(--on-accent);
   font-size: var(--text-sub);
   font-weight: 600;
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease;
 }
 
 /* Hover belongs to a fine pointer: a touch tap fires a false hover on both
@@ -96,7 +97,7 @@
   .undo-toast-close:hover { color: var(--toast-label); }
 }
 
-.undo-toast-action:active { transform: scale(0.96); }
+/* The press scale itself comes from ui/press.css, like every other pressable. */
 
 .undo-toast-close {
   flex: none;
@@ -106,10 +107,10 @@
   height: 30px;
   border-radius: 50%;
   color: var(--toast-quiet);
-  transition: transform var(--dur-press) var(--ease-out), color var(--dur-hover) ease;
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    color var(--dur-hover) ease;
 }
 
-.undo-toast-close:active { transform: scale(0.94); }
 .undo-toast-close svg { width: 14px; height: 14px; }
 
 /* Touch targets (odd/research/responsive-audit.md F3): the offer's two controls

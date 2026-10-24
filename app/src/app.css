@@ -270,7 +270,10 @@ time,
   font-weight: 500;
   color: var(--label);
   white-space: nowrap;
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+  /* Press timing lives in ui/press.css (ronda4 S2): down is instant, release
+     springs back with one small overshoot. */
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease;
 }
 
 .button svg { width: 15px; height: 15px; flex: none; }
@@ -291,7 +294,8 @@ time,
   width: 100%;
   border-radius: var(--r-group);
   font-weight: 600;
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease;
 }
 
 .button-primary { background: var(--accent); color: var(--on-accent); }
@@ -305,7 +309,8 @@ time,
   border-radius: 50%;
   background: var(--fill-hover);
   color: var(--label-2);
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease;
 }
 
 .icon-button svg { width: 14px; height: 14px; }
@@ -318,13 +323,8 @@ time,
   font-weight: 500;
 }
 
-.button:active:not(:disabled),
-.button-primary:active:not(:disabled),
-.button-danger:active:not(:disabled),
-.icon-button:active,
-.fab:active {
-  transform: scale(0.96);
-}
+/* The press itself is owned by ui/press.css: one scale-down and one spring
+   for every pressable, so these selectors carry no transform of their own. */
 
 @media (hover: hover) and (pointer: fine) {
   .button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 93%, var(--label)); }
@@ -348,7 +348,8 @@ time,
   font-size: var(--text-sub);
   font-weight: 500;
   color: var(--label-2);
-  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .segmented button[aria-pressed="true"] {
@@ -375,7 +376,8 @@ time,
   height: 28px;
   border-radius: 7px;
   color: var(--label-3);
-  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .theme-switch button svg { width: 15px; height: 15px; }
@@ -602,7 +604,8 @@ time,
   font-size: var(--text-caption);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  transition: background-color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .mini-day.is-out { color: var(--label-3); opacity: 0.6; }
@@ -890,7 +893,8 @@ time,
   min-height: 46px;
   padding: 6px 14px 6px 12px;
   background: var(--surface);
-  transition: background-color var(--dur-hover) ease;
+  transition: background-color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .row + .row::before {
@@ -919,10 +923,13 @@ time,
 /* A press moves the row it belongs to, never the text inside it: scaling the
    opener shrank the title inside a row that stayed put. It is declared after
    the hover tint so the deeper fill wins while the pointer is still on the
-   row, lands on the press frame, and eases back out through .row. */
+   row, lands on the press frame, and eases back out through .row. The row
+   presses as one surface through the shared tokens (ui/press.css), at the
+   shallower large-surface depth. */
 .row:has(button.row-main:active) {
   background: color-mix(in srgb, var(--surface) 92%, var(--label));
-  transition-duration: 0s;
+  transform: scale(var(--press-scale-large));
+  transition: background-color 0s, transform var(--press-down-dur) var(--ease-press-down);
 }
 
 .row-title,
@@ -1306,7 +1313,8 @@ time,
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
-  transition: filter var(--dur-hover) ease, transform var(--dur-press) var(--ease-out);
+  transition: filter var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
   /* 160 ms, opacity and scale only: every range change remounts all blocks, and
      a blur on each of them reads as a smear rather than a bridge */
   animation: block-in 160ms var(--ease-out);
@@ -1334,7 +1342,10 @@ time,
 }
 .calendar-block.is-short { flex-direction: row; gap: 6px; padding-top: 2px; }
 .calendar-block.is-past { opacity: 0.55; }
-.calendar-block:active { transform: scale(0.98); }
+.calendar-block:active {
+  transform: scale(var(--press-scale-large));
+  transition: transform var(--press-down-dur) var(--ease-press-down);
+}
 
 .calendar-block-pending {
   outline: 1px dashed currentColor;
@@ -1633,7 +1644,7 @@ select.form-control { text-align: left; cursor: pointer; }
   height: 60px;
   border-radius: 50%;
   color: var(--accent);
-  transition: transform var(--dur-press) var(--ease-out);
+  transition: transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .fab svg { width: 24px; height: 24px; }

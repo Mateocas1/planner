@@ -121,12 +121,8 @@
   background: transparent;
   color: var(--ink-400);
   cursor: pointer;
-  transition: transform var(--dur-press, 80ms) var(--ease-out, ease-out),
+  transition: transform var(--press-release-dur, 420ms) var(--ease-press-spring, ease-out),
     background-color var(--dur-hover, 120ms) ease, color var(--dur-hover, 120ms) ease;
-}
-
-.focus-pill-button:active {
-  transform: scale(0.94);
 }
 
 .focus-pill-button:hover {

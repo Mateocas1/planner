@@ -1,0 +1,99 @@
+/**
+ * The press language (odd/tasks/ronda4.md S2): one way every pressable answers
+ * a press. On press the control sinks instantly to a fixed depth; on release it
+ * springs back through a damped `linear()` spring with one small visible
+ * overshoot -- the "efecto rebote" -- and settles. The tokens are the single
+ * source of truth: co-located rules that own their own transition (app.css
+ * buttons, rows, calendar blocks, mini days, segmented/theme buttons,
+ * quick-add chips, focus and undo-toast controls) consume the same tokens
+ * instead of stacking a second transform system.
+ */
+:root {
+  /* How deep a press sinks: standard controls, and large surfaces (rows,
+     calendar blocks), which move less so text never reads as wobbling. */
+  --press-scale: 0.96;
+  --press-scale-large: 0.99;
+  /* Down is instant (80 ms, inside the old --dur-press); release is the spring. */
+  --press-down-dur: 80ms;
+  --press-release-dur: 420ms;
+  --ease-press-down: var(--ease-out);
+  /* Damped spring (zeta 0.404, omega_d 26.2 rad/s, sampled every 20 ms). From
+   * a 0.96 press it passes 1 at ~100 ms, peaks at ~1.01 around 120 ms, dips
+   * back to ~0.998 and settles -- one bump, never a wobble. The values are
+   * progress along the release (0 = pressed, 1 = at rest), so the overshoot
+   * scales with the press depth: rows, which only sink 1%, overshoot ~0.25%.
+   * Generated with a damped-harmonic-oscillator sample; regenerate rather than
+   * hand-tuning individual points. */
+  --ease-press-spring: linear(
+    0,
+    0.1377 4.8%,
+    0.4448 9.5%,
+    0.78 14.3%,
+    1.0473 19%,
+    1.2034 23.8%,
+    1.2497 28.6%,
+    1.215 33.3%,
+    1.1382 38.1%,
+    1.0546 42.9%,
+    0.988 47.6%,
+    0.9491 52.4%,
+    0.9376 57.1%,
+    0.9464 61.9%,
+    0.9656 66.7%,
+    0.9865 71.4%,
+    1.0031 76.2%,
+    1.0127 81%,
+    1.0156 85.7%,
+    1.0134 90.5%,
+    1.0086 95.2%,
+    1
+  );
+}
+
+/*
+ * Opt-outs, and why:
+ * - `:disabled` / `[aria-disabled="true"]`: a dead control does not answer.
+ * - `.row-main`: the row it sits in presses instead (app.css), so the row
+ *   moves as one surface and the title never shrinks inside a still row.
+ * - Inputs, selects and textareas are never matched: this file only targets
+ *   `button` and `[role="button"]`.
+ * - `.block-handle` / `.drag-grip` are spans with pointer handlers, never
+ *   matched; the calendar additionally pins `transform: none` on
+ *   `.calendar-block[data-resizing]` (Calendar.css).
+ * - `.palette-option` rows are keyboard-driven `role="option"` list items, not
+ *   buttons: the palette paints selection with no transitions on purpose
+ *   (CommandPalette.css), and they stay instant.
+ * - Chat surfaces (ChatPanel.css) and the swipeable Sheet (r4-swipe) own their
+ *   motion; buttons inside them pick the language up through the rules below,
+ *   and their old local `:active` values are reconciled at integration.
+ * - Elements animated by Motion carry inline transforms, which outrank these
+ *   stylesheet rules: a pressed control mid-animation keeps its animation.
+ */
+
+/* The release: every pressable returns through the spring. Element-level on
+ * purpose, so a pressable nobody styled still speaks the language; class rules
+ * that own a transition beat it, and each of them carries the same tokens. */
+button:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not([aria-disabled="true"]) {
+  transition: transform var(--press-release-dur) var(--ease-press-spring);
+}
+
+/* The press: instant scale-down. */
+button:not(:disabled):not([aria-disabled="true"]):not(.row-main):active,
+[role="button"]:not([aria-disabled="true"]):not(.row-main):active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--press-down-dur) var(--ease-press-down);
+}
+
+/* Reduced motion: no scale at all -- the press reads through the existing
+ * color/opacity feedback (press tints, opacity drops), which stays untouched.
+ * !important is what beats the higher-specificity class rules that also set
+ * `transform` here; it changes nothing else about them. */
+@media (prefers-reduced-motion: reduce) {
+  button:active,
+  [role="button"]:active,
+  .calendar-block:active,
+  .row:has(button.row-main:active) {
+    transform: none !important;
+  }
+}
