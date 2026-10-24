@@ -4,6 +4,7 @@ import type { View } from "../App.tsx";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
+import { currentAndNext } from "../domain/upNext.ts";
 import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
 import { spring, useNow } from "./motion.ts";
@@ -180,16 +181,10 @@ function UpNext({
 }) {
   const now = useNow();
   const nowMs = now.getTime();
-  const today = dateKey(now, timeZone);
-  const sorted = [...blocks].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  /* What is running is a question about this instant, not about this date: a
-     block that began at 23:50 is still the block being worked on at 00:10, so it
-     keeps its row, its ▶ and its countdown across midnight. Only "next" is a
-     question about today. */
-  const current = sorted.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
-  const next = sorted.find(
-    block => Date.parse(block.start) > nowMs && dateKey(new Date(block.start), timeZone) === today,
-  );
+  /* What is running is a question about this instant, not about this date, and
+     both questions have one answer for the whole app: domain/upNext.ts (the
+     tray line and Now mode read the same pair). */
+  const { current, next } = currentAndNext(blocks, nowMs, timeZone);
   const rows = [
     ...(current ? [{ block: current, running: true }] : []),
     ...(next ? [{ block: next, running: false }] : []),

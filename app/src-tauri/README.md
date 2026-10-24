@@ -11,7 +11,7 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 | Command | What it does |
 | --- | --- |
 | `npm run desktop:dev` | Builds the debug exe, copies `Planner-dev.exe` to the Windows Desktop and starts Vite on `localhost:5173`. Run the exe on Windows; WSL2 forwards `localhost`. |
-| `npm run desktop:build` | `vite build` + release exe + NSIS installer (per-user install) in `src-tauri/target/x86_64-pc-windows-msvc/release/`. |
+| `npm run desktop:build` | `vite build` + release exe + NSIS installer (per-user install) in `src-tauri/target/x86_64-pc-windows-msvc/release/`. Runs through `scripts/desktop-build.sh`, which answers tauri-cli's host-side appindicator check with a stub `pkg-config` when the real one (and the library) is missing: that check only feeds the Linux bundlers this build never runs. |
 | `npm run desktop:copy` | Copies only the NSIS installer to `/mnt/c/Users/$USER/Desktop` (override with `DESKTOP_DEST` or a first argument). |
 
 `tauri dev` is not used: it tries to launch the built exe from Linux. The debug exe is not built with Tauri's `custom-protocol` feature, so it loads `build.devUrl` (the Vite server) instead of embedded assets.
@@ -28,6 +28,13 @@ The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2
 - **Windows toasts with buttons.** `tauri-plugin-notification` cannot add action buttons on desktop, so `notify.rs` draws toasts with `tauri-winrt-notification` (the Tauri-org fork of `winrt-notification` that adds buttons plus an in-process `Activated` handler). The block-start toast carries [Start focus] and [+5 min]; the shutdown nudge carries [Close the day]. Pressed actions are reported to the webview as `notify-action` events; what to notify when, dedupe and snooze live in the frontend's pure half (`src/desktop-notify.ts`), so no decision exists twice.
 - **AppUserModelID.** A desktop toast only shows for a registered AUMID. The NSIS installer stamps its shortcuts with the bundle identifier, so the installed app's AUMID is `com.picala.planner` (read from the app config). An exe run from a `target/` build directory is not registered, so dev builds fall back to the PowerShell AUMID (same guard `tauri-plugin-notification` uses): the toast shows with PowerShell's identity and the in-process activation still works.
 - **Focus Assist / Do Not Disturb** is the OS's own toast behaviour; the app does nothing about it on purpose (S10).
+
+## Tray and close-to-tray (T6)
+
+- **Close hides (L13).** The main window's close button saves the window state *while the window is still visible*, hides it, and leaves the app running for the hotkey, the timer and the tray. Quit lives in the tray menu and is the real exit (it writes the state first, then `app.exit`, and the window-state plugin saves once more on `RunEvent::Exit`).
+- **The tray icon** (left click) toggles the main window: it hides the window that is already in front, otherwise it unminimizes, shows and focuses it; a double click always opens. The right-click menu holds the disabled **Up next** line, the focus line while a session runs (`Focus: 18 min left`), **Open Planner** and **Quit**; the tooltip mirrors Up next, and signed out the line reads `Sign in to see Up next`.
+- **One notice per install.** The first close shows the toast "Planner is still running in the tray" (`tauri-plugin-notification`, Rust-side only, no JS permission). The shown flag is `tray-notice.shown` in the app config dir, written only after the toast was accepted.
+- **Data path.** `src/desktop-tray.ts` words the label from `src/domain/upNext.ts` (the same block pair the sidebar card and Now mode show) and `src/domain/focus.ts`, then pushes `{upNext, focus, progress}` to the `tray_sync` command in `src-tauri/src/tray.rs` — at most one push per 10 s, at least one per minute while focus runs. Rust owns the menu rows, the tooltip and `set_progress_bar` (`Normal` running, `Paused` paused, `None` without a session).
 
 ## Notes
 
