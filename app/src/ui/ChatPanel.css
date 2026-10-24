@@ -5,9 +5,13 @@
 
    - Panel open/close. A keyboard surface, so this is deliberately the app's
      shortest flight rather than a sheet's: opacity + translateY(10px)/scale
-     (0.96), transform-origin at the launcher (bottom-right), 200 ms in,
-     140 ms out (an exit says "gone"). CSS transitions, so Ctrl+J pressed
-     mid-flight retargets instead of restarting. Reduced motion: opacity only.
+     (0.96), transform-origin at the launcher (bottom-right), 200 ms in. The
+     close is a real 120 ms exit (review #3): `data-closing` keeps the card
+     displayed (but inert) while `chat-panel-out` plays, and `animationend` —
+     with a ~200 ms timeout fallback in JS — hides it. The entrance is a
+     keyframe, so Ctrl+J pressed mid-flight restarts it; reopening mid-exit
+     cancels the exit and restarts the entrance. Reduced motion: opacity only,
+     and the close is instant.
    - Content focus-pull: .chat-inner sharpens from blur(6px) as the card lands
      (the Sheet.tsx pattern, on the inner body — never a filter on the glass
      element itself, which would repaint the backdrop flat).
@@ -63,15 +67,31 @@
   border-radius: var(--r-sheet);
   color: var(--label);
   /* Closed = not displayed (the palette's pattern): out of the tab order and
-     the a11y tree, and nothing transition-shaped can race the focus effect.
-     The entrance is an animation, which starts on the first displayed frame.
-     The close is instant — the palette's precedent for a keyboard surface. */
+     the a11y tree. While the 120 ms exit plays, `data-closing` keeps the card
+     displayed and inert (review #3) — an animationend has no visibility
+     transition to race the focus effect. */
   transform-origin: 100% 100%;
 }
 
-.chat-panel[data-open="true"] {
+.chat-panel[data-open="true"],
+.chat-panel[data-closing] {
   display: flex;
+}
+
+.chat-panel[data-open="true"] {
   animation: chat-panel-in 200ms var(--ease-out);
+}
+
+.chat-panel[data-closing] {
+  pointer-events: none;
+  animation: chat-panel-out 120ms var(--ease-out) forwards;
+}
+
+@keyframes chat-panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
 }
 
 @keyframes chat-panel-in {
@@ -105,6 +125,9 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-panel[data-open="true"] {
     animation-name: chat-fade-in;
+  }
+  .chat-panel[data-closing] {
+    animation: none;
   }
   .chat-panel[data-open="true"] .chat-inner {
     animation: none;
@@ -333,8 +356,8 @@
    positioned so the text takes the bubble over, never beside it). */
 .chat-waiting.is-done {
   position: absolute;
-  top: 8px;
-  left: 10px;
+  top: 10px;
+  left: 14px;
   opacity: 0;
   transform: scale(0.6);
   pointer-events: none;
@@ -367,7 +390,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-user {
-    animation: chat-fade-in 160ms ease both;
+    animation: chat-fade-in 160ms var(--ease-out) both;
   }
   .chat-answer[data-live] {
     animation: none;
@@ -482,8 +505,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Review nit #6: keep the fade, drop only the rise. */
   .chat-jump {
-    animation: none;
+    animation: chat-fade-in 140ms var(--ease-out) both;
   }
 }
 

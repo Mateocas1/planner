@@ -69,9 +69,10 @@ export default function App() {
       {/* Announced outside the shell: an update is just as available on the
           sign-in screen as inside the app. */}
       <UpdatePrompt />
-      {/* The floating chat panel (desktop; dev-mock with ?chatMock). Mounted
-          outside the auth gate so the dev-mock UI needs no emulator account. */}
-      <ChatPanel />
+      {/* The floating chat panel (desktop, signed-in; dev-mock with ?chatMock
+          is account-free). Signed-out users never see it — not even on the
+          sign-in screen (review #2). */}
+      <ChatPanel signedIn={user !== null} />
     </MotionConfig>
   );
 }
