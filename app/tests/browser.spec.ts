@@ -864,7 +864,8 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
 });
 
 async function openSeriesPanel(page: Page, title: string) {
-  await page.getByRole("button", { name: title }).click();
+  // Anchored: a bare substring would also hit the "Weekly review" nav item.
+  await page.getByRole("button", { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) }).click();
   const panel = page.getByRole("complementary", { name: "Series details" });
   await expect(panel).toBeVisible();
   return panel;

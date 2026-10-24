@@ -225,6 +225,9 @@ test("Skip this week marks the week skipped and the banner stays gone", async ({
   await enter(page, email, FRIDAY_EVENING);
 
   await expect(banner(page)).toBeVisible();
+  // Skip lives behind the ⋯ disclosure, not beside Start.
+  await expect(banner(page).getByRole("button", { name: "Skip this week" })).toHaveCount(0);
+  await banner(page).getByRole("button", { name: "More weekly review options" }).click();
   await banner(page).getByRole("button", { name: "Skip this week" }).click();
   await expect(banner(page)).toHaveCount(0);
 
@@ -313,6 +316,34 @@ test("the full flow writes every step and the reflection note", async ({ page })
   await expect(flow(page)).toHaveCount(0);
 });
 
+test("Next over undecided clean-up rows moves on without marking Clean up finished", async ({ page }) => {
+  const email = newEmail("weekly-undecided");
+  const uid = await seed(email, {
+    weeklyReview: true,
+    tasks: [{ title: "Old report", deadline: "2026-10-19" }],
+  });
+  await enter(page, email, TUESDAY_NOON);
+
+  await page.getByRole("complementary").getByRole("button", { name: "Weekly review" }).click();
+  await expect(flow(page)).toBeVisible();
+  await expect(flow(page)).toContainText("Step 1 of 4");
+  await next(page);
+
+  /* Clean up: "Old report" is still undecided, so Next moves on but the step
+     stays open; the header counts the step it is on. */
+  await expect(flow(page)).toContainText("Step 2 of 4");
+  await expect(flow(page).locator(".weekly-cleanup-row", { hasText: "Old report" })).toHaveCount(1);
+  await next(page);
+  await expect(flow(page)).toContainText("Step 3 of 4");
+
+  const poll = { timeout: 15_000, intervals: [250, 500, 1_000] };
+  await expect
+    .poll(async () => listOf((await getDoc(uid, `weeklyReview/${WEEK}`))?.stepsDone).sort().join(","), poll)
+    .toBe("review");
+  // The old copy's footer counter is gone: the progress is in the header.
+  await expect(flow(page).getByText("steps done this week")).toHaveCount(0);
+});
+
 test("a due visit runs only the moment's steps, and finished steps are not re-offered", async ({ page }) => {
   const email = newEmail("weekly-due");
   const uid = await seed(email, {
@@ -398,6 +429,9 @@ test("screenshots of every step, light and dark", async ({ page }) => {
   await shot(page, "step-review-light");
   await next(page);
   await shot(page, "step-cleanup-light");
+  // Clean up is finished only once its candidate is decided: Next before that
+  // would leave the step open, and the dark walk would start there.
+  await flow(page).locator(".weekly-cleanup-row", { hasText: "Old report" }).getByRole("button", { name: "This week" }).click();
   await next(page);
   await flow(page).locator(".weekly-pick-row", { hasText: "Next week deck" }).locator('input[type="checkbox"]').check();
   await flow(page).getByRole("button", { name: "Place blocks on next week" }).click();

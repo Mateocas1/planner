@@ -96,7 +96,12 @@ export async function createRemoteAccount(email: string): Promise<void> {
 /* ---------- Firestore emulator REST ---------- */
 
 /** The subset of Firestore REST typed values this harness writes and reads. */
-type RestValue = { stringValue: string } | { booleanValue: boolean } | { integerValue: string } | { doubleValue: number };
+type RestValue =
+  | { stringValue: string }
+  | { booleanValue: boolean }
+  | { integerValue: string }
+  | { doubleValue: number }
+  | { mapValue: { fields?: Record<string, { integerValue?: string; doubleValue?: number }> } };
 type RestFields = Record<string, RestValue>;
 type RestDocument = { name: string; fields?: RestFields };
 
@@ -108,8 +113,16 @@ function encodeFields(data: Record<string, string | boolean>): RestFields {
   return fields;
 }
 
-function decodeDocument(document: RestDocument): { id: string; data: Record<string, string | boolean | number> } {
-  const data: Record<string, string | boolean | number> = {};
+function decodeMinuteMap(map: { fields?: Record<string, { integerValue?: string; doubleValue?: number }> }): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [day, entry] of Object.entries(map.fields ?? {})) {
+    out[day] = entry.integerValue !== undefined ? Number(entry.integerValue) : Number(entry.doubleValue);
+  }
+  return out;
+}
+
+function decodeDocument(document: RestDocument): { id: string; data: RemoteData } {
+  const data: RemoteData = {};
   for (const [key, value] of Object.entries(document.fields ?? {})) {
     if ("stringValue" in value) data[key] = value.stringValue;
     else if ("booleanValue" in value) data[key] = value.booleanValue;
@@ -117,6 +130,8 @@ function decodeDocument(document: RestDocument): { id: string; data: Record<stri
     // back as the number the domain wrote, not as a string.
     else if ("integerValue" in value) data[key] = Number(value.integerValue);
     else if ("doubleValue" in value) data[key] = value.doubleValue;
+    // `actualByDay` (W2c) is a map of day key → whole minutes.
+    else if ("mapValue" in value) data[key] = decodeMinuteMap(value.mapValue);
     else throw new Error(`unsupported Firestore REST value for ${key}: ${JSON.stringify(value)}`);
   }
   // The document id is the last segment of the full resource name.
@@ -442,7 +457,7 @@ export async function readRemoteDaySettings(email: string): Promise<RemoteDaySet
  * domain wrote rather than through this legacy string map.
  */
 /** A stored document's fields as the emulator reports them. */
-export type RemoteData = Record<string, string | boolean | number>;
+export type RemoteData = Record<string, string | boolean | number | Record<string, number>>;
 
 export async function readRemoteSeries(email: string): Promise<Array<{ id: string; data: RemoteData }>> {
   const uid = await resolveRemoteUid(email);
@@ -832,7 +847,7 @@ export async function readRemoteShutdown(
 
 /** One task document by id, read directly: the list endpoint paginates, so a
  *  fixture with hundreds of tasks cannot be read whole through it. */
-export async function readRemoteTask(email: string, taskId: string): Promise<Record<string, string | boolean | number> | undefined> {
+export async function readRemoteTask(email: string, taskId: string): Promise<RemoteData | undefined> {
   const uid = await resolveRemoteUid(email);
   return getRemoteDoc(uid, `tasks/${taskId}`);
 }

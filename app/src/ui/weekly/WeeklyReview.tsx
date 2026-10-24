@@ -116,9 +116,18 @@ export function WeeklyReview({
   const step = steps[Math.min(index, steps.length - 1)];
   const last = index === steps.length - 1;
 
-  /** Marks the step walked and moves on; the last step's Next closes the flow. */
+  // Clean up is finished only when every candidate has a decision; the
+  // step reports its open rows here while it is on screen.
+  const [cleanupUndecided, setCleanupUndecided] = useState(0);
+
+  /**
+   * Moves on, and marks the step finished when the user completes it. Next
+   * over undecided clean-up rows still moves on, but the step stays open:
+   * it is not marked done, so the due visit offers it again.
+   */
   function advance() {
-    void settle(markWeeklyStepDone(uid, week.week, step)).catch(onProblem);
+    const finished = step !== "cleanup" || cleanupUndecided === 0;
+    if (finished) void settle(markWeeklyStepDone(uid, week.week, step)).catch(onProblem);
     if (last) {
       onBack();
       return;
@@ -144,7 +153,9 @@ export function WeeklyReview({
         </button>
         <header className="weekly-title">
           <h2>Weekly review</h2>
-          <p>{weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)}</p>
+          <p>
+            {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · Step {index + 1} of {steps.length}
+          </p>
         </header>
       </div>
 
@@ -195,6 +206,7 @@ export function WeeklyReview({
                 weekSunday={week.sunday}
                 onOfferUndo={onOfferUndo}
                 onProblem={onProblem}
+                onUndecided={setCleanupUndecided}
               />
             )}
             {step === "plan" && (
@@ -216,7 +228,7 @@ export function WeeklyReview({
           <div className="weekly-actions">
             <button
               type="button"
-              className="button"
+              className="weekly-quiet"
               disabled={index === 0}
               onClick={() => setIndex(current => Math.max(current - 1, 0))}
             >
@@ -224,7 +236,7 @@ export function WeeklyReview({
             </button>
             <button
               type="button"
-              className="button-primary"
+              className="button button-accent weekly-next"
               onClick={() => {
                 if (step === "reflect") saveDraft();
                 advance();
@@ -233,9 +245,6 @@ export function WeeklyReview({
               {last ? "Finish" : "Next"}
             </button>
           </div>
-          <p className="weekly-progress" role="status">
-            {done.size > 0 ? `${done.size} of 4 steps done this week.` : "Nothing marked done this week yet."}
-          </p>
         </>
       )}
     </section>

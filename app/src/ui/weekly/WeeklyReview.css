@@ -441,15 +441,18 @@
 .weekly-actions {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
 }
 
-.weekly-actions .button:disabled { opacity: 0.45; cursor: default; }
+/* Back is the quiet one on the left; the primary sits right at its own
+   width, never stretched across the pane. */
+.weekly-quiet:disabled { opacity: 0.45; cursor: default; }
 
-.weekly-progress {
-  margin: -8px 0 0;
-  font-size: var(--text-caption);
-  color: var(--label-3);
+.weekly-next {
+  min-width: 120px;
+  height: 36px;
+  padding: 0 20px;
 }
 
 /* ---------- the Home banner ---------- */
@@ -484,8 +487,65 @@
 .weekly-banner-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Start is the banner's one primary; Later and the ⋯ trigger are quiet text
+   buttons in the label colour, so the eye lands on Start first. */
+.weekly-banner-start { height: 32px; padding: 0 14px; }
+
+.weekly-quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+  font-size: var(--text-sub);
+  font-weight: 500;
+  transition: background-color var(--dur-hover) ease;
+}
+
+.weekly-banner-dots { font-size: var(--text-body); letter-spacing: 0.1em; }
+
+@media (hover: hover) and (pointer: fine) {
+  .weekly-quiet:hover { color: var(--label); background: var(--fill-hover); }
+}
+
+.weekly-quiet:focus-visible,
+.weekly-banner-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.weekly-banner-more { position: relative; }
+
+.weekly-banner-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  border: 0.5px solid var(--separator);
+  box-shadow: var(--card-shadow);
+}
+
+.weekly-banner-menu-item {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  text-align: left;
+  font-size: var(--text-sub);
+  color: var(--label);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .weekly-banner-menu-item:hover { background: var(--fill-hover); }
 }
 
 /* ---------- phone ---------- */
