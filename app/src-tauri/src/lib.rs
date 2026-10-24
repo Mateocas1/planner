@@ -61,6 +61,10 @@ pub fn run() {
             chat::memory_store::chat_memories_apply,
             chat::memory_store::chat_memories_delete,
             chat::memory_store::chat_memories_clear,
+            chat::engram::engram_settings_get,
+            chat::engram::engram_settings_set,
+            chat::engram::engram_sync_now,
+            chat::engram::engram_status,
         ])
         .setup(|app| {
             deeplink::setup(app.handle())?;

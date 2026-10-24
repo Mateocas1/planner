@@ -4,6 +4,8 @@
 //! on Linux. The Tauri glue lives in the `planner` crate (`../src`).
 
 pub mod chat;
+pub mod engram;
+pub mod fsutil;
 pub mod idle;
 pub mod loopback;
 pub mod oauth;

@@ -1,15 +1,27 @@
 import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { DEFAULT_CHAT_MODEL, getChatModel, normalizeChatModel, setChatModel } from "../../../chat/config.ts";
 import { DEFAULT_CHAT_BASE_URL, clearKey, getKeyStatus, setKey, type ChatKeyStatus } from "../../../chat/keyStore.ts";
+import {
+  engramSettingsGet,
+  engramSettingsSet,
+  engramStatus,
+  engramSyncNow,
+  type EngramMirrorStatus,
+  type EngramSettings,
+} from "../../../chat/engramSettings.ts";
 import { chatMemoriesClear, chatMemoriesDelete, chatMemoriesList, type Memory } from "../../../chat/memoryStore.ts";
 import {
+  engramStatusText,
   keyStatusText,
   memoryDate,
   memoryPreview,
+  validateEngramAddressClient,
+  validateEngramProjectClient,
   validateBaseUrlClient,
   validateKeyClient,
 } from "../aiSettings.ts";
 import { Section, SettingRow } from "../SettingRow.tsx";
+import { SettingsSwitch } from "../SettingsSwitch.tsx";
 import "./AiTab.css";
 
 /**
@@ -326,6 +338,7 @@ function MemoriesSection() {
 
   return (
     <Section title="Memories" description="Notes the assistant keeps between chats, on this computer only.">
+      <EngramSection />
       {sorted.length === 0 ? (
         <div className="settings-empty">
           <p>No memories yet.</p>
@@ -374,5 +387,159 @@ function MemoriesSection() {
         </>
       )}
     </Section>
+  );
+}
+
+/**
+ * The Engram mirror controls (task R2, spec S2): an optional write-through
+ * copy of the memories on a local Engram server. The local store stays the
+ * source of truth — mirroring happens in Rust after every applied memory op,
+ * best effort, so a dead Engram never blocks the chat; "Sync now" pushes the
+ * whole store and reports the last attempt here.
+ */
+function EngramSection() {
+  const [settings, setSettings] = useState<EngramSettings | null>(null);
+  const [status, setStatus] = useState<EngramMirrorStatus | null>(null);
+  const [addressDraft, setAddressDraft] = useState("");
+  const [projectDraft, setProjectDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // One settings + status read per mount: the tab unmounts on every switch.
+  useEffect(() => {
+    let alive = true;
+    engramSettingsGet()
+      .then(loaded => {
+        if (!alive) return;
+        setSettings(loaded);
+        setAddressDraft(loaded.address);
+        setProjectDraft(loaded.project);
+      })
+      .catch(loadingFailure => {
+        // Rust unreachable (unexpected on desktop): leave the controls off.
+        console.warn("settings: loading Engram settings failed", loadingFailure);
+      });
+    engramStatus()
+      .then(loaded => {
+        if (alive) setStatus(loaded);
+      })
+      .catch(() => {
+        /* the status line stays "Not synced yet." */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const save = useCallback(
+    async (next: EngramSettings) => {
+      const addressProblem = validateEngramAddressClient(next.address);
+      const projectProblem = validateEngramProjectClient(next.project);
+      setError(addressProblem ?? projectProblem);
+      if (addressProblem !== null || projectProblem !== null) return false;
+      setBusy(true);
+      try {
+        await engramSettingsSet({ ...next, address: next.address.trim(), project: next.project.trim() });
+        setSettings({ ...next, address: next.address.trim(), project: next.project.trim() });
+        return true;
+      } catch (saveError) {
+        // Rust's own wording (validation happens there too; it wins).
+        setError(saveError instanceof Error ? saveError.message : String(saveError));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const toggle = useCallback(() => {
+    if (settings === null || busy) return;
+    void save({ ...settings, enabled: !settings.enabled });
+  }, [settings, busy, save]);
+
+  const syncNow = useCallback(async () => {
+    if (settings === null || !settings.enabled || busy) return;
+    // A refused save (bad address draft) must not trigger a sync of the
+    // stored (different) settings.
+    if (!(await save(settings))) return;
+    setBusy(true);
+    try {
+      setStatus(await engramSyncNow());
+      setError(null);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : String(syncError));
+    } finally {
+      setBusy(false);
+    }
+  }, [settings, busy, save]);
+
+  if (settings === null) return null;
+
+  return (
+    <>
+      <div className="settings-row">
+        <div className="settings-row-text">
+          <span className="settings-row-label">Also save to Engram</span>
+          <span className="settings-row-desc">
+            Mirror memories to a local Engram server. The local copy stays the source of truth; a failed mirror never loses a memory.
+          </span>
+          <span className="ai-memory-date">{engramStatusText(settings.enabled, status)}</span>
+        </div>
+        <div className="settings-row-control">
+          <SettingsSwitch labelledBy="engram-enabled" checked={settings.enabled} disabled={busy} onChange={toggle} />
+        </div>
+      </div>
+      {settings.enabled && (
+        <>
+          <SettingRow
+            label="Engram address"
+            controlId="engram-address"
+            description="Where your local Engram server listens. Loopback only: localhost, 127.0.0.1 or [::1]."
+            error={error}
+          >
+            {() => (
+              <input
+                id="engram-address"
+                className="form-control ai-field"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={addressDraft}
+                onChange={event => setAddressDraft(event.target.value)}
+              />
+            )}
+          </SettingRow>
+          <SettingRow
+            label="Engram project"
+            controlId="engram-project"
+            description="The Engram project the memories are mirrored into."
+          >
+            {() => (
+              <input
+                id="engram-project"
+                className="form-control ai-field"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={projectDraft}
+                onChange={event => setProjectDraft(event.target.value)}
+              />
+            )}
+          </SettingRow>
+          <div className="settings-row">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Sync now</span>
+              <span className="settings-row-desc">Push every memory to Engram and remove the ones deleted here.</span>
+            </div>
+            <div className="settings-row-control">
+              <button type="button" className="button ai-button" disabled={busy} onClick={() => void syncNow()}>
+                Sync now
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }

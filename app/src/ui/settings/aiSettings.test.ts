@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  engramStatusText,
   keyStatusText,
   memoryDate,
   memoryPreview,
   providerHost,
   validateBaseUrlClient,
+  validateEngramAddressClient,
+  validateEngramProjectClient,
   validateKeyClient,
 } from "./aiSettings.ts";
 
@@ -50,4 +53,42 @@ test("memory previews collapse to one line and cap their length", () => {
 
 test("memory dates format in the app's English UI", () => {
   assert.equal(memoryDate(Date.UTC(2026, 9, 24)), "Oct 24, 2026");
+});
+
+test("the Engram status line follows mirroring off, last error, then success (spec S2)", () => {
+  assert.equal(
+    engramStatusText(false, { ok: true, synced: 3, error: null }),
+    "Mirroring is off. Memories stay on this computer only.",
+  );
+  assert.equal(engramStatusText(true, null), "Not synced yet.");
+  assert.equal(
+    engramStatusText(true, { ok: false, synced: 0, error: "connection refused" }),
+    "Engram unreachable: connection refused",
+  );
+  assert.equal(
+    engramStatusText(true, { ok: false, synced: 0, error: null }),
+    "Engram unreachable: unknown error",
+  );
+  assert.equal(engramStatusText(true, { ok: true, synced: 3, error: null }), "Synced 3 memories.");
+  assert.equal(engramStatusText(true, { ok: true, synced: 1, error: null }), "Synced 1 memory.");
+});
+
+test("the Engram address rules mirror the Rust validation: loopback only, both schemes, no userinfo", () => {
+  const refused = "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1]).";
+  assert.equal(validateEngramAddressClient("http://127.0.0.1:7437"), null);
+  assert.equal(validateEngramAddressClient("http://localhost:7437"), null);
+  assert.equal(validateEngramAddressClient("http://[::1]:7437"), null);
+  assert.equal(validateEngramAddressClient("https://127.0.0.1:7437"), null);
+  // A remote host is refused on both schemes.
+  assert.equal(validateEngramAddressClient("https://engram.example.com"), refused);
+  assert.equal(validateEngramAddressClient("http://evil.com"), refused);
+  assert.equal(validateEngramAddressClient("https://user:pass@127.0.0.1:7437"), refused);
+  assert.equal(validateEngramAddressClient(""), refused);
+  assert.equal(validateEngramAddressClient("not a url"), refused);
+});
+
+test("an empty Engram project is refused; a named one passes", () => {
+  assert.equal(validateEngramProjectClient(""), "The Engram project must not be empty.");
+  assert.equal(validateEngramProjectClient("   "), "The Engram project must not be empty.");
+  assert.equal(validateEngramProjectClient("calendar-assistant"), null);
 });

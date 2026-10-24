@@ -62,3 +62,48 @@ export function memoryPreview(content: string, max = 96): string {
 export function memoryDate(updatedAt: number): string {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(updatedAt));
 }
+
+/**
+ * The Engram mirror status line (task R2, spec S2). Mirroring off wins over
+ * the last attempt; a failed attempt shows "Engram unreachable: …" with the
+ * error Rust recorded; success shows how many memories the attempt touched.
+ */
+export function engramStatusText(
+  enabled: boolean,
+  status: { ok: boolean; synced: number; error: string | null } | null,
+): string {
+  if (!enabled) return "Mirroring is off. Memories stay on this computer only.";
+  if (status === null) return "Not synced yet.";
+  if (!status.ok) return `Engram unreachable: ${status.error ?? "unknown error"}`;
+  return `Synced ${status.synced} ${status.synced === 1 ? "memory" : "memories"}.`;
+}
+
+/**
+ * The Rust Engram address rules (planner_core::engram::validate_engram_address):
+ * loopback only, on either scheme — the mirror talks to a local Engram, and a
+ * remote address would send the memories off this computer. The message is
+ * the Rust command's own wording.
+ */
+export function validateEngramAddressClient(url: string): string | null {
+  const refused = "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1]).";
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return refused;
+  }
+  if (parsed.username !== "" || parsed.password !== "") return refused;
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if ((parsed.protocol === "https:" || parsed.protocol === "http:") && loopback) return null;
+  return refused;
+}
+
+/** The Rust project rule worth repeating in the page: not empty (Rust also
+ * caps the length and rejects control characters; its word wins). */
+export function validateEngramProjectClient(project: string): string | null {
+  if (project.trim() === "") return "The Engram project must not be empty.";
+  return null;
+}

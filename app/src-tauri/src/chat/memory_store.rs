@@ -13,12 +13,11 @@
 //! can never wipe the memories.
 
 use std::fs;
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
 use planner_core::chat::apply_memory_ops;
+use planner_core::fsutil::atomic_write;
 use planner_core::chat::backup_file_name;
 use planner_core::chat::classify_load;
 use planner_core::chat::new_memory_id;
@@ -92,32 +91,6 @@ fn backup_corrupt(path: &Path) {
     }
 }
 
-/// Writes a text file atomically: create the temp file in the same
-/// directory, `write_all`, `sync_all`, then rename over the target, so an
-/// interrupted write can never leave a half-written file.
-pub(crate) fn atomic_write(path: &Path, contents: &str) -> Result<(), String> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| "the target file has no directory".to_string())?;
-    fs::create_dir_all(dir).map_err(|error| {
-        format!(
-            "the directory could not be created: {error} ({} {})",
-            dir.display(),
-            path.display()
-        )
-    })?;
-    let temp = path.with_extension("tmp");
-    let mut file = File::create(&temp)
-        .map_err(|error| format!("{} could not be created: {error}", temp.display()))?;
-    file.write_all(contents.as_bytes())
-        .map_err(|error| format!("{} could not be written: {error}", temp.display()))?;
-    file.sync_all()
-        .map_err(|error| format!("{} could not be flushed: {error}", temp.display()))?;
-    drop(file);
-    fs::rename(&temp, path)
-        .map_err(|error| format!("{} could not be replaced: {error}", path.display()))
-}
-
 fn save(path: &Path, memories: &[Memory]) -> Result<(), String> {
     let json = serde_json::to_string_pretty(memories)
         .map_err(|error| format!("the memories could not be serialized: {error}"))?;
@@ -129,6 +102,13 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Loads the whole store for the Engram mirror's "Sync now" (task R2). The
+/// same data-safety rules as the commands: a missing file is empty, an
+/// unreadable file is an error and refuses to write.
+pub(crate) fn load_all(app: &AppHandle) -> Result<Vec<Memory>, String> {
+    load(&file_path(app)?)
 }
 
 /// Lists all memories, newest topic first is the caller's concern; the order
@@ -147,6 +127,7 @@ pub fn chat_memories_apply(app: AppHandle, ops: Vec<MemoryOp>) -> Result<Vec<Mem
     let path = file_path(&app)?;
     let memories = apply_memory_ops(load(&path)?, &ops, new_memory_id, now_ms())?;
     save(&path, &memories)?;
+    super::engram::mirror_after_write(&app, &ops);
     Ok(memories)
 }
 
@@ -156,8 +137,18 @@ pub fn chat_memories_apply(app: AppHandle, ops: Vec<MemoryOp>) -> Result<Vec<Mem
 pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
     let mut memories = load(&path)?;
+    // The deleted memory's topic key drives the Engram mirror delete (R2).
+    let topic = memories
+        .iter()
+        .find(|memory| memory.id == id)
+        .map(|memory| MemoryOp::Delete {
+            topic_key: memory.topic_key.clone(),
+        });
     memories.retain(|memory| memory.id != id);
     save(&path, &memories)?;
+    if let Some(op) = topic {
+        super::engram::mirror_after_write(&app, std::slice::from_ref(&op));
+    }
     Ok(memories)
 }
 
@@ -165,7 +156,15 @@ pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, S
 #[tauri::command]
 pub fn chat_memories_clear(app: AppHandle) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
-    load(&path)?;
+    let memories = load(&path)?;
+    // "Clear all" removes the mirrored observations too (spec S2).
+    let mirror_ops: Vec<MemoryOp> = memories
+        .iter()
+        .map(|memory| MemoryOp::Delete {
+            topic_key: memory.topic_key.clone(),
+        })
+        .collect();
     save(&path, &[])?;
+    super::engram::mirror_after_write(&app, &mirror_ops);
     Ok(Vec::new())
 }

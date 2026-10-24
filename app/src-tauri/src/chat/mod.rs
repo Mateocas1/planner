@@ -13,6 +13,7 @@
 //! (never taken from the webview per call) and never echoed in error
 //! messages.
 
+pub mod engram;
 pub mod memory_store;
 
 use std::collections::HashMap;
@@ -209,7 +210,7 @@ fn store_base_url(app: &tauri::AppHandle, base_url: &str) -> Result<(), String> 
         base_url: base_url.to_string(),
     })
     .map_err(|error| format!("the provider settings could not be serialized: {error}"))?;
-    memory_store::atomic_write(&path, &json)
+    planner_core::fsutil::atomic_write(&path, &json)
 }
 
 fn remove_base_url(app: &tauri::AppHandle) {
