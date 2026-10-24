@@ -5,6 +5,7 @@ import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { connectFirestoreEmulator, disableNetwork, doc, enableNetwork, getDoc, getDocFromServer, getFirestore, increment, setDoc, terminate, updateDoc, type Firestore } from "firebase/firestore";
 import { calendarKey, planHolidayCleanup, selectHolidayTasks } from "../src/domain/gcalImport.ts";
+import { subtractActualMinutesIn } from "../src/data/actualMinutes.ts";
 import { createOccurrenceCompletion, MAX_ACTUAL_MINUTES, occurrenceId, requireActualMinutes } from "../src/domain/model.ts";
 import { maxCloseDayMoves, planCloseDay, type ShutdownBlock, type ShutdownState, type ShutdownTask } from "../src/planning/shutdown.ts";
 
@@ -121,6 +122,55 @@ test("two offline increments accumulate on the server instead of overwriting eac
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(stored, 30);
+  } finally {
+    await close(owner);
+  }
+});
+
+/**
+ * Idle away (T9, spec S8.5): a subtraction confirmed after the session's own
+ * minutes already landed goes through the app's helper
+ * (`subtractActualMinutesIn`, which `tasks.ts` `subtractActualMinutes` calls
+ * with the app's database): one `increment()` transform with a negative
+ * value. This test calls that helper while offline and proves the queued
+ * write drains once and changes the counter by exactly its minutes. The
+ * "Keep writes nothing" half is a property of the confirm / keep functions in
+ * domain/idleFlow.ts, covered by their unit tests.
+ */
+test("a queued offline subtraction lands once on the server", async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const owner = client(`idle-${suffix}`);
+  try {
+    const account = await createUserWithEmailAndPassword(owner.auth, `idle-${suffix}@example.invalid`, "password1");
+    const path = `users/${account.user.uid}/tasks/away`;
+    await setDoc(doc(owner.db, path), { title: "Away task", completed: false, actualMinutes: 30 });
+
+    await disableNetwork(owner.db);
+    // The one write a confirmed Subtract produces, queued while offline.
+    const subtraction = subtractActualMinutesIn(owner.db, account.user.uid, "away", 12);
+    // The local cache applies the transform at once, which is what keeps the
+    // visible counter honest while the app is offline.
+    assert.equal((await getDoc(doc(owner.db, path))).data()?.actualMinutes, 18);
+    await enableNetwork(owner.db);
+    await subtraction;
+
+    // The server holds exactly one subtraction, not a replayed one.
+    let stored: number | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      stored = (await getDocFromServer(doc(owner.db, path))).data()?.actualMinutes;
+      if (stored === 18) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(stored, 18);
+
+    // The helper refuses what is not a whole positive minute count.
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "away", 0), /whole minute/);
+    await assert.rejects(subtractActualMinutesIn(owner.db, account.user.uid, "a/b", 5), /task ID/);
+
+    // Keep: the same offline cycle with no confirmed write changes nothing.
+    await disableNetwork(owner.db);
+    await enableNetwork(owner.db);
+    assert.equal((await getDocFromServer(doc(owner.db, path))).data()?.actualMinutes, 18);
   } finally {
     await close(owner);
   }

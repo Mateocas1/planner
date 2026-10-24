@@ -2,6 +2,7 @@ import { addDoc, collection, deleteDoc, deleteField, doc, increment, setDoc, upd
 import { createTask, MAX_ACTUAL_MINUTES, requireActualMinutes, requireEstimate, requireInstant, type Task } from "../domain/model.ts";
 import { planUndo, type ShutdownPlan, type ShutdownState, type UndoRefusal } from "../planning/shutdown.ts";
 import { db } from "./client.ts";
+import { subtractActualMinutesIn } from "./actualMinutes.ts";
 import { forgetRemoval, trackRemoval } from "./pending.ts";
 import { profileDocument } from "./profile.ts";
 
@@ -72,6 +73,21 @@ export async function addActualMinutes(uid: string, taskId: string, minutes: num
     throw new Error(`actual minutes to add must be a whole minute count between 1 and ${MAX_ACTUAL_MINUTES}`);
   }
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { actualMinutes: increment(minutes) });
+}
+
+/**
+ * Removes minutes from a task's counter (T9 idle away, spec S8.5): a session
+ * the user spent mostly away, confirmed after its own minutes already landed.
+ *
+ * It is the same write path as `addActualMinutes` -- one `increment()`
+ * transform with a negative value -- so it queues offline, commutes with every
+ * other device's increments and never needs a read. What it cannot do is see
+ * the counter: keeping the result non-negative is the caller's clamp
+ * (domain/idle.ts `clampSubtraction`), exactly once by the applied ledger, and
+ * this helper only refuses anything that is not a whole positive minute.
+ */
+export async function subtractActualMinutes(uid: string, taskId: string, minutes: number) {
+  await subtractActualMinutesIn(db, uid, taskId, minutes);
 }
 
 export async function setTaskCompleted(uid: string, taskId: string, completed: boolean) {

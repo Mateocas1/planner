@@ -32,6 +32,9 @@ import { SyncStatus } from "./ui/SyncStatus.tsx";
 import { Tasks } from "./ui/Tasks.tsx";
 import { dateKey } from "./ui/time.ts";
 import { useFocusTimer } from "./ui/useFocusTimer.ts";
+import { useIdleAway } from "./ui/useIdleAway.ts";
+import { IdleToast } from "./ui/IdleToast.tsx";
+import type { FocusReport } from "./domain/focus.ts";
 import { useKeyboardInset } from "./ui/viewport.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
@@ -73,10 +76,23 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
   const phone = useMediaQuery(phoneQuery);
   // One timer for the whole shell: the sidebar card shows it and the palette
   // commands change it. A phone has no focus surface yet, so it runs none.
-  const focus = useFocusTimer({ blocks, tasks, timeZone: profile.timeZone, enabled: !phone });
+  // The idle-away hook (T9, desktop only) needs the timer's session and hands
+  // back the stop report it must see, so the report travels through a ref: the
+  // hook is created after the timer, and useFocusTimer keeps its onStop fresh
+  // every render.
+  const idleStopBridge = useRef<(report: FocusReport) => void>(() => {});
+  const [lateError, setLateError] = useState<string | null>(null);
+  const focus = useFocusTimer({
+    blocks,
+    tasks,
+    timeZone: profile.timeZone,
+    enabled: !phone,
+    onStop: report => idleStopBridge.current(report),
+  });
+  const idle = useIdleAway({ uid: user.uid, session: focus.session, status: focus.status, onError: setLateError });
+  idleStopBridge.current = idle.onFocusStopped;
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
   const [creating, setCreating] = useState<HTMLElement | null>(null);
-  const [lateError, setLateError] = useState<string | null>(null);
   // One undo offer at a time, keyed so a new delete replaces the old toast and
   // restarts its countdown instead of stacking a second one. The id is returned
   // because the shutdown ritual withdraws its own offer when the server rejects
@@ -379,6 +395,15 @@ function Shell({ user, view, onNavigate }: { user: User; view: View; onNavigate:
       )}
       {undo && (
         <UndoToast key={undo.id} item={undo} onDismiss={() => setUndo(null)} onError={setLateError} />
+      )}
+      {idle.prompt !== null && (
+        <IdleToast
+          prompt={idle.prompt}
+          onSubtract={() =>
+            idle.confirm(tasks.find(task => task.id === idle.prompt?.taskId)?.actualMinutes ?? 0)
+          }
+          onKeep={idle.keep}
+        />
       )}
       <AnimatePresence>
         {creating && (
