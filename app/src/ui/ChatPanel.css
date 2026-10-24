@@ -142,6 +142,55 @@
   }
 }
 
+/* Swipe to dismiss (useSwipeDismiss, odd/tasks/ronda4.md S1). Co-located per
+   AGENTS.md: only the rules the gesture adds live here.
+
+   The panel keeps native vertical panning (pan-y) so the thread scrolls with
+   a finger exactly as before, and horizontal moves reach the gesture instead
+   of the browser; the header is the drag handle and opts out of native
+   panning entirely, so every direction is available to the gesture from
+   there. The thread scroller states its own pan-y: touch-action is not
+   inherited, and the scroller is the element the browser pans. */
+.chat-panel {
+  touch-action: pan-y;
+  /* A down-drag from a top edge must reach the gesture, not the browser's
+     overscroll: pull-to-refresh or scroll chaining would claim the drag and
+     send pointercancel before the 8 px slop lock. */
+  overscroll-behavior: contain;
+}
+.chat-scroll { touch-action: pan-y; }
+.chat-head { touch-action: none; }
+
+/* Once the gesture has locked a direction (data-swiping="active"), nothing
+   under the pointer may start a native selection the swipe would fight. While
+   the pointer is only pending (inside the slop) selection keeps working: a
+   mouse press on message text must still be able to select. Text fields,
+   buttons and links never enter the gesture (useSwipeDismiss), so their
+   selection is untouched. */
+.chat-panel[data-swiping="active"] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The gesture moves the panel on the compositor; the hint holds the layer for
+   the whole drag so each per-move write (transform, and the phone-only corner
+   radius) is a paint of the panel's own layer -- never a layout pass and
+   never a promote/demote cycle. */
+.chat-panel[data-swiping="active"] { will-change: transform; }
+
+/* Phone (the same query as motion.ts phoneQuery): the panel is the full
+   viewport (S1) -- a whole screen of drag surface, resting radius 0 -- so the
+   drag rounds its corners 0 → 28 px while the card shrinks (sheetRadius).
+   Desktop keeps the inset card and its --r-sheet corners untouched. */
+@media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
+  .chat-panel {
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+  }
+}
+
 /* head ------------------------------------------------------------------ */
 
 .chat-head {

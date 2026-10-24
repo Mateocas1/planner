@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { animate, type AnimationPlaybackControls } from "motion/react";
 import { phoneQuery } from "./motion.ts";
 import {
@@ -17,6 +17,23 @@ import {
 
 /** The resting transform every flight ends on: one string, never four props. */
 const restTransform = "translate(0px, 0px) scale(1, 1)";
+
+/** Every inline style the gesture owns on the surface and its scrim, back to
+ * nothing. The hook owns exactly these -- the caller's own styles are never
+ * touched. */
+function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
+  delete surface.dataset.swiping;
+  surface.style.transform = "";
+  surface.style.transformOrigin = "";
+  surface.style.borderRadius = "";
+  surface.style.opacity = "";
+  surface.style.willChange = "";
+  surface.style.pointerEvents = "";
+  if (scrim) {
+    scrim.style.opacity = "";
+    scrim.style.pointerEvents = "";
+  }
+}
 
 /**
  * Swipe-to-dismiss pointer wiring, shared by the Sheet and the ChatPanel
@@ -190,17 +207,7 @@ export function useSwipeDismiss({
      * write per move repaints the glass for nothing). */
     let lastRadius: number | null = null;
 
-    const clearInline = () => {
-      delete surface.dataset.swiping;
-      surface.style.transform = "";
-      surface.style.transformOrigin = "";
-      surface.style.borderRadius = "";
-      surface.style.opacity = "";
-      // The Motion spring manages will-change while it runs; drop it so the
-      // resting surface holds no promoted layer.
-      surface.style.willChange = "";
-      if (scrim) scrim.style.opacity = "";
-    };
+    const clearInline = () => clearGestureStyles(surface, scrim);
 
     /** A commit that the caller declines must not leave the surface invisible
      * under the flight's `fill: forwards`: if the exit has not started a frame
@@ -210,8 +217,6 @@ export function useSwipeDismiss({
         requestAnimationFrame(() => {
           if (!surface.isConnected || closeStartedRef.current?.() || !dismissedRef.current) return;
           dismissedRef.current = false;
-          surface.style.pointerEvents = "";
-          if (scrim) scrim.style.pointerEvents = "";
           clearInline();
         }),
       );
@@ -488,15 +493,6 @@ export function useSwipeDismiss({
       else clearInline();
     };
 
-    // A previous commit left the surface held invisible (the flight's end
-    // writes an inline opacity so the caller's exit starts hidden): the
-    // caller's entrance is a CSS animation and overrides the inline value
-    // while it plays, but once it ends the inline opacity would win. Clear
-    // every gesture-owned style as the surface becomes active again.
-    clearInline();
-    surface.style.pointerEvents = "";
-    if (scrim) scrim.style.pointerEvents = "";
-
     surface.addEventListener("pointerdown", onPointerDown);
     // Moves, the release and cancellation are tracked on the document: a touch
     // pointer implicitly captures to its target, but a mouse has no implicit
@@ -518,9 +514,7 @@ export function useSwipeDismiss({
       // caller's own close path is never fought.
       if (gesture) {
         gesture = null;
-        clearInline();
-        surface.style.pointerEvents = "";
-        if (scrim) scrim.style.pointerEvents = "";
+        clearGestureStyles(surface, scrim);
       }
       snapback?.cancel();
       snapbackScrim?.cancel();
@@ -530,6 +524,16 @@ export function useSwipeDismiss({
     // The gesture reads geometry live; the commit path is read through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedMotion, active, surfaceRef, scrimRef, handleSelector]);
+
+  // The clean-up above must also run before the caller's entrance paints when
+  // the surface becomes active again: a hold left by a commit flight would
+  // otherwise be read by the entrance's implicit end keyframe.
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!active || !surface) return;
+    clearGestureStyles(surface, scrimRef?.current ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, surfaceRef, scrimRef]);
 
   return { dismissedRef };
 }
