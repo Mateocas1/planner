@@ -1,6 +1,6 @@
 import { freeSlots, type Interval, type WorkWindow } from "../planning/window.ts";
 import { isDayKey, type UndoRefusal } from "../planning/shutdown.ts";
-import { formatWall, keyToWallUtc, pad } from "./time.ts";
+import { dateKey, formatWall, keyToWallUtc, pad, wallMinutes } from "./time.ts";
 
 /**
  * The shutdown ritual's words and thresholds (distinctive roadmap F3).
@@ -197,6 +197,55 @@ export function morningBriefText(input: {
   const first = input.firstStartMinutes === undefined ? "" : `, first at ${minutesLabel(input.firstStartMinutes)}.`;
   const free = input.firstFreeSlotMinutes === undefined ? "" : ` First free slot ${minutesLabel(input.firstFreeSlotMinutes)}.`;
   return `Today: ${blocks}${first}${free}`;
+}
+
+/**
+ * The brief's day state, computed from the blocks and clock the Home screen
+ * reads. Home renders from it and so does the desktop sign-in launch
+ * (`desktop-autostart.ts`), so both agree on whether today's brief applies.
+ */
+export function morningBriefState(input: {
+  blocks: readonly { start: string; end: string }[];
+  timeZone: string;
+  workWindow: WorkWindow;
+  now: Date;
+}): { today: string; blockCount: number; text: string | null } {
+  const today = dateKey(input.now, input.timeZone);
+  const todays = input.blocks
+    .filter(block => dateKey(new Date(block.start), input.timeZone) === today)
+    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  const text = morningBriefText({
+    blockCount: todays.length,
+    firstStartMinutes: todays.length === 0 ? undefined : wallMinutes(new Date(todays[0].start), input.timeZone),
+    firstFreeSlotMinutes: firstFreeSlot(
+      todays.map(block => {
+        const startMinutes = wallMinutes(new Date(block.start), input.timeZone);
+        const endMinutes = wallMinutes(new Date(block.end), input.timeZone);
+        return { startMinutes, endMinutes: endMinutes <= startMinutes ? 1440 : endMinutes };
+      }),
+      input.workWindow,
+      wallMinutes(input.now, input.timeZone),
+    ),
+  });
+  return { today, blockCount: todays.length, text };
+}
+
+/** The day the brief was dismissed on this device. A browser that refuses
+ *  storage (private modes, hardened browsers throw on access) reads as none. */
+export function readBriefDismissal(): string | null {
+  try {
+    return window.localStorage.getItem(briefStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+export function writeBriefDismissal(day: string): void {
+  try {
+    window.localStorage.setItem(briefStorageKey, day);
+  } catch {
+    // A browser that refuses storage still gets a dismissal for this mount.
+  }
 }
 
 /**

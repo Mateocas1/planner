@@ -17,7 +17,8 @@
         "height": 820,
         "minWidth": 800,
         "minHeight": 560,
-        "transparent": true
+        "transparent": true,
+        "visible": false
       },
       {
         "label": "quickadd",

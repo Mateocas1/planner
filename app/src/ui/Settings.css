@@ -78,6 +78,10 @@
   background: var(--on-accent);
 }
 
+.day-switch:disabled {
+  opacity: 0.5;
+}
+
 .day-switch:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
