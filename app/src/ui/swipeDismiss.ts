@@ -97,17 +97,20 @@ export const VELOCITY_STALE_MS = 60;
 
 /**
  * The dominant compass direction of a 2D vector: the sector of the plane it
- * points into. Up means within ±45° of straight up (|vy| > |vx| with vy < 0);
- * on the 45° boundaries the horizontal sector wins, matching how sheets are
- * dismissed far more often than scrolled. Inside the slop (`adx` and `ady`
- * both below it) there is no dominant direction yet: the pointer may still be
- * reaching for a scroll or a click, so nothing moves.
+ * points into. Up means within ±45° of straight up (|vy| ≥ |vx| with vy < 0):
+ * on the exact 45° diagonal the up sector wins, so an exact ±45° up-left or
+ * up-right release never dismisses (finding 5); every other 45° boundary is
+ * horizontal, where dismissing is the common intent. Inside the slop (`adx`
+ * and `ady` both below it) there is no dominant direction yet: the pointer
+ * may still be reaching for a scroll or a click, so nothing moves.
  */
 export function dominantDirection(dx: number, dy: number, slop: number = SWIPE_SLOP): SwipeDirection | null {
   const adx = Math.abs(dx);
   const ady = Math.abs(dy);
   if (adx < slop && ady < slop) return null;
-  if (adx >= ady) return dx < 0 ? "left" : "right";
+  // Exact diagonal-up is the up sector: it must never dismiss. Ties pointing
+  // down or flat stay horizontal, where a dismissal is the common intent.
+  if (adx > ady || (adx === ady && dy >= 0)) return dx < 0 ? "left" : "right";
   return dy < 0 ? "up" : "down";
 }
 
@@ -245,13 +248,19 @@ export function exitVector(
   }
   const ux = dx / magnitude;
   const uy = dy / magnitude;
-  // The scale factor that carries the sheet's edge past the viewport along
-  // each axis the vector travels; the largest wins.
-  let t = 1;
-  if (ux < 0) t = Math.max(t, (rect.left + rect.width) / -ux);
-  else if (ux > 0) t = Math.max(t, (viewportWidth - rect.left) / ux);
-  if (uy < 0) t = Math.max(t, (rect.top + rect.height) / -uy);
-  else if (uy > 0) t = Math.max(t, (viewportHeight - rect.top) / uy);
+  // The scale factor that carries the sheet fully outside the viewport: it is
+  // outside once it clears ANY one edge, so the smallest per-axis clearance
+  // wins (finding 1) -- the old largest-t value made a near-vertical release
+  // fly ~78,000 px on a phone and leave after ~1% of the flight, breaking
+  // "exit matches release velocity". A zero axis component never bounds the
+  // flight (the sheet does not travel along it), so only traveled axes count.
+  let t = Infinity;
+  if (ux < 0) t = Math.min(t, (rect.left + rect.width) / -ux);
+  else if (ux > 0) t = Math.min(t, (viewportWidth - rect.left) / ux);
+  if (uy < 0) t = Math.min(t, (rect.top + rect.height) / -uy);
+  else if (uy > 0) t = Math.min(t, (viewportHeight - rect.top) / uy);
+  // Unreachable for a nonzero vector; kept as a guard.
+  if (!Number.isFinite(t)) t = 1;
   return { x: dx + t * ux, y: dy + t * uy, distance: t };
 }
 
