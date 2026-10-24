@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { chatPanelVisible, mockMode } from "../chat/config.ts";
 import type { ChatTurn } from "../chat/conversation.ts";
+import { getKeyStatus } from "../chat/keyStore.ts";
 import { Markdown, StreamedAnswer } from "../chat/markdown.tsx";
 import { createMockTransport } from "../chat/mockTransport.ts";
 import type { ChatTransport } from "../chat/types.ts";
@@ -116,13 +117,21 @@ export function ChatPanel({
   transport,
   buildSystemPrompt,
   signedIn = false,
+  onConversationEnd,
+  onSetupKey,
 }: {
-  /** Defaults select the mock in dev-mock mode; C4 wires the Tauri bridge. */
+  /** Defaults select the mock in dev-mock mode; C3a's ChatSurface wires the
+   * Tauri bridge on desktop and the mock in dev-mock runs. */
   transport?: ChatTransport;
   buildSystemPrompt?: () => string;
   /** Review #2: the panel is an in-app surface, so the real (non-mock) panel
    * exists only for a signed-in session; App passes `user !== null`. */
   signedIn?: boolean;
+  /** C3a: fired once per conversation end with the transcript turns (spec S5
+   * memory extraction); the panel only forwards it to `useChat`. */
+  onConversationEnd?: (turns: ChatTurn[]) => void;
+  /** C3a: the no-key empty state's button — opens the Settings "AI" tab. */
+  onSetupKey?: () => void;
 }) {
   const [mockQuery] = useState(() => new URLSearchParams(window.location.search).get("chatMock"));
   const [open, setOpen] = useState(false);
@@ -133,7 +142,12 @@ export function ChatPanel({
   const [mockTransport] = useState(() => createMockTransport(mockMode(mockQuery)));
   const resolvedTransport = transport ?? (mockQuery !== null ? mockTransport : unwiredTransport);
   const resolvedPrompt = buildSystemPrompt ?? (() => "");
-  const { state, send, stop, retry, newChat } = useChat({ transport: resolvedTransport, buildSystemPrompt: resolvedPrompt });
+  const { state, send, stop, retry, newChat } = useChat({
+    transport: resolvedTransport,
+    buildSystemPrompt: resolvedPrompt,
+    panelOpen: open,
+    onConversationEnd,
+  });
   const inFlight = state.phase !== "idle";
   const streaming = state.phase === "streaming";
 
@@ -154,6 +168,26 @@ export function ChatPanel({
    * inert until `animationend` (or the fallback timer) hides it. */
   const [closing, setClosing] = useState(false);
   const closeFallback = useRef<number | null>(null);
+
+  // No API key (S3, C3a): the desktop panel opens onto a setup empty state
+  // instead of a chat that can only fail. Checked once per mount — key
+  // changes from Settings reappear on the next panel mount.
+  const [noKey, setNoKey] = useState(false);
+  useEffect(() => {
+    if (mockQuery !== null || !isTauri()) return undefined;
+    let alive = true;
+    getKeyStatus()
+      .then(status => {
+        if (alive) setNoKey(!status.hasKey);
+      })
+      .catch(() => {
+        // Rust unreachable (unexpected on desktop): keep the chat UI; the
+        // first send reports the failure through the transport error path.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mockQuery]);
 
   const cancelExit = useCallback(() => {
     if (closeFallback.current !== null) {
@@ -343,13 +377,23 @@ export function ChatPanel({
           <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
             <div className="chat-column" ref={columnRef}>
               {isEmptyThread ? (
+              noKey ? (
+                <div className="chat-empty">
+                  <p className="chat-empty-hi">Your assistant is not set up yet.</p>
+                  <h2 className="chat-empty-heading">Add an API key to start chatting.</h2>
+                  <button type="button" className="chat-retry" onClick={() => onSetupKey?.()}>
+                    Set up the assistant
+                  </button>
+                </div>
+              ) : (
                 <div className="chat-empty">
                   <p className="chat-empty-hi">Hi</p>
                   <h2 className="chat-empty-heading">What do you need?</h2>
                 </div>
-              ) : (
-                state.turns.map(renderTurn)
-              )}
+              )
+            ) : (
+              state.turns.map(renderTurn)
+            )}
               {(state.phase === "pending" || state.phase === "reasoning" || streamingTurn !== null) && (
                 <div className="chat-bubble chat-answer" data-live key="assistant-live">
                   {/* The spinner stays mounted through the morph: the same

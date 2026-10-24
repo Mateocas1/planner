@@ -1,15 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CHAT_MODEL, buildSystemPrompt, chatPanelVisible, mockMode } from "./config.ts";
+import { DEFAULT_CHAT_MODEL, chatPanelVisible, mockMode } from "./config.ts";
 
 test("the default model is the NaN deepseek flash the user named", () => {
   assert.equal(DEFAULT_CHAT_MODEL, "deepseek-v4-flash");
-});
-
-test("buildSystemPrompt returns a short non-empty prompt (C3 replaces the stub)", () => {
-  const prompt = buildSystemPrompt();
-  assert.ok(prompt.length > 0);
-  assert.ok(prompt.length < 1000);
 });
 
 test("the panel renders in a signed-in desktop shell regardless of the query (review #2)", () => {

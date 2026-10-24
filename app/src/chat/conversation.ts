@@ -45,13 +45,24 @@ export type ConversationAction =
 
 export const emptyConversation: ConversationState = { turns: [], phase: "idle", requestId: null, error: null };
 
-/** The text a Retry would send again: the last user turn, or null. */
+/**
+ * The text a Retry would send again: the last user turn, or null. */
 export function lastUserText(state: ConversationState): string | null {
   for (let index = state.turns.length - 1; index >= 0; index--) {
     const turn = state.turns[index];
     if (turn.role === "user") return turn.text;
   }
   return null;
+}
+
+/**
+ * Whether the conversation holds at least one real exchange: a user message
+ * *and* a non-empty answer. An empty assistant turn (an error, a stop before
+ * any text) is not an exchange — there is nothing to extract memories from.
+ * End-of-conversation extraction (spec S5) only runs on a real exchange.
+ */
+export function hasExchange(turns: ChatTurn[]): boolean {
+  return turns.some(turn => turn.role === "user") && turns.some(turn => turn.role === "assistant" && turn.text !== "");
 }
 
 /** Append text to the trailing assistant turn, keeping text and segments in step. */

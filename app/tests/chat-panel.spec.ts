@@ -203,3 +203,37 @@ test("reduced motion: the panel and the stream still work without movement", asy
   await expect.poll(() => answerLength(page), { timeout: 15_000 }).toBeGreaterThan(0);
   await expect(stopButton(page)).toBeHidden({ timeout: 25_000 });
 });
+
+test("memory extraction: canned ops from the mock ride into the next conversation's prompt (S5)", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openPanel(page);
+  // First conversation: one full exchange.
+  await field(page).fill("Remember I plan my week on Sundays");
+  await field(page).press("Enter");
+  await expect(stopButton(page)).toBeHidden({ timeout: 30_000 });
+  // "New chat" ends the conversation: extraction calls the mock's `complete`,
+  // which replies with canned upsert ops the in-memory backend applies.
+  await panel(page).getByRole("button", { name: "New chat" }).click();
+  await expect(panel(page).getByText("What do you need?")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const mock = (window as { __chatMockTransport?: { __lastCompleteRequest?: unknown } }).__chatMockTransport;
+        return mock?.__lastCompleteRequest != null;
+      }),
+    )
+    .toBe(true); // extraction recorded its complete request
+  // Second conversation: the system prompt carries the extracted note.
+  await field(page).fill("What is left of my day?");
+  await field(page).press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const mock = (window as { __chatMockTransport?: { __lastStreamRequest?: { messages?: Array<{ role?: string; content?: string }> } } }).__chatMockTransport;
+        const system = mock?.__lastStreamRequest?.messages?.find(message => message.role === "system")?.content ?? "";
+        return system.includes("Prefers short answers") && system.includes("planning-style");
+      }),
+    )
+    .toBe(true); // the second conversation's system prompt includes the memory
+});
