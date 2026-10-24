@@ -94,10 +94,10 @@ test("the rail switches tabs, and the desktop-only tabs never render on the web"
     await expect(view(page).getByRole("heading", { name: tab, exact: true })).toBeVisible();
   }
 
-  /* Rituals' placeholder rows say what is coming, without pretending to work. */
+  /* Rituals is real now (S3): the weekly review's switch and its moments. */
   await rail(page).getByRole("button", { name: "Rituals" }).click();
-  await expect(view(page).getByText("Coming with the weekly review.")).toBeVisible();
-  await expect(view(page).getByRole("switch", { name: "Enable nudges" })).toBeDisabled();
+  await expect(view(page).getByRole("switch", { name: "Propose the review" })).toBeEnabled();
+  await expect(view(page).getByText("Moment 1")).toBeVisible();
 });
 
 test("a changed work window still persists from the new container", async ({ page }) => {

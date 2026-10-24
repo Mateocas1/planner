@@ -1,9 +1,10 @@
 import { bannerVisible } from "./ui/shutdownRitual.ts";
+import { isDayKey } from "./planning/shutdown.ts";
 
 /**
  * Actionable native notifications' pure half (task T7, spec S8.3 + S3).
  *
- * Two reminders exist, and both reuse a rule the app already owns:
+ * Three reminders exist, and each reuses a rule the app already owns:
  *
  * - **Block start.** Two minutes before a work block starts, a Windows toast
  *   offers [Start focus] and [+5 min]. What to notify when, the dedupe and the
@@ -14,6 +15,11 @@ import { bannerVisible } from "./ui/shutdownRitual.ts";
  * - **Shutdown nudge.** The same trigger as Home's banner: `bannerVisible`
  *   (`ui/shutdownRitual.ts`), the app's own rule, not a new time. At most one
  *   nudge per profile-zone day.
+ * - **Weekly review nudge** (S3). The same due moment Home's weekly banner
+ *   reads (`planning/weekly.ts` `dueMoment`, handed in by the caller), at most
+ *   one toast per week and moment, and never on a day the shutdown ritual
+ *   already closed — that ritual ends with "Close the week too?" instead of
+ *   a second nudge.
  *
  * No Firebase, no React, no storage, no clock: the caller hands in the blocks
  * it currently knows about and `Date.now()`, and gets back data. The React glue
@@ -63,10 +69,10 @@ export const defaultNotifySettings: NotifySettings = { blockReminders: true, shu
  * - `snoozed` maps a key to the instant its snoozed reminder fires.
  * - `shutdownDay` is the profile-zone day key the nudge last fired on.
  */
-export type NotifyState = { notified: string[]; snoozed: Record<string, number>; shutdownDay?: string };
+export type NotifyState = { notified: string[]; snoozed: Record<string, number>; shutdownDay?: string; weeklyKeys: string[] };
 
 export function emptyNotifyState(): NotifyState {
-  return { notified: [], snoozed: {} };
+  return { notified: [], snoozed: {}, weeklyKeys: [] };
 }
 
 /** The dedupe key of one block start: the id *and* the instant (S8.3). */
@@ -84,7 +90,7 @@ export function parseNotifyState(raw: string | null): NotifyState {
     return emptyNotifyState();
   }
   if (value === null || typeof value !== "object") return emptyNotifyState();
-  const { notified, snoozed, shutdownDay } = value as Record<string, unknown>;
+  const { notified, snoozed, shutdownDay, weeklyKeys } = value as Record<string, unknown>;
   const state = emptyNotifyState();
   if (Array.isArray(notified)) state.notified = notified.filter((key): key is string => typeof key === "string");
   if (snoozed !== null && typeof snoozed === "object" && !Array.isArray(snoozed)) {
@@ -93,6 +99,7 @@ export function parseNotifyState(raw: string | null): NotifyState {
     }
   }
   if (typeof shutdownDay === "string") state.shutdownDay = shutdownDay;
+  if (Array.isArray(weeklyKeys)) state.weeklyKeys = weeklyKeys.filter((key): key is string => typeof key === "string");
   return state;
 }
 
@@ -199,4 +206,42 @@ export function shutdownNudgeDue(input: {
 /** Records that the nudge fired on `today`, so it stays at most once per day. */
 export function applyShutdownNotified(state: NotifyState, today: string): NotifyState {
   return { ...state, shutdownDay: today };
+}
+
+/** The weekly review moment a toast stands for: the ISO week and the moment's
+ *  own day and time — the identity one week's schedule can hold twice. */
+export type WeeklyNudgeMoment = { week: string; day: number; time: number };
+
+/** The dedupe key of one weekly moment: week, day, time. */
+export function weeklyNudgeKey(moment: WeeklyNudgeMoment): string {
+  return `${moment.week}|${moment.day}|${moment.time}`;
+}
+
+/** How many weekly keys the device remembers. A year of weeks is 52; eight is
+ *  already far past any dedupe a returning device could meet. */
+const weeklyKeysKept = 8;
+
+/**
+ * Whether the weekly review's toast is due, and the key to record if it is.
+ *
+ * The moment is the caller's `dueMoment` answer, narrowed to what the dedupe
+ * needs. A day the shutdown ritual already closed gets no toast: the ritual
+ * itself ended with "Close the week too?" (S3), so a toast would be the
+ * second nudge the week no longer needs. The banner stays the quiet path.
+ */
+export function weeklyNudgeDue(input: {
+  due: WeeklyNudgeMoment | null;
+  today: string;
+  lastShutdown?: unknown;
+  state: NotifyState;
+}): string | null {
+  if (input.due === null) return null;
+  if (isDayKey(input.lastShutdown) && (input.lastShutdown as string) >= input.today) return null;
+  const key = weeklyNudgeKey(input.due);
+  return input.state.weeklyKeys.includes(key) ? null : key;
+}
+
+/** Records that the weekly toast fired for `key`, keeping the list bounded. */
+export function applyWeeklyNotified(state: NotifyState, key: string): NotifyState {
+  return { ...state, weeklyKeys: [...state.weeklyKeys, key].slice(-weeklyKeysKept) };
 }

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { motion } from "motion/react";
 import { isTauri } from "../../desktop.ts";
 import type { WorkWindow } from "../../planning/window.ts";
+import type { WeeklyReviewSettings } from "../../planning/weekly.ts";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "../motion.ts";
 import { availableSettingsTabs, resolveSettingsTab, type SettingsTab } from "./tabs.ts";
 import { AiTab } from "./tabs/AiTab.tsx";
@@ -32,6 +33,7 @@ export function SettingsView({
   workWindow,
   shutdownTime,
   shortcutsEnabled,
+  weeklyReview,
   tab,
   onTab,
   onBack,
@@ -40,6 +42,8 @@ export function SettingsView({
   workWindow: WorkWindow;
   shutdownTime: number;
   shortcutsEnabled: boolean;
+  /** The profile's weekly review schedule (S3); the Rituals tab edits it. */
+  weeklyReview: WeeklyReviewSettings;
   tab: SettingsTab;
   onTab: (tab: SettingsTab) => void;
   /** Returns to the view Settings was opened from. */
@@ -107,7 +111,9 @@ export function SettingsView({
           {active === "general" && (
             <GeneralTab uid={uid} workWindow={workWindow} shutdownTime={shutdownTime} shortcutsEnabled={shortcutsEnabled} />
           )}
-          {active === "rituals" && <RitualsTab shutdownTime={shutdownTime} onOpenGeneral={openGeneral} />}
+          {active === "rituals" && (
+            <RitualsTab uid={uid} settings={weeklyReview} shutdownTime={shutdownTime} onOpenGeneral={openGeneral} />
+          )}
           {active === "shortcuts" && (
             <ShortcutsTab desktop={desktop} shortcutsEnabled={shortcutsEnabled} onOpenGeneral={openGeneral} />
           )}

@@ -74,6 +74,8 @@ export function ShutdownSheet({
   workWindow,
   now,
   storedShutdown,
+  weeklyOffer = false,
+  onOpenWeeklyReview,
   origin,
   onClose,
   onOfferUndo,
@@ -91,6 +93,13 @@ export function ShutdownSheet({
   /** `profile.storedLastShutdown` exactly as stored: the plan records it so the
    *  undo puts a hand-edited value back instead of deleting it (F3c item 6). */
   storedShutdown?: unknown;
+  /** True while a weekly review moment is due (S3): the turned page then ends
+   *  with "Close the week too?" — the shutdown chain takes the place of a
+   *  second nudge on the day the day was closed. */
+  weeklyOffer?: boolean;
+  /** Opens the weekly review the chain offers; the sheet closes first, the
+   *  shell navigates. */
+  onOpenWeeklyReview?: () => void;
   origin: HTMLElement | null;
   onClose: () => void;
   /** The shell's single undo offer, and its withdrawal: the roll is undoable
@@ -406,6 +415,17 @@ export function ShutdownSheet({
       <p className="shutdown-live" role="status" aria-live="polite">{announcement}</p>
       {turned && (
         <div className="shutdown-actions">
+          {/* The week's chain (S3): on the day the review is due, the ritual
+              offers it here — one door, not a second nudge waiting outside. */}
+          {weeklyOffer && onOpenWeeklyReview !== undefined && (
+            <button
+              type="button"
+              className="button-primary"
+              onClick={onOpenWeeklyReview}
+            >
+              Close the week too?
+            </button>
+          )}
           <button type="button" className="button" onClick={onClose}>Done</button>
         </div>
       )}
