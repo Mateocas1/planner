@@ -16,6 +16,7 @@ import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { BiasHint, completedSamples, type TrackedTask } from "./ui/BiasHint.tsx";
 import { Calendar } from "./ui/Calendar.tsx";
+import { ChatPanel } from "./ui/ChatPanel.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
@@ -68,6 +69,9 @@ export default function App() {
       {/* Announced outside the shell: an update is just as available on the
           sign-in screen as inside the app. */}
       <UpdatePrompt />
+      {/* The floating chat panel (desktop; dev-mock with ?chatMock). Mounted
+          outside the auth gate so the dev-mock UI needs no emulator account. */}
+      <ChatPanel />
     </MotionConfig>
   );
 }
