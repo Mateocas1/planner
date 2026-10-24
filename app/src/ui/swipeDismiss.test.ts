@@ -10,30 +10,80 @@ import {
   VELOCITY_STALE_MS,
   commitDistance,
   createVelocityTracker,
+  dominantDirection,
   dragTransform,
-  exitDistance,
   exitDurationMs,
-  lockDirection,
+  exitVector,
   progress,
+  releaseDirection,
   rubberBand,
   shouldCommit,
+  shouldDismiss,
   sheetRadius,
   sheetScale,
 } from "./swipeDismiss.ts";
 
-test("lockDirection stays null inside the slop and locks to the axis that gets there first", () => {
-  assert.equal(lockDirection(0, 0), null);
-  assert.equal(lockDirection(4, 4), null);
-  assert.equal(lockDirection(SWIPE_SLOP - 1, 0), null);
-  assert.equal(lockDirection(0, SWIPE_SLOP - 1), null);
+test("dominantDirection stays null inside the slop and picks the larger component's sector", () => {
+  assert.equal(dominantDirection(0, 0), null);
+  assert.equal(dominantDirection(4, 4), null);
+  assert.equal(dominantDirection(SWIPE_SLOP - 1, 0), null);
+  assert.equal(dominantDirection(0, SWIPE_SLOP - 1), null);
   // Horizontal wins ties: dismissing is far more common than scrolling.
-  assert.equal(lockDirection(SWIPE_SLOP, SWIPE_SLOP), "right");
-  assert.equal(lockDirection(-SWIPE_SLOP, SWIPE_SLOP), "left");
-  assert.equal(lockDirection(SWIPE_SLOP, -SWIPE_SLOP), "right");
-  assert.equal(lockDirection(0, SWIPE_SLOP), "down");
-  assert.equal(lockDirection(0, -SWIPE_SLOP), "up");
-  assert.equal(lockDirection(SWIPE_SLOP + 10, 2), "right");
-  assert.equal(lockDirection(2, SWIPE_SLOP + 10), "down");
+  assert.equal(dominantDirection(SWIPE_SLOP, SWIPE_SLOP), "right");
+  assert.equal(dominantDirection(-SWIPE_SLOP, SWIPE_SLOP), "left");
+  assert.equal(dominantDirection(SWIPE_SLOP, -SWIPE_SLOP), "right");
+  assert.equal(dominantDirection(0, SWIPE_SLOP), "down");
+  assert.equal(dominantDirection(0, -SWIPE_SLOP), "up");
+  assert.equal(dominantDirection(SWIPE_SLOP + 10, 2), "right");
+  assert.equal(dominantDirection(2, SWIPE_SLOP + 10), "down");
+});
+
+test("releaseDirection reads 45° sectors of the release vector: up is within ±45° of straight up", () => {
+  // The up sector: the vertical component strictly dominates.
+  assert.equal(releaseDirection(-10, -100), "up");
+  assert.equal(releaseDirection(10, -100), "up");
+  assert.equal(releaseDirection(0, -1), "up");
+  // Exactly on the ±45° boundary the horizontal sector wins, as before.
+  assert.equal(releaseDirection(100, -100), "right");
+  assert.equal(releaseDirection(-100, -100), "left");
+  // The dismissible sectors.
+  assert.equal(releaseDirection(-200, 120), "left");
+  assert.equal(releaseDirection(200, 120), "right");
+  assert.equal(releaseDirection(120, 200), "down");
+});
+
+test("shouldDismiss: a diagonal down-left release past the threshold dismisses", () => {
+  const width = 400;
+  const height = 600;
+  // Dominant left, 200 px of travel against a 140 px threshold.
+  assert.equal(shouldDismiss(-200, 120, 0, 0, width, height), true);
+  // Dominant down (the travel that decides is the vertical one).
+  assert.equal(shouldDismiss(-120, 250, 0, 0, width, height), true);
+  // Diagonal down-right dismisses the same way.
+  assert.equal(shouldDismiss(200, 120, 0, 0, width, height), true);
+});
+
+test("shouldDismiss: an up-dominant release never dismisses", () => {
+  const width = 400;
+  const height = 600;
+  // Far past every distance threshold, and even with a violent flick behind
+  // it: the up sector is not dismissible.
+  assert.equal(shouldDismiss(0, -400, 0, -5, width, height), false);
+  assert.equal(shouldDismiss(-100, -300, -2, -5, width, height), false);
+  // On the boundary the horizontal sector wins, so this one may dismiss.
+  assert.equal(shouldDismiss(-300, -100, 0, 0, width, height), true);
+});
+
+test("shouldDismiss: a short diagonal snaps back", () => {
+  const width = 400;
+  const height = 600;
+  // Slow, short, no flick: below both gates on the dominant axis.
+  assert.equal(shouldDismiss(-50, 30, 0, 0, width, height), false);
+  assert.equal(shouldDismiss(30, -50, 0, 0, width, height), false);
+  // A flick on a short diagonal commits (the flick gate, unchanged).
+  assert.equal(shouldDismiss(-60, 40, -2, 1, width, height), true);
+  // A flick pointing against the drag is a pull-back, not a throw.
+  assert.equal(shouldDismiss(-60, 40, 2, -1, width, height), false);
 });
 
 test("commitDistance is a fraction of the sheet size with a floor", () => {
@@ -114,13 +164,27 @@ test("exitDurationMs inherits the release velocity and clamps to the budget", ()
   assert.equal(exitDurationMs(1, 5), 120);
 });
 
-test("exitDistance reaches fully outside the viewport along the locked direction", () => {
+test("exitVector flies fully outside the viewport along the release vector", () => {
   const rect = { left: 300, top: 100, width: 400, height: 500 };
   const vw = 1280;
   const vh = 800;
-  assert.equal(exitDistance("left", rect, vw, vh), 700); // left + width
-  assert.equal(exitDistance("right", rect, vw, vh), 980); // vw - left
-  assert.equal(exitDistance("down", rect, vw, vh), 700); // vh - top
+  // Axis-aligned releases reduce to the old per-axis exit distances.
+  assert.deepEqual(exitVector(-100, 0, rect, vw, vh), { x: -800, y: 0, distance: 700 });
+  assert.deepEqual(exitVector(100, 0, rect, vw, vh), { x: 1080, y: 0, distance: 980 });
+  assert.deepEqual(exitVector(0, 100, rect, vw, vh), { x: 0, y: 800, distance: 700 });
+  // A 3-4-5 up-left vector: both edges must end up past the viewport. The
+  // horizontal run needs 700 / 0.8 px, the vertical rise 600 / 0.6; the
+  // vertical one is longer, so the flight is ~1000 px along the vector.
+  const upLeft = exitVector(-4, -3, rect, vw, vh);
+  assert.ok(Math.abs(upLeft.distance - 1000) < 1e-9);
+  assert.ok(Math.abs(upLeft.x - -804) < 1e-6 && Math.abs(upLeft.y - -603) < 1e-6);
+  assert.ok(rect.left + upLeft.x + rect.width <= 0, "fully past the left edge");
+  assert.ok(rect.top + upLeft.y + rect.height <= 0, "fully past the top edge");
+  // A 3-4-5 down-left vector: the down run (700 / 0.6) is longer than the
+  // left run (700 / 0.8).
+  const downLeft = exitVector(-4, 3, rect, vw, vh);
+  assert.equal(downLeft.distance, Math.max(700 / 0.8, 700 / 0.6));
+  assert.ok(rect.top + downLeft.y >= vh, "fully past the bottom edge");
 });
 
 test("dragTransform is one composited string, never four props", () => {

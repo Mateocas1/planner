@@ -3,15 +3,16 @@ import { animate, type AnimationPlaybackControls } from "motion/react";
 import { phoneQuery } from "./motion.ts";
 import {
   createVelocityTracker,
+  dominantDirection,
   dragTransform,
-  exitDistance,
   exitDurationMs,
-  lockDirection,
+  exitVector,
   progress,
+  releaseDirection,
   rubberBand,
+  shouldDismiss,
   sheetRadius,
   sheetScale,
-  shouldCommit,
   type SwipeDirection,
 } from "./swipeDismiss.ts";
 
@@ -48,16 +49,15 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
  *
  * pointer drag on the drag handle (stamped `data-drag-handle`, by default the
  * surface's header) or on plain, non-scrolled surface content follows the
- * finger 1:1, locks to left, right or down after an 8 px slop -- up
- * rubber-bands and never dismisses -- and on release either commits (the
- * surface leaves in the drag direction carrying the release velocity, then the
- * caller's close path runs) or springs back on a motion spring that starts at
- * the release velocity. Mouse gestures start on the handle or on surface that
- * is not text: a press on body copy selects, it never moves the surface. Text
- * fields, buttons and any scroller that can still move in the locked direction
- * never enter the gesture, so selection and scrolling keep working, and
- * pointer capture is taken only after the direction locks so a tap's click
- * keeps its target. A surface a call site stamps `data-swipe-dismiss="off"`
+ * finger freely on both axes (S7) after an 8 px slop -- upward travel
+ * rubber-bands -- and on release either commits (the surface leaves along the
+ * release vector carrying the release velocity, then the caller's close path
+ * runs) or springs back on a motion spring that starts at the release velocity.
+ * The slop decides only whether the gesture starts: a scroller that can still
+ * scroll in the drag's initial dominant direction keeps the gesture, so
+ * scrolling and selection keep working, and pointer capture is taken only
+ * after the slop so a tap's click keeps its target. An up-dominant release
+ * never dismisses. A surface a call site stamps `data-swipe-dismiss="off"`
  * owns its own gestures: an embedded page turn (ShutdownSheet, ronda4 F3b) is
  * itself a swipe, and it wins over the dismissal -- after the 8 px slop both
  * gestures lock at once and whoever captures the pointer first steals it from
@@ -223,7 +223,10 @@ export function useSwipeDismiss({
       baseX: number;
       baseY: number;
       target: EventTarget | null;
-      direction: SwipeDirection | null;
+      /** True once the gesture won ownership past the slop (a scroller that
+       * could still scroll in the initial direction would have kept it). The
+       * release vector, not the initial direction, decides the commit. */
+      eligible: boolean;
     };
     let gesture: Gesture | null = null;
     let snapback: AnimationPlaybackControls | null = null;
@@ -292,7 +295,7 @@ export function useSwipeDismiss({
         baseX,
         baseY,
         target,
-        direction: null,
+        eligible: false,
       };
       velocity.reset();
       lastRadius = null;
@@ -303,23 +306,19 @@ export function useSwipeDismiss({
       // a direction and is really moving the surface.
     };
 
-    const apply = (direction: SwipeDirection, dx: number, dy: number) => {
-      const horizontal = direction === "left" || direction === "right";
-      const dimension = horizontal ? surface.offsetWidth : surface.offsetHeight;
-      let x = 0;
-      let y = 0;
-      let distance = 0;
-      if (direction === "up") {
-        // Up rubber-bands and never counts toward progress.
-        y = dy < 0 ? -rubberBand(-dy, dimension) : dy;
-      } else if (horizontal) {
-        x = dx;
-        distance = Math.abs(dx);
-      } else {
-        y = dy;
-        distance = Math.abs(dy);
-      }
-      const p = direction === "up" ? 0 : progress(distance, dimension);
+    /**
+     * Free 2D follow (S7): the surface tracks the pointer 1:1 on both axes;
+     * only upward travel rubber-bands (and up never dismisses). Scale and the
+     * phone corner rounding derive from the 2D distance against the larger
+     * sheet dimension, so a diagonal drag shrinks exactly as much as an
+     * axis drag of the same length.
+     */
+    const apply = (dx: number, dy: number) => {
+      const height = surface.offsetHeight;
+      const dimension = Math.max(surface.offsetWidth, height);
+      const x = dx;
+      const y = dy < 0 ? -rubberBand(-dy, height) : dy;
+      const p = progress(Math.hypot(x, y), dimension);
       surface.dataset.swiping = "active";
       surface.style.transformOrigin = "center";
       surface.style.transform = dragTransform(x, y, sheetScale(p));
@@ -347,20 +346,22 @@ export function useSwipeDismiss({
       velocity.add(event.clientX, event.clientY, event.timeStamp);
       const dx = event.clientX - gesture.startX + gesture.baseX;
       const dy = event.clientY - gesture.startY + gesture.baseY;
-      if (!gesture.direction) {
-        const direction = lockDirection(dx, dy);
-        if (!direction) return;
-        // Eligibility resolves once a direction exists.
-        if (scrollerBlocks(gesture.target, direction, event.pointerType)) {
+      if (!gesture.eligible) {
+        // The slop only decides whether the gesture starts: the drag's
+        // initial dominant direction picks the scroller test, and a scroller
+        // that can still move that way wins the gesture (S7).
+        const initial = dominantDirection(dx, dy);
+        if (!initial) return;
+        if (scrollerBlocks(gesture.target, initial, event.pointerType)) {
           gesture = null;
           clearInline();
           return;
         }
-        gesture.direction = direction;
+        gesture.eligible = true;
         // The gesture just claimed the drag: any text selection the press had
         // begun dies here, where `user-select: none` takes over too.
         document.getSelection()?.removeAllRanges();
-        // Capture only now, after the lock: before it, a tap's click would be
+        // Capture only now, after the slop: before it, a tap's click would be
         // retargeted to the surface and a clickable element would lose it.
         try {
           surface.setPointerCapture(event.pointerId);
@@ -370,7 +371,7 @@ export function useSwipeDismiss({
         }
       }
       if (reducedMotion) return; // reduced motion: decide on release, never follow
-      apply(gesture.direction, dx, dy);
+      apply(dx, dy);
     };
 
     /**
@@ -420,12 +421,7 @@ export function useSwipeDismiss({
       );
     };
 
-    const commit = (
-      direction: Exclude<SwipeDirection, "up">,
-      dx: number,
-      dy: number,
-      velocityPxPerMs: number,
-    ) => {
+    const commit = (dx: number, dy: number, velocityX: number, velocityY: number) => {
       dismissedRef.current = true;
       if (commitWithoutFlightRef.current?.()) {
         // A shared sheet closes through the view transition (morph.ts): the
@@ -435,20 +431,21 @@ export function useSwipeDismiss({
         restoreIfDeclined();
         return;
       }
-      // Fly out along the drag direction, carrying the release velocity: linear
-      // over a velocity-scaled duration. Then the caller's close path runs.
+      // Fly out along the release vector (both axes, S7), carrying the release
+      // velocity: linear over a velocity-scaled duration. Then the caller's
+      // close path runs.
       surface.style.pointerEvents = "none";
       if (scrim) scrim.style.pointerEvents = "none";
       const rect = surface.getBoundingClientRect();
-      const remaining = exitDistance(direction, rect, window.innerWidth, window.innerHeight);
-      const duration = exitDurationMs(remaining, velocityPxPerMs);
-      const endX =
-        direction === "left"
-          ? dx - (rect.left + rect.width)
-          : direction === "right"
-            ? dx + (window.innerWidth - rect.left)
-            : dx;
-      const endY = direction === "down" ? dy + (window.innerHeight - rect.top) : dy;
+      const exit = exitVector(dx, dy, rect, window.innerWidth, window.innerHeight);
+      // The flight speed is the release velocity's component along the exit
+      // vector: a pull-back release (velocity against the drag) carries none
+      // and leaves at MIN_EXIT_SPEED.
+      const magnitude = Math.hypot(dx, dy);
+      const speed = magnitude > 0 ? Math.max((dx * velocityX + dy * velocityY) / magnitude, 0) : 0;
+      const duration = exitDurationMs(exit.distance, speed);
+      const endX = exit.x;
+      const endY = exit.y;
       const computed = getComputedStyle(surface).transform;
       const scale = (computed === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(computed)).a || 1;
       const flight = surface.animate(
@@ -497,33 +494,27 @@ export function useSwipeDismiss({
       }
       const dx = event.clientX - g.startX + g.baseX;
       const dy = event.clientY - g.startY + g.baseY;
-      const direction = g.direction;
-      if (!direction) {
-        // Never locked: a plain press or a scroller that kept the gesture.
+      if (!g.eligible) {
+        // Never got past the slop (or a scroller kept the gesture): a plain
+        // press, nothing moved.
         clearInline();
         return;
       }
-      const horizontal = direction === "left" || direction === "right";
-      const dimension = horizontal ? surface.offsetWidth : surface.offsetHeight;
-      const distance = horizontal ? Math.abs(dx) : Math.abs(dy);
       // The release velocity is read at the release's own timestamp: a pointer
       // that stopped holding its flick before lifting throws nothing.
       const rawX = velocity.velocity("x", event.timeStamp);
       const rawY = velocity.velocity("y", event.timeStamp);
-      const raw = horizontal ? rawX : rawY;
-      // The release velocity only counts when it moves the way the surface is
-      // dragged: a release decelerating against the drag is the user pulling
-      // the surface back, not throwing it.
-      const dragSign = horizontal ? Math.sign(dx) : Math.sign(dy);
-      const velocityAlong = Math.sign(raw) === dragSign ? Math.abs(raw) : 0;
-      if (direction !== "up" && shouldCommit(distance, velocityAlong, dimension)) {
+      // The release vector decides (S7): its dominant sector must be
+      // dismissible -- an up-dominant release never is -- and the displacement
+      // or flick along that sector's axis must pass the thresholds.
+      if (shouldDismiss(dx, dy, rawX, rawY, surface.offsetWidth, surface.offsetHeight)) {
         if (reducedMotion) {
           // Reduced motion: no flight of ours; the close path's reduced fade runs.
           clearInline();
           onDismissRef.current();
           return;
         }
-        commit(direction, dx, dy, velocityAlong);
+        commit(dx, dy, rawX, rawY);
         return;
       }
       if (reducedMotion) {
