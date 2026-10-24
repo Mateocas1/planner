@@ -213,11 +213,12 @@ export function ChatPanel({
   const closeFallback = useRef<number | null>(null);
 
   // No API key (S3, C3a): the desktop panel opens onto a setup empty state
-  // instead of a chat that can only fail. Checked once per mount — key
-  // changes from Settings reappear on the next panel mount.
+  // instead of a chat that can only fail. Checked on every open: the panel
+  // stays mounted for the whole session, so a key saved in Settings must be
+  // seen the next time it opens, not after a restart.
   const [noKey, setNoKey] = useState(false);
   useEffect(() => {
-    if (mockQuery !== null || !isTauri()) return undefined;
+    if (!open || mockQuery !== null || !isTauri()) return undefined;
     let alive = true;
     getKeyStatus()
       .then(status => {
@@ -230,7 +231,7 @@ export function ChatPanel({
     return () => {
       alive = false;
     };
-  }, [mockQuery]);
+  }, [open, mockQuery]);
 
   const cancelExit = useCallback(() => {
     if (closeFallback.current !== null) {

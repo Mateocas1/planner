@@ -143,6 +143,34 @@ test("desktop: signing in reveals the panel without a hooks-order crash", async 
   expect(errors.filter(message => message.includes("310") || message.includes("more hooks"))).toEqual([]);
 });
 
+// A key saved in Settings while the app runs must clear the setup state the
+// next time the panel opens — the panel stays mounted for the whole session,
+// so a once-per-mount check kept showing "Set up the assistant".
+test("desktop: a key saved after startup clears the setup state on the next open", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => {
+    const scope = window as unknown as { __hasKey: boolean; __TAURI_INTERNALS__: unknown };
+    scope.__hasKey = false;
+    scope.__TAURI_INTERNALS__ = {
+      invoke: async (command: string) => (command === "chat_key_status" ? { hasKey: scope.__hasKey } : null),
+      transformCallback: () => 0,
+      metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+    };
+  });
+  await submitAuthForm(page, `chat-key-${Date.now()}@example.test`, "sign up", { url: base });
+  const setup = panel(page).getByRole("button", { name: "Set up the assistant" });
+  await launcher(page).click();
+  await expect(setup).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeHidden();
+  await page.evaluate(() => {
+    (window as unknown as { __hasKey: boolean }).__hasKey = true;
+  });
+  await launcher(page).click();
+  await expect(field(page)).toBeVisible();
+  await expect(setup).toBeHidden();
+});
+
 test("send: user pill, waiting spinner, streamed text grows to a markdown answer", async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
