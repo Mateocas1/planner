@@ -5,8 +5,10 @@ import { parseActualMinutes, parseBlock as parseStoredBlock, parseEstimate, type
 import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
-/** View type for a stored task: the domain Task plus its completion state. */
-export type TaskView = Task & { completed: boolean; completedAt?: string; pending: boolean };
+/** View type for a stored task: the domain Task plus its completion state.
+ *  `someday` is the weekly review's Clean-up shelf flag (S3); absent means
+ *  "not someday", exactly like every other optional task field. */
+export type TaskView = Task & { completed: boolean; completedAt?: string; someday?: boolean; pending: boolean };
 
 /**
  * View type for a stored work block: the domain WorkBlock plus whether the
@@ -44,7 +46,13 @@ export type Store = {
   pendingWrites: number;
 };
 
-function toTask(doc: QueryDocumentSnapshot): TaskView {
+/**
+ * Reads one stored task document as the view the surfaces hold. Exported so
+ * the emulator suite can pin the someday flag's read path: the snapshot a
+ * delete captures is a `TaskView`, and a flag the reader drops is a flag the
+ * restore cannot put back.
+ */
+export function toTask(doc: QueryDocumentSnapshot): TaskView {
   const data = doc.data();
   const estimate = parseEstimate(data.estimate);
   const actualMinutes = parseActualMinutes(data.actualMinutes);
@@ -57,6 +65,7 @@ function toTask(doc: QueryDocumentSnapshot): TaskView {
     ...(estimate === undefined ? {} : { estimate }),
     ...(actualMinutes === undefined ? {} : { actualMinutes }),
     ...(data.completedAt === undefined ? {} : { completedAt: String(data.completedAt) }),
+    ...(data.someday === true ? { someday: true } : {}),
   };
 }
 

@@ -17,9 +17,11 @@ import { profileDocument } from "./profile.ts";
  * The stored shape of a task: the closed set of fields a task document holds.
  * Optional fields are omitted rather than written as null. Every task write
  * path that rewrites a whole document (create, restore, import) goes through
- * here, so a restored task is the document that was deleted.
+ * here, so a restored task is the document that was deleted. `someday` is the
+ * weekly review's Clean-up shelf flag (S3); it rides the same closed list so
+ * a delete → undo does not silently un-shelve the task.
  */
-export function taskFields(task: Task, completed: boolean, completedAt?: string): Record<string, unknown> {
+export function taskFields(task: Task, completed: boolean, completedAt?: string, someday?: boolean): Record<string, unknown> {
   return {
     title: task.title,
     completed,
@@ -27,6 +29,7 @@ export function taskFields(task: Task, completed: boolean, completedAt?: string)
     ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
     ...(task.actualMinutes === undefined ? {} : { actualMinutes: task.actualMinutes }),
     ...(completedAt === undefined ? {} : { completedAt }),
+    ...(someday === true ? { someday: true } : {}),
   };
 }
 
@@ -111,8 +114,9 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
   await updateDoc(doc(db, `users/${uid}/tasks/${taskId}`), { deadline });
 }
 
-export async function deleteTask(uid: string, taskId: string) {
-  await trackRemoval(`users/${uid}/tasks/${taskId}`, deleteDoc(doc(db, `users/${uid}/tasks/${taskId}`)));
+export async function deleteTask(uid: string, taskId: string, database: Firestore = db) {
+  const path = `users/${uid}/tasks/${taskId}`;
+  await trackRemoval(path, deleteDoc(doc(database, path)));
 }
 
 /**
@@ -209,25 +213,28 @@ export type DeletedTask = {
   /** The tracked minutes the focus timer accumulated; undo must not lose them. */
   actualMinutes?: number;
   completedAt?: string;
+  /** The weekly review's Clean-up shelf flag (S3); undo must not un-shelve
+   *  the task any more than it may drop its deadline. */
+  someday?: boolean;
 };
 
 /**
  * Puts a deleted task back under its original document id and with the exact
  * fields it held, which is what undo promises. The document schema for a task
  * is closed (title, completed, optional deadline, estimate, actualMinutes,
- * completedAt), so rewriting those fields with setDoc reproduces the original
- * document rather than approximating it. The title and deadline are validated
- * through the domain module first; estimate and actualMinutes are validated
- * only when present.
+ * completedAt, someday), so rewriting those fields with setDoc reproduces the
+ * original document rather than approximating it. The title and deadline are
+ * validated through the domain module first; estimate and actualMinutes are
+ * validated only when present.
  */
-export async function restoreTask(uid: string, task: DeletedTask) {
+export async function restoreTask(uid: string, task: DeletedTask, database: Firestore = db) {
   if (!task.id || task.id.includes("/")) throw new Error("task ID is invalid");
   const validated = createTask(task.id, task.title, task.deadline, task.estimate);
   if (task.actualMinutes !== undefined) requireActualMinutes(task.actualMinutes);
   if (task.completedAt !== undefined) requireInstant(task.completedAt);
   const path = `users/${uid}/tasks/${task.id}`;
   const restored: Task = task.actualMinutes === undefined ? validated : { ...validated, actualMinutes: task.actualMinutes };
-  const write = setDoc(doc(db, path), taskFields(restored, task.completed, task.completedAt));
+  const write = setDoc(doc(database, path), taskFields(restored, task.completed, task.completedAt, task.someday));
   // The restore is the pending write now: the delete it undoes no longer counts
   // on its own (see forgetRemoval), so one document is one pending change.
   forgetRemoval(path);
