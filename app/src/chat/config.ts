@@ -61,10 +61,16 @@ export function chatPanelVisible(options: { desktop: boolean; dev: boolean; mock
   return surface && (options.signedIn || options.mockQuery !== null);
 }
 
-/** What the mock transport should do this run (`?chatMock=error` streams a failure,
- * `?chatMock=tools` proposes two planner changes as tool calls). */
-export function mockMode(mockQuery: string | null): "answer" | "error" | "tools" {
+/** What the mock transport should do this run (`?chatMock=error` streams a
+ * failure, `?chatMock=tools` proposes two planner changes, the `agent-*`
+ * scenarios drive the ronda4 agentic flow). */
+export function mockMode(mockQuery: string | null): "answer" | "error" | "tools" | "agent-read" | "agent-edit" | "agent-delete" | "agent-holiday" | "agent-memory" {
   if (mockQuery === "error") return "error";
   if (mockQuery === "tools") return "tools";
+  if (mockQuery === "agent-read") return "agent-read";
+  if (mockQuery === "agent-edit") return "agent-edit";
+  if (mockQuery === "agent-delete") return "agent-delete";
+  if (mockQuery === "agent-holiday") return "agent-holiday";
+  if (mockQuery === "agent-memory") return "agent-memory";
   return "answer";
 }

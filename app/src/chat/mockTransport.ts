@@ -35,7 +35,7 @@ You have **two blocks** left, and the *Deep Work* session on the chat panel is n
 
 If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [the planner guide](https://example.com/planner-guide).`;
 
-export type MockScenario = "answer" | "error" | "tools";
+export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit" | "agent-delete" | "agent-holiday" | "agent-memory";
 
 export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
@@ -71,6 +71,11 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
     return chunks;
   };
 
+  /** Unique call-id suffix per stream: the conversation resolves exactly one
+   * card per call id, so a scenario that streams twice (discard → confirm)
+   * must not repeat one. */
+  let streamCounter = 0;
+
   const transport: MockChatTransport = {
     __lastStreamRequest: null,
     __lastCompleteRequest: null,
@@ -100,6 +105,59 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           return;
         }
         clock += 700; // ≈1.2 s of reasoning before the first word
+        if (scenario.startsWith("agent-")) {
+          // ronda4 agentic flow. `agent-read` proposes one read (it runs
+          // without confirmation); `agent-edit` proposes a create at a time
+          // first and, once that card is confirmed, uses the created task's
+          // id from the tool result to move it — the exact behavior the S4
+          // diagnosis found missing.
+          for (const chunk of chunkPlan("On it.")) {
+            clock += chunk.gapMs;
+            const text = chunk.text;
+            schedule(id, clock, () => emit({ type: "delta", text }));
+          }
+          const today = dateKey(new Date(), browserTimeZone);
+          let call: { id: string; name: string; args: string };
+          if (scenario === "agent-read") {
+            call = { id: `call_read-${++streamCounter}`, name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
+          } else if (scenario === "agent-memory") {
+            // First call saves a note; once its card is confirmed, the
+            // follow-up call forgets it by the topic key from the tool
+            // result — the model-side counterpart of the memory tools.
+            const remembered = request.messages.map(message => message.content).find(content => content.includes("(topic ")) ?? "";
+            const topicKey = /\(topic ([\w-]+)\)/.exec(remembered)?.[1];
+            call = topicKey === undefined
+              ? { id: `call_remember-${++streamCounter}`, name: "remember", args: JSON.stringify({ title: "Prefers morning planning", content: "The user plans their day before 09:00." }) }
+              : { id: `call_forget-${++streamCounter}`, name: "forget", args: JSON.stringify({ topicKey }) };
+          } else if (scenario === "agent-delete" || scenario === "agent-holiday") {
+            // The id comes from the planner context, exactly like the real
+            // model's: the seeded row must already be visible to the request.
+            const system = request.messages[0]?.content ?? "";
+            const pattern = scenario === "agent-delete" ? /\[([\w-]+)\] Delete me/ : /\[([\w-]+)\] [^\n]*Independence/;
+            const foundId = pattern.exec(system)?.[1];
+            call = foundId === undefined
+              ? { id: `call_none-${++streamCounter}`, name: "list_tasks", args: "{}" }
+              : scenario === "agent-delete"
+                ? { id: `call_delete-${++streamCounter}`, name: "delete_task", args: JSON.stringify({ taskId: foundId }) }
+                : { id: `call_hide-${++streamCounter}`, name: "hide_holiday", args: JSON.stringify({ holidayId: foundId }) };
+          } else {
+            const createResult = request.messages.map(message => message.content).find(content => content.includes("Created task id=")) ?? "";
+            const createdId = /id=([\w-]+)/.exec(createResult)?.[1];
+            call = createdId === undefined
+              ? { id: `call_create-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, startTime: "14:00", estimateMinutes: 30 }) }
+              : { id: `call_move-${++streamCounter}`, name: "move_task", args: JSON.stringify({ taskId: createdId, day: today, startTime: "16:00" }) };
+          }
+          clock += 250;
+          schedule(id, clock, () => emit({ type: "tool_call", call: { id: call.id, name: call.name, arguments: call.args } }));
+          clock += 120;
+          schedule(id, clock, () => {
+            clearTimers(id);
+            emit({ type: "done" });
+            listeners.delete(id);
+            resolve();
+          });
+          return;
+        }
         if (scenario === "tools") {
           // R1 (spec S1): the mock proposes two planner changes — one dated
           // today (the confirm test's visible task), one undated (the discard
@@ -112,8 +170,8 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           }
           const today = dateKey(new Date(), browserTimeZone);
           const calls: Array<{ id: string; name: string; args: string }> = [
-            { id: "call_confirm", name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, estimateMinutes: 30 }) },
-            { id: "call_discard", name: "create_task", args: JSON.stringify({ title: "Return library books" }) },
+            { id: `call_confirm-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Water the plants", day: today, estimateMinutes: 30 }) },
+            { id: `call_discard-${++streamCounter}`, name: "create_task", args: JSON.stringify({ title: "Return library books" }) },
           ];
           for (const call of calls) {
             clock += 250;

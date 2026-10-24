@@ -1,3 +1,4 @@
+import { isReadTool } from "../chat/tools.ts";
 import type { ToolCallCard } from "../chat/conversation.ts";
 import "./ChatActionCard.css";
 
@@ -8,6 +9,10 @@ import "./ChatActionCard.css";
  * the user acts, the buttons give way to the outcome line; the state change
  * itself does not animate. Confirm/Discard disable while that card's write is
  * in flight and while a new reply streams.
+ *
+ * Read tools (ronda4 S4) never had buttons to begin with: they run the
+ * moment the model proposes them, so the card shows the lookup while it runs
+ * ("Reading…") and the outcome once it lands.
  */
 export function ChatActionCard({
   card,
@@ -26,16 +31,27 @@ export function ChatActionCard({
   onConfirm: () => void;
   onDiscard: () => void;
 }) {
+  const read = isReadTool(card.name);
   const resolved = card.status !== "pending";
   const outcome =
     card.outcome ??
-    (card.status === "confirmed" ? "Done." : card.status === "discarded" ? "Discarded — nothing changed." : "Failed.");
+    (card.status === "confirmed"
+      ? "Done."
+      : card.status === "read"
+        ? "Done."
+        : card.status === "discarded"
+          ? "Discarded — nothing changed."
+          : "Failed.");
   return (
-    <div className="chat-card" data-status={card.status}>
+    <div className="chat-card" data-status={card.status} data-read={read ? "true" : undefined}>
       <p className="chat-card-action">{description}</p>
       {resolved ? (
         <p className="chat-card-outcome" role="status">
           {outcome}
+        </p>
+      ) : read ? (
+        <p className="chat-card-outcome" role="status">
+          Reading…
         </p>
       ) : (
         <div className="chat-card-actions">

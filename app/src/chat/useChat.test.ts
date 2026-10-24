@@ -71,3 +71,27 @@ test("buildMessages: a pending card answers as not yet done, keeping the protoco
   const messages = buildMessages("sys", [user("hi"), turn]);
   assert.match(messages.at(-1)?.content ?? "", /not answered/);
 });
+
+test("buildMessages: a write outcome's result line (ids, fields) reaches the model (S4)", () => {
+  const turn: ChatTurn = {
+    id: "a1",
+    role: "assistant",
+    text: "",
+    segments: [],
+    toolCalls: [
+      {
+        callId: "c1",
+        name: "create_task",
+        arguments: '{"title":"Buy milk"}',
+        status: "confirmed",
+        outcome: "Task created.",
+        result: 'Created task id=t9 "Buy milk" due 2026-10-30 at 14:00, 30 min.',
+      },
+    ],
+  };
+  const messages = buildMessages("sys", [user("hi"), turn]);
+  const tool = messages.at(-1);
+  assert.equal(tool?.role, "tool");
+  assert.match(tool?.content ?? "", /applied/);
+  assert.match(tool?.content ?? "", /id=t9/);
+});

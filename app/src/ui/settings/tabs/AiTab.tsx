@@ -9,7 +9,7 @@ import {
   type EngramMirrorStatus,
   type EngramSettings,
 } from "../../../chat/engramSettings.ts";
-import { chatMemoriesClear, chatMemoriesDelete, chatMemoriesList, type Memory } from "../../../chat/memoryStore.ts";
+import { chatMemoriesClear, chatMemoriesDelete, chatMemoriesList, MEMORIES_CHANGED_EVENT, type Memory } from "../../../chat/memoryStore.ts";
 import {
   engramStatusText,
   keyStatusText,
@@ -300,7 +300,10 @@ function ModelSection() {
 /**
  * The durable memories (spec S5): listed newest first, one delete per row,
  * "Clear all" behind a confirm. Refreshed on mount — the tab remounts on
- * every visit, so memories the chat just extracted are here by the next look.
+ * every visit — and whenever the chat changes the notes under it (a
+ * confirmed remember/forget or an extraction) through the
+ * `planner:chat-memories-changed` window event, so the list is current
+ * whenever it is shown.
  */
 function MemoriesSection() {
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -315,6 +318,13 @@ function MemoriesSection() {
   }, []);
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  // Notes changed elsewhere (the chat's memory tools or extraction).
+  useEffect(() => {
+    const onChange = () => void refresh();
+    window.addEventListener(MEMORIES_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(MEMORIES_CHANGED_EVENT, onChange);
   }, [refresh]);
 
   const deleteOne = async (id: string) => {

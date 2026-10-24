@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, deleteDoc, deleteField, doc, setDoc, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { blockFields, createTask, createWorkBlock } from "../domain/model.ts";
 
 /**
@@ -24,12 +24,14 @@ export type ChatMove = {
   block?: { start: string; end: string };
 };
 
-/** One write inside a move batch: a field update on an existing document, or
- * a whole-document set (the new block). Exposed for the payload test — the
- * executor applies exactly what this lists. */
+/** One write inside a move batch: a field update on an existing document, a
+ * whole-document set (the new block), or a whole-document delete (a replaced
+ * or dropped placement). Exposed for the payload test — the executor applies
+ * exactly what this lists. */
 export type ChatMoveWrite =
   | { kind: "update"; path: string; fields: Record<string, unknown> }
-  | { kind: "set"; path: string; fields: Record<string, unknown> };
+  | { kind: "set"; path: string; fields: Record<string, unknown> }
+  | { kind: "delete"; path: string };
 
 /**
  * The writes one move consists of, as pure data. Validation runs here and
@@ -72,7 +74,155 @@ export async function moveTaskWithBlock(uid: string, move: ChatMove, database: F
   for (const write of writes) {
     const reference = doc(database, write.path);
     if (write.kind === "update") batch.update(reference, write.fields);
-    else batch.set(reference, write.fields);
+    else if (write.kind === "set") batch.set(reference, write.fields);
   }
   await batch.commit();
+}
+
+/* ---------- create (ronda4 T4, S4): a task and its schedule block in one batch ---------- */
+
+/** One confirmed chat create: a new task, optionally due on a day, optionally
+ * placed on that day's schedule by a task-linked work block. The block's
+ * duration is the task's estimate — the caller computes its instants the way
+ * `ChatMove`'s block does. */
+export type ChatCreate = {
+  title: string;
+  deadline?: string;
+  estimateMinutes?: number;
+  block?: { start: string; end: string };
+};
+
+/** What one create consists of, as pure data: the minted task id (and block
+ * id, when a block is part of it) plus the batch's writes. Validation runs
+ * here and throws before any write exists, so a rejected create produces no
+ * batch at all — the caller's card then fails and nothing was written. */
+export function createChatTaskWrites(
+  uid: string,
+  create: ChatCreate,
+  taskId: string,
+  blockId: string,
+): { taskId: string; blockId?: string; writes: ChatMoveWrite[] } {
+  // The domain builder validates title, deadline and estimate (throws before
+  // any write exists), exactly like `addTask` does. The stored fields mirror
+  // `data/tasks.ts` `taskFields` for a new task (the closed schema: title,
+  // completed, optional deadline and estimate) — this module stays importable
+  // without the browser-only client, so it cannot call that helper; the
+  // payload test pins the shape, so a schema drift fails here first.
+  const task = createTask(taskId, create.title, create.deadline, create.estimateMinutes);
+  const fields = {
+    title: task.title,
+    completed: false,
+    ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
+    ...(task.estimate === undefined ? {} : { estimate: task.estimate }),
+  };
+  const writes: ChatMoveWrite[] = [
+    { kind: "set", path: `users/${uid}/tasks/${taskId}`, fields },
+  ];
+  if (create.block !== undefined) {
+    const block = createWorkBlock(blockId, create.block.start, create.block.end, taskId);
+    writes.push({ kind: "set", path: `users/${uid}/blocks/${blockId}`, fields: blockFields(block) });
+    return { taskId, blockId, writes };
+  }
+  return { taskId, writes };
+}
+
+/**
+ * Writes one confirmed chat create in one atomic `writeBatch` and returns the
+ * minted task id (plus the block id, when a block was part of it) so the
+ * card's outcome can name what now exists. The ids are minted before the
+ * batch so the documents and the returned value can never drift apart.
+ * Throws (writing nothing) when the create does not validate.
+ */
+export async function createChatTask(
+  uid: string,
+  create: ChatCreate,
+  database: Firestore,
+): Promise<{ taskId: string; blockId?: string }> {
+  const taskId = doc(collection(database, `users/${uid}/tasks`)).id;
+  const blockId = create.block === undefined ? "" : doc(collection(database, `users/${uid}/blocks`)).id;
+  const { blockId: blockIdOut, writes } = createChatTaskWrites(uid, create, taskId, blockId);
+  const batch = writeBatch(database);
+  for (const write of writes) {
+    const reference = doc(database, write.path);
+    if (write.kind === "update") batch.update(reference, write.fields);
+    else if (write.kind === "set") batch.set(reference, write.fields);
+  }
+  await batch.commit();
+  return { taskId, ...(blockIdOut === undefined ? {} : { blockId: blockIdOut }) };
+}
+
+/* ---------- update (ronda4 T4): any task edit, its block changes included, one batch ---------- */
+
+/** One confirmed chat update: the task fields that change (the caller sends
+ * only what changes; everything else is left alone) plus, in the same batch,
+ * the block that re-places the task and the task-linked blocks it replaces
+ * or drops. `title` is the task's title for validation (the same argument
+ * `setTaskDeadline` passes); a rename goes through `newTitle`. */
+export type ChatTaskUpdate = {
+  taskId: string;
+  title: string;
+  newTitle?: string;
+  deadline?: string;
+  clearDeadline?: boolean;
+  estimate?: number;
+  clearEstimate?: boolean;
+  block?: { start: string; end: string };
+  removeBlockIds?: string[];
+};
+
+/** The writes one update consists of, as pure data. Validation runs here and
+ * throws before any write exists (createTask for title/deadline,
+ * requireEstimate for the estimate, createWorkBlock for the block, path
+ * safety for every block id), so a rejected update produces no batch. */
+export function chatTaskUpdateWrites(uid: string, update: ChatTaskUpdate, blockId: string): ChatMoveWrite[] {
+  if (typeof update.taskId !== "string" || update.taskId === "" || update.taskId.includes("/")) {
+    throw new Error("task ID is invalid");
+  }
+  const effectiveDeadline = update.clearDeadline === true ? undefined : update.deadline;
+  const task = createTask(update.taskId, update.newTitle ?? update.title, effectiveDeadline, update.estimate);
+  for (const id of update.removeBlockIds ?? []) {
+    if (typeof id !== "string" || id === "" || id.includes("/")) throw new Error("block ID is invalid");
+  }
+  const fields: Record<string, unknown> = {};
+  if (update.newTitle !== undefined) fields.title = task.title;
+  if (update.clearDeadline === true) fields.deadline = deleteField();
+  else if (update.deadline !== undefined) fields.deadline = task.deadline;
+  if (update.clearEstimate === true) fields.estimate = deleteField();
+  else if (update.estimate !== undefined) fields.estimate = task.estimate;
+  const writes: ChatMoveWrite[] = [];
+  if (Object.keys(fields).length > 0) {
+    writes.push({ kind: "update", path: `users/${uid}/tasks/${update.taskId}`, fields });
+  }
+  if (update.block !== undefined) {
+    const block = createWorkBlock(blockId, update.block.start, update.block.end, update.taskId);
+    writes.push({ kind: "set", path: `users/${uid}/blocks/${blockId}`, fields: blockFields(block) });
+  }
+  for (const id of update.removeBlockIds ?? []) {
+    writes.push({ kind: "delete", path: `users/${uid}/blocks/${id}` });
+  }
+  if (writes.length === 0) throw new Error("the update changes nothing");
+  return writes;
+}
+
+/**
+ * Applies one confirmed chat update in one atomic `writeBatch` and returns
+ * the ids of the block documents the batch deleted, so the card's outcome
+ * can name them. Throws (writing nothing) when the update does not validate.
+ */
+export async function applyChatTaskUpdate(
+  uid: string,
+  update: ChatTaskUpdate,
+  database: Firestore,
+): Promise<{ removedBlockIds: string[] }> {
+  const blockId = update.block === undefined ? "" : doc(collection(database, `users/${uid}/blocks`)).id;
+  const writes = chatTaskUpdateWrites(uid, update, blockId);
+  const batch = writeBatch(database);
+  for (const write of writes) {
+    const reference = doc(database, write.path);
+    if (write.kind === "update") batch.update(reference, write.fields);
+    else if (write.kind === "set") batch.set(reference, write.fields);
+    else batch.delete(reference);
+  }
+  await batch.commit();
+  return { removedBlockIds: update.removeBlockIds ?? [] };
 }

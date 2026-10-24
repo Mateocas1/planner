@@ -15,10 +15,32 @@
 import { MAX_TOOL_CALLS_PER_ANSWER } from "./tools.ts";
 import type { ChatEvent, ChatErrorCode } from "./types.ts";
 
+/**
+ * A per-answer gate mirroring the reducer's `tool_call` decisions (cap and
+ * duplicate ids): `true` when the call will render a card, `false` when the
+ * reducer drops it. `useChat` consults it before executing a proposed read
+ * (S4), because the reducer may not have processed the answer's earlier
+ * events yet when the next one arrives — a state-based check could let the
+ * 6th read execute.
+ */
+export function createAnswerCallGate(): (callId: string) => boolean {
+  const seen = new Set<string>();
+  let proposed = 0;
+  return (callId: string) => {
+    if (seen.has(callId)) return false;
+    seen.add(callId);
+    if (proposed >= MAX_TOOL_CALLS_PER_ANSWER) return false;
+    proposed += 1;
+    return true;
+  };
+}
+
 /** The lifecycle of one proposed tool call on its action card (spec S1).
  * `pending` waits for the user; the others are terminal and become the `tool`
- * message the next request sends back to the model. */
-export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed";
+ * message the next request sends back to the model. `read` is a read tool
+ * the hook executed without asking (S4): it resolves on its own, never
+ * behind Confirm/Discard buttons. */
+export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed" | "read";
 
 export type ToolCallCard = {
   /** The model's call id; the `tool` message answers it by this id. */
@@ -29,6 +51,10 @@ export type ToolCallCard = {
   status: ToolCallStatus;
   /** The outcome line shown on the card once resolved (result or error). */
   outcome?: string;
+  /** The model-facing detail line that rides the `tool` message: the
+   * created/changed task's id and fields (S4), or a read's result. Absent
+   * for a discarded card and for writes whose executor could not name them. */
+  result?: string;
 };
 
 export type ChatTurn =
@@ -68,7 +94,7 @@ export type ConversationAction =
   | { type: "stop" }
   | { type: "retry"; id: string }
   | { type: "newChat" }
-  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed"; outcome?: string };
+  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed" | "read"; outcome?: string; result?: string };
 
 export const emptyConversation: ConversationState = { turns: [], phase: "idle", requestId: null, error: null };
 
@@ -135,12 +161,15 @@ export function reduceConversation(state: ConversationState, action: Conversatio
         const fresh = state.phase !== "streaming";
         const base = fresh ? { ...state, phase: "streaming" as const } : state;
         return appendAssistantTurn(base, turn => {
+          const call = event.call;
           const toolCalls = turn.toolCalls ?? [];
-          if (toolCalls.length >= MAX_TOOL_CALLS_PER_ANSWER) {
-            // Extras are dropped with a note (spec S1); the card never renders.
+          // Over the cap, or a call id this answer already proposed: dropped
+          // with a note (spec S1). A repeated id must not get a second card —
+          // it would resolve together with the first and its `tool` message
+          // would claim a write that never happened.
+          if (toolCalls.length >= MAX_TOOL_CALLS_PER_ANSWER || toolCalls.some(card => card.callId === call.id)) {
             return { ...turn, callsDropped: (turn.callsDropped ?? 0) + 1 };
           }
-          const call = event.call;
           return {
             ...turn,
             toolCalls: [...toolCalls, { callId: call.id, name: call.name, arguments: call.arguments, status: "pending" as const }],
@@ -210,7 +239,12 @@ export function reduceConversation(state: ConversationState, action: Conversatio
             ...turn,
             toolCalls: turn.toolCalls.map(card =>
               card.callId === action.callId
-                ? { ...card, status: action.status, ...(action.outcome === undefined ? {} : { outcome: action.outcome }) }
+                ? {
+                    ...card,
+                    status: action.status,
+                    ...(action.outcome === undefined ? {} : { outcome: action.outcome }),
+                    ...(action.result === undefined ? {} : { result: action.result }),
+                  }
                 : card,
             ),
           };

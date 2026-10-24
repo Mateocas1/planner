@@ -13,10 +13,11 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { DEFAULT_CHAT_MODEL } from "./config.ts";
-import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
+import { createAnswerCallGate, emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
 import { createPacer, type StreamPacer } from "./pacer.ts";
-import { CHAT_TOOLS, toolResultContent } from "./tools.ts";
-import type { ChatEvent, ChatMessage, ChatTransport } from "./types.ts";
+import { getChatReadExecutor, type ChatReadExecutor } from "./readTools.ts";
+import { CHAT_TOOLS, isReadTool, toolResultContent } from "./tools.ts";
+import type { ChatEvent, ChatMessage, ChatToolCall, ChatTransport } from "./types.ts";
 
 export type ChatController = {
   state: ConversationState;
@@ -25,8 +26,9 @@ export type ChatController = {
   retry: () => void;
   newChat: () => void;
   /** Resolves one action card (the user confirmed, discarded, or the write
-   * failed). Resolving never triggers a new model call (spec S1). */
-  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => void;
+   * failed). Resolving never triggers a new model call (spec S1). `result`
+   * is the model-facing detail (ids, fields) that rides the `tool` message. */
+  resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string, result?: string) => void;
 };
 
 let requestCounter = 0;
@@ -76,6 +78,10 @@ export function useChat(options: {
    * with the transcript turns, before anything is cleared. */
   onConversationEnd?: (turns: ChatTurn[]) => void;
   idleExtractMs?: number;
+  /** Runs a read tool call the model proposed (S4: reads need no
+   * confirmation). Takes precedence over the executor installed in the
+   * `readTools` registry. */
+  executeReadTool?: ChatReadExecutor;
 }): ChatController {
   const { transport, buildSystemPrompt, panelOpen, onConversationEnd, idleExtractMs = IDLE_EXTRACT_MS } = options;
   const [state, dispatch] = useReducer(reduceConversation, emptyConversation);
@@ -93,6 +99,38 @@ export function useChat(options: {
   // need to re-arm because App re-created the closure.
   const onEndRef = useRef(onConversationEnd);
   onEndRef.current = onConversationEnd;
+
+  /** Mirrors the read executor option so `startStream` never needs to depend
+   * on it; the registry is the fallback (see readTools.ts). */
+  const readExecutorRef = useRef<ChatReadExecutor | undefined>(options.executeReadTool);
+  readExecutorRef.current = options.executeReadTool;
+
+  /** Runs a proposed read at once and resolves its card with what came back
+   * (S4): no buttons, no user click. Resolution is a `toolCallResolved`
+   * dispatch, so it applies even after the stream ended, and the reducer's
+   * known-id guard drops it if the turn is already gone. */
+  const runReadTool = useCallback((call: ChatToolCall) => {
+    void (async () => {
+      try {
+        const execute = readExecutorRef.current ?? getChatReadExecutor();
+        const outcome = execute === null
+          ? ({ ok: false, error: "The assistant cannot read the planner right now." } as const)
+          : await execute(call);
+        if (outcome.ok) {
+          dispatch({ type: "toolCallResolved", callId: call.id, status: "read", outcome: outcome.summary, result: outcome.result });
+        } else {
+          dispatch({ type: "toolCallResolved", callId: call.id, status: "failed", outcome: outcome.error });
+        }
+      } catch (error) {
+        dispatch({
+          type: "toolCallResolved",
+          callId: call.id,
+          status: "failed",
+          outcome: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  }, []);
 
   /** Fires the end-of-conversation hook at most once per conversation, and
    * only when there is a real exchange to extract memories from. */
@@ -125,12 +163,24 @@ export function useChat(options: {
       });
       pacerRef.current = pacer;
       activeIdRef.current = id;
+      // The per-answer gate mirrors the reducer's cap/duplicate decisions for
+      // this answer, so a read the reducer will drop never executes (finding
+      // 5): the reducer may not have processed the earlier events yet.
+      const answerCallGate = createAnswerCallGate();
       void transport.stream(
         { id, model: DEFAULT_CHAT_MODEL, messages: buildMessages(buildSystemPrompt(), state.turns), tools: CHAT_TOOLS },
         event => {
         if (activeIdRef.current !== id) return;
         if (event.type === "delta") {
           pacer.push(event.text);
+          return;
+        }
+        if (event.type === "tool_call") {
+          const proposed = answerCallGate(event.call.id);
+          dispatchEvent(event);
+          // Reads run at once (S4) — but only when the call actually renders
+          // a card; writes wait for the user on their card.
+          if (proposed && isReadTool(event.call.name)) runReadTool(event.call);
           return;
         }
         if (event.type === "done" || event.type === "cancelled" || event.type === "error") {
@@ -191,8 +241,8 @@ export function useChat(options: {
   }, [transport, fireConversationEnd]);
 
   const resolveToolCall = useCallback(
-    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string) => {
-      dispatch({ type: "toolCallResolved", callId, status, outcome });
+    (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string, result?: string) => {
+      dispatch({ type: "toolCallResolved", callId, status, outcome, result });
     },
     [],
   );

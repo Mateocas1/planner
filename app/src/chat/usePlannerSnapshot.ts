@@ -7,6 +7,7 @@
 
 import { useMemo } from "react";
 import { browserTimeZone, useProfileTimeZone } from "../data/profile.ts";
+import { effectiveKind } from "../domain/holidays.ts";
 import { useStore } from "../data/store.ts";
 import type { PlannerSnapshot } from "./plannerContext.ts";
 
@@ -36,8 +37,17 @@ export function usePlannerSnapshot(uid: string | null): PlannerSnapshotResult {
         ...(task.estimate === undefined ? {} : { estimateMinutes: task.estimate }),
         ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
       })),
+      // Holiday labels (ronda4 S4): the read/hide tools and the context text
+      // see the user's own classification, exactly like the Holidays sheet.
+      holidays: store.holidays.map(holiday => ({
+        id: holiday.id,
+        date: holiday.date,
+        title: holiday.title,
+        kind: effectiveKind(holiday),
+        ...(holiday.hidden === true ? { hidden: true } : {}),
+      })),
     }),
-    [store.blocks, store.tasks],
+    [store.blocks, store.tasks, store.holidays],
   );
 
   // A profile still loading has no zone yet; the browser's zone is the
