@@ -1,0 +1,24 @@
+/* Swipe-to-dismiss (ui/Sheet.tsx + ui/swipeDismiss.ts, odd/tasks/ronda4.md S1).
+   Co-located per AGENTS.md: only the rules the gesture adds live here. */
+
+/* The sheet is its own vertical scroller, so touch keeps native vertical
+   panning (pan-y); horizontal moves reach the gesture instead of the browser.
+   The header is the drag handle: no scroller lives inside it, so it opts out of
+   native panning entirely and every direction is available to the gesture from
+   there. */
+.sheet { touch-action: pan-y; }
+.sheet-head { touch-action: none; }
+
+/* From pointerdown until the gesture ends, nothing under the finger may start
+   a native selection the swipe would have to fight. Text fields, buttons and
+   links never enter the gesture (Sheet.tsx), so their selection is untouched. */
+.sheet[data-swiping] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The gesture moves the sheet on the compositor; the hint holds the layer for
+   the whole drag so each per-move write (transform, and the phone-only corner
+   radius) is a paint of the sheet's own layer -- never a layout pass and never
+   a promote/demote cycle. */
+.sheet[data-swiping="active"] { will-change: transform; }
