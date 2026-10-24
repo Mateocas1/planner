@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { chatPanelVisible, mockMode } from "../chat/config.ts";
-import type { ChatTurn } from "../chat/conversation.ts";
+import type { ChatTurn, ToolCallCard } from "../chat/conversation.ts";
 import { getKeyStatus } from "../chat/keyStore.ts";
 import { Markdown, StreamedAnswer } from "../chat/markdown.tsx";
 import { createMockTransport } from "../chat/mockTransport.ts";
-import type { ChatTransport } from "../chat/types.ts";
+import { describeToolCall, type ChatToolContext } from "../chat/tools.ts";
+import type { ChatToolCall, ChatTransport } from "../chat/types.ts";
 import { useChat } from "../chat/useChat.ts";
+import { browserTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
+import { dateKey } from "./time.ts";
 import { matchesEvent, parseAccelerator, useShortcutBinding } from "./settings/shortcutRegistry.ts";
+import { CallsDroppedNote, ChatActionCard } from "./ChatActionCard.tsx";
 import { CloseIcon } from "./icons.tsx";
 import "./ChatPanel.css";
 
@@ -28,6 +32,10 @@ import "./ChatPanel.css";
  * timeout fallback — hides it). The exit never cancels an in-flight stream:
  * the request keeps running hidden, so reopening shows the finished answer.
  */
+
+/** The result of one confirmed (or failed) proposal, rendered on the card and
+ * sent back to the model as the call's `tool` message (spec S1). */
+export type ToolOutcome = { status: "confirmed" | "failed"; message: string };
 
 /** Placeholder for C1's tauriTransport, which is wired at integration (C4). */
 const unwiredTransport: ChatTransport = {
@@ -135,6 +143,8 @@ export function ChatPanel({
   signedIn = false,
   onConversationEnd,
   onSetupKey,
+  toolContext,
+  onConfirmToolCall,
 }: {
   /** Defaults select the mock in dev-mock mode; C3a's ChatSurface wires the
    * Tauri bridge on desktop and the mock in dev-mock runs. */
@@ -148,6 +158,13 @@ export function ChatPanel({
   onConversationEnd?: (turns: ChatTurn[]) => void;
   /** C3a: the no-key empty state's button — opens the Settings "AI" tab. */
   onSetupKey?: () => void;
+  /** R1: planner data the action cards read (descriptions) and the confirm
+   * flow validates against. */
+  toolContext?: ChatToolContext;
+  /** R1: runs one confirmed proposal through the app's data writes for the
+   * signed-in user, returning the card outcome. Discard never writes and is
+   * handled here. */
+  onConfirmToolCall?: (call: ChatToolCall) => Promise<ToolOutcome>;
 }) {
   const [mockQuery] = useState(() => new URLSearchParams(window.location.search).get("chatMock"));
   const [open, setOpen] = useState(false);
@@ -158,7 +175,7 @@ export function ChatPanel({
   const [mockTransport] = useState(() => createMockTransport(mockMode(mockQuery)));
   const resolvedTransport = transport ?? (mockQuery !== null ? mockTransport : unwiredTransport);
   const resolvedPrompt = buildSystemPrompt ?? (() => "");
-  const { state, send, stop, retry, newChat } = useChat({
+  const { state, send, stop, retry, newChat, resolveToolCall } = useChat({
     transport: resolvedTransport,
     buildSystemPrompt: resolvedPrompt,
     panelOpen: open,
@@ -181,6 +198,12 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef(true);
+  /** The action card whose confirm write is running; others disable meanwhile.
+   * The in-flight guard is a ref, not just this state: two rapid confirms on
+   * the same card both run before React re-renders, and only the ref sees the
+   * second one (one Confirm → exactly one write). */
+  const [busyCallId, setBusyCallId] = useState<string | null>(null);
+  const busyCallRef = useRef<string | null>(null);
   /** Whether the panel has been opened, so closing returns focus only then. */
   const openedOnce = useRef(false);
   const reduced = useReducedMotion();
@@ -342,6 +365,57 @@ export function ChatPanel({
   const canSend = draft.trim() !== "" && !inFlight;
   const isEmptyThread = state.turns.length === 0 && !inFlight && state.error === null;
 
+  // R1: action cards. The description is computed from the raw arguments by
+  // the pure describeToolCall — never from unvalidated data — and Confirm is
+  // the only path that writes, through ChatSurface's executor. Discard writes
+  // nothing, ever.
+  const resolvedToolContext: ChatToolContext =
+    toolContext ?? { tasks: [], timeZone: browserTimeZone, todayKey: dateKey(new Date(), browserTimeZone) };
+
+  const confirmCard = useCallback(
+    async (card: ToolCallCard) => {
+      // One Confirm, one write: a card already in flight (the ref, set before
+      // any await) or already resolved (its status) never confirms again.
+      if (busyCallRef.current !== null || card.status !== "pending") return;
+      busyCallRef.current = card.callId;
+      setBusyCallId(card.callId);
+      try {
+        const outcome =
+          (await onConfirmToolCall?.({ id: card.callId, name: card.name, arguments: card.arguments })) ??
+          { status: "failed" as const, message: "Proposed actions need a signed-in session." };
+        resolveToolCall(card.callId, outcome.status, outcome.message);
+      } finally {
+        busyCallRef.current = null;
+        setBusyCallId(null);
+      }
+    },
+    [onConfirmToolCall, resolveToolCall],
+  );
+
+  const discardCard = useCallback(
+    (card: ToolCallCard) => {
+      resolveToolCall(card.callId, "discarded");
+    },
+    [resolveToolCall],
+  );
+
+  const renderCards = (turn: ChatTurn & { role: "assistant" }): ReactNode => (
+    <>
+      {turn.toolCalls?.map(card => (
+        <ChatActionCard
+          key={card.callId}
+          card={card}
+          description={describeToolCall(card, resolvedToolContext)}
+          disabled={busyCallId !== null && busyCallId !== card.callId}
+          busy={busyCallId === card.callId}
+          onConfirm={() => void confirmCard(card)}
+          onDiscard={() => discardCard(card)}
+        />
+      ))}
+      {turn.callsDropped !== undefined && turn.callsDropped > 0 ? <CallsDroppedNote dropped={turn.callsDropped} /> : null}
+    </>
+  );
+
   const renderTurn = (turn: ChatTurn, index: number): ReactNode => {
     if (turn.role === "user") {
       return (
@@ -358,6 +432,7 @@ export function ChatPanel({
         <div className="chat-answer-body">
           <Markdown text={turn.text} />
         </div>
+        {turn.role === "assistant" ? renderCards(turn) : null}
       </div>
     );
   };
@@ -427,6 +502,7 @@ export function ChatPanel({
                       <StreamedAnswer text={streamingTurn.text} segments={streamingTurn.segments} />
                     </div>
                   )}
+                  {streamingTurn !== null && renderCards(streamingTurn)}
                 </div>
               )}
               {state.error !== null && (

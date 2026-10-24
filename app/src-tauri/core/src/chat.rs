@@ -30,6 +30,17 @@ pub enum ChatErrorCode {
     InvalidRequest,
 }
 
+/// One complete tool call proposed by the model: the id, the function name
+/// and the JSON arguments concatenated across stream chunks. Serialized to
+/// the webview as `{id, name, arguments}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallPayload {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
 /// One event of a streamed reply, serialized with `"type"` tags.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -38,6 +49,9 @@ pub enum ChatEvent {
     Reasoning,
     /// A piece of the answer text.
     Delta { text: String },
+    /// The model proposed one complete tool call (its arguments are the
+    /// concatenation of every fragment seen so far for its index).
+    ToolCall { call: ToolCallPayload },
     /// The stream ended.
     Done,
     /// The stream was cancelled by the user.
@@ -57,10 +71,23 @@ pub enum StreamEvent {
     Reasoning,
     /// A non-empty piece of the answer text.
     Delta(String),
+    /// One tool call became complete: its id, function name and the arguments
+    /// accumulated so far. Calls are only emitted when the stream ends — at
+    /// `data: [DONE]`, or via [`StreamDecoder::flush_tool_calls`] at EOF —
+    /// never mid-call, because fragments may interleave.
+    ToolCall(ToolCallPayload),
     /// The stream ended (`data: [DONE]`).
     Done,
     /// A `data:` line that is neither `[DONE]` nor parseable stream JSON.
     Malformed,
+}
+
+/// One tool call being accumulated from `delta.tool_calls` fragments.
+#[derive(Debug, Default, Clone)]
+struct AccumToolCall {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 /// Incremental decoder for the lines of one SSE reply body.
@@ -71,10 +98,30 @@ pub enum StreamEvent {
 /// chunks with an empty `delta` produce nothing; a `data:` line that does not
 /// parse as a chunk is [`StreamEvent::Malformed`] and the caller must treat
 /// the stream as failed.
+///
+/// Tool calls: `delta.tool_calls` fragments are accumulated per call `index`.
+/// A chunk without an index continues the call being accumulated — unless it
+/// carries a new call `id`, which starts a new call (a provider that never
+/// sends indexes must still be able to open a second call). Calls may
+/// interleave, so a call is emitted complete — one [`StreamEvent::ToolCall`],
+/// in index order — only when the stream ends: `data: [DONE]`, or the caller
+/// draining via [`StreamDecoder::flush_tool_calls`] at EOF. Every call event
+/// therefore arrives before `Done`. A completed call without a function name
+/// is `Malformed` — at `[DONE]` and at EOF flush alike, so the caller never
+/// silently drops it.
 #[derive(Debug, Default)]
 pub struct StreamDecoder {
     reasoning_emitted: bool,
     done: bool,
+    /// Calls being accumulated, ordered by their stream index.
+    tool_calls: Vec<AccumToolCall>,
+    /// How many of `tool_calls` were already emitted as complete events.
+    emitted_calls: usize,
+    /// The request's id, prepended to fallback call ids so a provider that
+    /// omits ids still gets handles unique across requests (two turns of the
+    /// same conversation both propose `call_0` otherwise, and one Confirm
+    /// would resolve two cards).
+    request_id: String,
 }
 
 impl StreamDecoder {
@@ -82,9 +129,71 @@ impl StreamDecoder {
         Self::default()
     }
 
+    /// Binds the decoder to one request id, used only to make fallback call
+    /// ids unique per request.
+    pub fn with_request_id(mut self, request_id: &str) -> Self {
+        self.request_id = request_id.to_string();
+        self
+    }
+
     /// Whether `[DONE]` was seen; the caller can then stop reading.
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// Emits every accumulated-but-unfinished tool call, in index order. The
+    /// caller uses this once at end of stream (EOF without `[DONE]`) so a
+    /// reply whose calls were never followed by a higher index still delivers
+    /// them before `Done`.
+    pub fn flush_tool_calls(&mut self) -> Vec<StreamEvent> {
+        self.emit_tool_calls(self.tool_calls.len())
+    }
+
+    /// Finalizes accumulated calls `from..limit` into complete events, in
+    /// index order. A call with no function name is not a call the UI could
+    /// act on: it fails the stream as malformed.
+    fn emit_tool_calls(&mut self, limit: usize) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
+        while self.emitted_calls < limit {
+            let index = self.emitted_calls;
+            let call = &self.tool_calls[index];
+            if call.name.is_empty() {
+                return vec![StreamEvent::Malformed];
+            }
+            let id = if call.id.is_empty() {
+                // OpenAI-compatible streams send an id in the first fragment;
+                // a provider that omits it still gets a usable handle for the
+                // tool result the UI answers with — unique per request, so
+                // two turns cannot collide on the same fallback id.
+                if self.request_id.is_empty() {
+                    format!("call_{index}")
+                } else {
+                    format!("call_{}_{}", self.request_id, index)
+                }
+            } else {
+                call.id.clone()
+            };
+            events.push(StreamEvent::ToolCall(ToolCallPayload {
+                id,
+                name: call.name.clone(),
+                arguments: call.arguments.clone(),
+            }));
+            self.emitted_calls += 1;
+        }
+        events
+    }
+
+    /// Accumulates one `delta.tool_calls` entry into the call at `index`.
+    /// Calls are never finalized here: fragments may interleave, so a call is
+    /// only complete when the stream ends (`[DONE]` or the caller's flush).
+    fn accumulate_tool_call(&mut self, entry: &serde_json::Value, index: usize) -> Vec<StreamEvent> {
+        if index == self.tool_calls.len() {
+            self.tool_calls.push(AccumToolCall::default());
+        } else if index > self.tool_calls.len() {
+            // A gap means the provider is not speaking the protocol.
+            return vec![StreamEvent::Malformed];
+        }
+        Vec::new()
     }
 
     /// Decodes one body line into zero or more events.
@@ -102,7 +211,9 @@ impl StreamDecoder {
         let data = data.trim();
         if data == "[DONE]" {
             self.done = true;
-            return vec![StreamEvent::Done];
+            let mut events = self.emit_tool_calls(self.tool_calls.len());
+            events.push(StreamEvent::Done);
+            return events;
         }
         let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
             return vec![StreamEvent::Malformed];
@@ -134,6 +245,53 @@ impl StreamDecoder {
                     events.push(StreamEvent::Delta(text.to_string()));
                 }
             }
+            if let Some(entries) = delta.get("tool_calls").and_then(|entries| entries.as_array()) {
+                for entry in entries {
+                    // OpenAI-compatible streams mark each fragment with the
+                    // call's `index`. A stream that omits it continues the
+                    // call being accumulated — unless the fragment opens with
+                    // a new call `id`, which starts a new call (otherwise two
+                    // index-less calls concatenate into one name). No index
+                    // and no id at all, with no call accumulated yet, starts
+                    // the first one.
+                    let index = match entry
+                        .get("index")
+                        .and_then(|index| index.as_u64())
+                        .map(|index| index as usize)
+                    {
+                        Some(index) => index,
+                        None => {
+                            let opens_new_call = entry
+                                .get("id")
+                                .and_then(|id| id.as_str())
+                                .is_some_and(|id| !id.is_empty());
+                            if opens_new_call {
+                                self.tool_calls.len()
+                            } else {
+                                self.tool_calls.len().saturating_sub(1)
+                            }
+                        }
+                    };
+                    events.extend(self.accumulate_tool_call(entry, index));
+                    if events.last() == Some(&StreamEvent::Malformed) {
+                        return events;
+                    }
+                    let Some(call) = self.tool_calls.get_mut(index) else {
+                        continue;
+                    };
+                    if let Some(id) = entry.get("id").and_then(|id| id.as_str()) {
+                        call.id = id.to_string();
+                    }
+                    if let Some(function) = entry.get("function") {
+                        if let Some(name) = function.get("name").and_then(|name| name.as_str()) {
+                            call.name.push_str(name);
+                        }
+                        if let Some(arguments) = function.get("arguments").and_then(|arguments| arguments.as_str()) {
+                            call.arguments.push_str(arguments);
+                        }
+                    }
+                }
+            }
             // An empty delta (`{}`) yields nothing: the signal the UI needs
             // already arrived through the chunks that carry text.
         }
@@ -146,6 +304,81 @@ impl StreamDecoder {
 
 /// Longest accepted API key, in characters.
 pub const MAX_KEY_CHARS: usize = 512;
+
+// ---------------------------------------------------------------------------
+// Provider wire shape (Ronda 3 R1)
+
+/// One conversation turn as the webview sends it over IPC (camelCase
+/// `toolCalls` / `toolCallId`), mirroring `app/src/chat/types.ts`.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireMessage {
+    pub role: String,
+    pub content: String,
+    /// Assistant only: the tool calls this reply proposes, in the flat
+    /// `{id, name, arguments}` IPC shape. [`provider_body`] converts them to
+    /// the OpenAI wire shape — the single conversion point on the path to the
+    /// provider, unit-tested in this module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<WireToolCall>>,
+    /// Tool only: the id of the call this message answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+/// One tool call over IPC, in the flat shape `app/src/chat/types.ts` calls
+/// `ChatToolCall` (the same shape the `tool_call` event carries).
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// One message in the provider's wire shape: snake_case `tool_calls` /
+/// `tool_call_id`, each call in the OpenAI `{id, type: "function",
+/// function: {name, arguments}}` shape, and `content: null` on an assistant
+/// turn that only proposes tool calls (the OpenAI protocol there expects
+/// null, not `""`).
+fn provider_message(message: &WireMessage) -> serde_json::Value {
+    let only_tool_calls =
+        message.role == "assistant" && message.content.is_empty() && message.tool_calls.is_some();
+    let mut value = serde_json::json!({
+        "role": message.role,
+        "content": if only_tool_calls {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!(message.content)
+        },
+    });
+    if let Some(tool_calls) = &message.tool_calls {
+        value["tool_calls"] = serde_json::json!(tool_calls.iter().map(|call| serde_json::json!({
+            "id": call.id,
+            "type": "function",
+            "function": {"name": call.name, "arguments": call.arguments},
+        })).collect::<Vec<_>>());
+    }
+    if let Some(tool_call_id) = &message.tool_call_id {
+        value["tool_call_id"] = serde_json::json!(tool_call_id);
+    }
+    value
+}
+
+/// The request body for `{base_url}/chat/completions`: `messages` mapped onto
+/// the provider's wire shape, `tools` forwarded verbatim when present, and
+/// `stream` as requested.
+pub fn provider_body(model: &str, messages: &[WireMessage], tools: Option<&Vec<serde_json::Value>>, stream: bool) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages.iter().map(provider_message).collect::<Vec<_>>(),
+        "stream": stream,
+    });
+    if let Some(tools) = tools {
+        body["tools"] = serde_json::json!(tools);
+    }
+    body
+}
 
 /// Why an API key was rejected before it may touch the credential store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -528,6 +761,233 @@ mod tests {
         );
     }
 
+    // --- streamed tool calls (Ronda 3 R1, spec S1): recorded fixtures ---
+
+    fn tool_chunk(entries: &str) -> String {
+        format!(r#"data: {{"choices":[{{"delta":{{"tool_calls":[{entries}]}}}}]}}"#)
+    }
+
+    #[test]
+    fn a_single_tool_call_is_emitted_complete_before_done() {
+        let body = [
+            tool_chunk(r#"{"index":0,"id":"call_1","type":"function","function":{"name":"create_task","arguments":""}}"#),
+            tool_chunk(r#"{"index":0,"function":{"arguments":"{\"title\":\"Buy milk\"}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_1".into(),
+                    name: "create_task".into(),
+                    arguments: r#"{"title":"Buy milk"}"#.into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn arguments_split_across_chunks_are_concatenated() {
+        let body = [
+            tool_chunk(r#"{"index":0,"id":"call_a","function":{"name":"create_task","arguments":"{\"title\":"}}"#),
+            tool_chunk(r#"{"index":0,"function":{"arguments":"\"Deep clean\", \"day\":"}}"#),
+            tool_chunk(r#"{"index":0,"function":{"arguments":"\"2026-11-02\"}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_a".into(),
+                    name: "create_task".into(),
+                    arguments: r#"{"title":"Deep clean", "day":"2026-11-02"}"#.into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn two_calls_interleaved_emit_in_index_order_each_once() {
+        let body = [
+            tool_chunk(r#"{"index":0,"id":"call_0","function":{"name":"create_task","arguments":"{\"t"}}"#),
+            tool_chunk(r#"{"index":1,"id":"call_1","function":{"name":"move_task","arguments":"{\"taskId\":"}}"#),
+            tool_chunk(r#"{"index":0,"function":{"arguments":"itle\":\"A\"}"}}"#),
+            tool_chunk(r#"{"index":1,"function":{"arguments":"\"t1\"}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_0".into(),
+                    name: "create_task".into(),
+                    arguments: r#"{"title":"A"}"#.into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_1".into(),
+                    name: "move_task".into(),
+                    arguments: r#"{"taskId":"t1"}"#.into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn text_may_precede_calls_and_every_call_arrives_before_done() {
+        let body = [
+            chunk(r#"{"content":"Sure — proposing two changes."}"#),
+            tool_chunk(r#"{"index":0,"id":"call_0","function":{"name":"create_task","arguments":"{}"}}"#),
+            tool_chunk(r#"{"index":1,"id":"call_1","function":{"name":"move_task","arguments":"{}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::Delta("Sure — proposing two changes.".into()),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_0".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_1".into(),
+                    name: "move_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_call_without_a_name_is_malformed_not_a_ghost_call() {
+        let body = [
+            tool_chunk(r#"{"index":0,"id":"call_x","function":{"arguments":"{}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(decode_all(&body), vec![StreamEvent::Malformed, StreamEvent::Done]);
+    }
+
+    #[test]
+    fn eof_without_done_still_flushes_the_pending_call() {
+        let mut decoder = StreamDecoder::new();
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":0,"id":"call_9","function":{"name":"move_task","arguments":"{}"}}"#))
+            .is_empty());
+        assert_eq!(
+            decoder.flush_tool_calls(),
+            vec![StreamEvent::ToolCall(ToolCallPayload {
+                id: "call_9".into(),
+                name: "move_task".into(),
+                arguments: "{}".into(),
+            })]
+        );
+    }
+
+    #[test]
+    fn eof_flush_surfaces_a_nameless_call_as_malformed() {
+        // A nameless call must never be dropped silently at EOF: the flush
+        // reports it exactly like [DONE] does, and the caller fails the
+        // stream instead of sending Done.
+        let mut decoder = StreamDecoder::new().with_request_id("r1");
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":0,"id":"call_x","function":{"arguments":"{}"}}"#))
+            .is_empty());
+        assert_eq!(decoder.flush_tool_calls(), vec![StreamEvent::Malformed]);
+    }
+
+    #[test]
+    fn a_gap_in_tool_call_indexes_is_malformed() {
+        let body = [
+            tool_chunk(r#"{"index":0,"id":"c0","function":{"name":"a","arguments":"{}"}}"#),
+            tool_chunk(r#"{"index":2,"id":"c2","function":{"name":"b","arguments":"{}"}}"#),
+        ]
+        .join("\n\n");
+        assert_eq!(decode_all(&body), vec![StreamEvent::Malformed]);
+    }
+
+    #[test]
+    fn an_indexless_fragment_with_a_new_id_starts_a_new_call() {
+        // A provider that never sends indexes but opens each call with its
+        // own id: the second call must not concatenate into the first's name.
+        let body = [
+            tool_chunk(r#"{"id":"call_a","function":{"name":"create_task","arguments":"{}"}}"#),
+            tool_chunk(r#"{"id":"call_b","function":{"name":"move_task","arguments":"{}"}}"#),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            decode_all(&body),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_a".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_b".into(),
+                    name: "move_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::Done,
+            ]
+        );
+    }
+
+    #[test]
+    fn fallback_ids_are_prefixed_with_the_request_id() {
+        // A provider that omits ids entirely: the fallback handle must be
+        // unique per request, so one Confirm can never resolve two cards.
+        let mut decoder = StreamDecoder::new().with_request_id("r7");
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":0,"function":{"name":"create_task","arguments":"{}"}}"#))
+            .is_empty());
+        assert!(decoder
+            .feed(&tool_chunk(r#"{"index":1,"function":{"name":"move_task","arguments":"{}"}}"#))
+            .is_empty());
+        assert_eq!(
+            decoder.flush_tool_calls(),
+            vec![
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_r7_0".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                }),
+                StreamEvent::ToolCall(ToolCallPayload {
+                    id: "call_r7_1".into(),
+                    name: "move_task".into(),
+                    arguments: "{}".into(),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn tool_call_events_serialize_with_a_call_payload() {
+        assert_eq!(
+            serde_json::to_value(ChatEvent::ToolCall {
+                call: ToolCallPayload {
+                    id: "call_1".into(),
+                    name: "create_task".into(),
+                    arguments: "{}".into(),
+                },
+            })
+            .unwrap(),
+            serde_json::json!({
+                "type": "tool_call",
+                "call": {"id": "call_1", "name": "create_task", "arguments": "{}"},
+            })
+        );
+    }
+
     #[test]
     fn https_base_urls_are_accepted() {
         assert_eq!(validate_base_url("https://api.nan.builders/v1"), Ok(()));
@@ -901,6 +1361,135 @@ mod tests {
                 MemoryOp::Delete { topic_key: "t".into() },
             ]
         );
+    }
+
+    // --- provider wire shape (Ronda 3 R1) ---
+
+    fn wire(role: &str, content: &str) -> WireMessage {
+        WireMessage {
+            role: role.into(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn wire_call(id: &str, name: &str, arguments: &str) -> WireToolCall {
+        WireToolCall {
+            id: id.into(),
+            name: name.into(),
+            arguments: arguments.into(),
+        }
+    }
+
+    #[test]
+    fn plain_messages_map_to_the_provider_shape() {
+        assert_eq!(
+            provider_body("m", &[wire("user", "hi"), wire("assistant", "hello")], None, true),
+            serde_json::json!({
+                "model": "m",
+                "messages": [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hello"},
+                ],
+                "stream": true,
+            })
+        );
+    }
+
+    #[test]
+    fn a_follow_up_request_carries_the_openai_tool_call_wire_shape() {
+        // The exact body of the request after a card was answered: the
+        // assistant turn proposes its calls in the OpenAI shape ({id, type:
+        // "function", function: {name, arguments}}) and each call is answered
+        // by one `tool` message, in call order.
+        let assistant = WireMessage {
+            role: "assistant".into(),
+            content: String::new(),
+            tool_calls: Some(vec![
+                wire_call("call_1", "create_task", r#"{"title":"X"}"#),
+                wire_call("call_2", "move_task", r#"{"taskId":"t1"}"#),
+            ]),
+            tool_call_id: None,
+        };
+        let tool = |id: &str, content: &str| WireMessage {
+            role: "tool".into(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: Some(id.into()),
+        };
+        let body = provider_body(
+            "deepseek-v4-flash",
+            &[
+                wire("user", "plan my errands"),
+                assistant,
+                tool("call_1", "The user confirmed and it was applied. Task created."),
+                tool("call_2", "The user discarded this proposal. Nothing was changed."),
+            ],
+            Some(&vec![serde_json::json!({"type": "function", "function": {"name": "create_task"}})]),
+            true,
+        );
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "model": "deepseek-v4-flash",
+                "messages": [
+                    {"role": "user", "content": "plan my errands"},
+                    {
+                        "role": "assistant",
+                        "content": serde_json::Value::Null,
+                        "tool_calls": [
+                            {
+                                "id": "call_1", "type": "function",
+                                "function": {"name": "create_task", "arguments": r#"{"title":"X"}"#},
+                            },
+                            {
+                                "id": "call_2", "type": "function",
+                                "function": {"name": "move_task", "arguments": r#"{"taskId":"t1"}"#},
+                            },
+                        ],
+                    },
+                    {"role": "tool", "content": "The user confirmed and it was applied. Task created.", "tool_call_id": "call_1"},
+                    {"role": "tool", "content": "The user discarded this proposal. Nothing was changed.", "tool_call_id": "call_2"},
+                ],
+                "stream": true,
+                "tools": [{"type": "function", "function": {"name": "create_task"}}],
+            })
+        );
+    }
+
+    #[test]
+    fn an_assistant_turn_with_text_and_calls_keeps_its_text() {
+        let turn = WireMessage {
+            role: "assistant".into(),
+            content: "Here is my proposal.".into(),
+            tool_calls: Some(vec![wire_call("c", "create_task", "{}")]),
+            tool_call_id: None,
+        };
+        let body = provider_body("m", &[turn], None, false);
+        assert_eq!(body["messages"][0]["content"], "Here is my proposal.");
+    }
+
+    #[test]
+    fn tools_are_forwarded_verbatim_and_omitted_when_absent() {
+        let tools = vec![serde_json::json!({"type": "function", "function": {"name": "create_task"}})];
+        let body = provider_body("m", &[wire("user", "hi")], Some(&tools), true);
+        assert_eq!(body["tools"], serde_json::json!(tools));
+        let body = provider_body("m", &[wire("user", "hi")], None, true);
+        assert!(body.get("tools").is_none(), "no tools key when absent");
+    }
+
+    #[test]
+    fn wire_messages_deserialize_the_camel_case_ipc_shape() {
+        let message: WireMessage = serde_json::from_str(
+            r#"{"role": "assistant", "content": "", "toolCalls": [{"id": "c", "name": "create_task", "arguments": "{}"}], "toolCallId": null}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            message.tool_calls,
+            Some(vec![wire_call("c", "create_task", "{}")])
+        );
+        assert_eq!(message.tool_call_id, None);
     }
 }
 

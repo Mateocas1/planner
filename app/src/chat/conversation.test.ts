@@ -113,3 +113,77 @@ test("hasExchange: an exchange needs a user message and a non-empty answer (S5)"
   assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }, { id: "a1", role: "assistant", text: "", segments: [] }]), false, "an empty assistant turn (error, stop) is not an exchange");
   assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }, { id: "a1", role: "assistant", text: "hello", segments: ["hello"] }]), true);
 });
+
+// --- tool calls → action cards (Ronda 3 R1, spec S1) ---
+
+const toolCall = (id: string, name = "create_task") => ({ type: "tool_call" as const, call: { id, name, arguments: '{"title":"X"}' } });
+
+const pendingCards = (state: ConversationState) => (state.turns.at(-1) as { toolCalls?: Array<{ callId: string; status: string }> }).toolCalls ?? [];
+
+function streamWithCalls(...calls: Array<ChatEvent>): ConversationState {
+  let state = event(send(emptyConversation, "r1", "hi"), { type: "delta", text: "Proposal:" });
+  for (const chatEvent of calls) state = event(state, chatEvent);
+  return event(state, { type: "done" });
+}
+
+test("a tool_call opens the assistant turn and renders as a pending card", () => {
+  let state = event(send(emptyConversation, "r1", "hi"), toolCall("call_1"));
+  assert.equal(state.phase, "streaming");
+  state = event(state, { type: "done" });
+  assert.equal(state.phase, "idle");
+  const turn = state.turns[1];
+  assert.equal(turn.role, "assistant");
+  assert.deepEqual(pendingCards(state), [{ callId: "call_1", name: "create_task", arguments: '{"title":"X"}', status: "pending" }]);
+});
+
+test("a tool_call before any text still opens one answer turn", () => {
+  const state = streamWithCalls(toolCall("call_1"));
+  assert.equal(state.turns.length, 2);
+  assert.equal((state.turns[1] as { text: string }).text, "Proposal:");
+});
+
+test("resolving a card updates it in place and never re-opens the stream", () => {
+  let state = streamWithCalls(toolCall("call_1"));
+  state = reduceConversation(state, { type: "toolCallResolved", callId: "call_1", status: "confirmed", outcome: "Task created." });
+  assert.deepEqual(pendingCards(state), [{ callId: "call_1", name: "create_task", arguments: '{"title":"X"}', status: "confirmed", outcome: "Task created." }]);
+  assert.equal(state.phase, "idle");
+  state = reduceConversation(state, { type: "toolCallResolved", callId: "call_1", status: "failed", outcome: "offline" });
+  assert.deepEqual(pendingCards(state), [{ callId: "call_1", name: "create_task", arguments: '{"title":"X"}', status: "failed", outcome: "offline" }]);
+});
+
+test("resolving an unknown call id is a no-op", () => {
+  const state = streamWithCalls(toolCall("call_1"));
+  assert.equal(reduceConversation(state, { type: "toolCallResolved", callId: "ghost", status: "discarded" }), state);
+});
+
+test("a repeated call id across turns resolves exactly one card", () => {
+  // Two assistant turns whose cards carry the same id (a provider reusing
+  // fallback ids): one Confirm resolves only the first card; the second
+  // stays pending for its own answer.
+  let state = streamWithCalls(toolCall("call_1"));
+  state = send(state, "r2", "another");
+  state = event(state, { type: "tool_call", call: { id: "call_1", name: "create_task", arguments: '{"title":"Y"}' } });
+  state = event(state, { type: "done" });
+  state = reduceConversation(state, { type: "toolCallResolved", callId: "call_1", status: "confirmed", outcome: "Task created." });
+  const cards = state.turns.flatMap(turn => (turn.role === "assistant" ? turn.toolCalls ?? [] : []));
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0]?.status, "confirmed");
+  assert.equal(cards[1]?.status, "pending");
+});
+
+test("at most five cards render; extras are dropped and counted for the note", () => {
+  const calls = Array.from({ length: 7 }, (_, i) => toolCall(`call_${i}`));
+  const state = streamWithCalls(...calls);
+  assert.equal(pendingCards(state).length, 5);
+  assert.equal((state.turns[1] as { callsDropped?: number }).callsDropped, 2);
+});
+
+test("a card resolved while a later request streams keeps its state", () => {
+  // The user acts on an old card while a new reply is streaming: the old
+  // turn's card must update, the streaming turn's must not be touched.
+  let state = streamWithCalls(toolCall("call_1"));
+  state = send(state, "r2", "another");
+  state = event(state, { type: "delta", text: "Working" });
+  state = reduceConversation(state, { type: "toolCallResolved", callId: "call_1", status: "discarded" });
+  assert.deepEqual(pendingCards({ ...state, turns: state.turns.slice(0, 2) }), [{ callId: "call_1", name: "create_task", arguments: '{"title":"X"}', status: "discarded" }]);
+});

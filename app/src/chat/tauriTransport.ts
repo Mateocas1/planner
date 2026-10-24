@@ -38,6 +38,16 @@ export function toChatEvent(raw: unknown): ChatEvent | null {
       const text = (raw as { text?: unknown }).text;
       return typeof text === "string" ? { type: "delta", text } : null;
     }
+    case "tool_call": {
+      const call = (raw as { call?: unknown }).call;
+      if (typeof call !== "object" || call === null) return null;
+      const id = (call as { id?: unknown }).id;
+      const name = (call as { name?: unknown }).name;
+      const args = (call as { arguments?: unknown }).arguments;
+      return typeof id === "string" && typeof name === "string" && typeof args === "string"
+        ? { type: "tool_call", call: { id, name, arguments: args } }
+        : null;
+    }
     case "done":
       return { type: "done" };
     case "cancelled":

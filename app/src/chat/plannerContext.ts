@@ -53,6 +53,17 @@ const weekdayOf = (wallUtc: number): string =>
 const weekdayLongOf = (wallUtc: number): string =>
   new Date(wallUtc).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
 
+/** A block's line label: the title, prefixed with the linked task's id when
+ * it has one, so the model can propose moves with `move_task` (spec S1). */
+function blockLabel(
+  block: ContextBlock,
+  title: (block: ContextBlock, taskTitle: (taskId: string | undefined) => string | undefined) => string,
+  taskTitle: (taskId: string | undefined) => string | undefined,
+): string {
+  if (block.taskId === undefined) return title(block, taskTitle);
+  return `[${block.taskId}] ${title(block, taskTitle)}`;
+}
+
 /** What "done" means for a block: its time passed, or its task was completed. */
 function blockDone(block: ContextBlock, taskCompleted: (taskId: string | undefined) => boolean, nowMs: number): boolean {
   return Date.parse(block.end) <= nowMs || taskCompleted(block.taskId);
@@ -82,7 +93,8 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
     "",
   );
 
-  // Today's blocks, in start order, capped.
+  // Today's blocks, in start order, capped. A block linked to a task names
+  // the task's id: the agentic chat's move_task references tasks by id (S1).
   const todayBlocks = snap.blocks
     .filter(block => dateKey(new Date(block.start), timeZone) === todayKey)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
@@ -94,19 +106,19 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
     for (const block of shown) {
       const range = `${timeLabel(new Date(block.start), timeZone)}–${timeLabel(new Date(block.end), timeZone)}`;
       const done = blockDone(block, taskCompleted, nowMs) ? " · done" : "";
-      lines.push(`- ${range} · ${blockTitle(block, taskTitle)}${done}`);
+      lines.push(`- ${range} · ${blockLabel(block, blockTitle, taskTitle)}${done}`);
     }
     if (todayBlocks.length > shown.length) lines.push(`(+${todayBlocks.length - shown.length} more today)`);
   }
   lines.push("");
 
-  // Tasks due today.
+  // Tasks due today, with ids so the model can reference them (S1).
   const dueToday = snap.tasks.filter(task => !task.completed && task.deadline === todayKey);
   if (dueToday.length > 0) {
     lines.push("Tasks due today:");
     for (const item of dueToday.slice(0, TODAY_BLOCKS_CAP)) {
       const estimate = item.estimateMinutes === undefined ? "" : ` · ${formatDuration(item.estimateMinutes)}`;
-      lines.push(`- ${truncate(item.title)}${estimate}`);
+      lines.push(`- [${item.id}] ${truncate(item.title)}${estimate}`);
     }
     lines.push("");
   }
@@ -127,7 +139,7 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
     const shown = dayBlocks.slice(0, WEEK_BLOCKS_PER_DAY_CAP);
     const parts = shown.map(block => {
       const range = `${timeLabel(new Date(block.start), timeZone)}–${timeLabel(new Date(block.end), timeZone)}`;
-      return `${range} · ${blockTitle(block, taskTitle)}`;
+      return `${range} · ${blockLabel(block, blockTitle, taskTitle)}`;
     });
     const more = dayBlocks.length > shown.length ? ` (+${dayBlocks.length - shown.length} more)` : "";
     lines.push(`- ${label}: ${parts.join("; ")}${more}`);
@@ -149,7 +161,7 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
     for (const item of open.slice(0, OPEN_TASKS_CAP)) {
       const estimate = item.estimateMinutes === undefined ? "" : ` · ${formatDuration(item.estimateMinutes)}`;
       const deadline = item.deadline === undefined ? "" : ` · due ${item.deadline}`;
-      lines.push(`- ${truncate(item.title)}${estimate}${deadline}`);
+      lines.push(`- [${item.id}] ${truncate(item.title)}${estimate}${deadline}`);
     }
     if (open.length > OPEN_TASKS_CAP) lines.push(`(+${open.length - OPEN_TASKS_CAP} more)`);
     lines.push("");

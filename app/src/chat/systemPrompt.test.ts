@@ -13,10 +13,11 @@ const memory = (topicKey: string, title: string, updatedAt: number): Memory => (
   updatedAt,
 });
 
-test("the role text says the assistant is read-only and tool-free", () => {
+test("the role text offers the confirmation-gated tools and forbids invented ids", () => {
   const prompt = buildSystemPrompt({ snapshot: emptySnapshot, memories: [], now: new Date("2026-10-29T12:00:00Z"), timeZone: "UTC" });
-  assert.ok(prompt.includes("cannot change"), prompt);
-  assert.ok(prompt.includes("no tools"), prompt);
+  assert.ok(prompt.includes("create_task and move_task"), prompt);
+  assert.ok(prompt.includes("confirmation"), prompt);
+  assert.ok(prompt.includes("never invent ids"), prompt);
 });
 
 test("the planner context rides inside the prompt as data", () => {

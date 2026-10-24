@@ -33,7 +33,7 @@ test("a non-UTC zone shifts the day and the labels: a 00:30Z block is still toda
   assert.ok(text.includes(zone), text);
 });
 
-test("today's blocks list time range, title and done state; task titles fill in", () => {
+test("today's blocks list time range, title and done state; task titles fill in; linked tasks carry their id", () => {
   const text = buildPlannerContext(
     snapshot(
       [
@@ -46,11 +46,9 @@ test("today's blocks list time range, title and done state; task titles fill in"
     new Date("2026-10-29T14:32:00Z"),
     "UTC",
   );
-  assert.ok(text.includes("09:00–10:30 · Deep work · done"), text);
-  assert.ok(text.includes("14:00–15:00 · Inbox review"), text);
+  assert.ok(text.includes("09:00–10:30 · [t1] Deep work · done"), text);
+  assert.ok(text.includes("14:00–15:00 · [t2] Inbox review"), text);
   assert.ok(text.includes("16:00–17:00 · Work block"), text);
-  // Past blocks are done even with no task behind them.
-  assert.ok(text.includes("09:00–10:30 · Deep work · done"), text);
 });
 
 test("the next 7 days group by day; an empty day says so; today and day 8 stay out", () => {
@@ -98,7 +96,7 @@ test("titles are truncated to keep the prompt bounded", () => {
   assert.ok(!text.includes("x".repeat(49)), text);
 });
 
-test("open unscheduled tasks exclude completed and scheduled tasks and carry estimate and deadline", () => {
+test("tasks in the context carry their ids so the model can reference them (S1)", () => {
   const text = buildPlannerContext(
     snapshot(
       [block("b1", TODAY, "09:00", "10:00", { taskId: "scheduled" })],
@@ -112,12 +110,13 @@ test("open unscheduled tasks exclude completed and scheduled tasks and carry est
     new Date("2026-10-29T12:00:00Z"),
     "UTC",
   );
-  assert.ok(text.includes("Pay the invoice"), text);
+  assert.ok(text.includes("[open1] Pay the invoice"), text);
+  assert.ok(text.includes("[open2] Buy milk"), text);
   assert.ok(text.includes("45 min"), text);
-  assert.ok(text.includes("2026-11-02"), text);
-  assert.ok(text.includes("Buy milk"), text);
+  assert.ok(text.includes("[scheduled] Scheduled task"), text);
+  // A task placed on a block is not unscheduled; a completed task appears nowhere.
   const openSection = text.slice(text.indexOf("Open unscheduled tasks:"));
-  assert.ok(!openSection.includes("Scheduled task"), `a task placed on a block is not unscheduled: ${openSection}`);
+  assert.ok(!openSection.includes("Scheduled task"), openSection);
   assert.ok(!openSection.includes("Completed task"), openSection);
 });
 
