@@ -345,8 +345,6 @@ export function ChatPanel({
     }
   };
 
-  if (!visible) return null;
-
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
@@ -398,6 +396,11 @@ export function ChatPanel({
     },
     [resolveToolCall],
   );
+
+  // Only after every hook: `visible` flips false → true when the desktop
+  // session restores, and an early return above a hook makes React throw #310
+  // ("Rendered more hooks"), leaving the main window blank.
+  if (!visible) return null;
 
   const renderCards = (turn: ChatTurn & { role: "assistant" }): ReactNode => (
     <>
