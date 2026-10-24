@@ -1,0 +1,100 @@
+/* Quick-add window (QuickAddWindow.tsx, task T5). Co-located so the mini
+   surface's material and motion stay out of app.css; it imports DesktopShell.css
+   for the desktop-mica html rules (the two surfaces are never mounted together).
+
+   Material: the palette's thick glass over the Mica backdrop, the same recipe
+   the main window's content paints (DesktopShell.css keeps a 62% wash of the
+   designed background on the body so text contrast stays close to the audited
+   values while the wallpaper-tinted Mica reads through).
+
+   Motion: the palette's accepted short soft entrance (AGENTS.md log — user
+   decisions beat the instant-keyboard-surface preference): opacity 0 -> 1 with
+   a 2% scale over 150 ms on the app's --ease-out, composited (transform and
+   opacity only). It replays on every reveal because Rust bumps the shown
+   event and the component keys its inner tree on it. Focus is never queued
+   behind the animation: the field takes the caret in the shown handler, so a
+   key typed on the opening frame lands in it. No exit: hiding is instant. */
+
+.quickadd {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  animation: quickadd-in var(--dur-pop, 150ms) var(--ease-out);
+}
+
+.quickadd-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.quickadd-input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  font-size: var(--text-title);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.25;
+}
+
+.quickadd-input:focus { outline: none; }
+.quickadd-input::placeholder { color: var(--label-3); font-weight: 600; }
+
+.quickadd-note {
+  margin: 0;
+  color: var(--label-2);
+  font-size: var(--text-body);
+}
+
+.quickadd-hint {
+  margin: 0;
+  color: var(--label-3);
+  font-size: var(--text-caption);
+}
+
+.quickadd-error { color: var(--red); }
+
+@keyframes quickadd-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Reduced motion: the fade stays (it is not movement), the scale goes, and the
+   app-wide rule in app.css collapses the duration to 1 ms. */
+@media (prefers-reduced-motion: reduce) {
+  .quickadd {
+    animation-name: quickadd-fade;
+  }
+}
+
+@keyframes quickadd-fade {
+  from { opacity: 0; }
+}
+
+/* The Day settings row (QuickAddShortcut.tsx): a control-styled button that
+   reads as the shortcut it holds, and says "Press keys…" while capturing. */
+.quickadd-shortcut-button {
+  min-width: 132px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-sub);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quickadd-shortcut-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

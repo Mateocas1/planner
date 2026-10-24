@@ -2,6 +2,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { QuickAddWindow } from "./ui/QuickAddWindow.tsx";
+import { parseWindowRoute } from "./ui/quickAddWindow.ts";
 // brand.css is the scale itself (--brand-* / --ink-*); app.css maps every colour
 // token onto a step of it, so the scale is loaded first.
 import "./ui/brand.css";
@@ -27,8 +29,13 @@ installLens();
 // whose Reload button is the only way a new build takes over (SB1).
 installUpdatePrompt();
 
+// One bundle, two surfaces: the quick-add window loads the same index.html with
+// the `#quickadd` route flag (tauri.conf.json) and renders only the
+// natural-language quick add. Everything else — theme bootstrap, brand tokens,
+// the lens and sheen attributes — is shared on purpose, so both windows read
+// identical materials.
+const route = parseWindowRoute(window.location.search, window.location.hash);
+
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <StrictMode>{route === "quickadd" ? <QuickAddWindow /> : <App />}</StrictMode>,
 );

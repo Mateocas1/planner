@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quickadd",
+  "description": "Permissions for the global quick-add window (task T5): hide itself, resize to fit the NL chips, and listen for the shown event. Shortcut registration and window positioning stay on the Rust side.",
+  "windows": ["quickadd"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-set-size"
+  ]
+}
