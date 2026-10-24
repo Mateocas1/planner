@@ -105,6 +105,28 @@ async function seedHoliday(email: string, id: string, date: string, title: strin
   if (!response.ok) throw new Error(`holiday seed failed: ${response.status} ${await response.text()}`);
 }
 
+/** Seeds the task the delete scenario proposes, plus one work block linked
+ * to it — so the delete card must name the block and confirming removes both
+ * (ronda4 T8, S8). Deterministic ids; the block sits three days out. */
+async function seedDeletableTask(email: string): Promise<void> {
+  const uid = await remoteUid(email);
+  const day = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  const patch = async (path: string, fields: Record<string, unknown>) =>
+    fetch(`${FIRESTORE_REST}/users/${uid}/${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${await idToken(email)}` },
+      body: JSON.stringify({ fields }),
+    }).then(response => {
+      if (!response.ok) throw new Error(`seed write failed for ${path}: ${response.status}`);
+    });
+  await patch(`tasks/t-delblocks`, { title: { stringValue: "Delete me" } });
+  await patch(`blocks/b-delblocks`, {
+    start: { stringValue: `${day}T14:00:00Z` },
+    end: { stringValue: `${day}T15:00:00Z` },
+    taskId: { stringValue: "t-delblocks" },
+  });
+}
+
 async function readHolidayHidden(email: string, id: string): Promise<boolean | undefined> {
   const uid = await remoteUid(email);
   const response = await fetch(`${FIRESTORE_REST}/users/${uid}/holidays/${id}`, { headers: { Authorization: `Bearer ${await idToken(email)}` } });
@@ -221,7 +243,7 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   const zone = await browserZone(page);
   await createRemoteAccount(email);
   await updateRemoteProfile(email, zone);
-  await seedTasks(email, [{ title: "Delete me" }]);
+  await seedDeletableTask(email);
   await signInMock(page, email, "agent-delete");
 
   // The seeded task is already in the store, so the planner context carries
@@ -236,8 +258,10 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   const cards = panel(page).locator(".chat-card");
   const deleteCard = cards.last();
   await expect(deleteCard).toBeVisible({ timeout: 30_000 });
-  // The card names exactly what will be removed (S4): the task and what stays.
+  // The card names exactly what will be removed (S4, S8): the task AND its
+  // work block, from the live context.
   await expect(deleteCard.locator(".chat-card-action")).toContainText('Delete task "Delete me"');
+  await expect(deleteCard.locator(".chat-card-action")).toContainText(/and its 1 work block/);
 
   // Discard first: nothing is removed.
   await deleteCard.getByRole("button", { name: "Discard" }).click();
@@ -251,7 +275,10 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   await expect(secondCard.getByRole("button", { name: "Confirm" })).toBeVisible({ timeout: 30_000 });
   await secondCard.getByRole("button", { name: "Confirm" }).click();
   await expect(secondCard.locator(".chat-card-outcome")).toContainText("Deleted task id=", { timeout: 15_000 });
+  await expect(secondCard.locator(".chat-card-outcome")).toContainText("and its 1 work block");
   await expect.poll(async () => (await readRemoteTasks(email)).some(task => task.title === "Delete me"), { timeout: 15_000 }).toBe(false);
+  // The block the card named is gone from the store too (S8).
+  await expect.poll(async () => readRemoteBlocks(email), { timeout: 15_000 }).toEqual([]);
   await page.keyboard.press("Escape");
   // The hidden panel keeps its own card text; the view itself is clean.
   await expect(page.locator(".view").getByText("Delete me")).toHaveCount(0);
