@@ -55,6 +55,10 @@
  * - `:disabled` / `[aria-disabled="true"]`: a dead control does not answer.
  * - `.row-main`: the row it sits in presses instead (app.css), so the row
  *   moves as one surface and the title never shrinks inside a still row.
+ * - `.calendar-block` is its own pressable with its own rules (app.css) and its
+ *   own resize opt-out (Calendar.css): including it here would put a 0,4,0
+ *   `button:active` rule above the 0,3,0 resize pin and scale the block's text
+ *   for the length of an edge drag (integration regression, r4-integfix).
  * - Inputs, selects and textareas are never matched: this file only targets
  *   `button` and `[role="button"]`.
  * - `.block-handle` / `.drag-grip` are spans with pointer handlers, never
@@ -84,8 +88,8 @@
  * `:where` here would let class rules that own a transition win, so their
  * press would sink on the 420 ms release spring instead of instantly (S2).
  * The colour transitions stay, so tints still ease while the control is held. */
-button:not(:disabled):not([aria-disabled="true"]):not(.row-main):active,
-[role="button"]:not([aria-disabled="true"]):not(.row-main):active {
+button:not(:disabled):not([aria-disabled="true"]):not(.row-main):not(.calendar-block):active,
+[role="button"]:not([aria-disabled="true"]):not(.row-main):not(.calendar-block):active {
   transform: scale(var(--press-scale));
   transition: transform var(--press-down-dur) var(--ease-press-down),
     background-color var(--dur-hover) ease, color var(--dur-hover) ease;

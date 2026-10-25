@@ -386,6 +386,16 @@ export function Sheet({
       !!target.closest(
         "button, a, input, textarea, select, label, [contenteditable], [role='button'], summary",
       );
+    /**
+     * A surface that opted out owns its own gestures: an embedded page turn
+     * (ShutdownSheet, ronda4 F3b) is itself a swipe, and it wins over the
+     * dismissal -- after the 8 px slop both gestures lock at once and whoever
+     * captures the pointer first steals it from the other, which turned a page
+     * drag into a whole-sheet dismissal. Call sites stamp the surface
+     * `data-swipe-dismiss="off"`; everything outside it still dismisses (S1).
+     */
+    const optedOut = (target: EventTarget | null): boolean =>
+      target instanceof Element && !!target.closest('[data-swipe-dismiss="off"]');
     const onHandle = (target: EventTarget | null): boolean =>
       target instanceof Element && !!target.closest("[data-drag-handle]");
 
@@ -489,6 +499,7 @@ export function Sheet({
       if (sheet.getAnimations().length > 0) return;
       const target = event.target;
       if (interactive(target)) return;
+      if (optedOut(target)) return;
       if (!(target instanceof Element)) return;
       // Mouse: the drag handle or a surface that is not text. Touch and pen
       // start from any surface.
