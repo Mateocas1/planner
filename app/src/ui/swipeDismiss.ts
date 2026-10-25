@@ -1,16 +1,25 @@
 /**
  * Pure gesture math for swipe-to-dismiss on the shared glass sheet (odd/tasks/
- * ronda4.md, S1): a pointer drag on the sheet's drag handle or its plain surface
- * follows the finger 1:1, locks to one direction after a small slop, and either
- * commits a dismissal or springs back. No DOM here -- Sheet.tsx owns the pointer
- * wiring, this module owns the numbers, so every threshold is unit-testable.
+ * ronda4.md, S1 + S7): a pointer drag on the sheet's drag handle or its plain
+ * surface follows the finger freely on both axes after a small slop (Instagram-
+ * style; S7), upward travel rubber-bands, and either commits a dismissal or
+ * springs back. No DOM here -- useSwipeDismiss.ts owns the pointer wiring,
+ * this module owns the numbers, so every threshold is unit-testable.
  *
  * The values follow the Emil flow (AGENTS.md) and the user's S1 description:
- * the gesture is distance- OR velocity-gated ("debe tener un threshold que tiene
- * que ser a una determinada distancia o velocidad"), the same way iOS sheets
- * dismiss, and every direction except up may dismiss ("da igual si es para la
- * izquierda, para la derecha o para abajo"); up rubber-bands and never closes.
- */
+ * the gesture is distance- OR velocity-gated ("debe tener un threshold que
+ * tiene que ser a una determinada distancia o velocidad"), the same way iOS
+ * sheets dismiss, and every direction except up may dismiss ("da igual si es
+ * para la izquierda, para la derecha o para abajo").
+ *
+ * S7 (free drag) replaces the axis lock: the 8 px slop decides only *whether*
+ * the gesture starts -- a scroller that can still scroll in the drag's initial
+ * dominant direction keeps the gesture -- and once it starts, the surface
+ * tracks the pointer 1:1 on both axes. The commit decision reads the release
+ * vector: its dominant sector (up = within ±45° of straight up) must be
+ * dismissible, and the displacement or velocity along that sector's axis must
+ * pass the thresholds. The exit flies along the whole release vector, so a
+ * diagonal throw leaves diagonally.
 
 /** A locked drag direction. `up` is the rubber-band direction: never dismisses. */
 export type SwipeDirection = "left" | "right" | "down" | "up";
@@ -87,16 +96,32 @@ export const VELOCITY_WINDOW_MS = 100;
 export const VELOCITY_STALE_MS = 60;
 
 /**
- * The axis a gesture locks to, or null while the pointer is inside the slop.
- * The axis that reaches the slop first wins; on a diagonal the horizontal axis
- * wins ties, matching how sheets are dismissed far more often than scrolled.
+ * The dominant compass direction of a 2D vector: the sector of the plane it
+ * points into. Up means within ±45° of straight up (|vy| ≥ |vx| with vy < 0):
+ * on the exact 45° diagonal the up sector wins, so an exact ±45° up-left or
+ * up-right release never dismisses (finding 5); every other 45° boundary is
+ * horizontal, where dismissing is the common intent. Inside the slop (`adx`
+ * and `ady` both below it) there is no dominant direction yet: the pointer
+ * may still be reaching for a scroll or a click, so nothing moves.
  */
-export function lockDirection(dx: number, dy: number, slop: number = SWIPE_SLOP): SwipeDirection | null {
+export function dominantDirection(dx: number, dy: number, slop: number = SWIPE_SLOP): SwipeDirection | null {
   const adx = Math.abs(dx);
   const ady = Math.abs(dy);
   if (adx < slop && ady < slop) return null;
-  if (adx >= ady) return dx < 0 ? "left" : "right";
+  // Exact diagonal-up is the up sector: it must never dismiss. Ties pointing
+  // down or flat stay horizontal, where a dismissal is the common intent.
+  if (adx > ady || (adx === ady && dy >= 0)) return dx < 0 ? "left" : "right";
   return dy < 0 ? "up" : "down";
+}
+
+/**
+ * The dominant sector of a release vector, with no slop: the gesture only
+ * releases after the slop, so the vector is never zero in practice (and even
+ * a near-zero vector fails every commit threshold below, so the sector it
+ * reports is inert).
+ */
+export function releaseDirection(dx: number, dy: number): SwipeDirection {
+  return dominantDirection(dx, dy, 0) as SwipeDirection;
 }
 
 /**
@@ -142,13 +167,42 @@ export function sheetRadius(baseRadius: number, p: number): number {
 
 /**
  * Whether a release commits the dismissal. `distance` is the drag distance
- * along the locked axis and `velocity` the release velocity along it, in px/ms,
- * signed the same way as the drag (a release that decelerates against the drag
- * is the user pulling the sheet back, not throwing it).
+ * along the release vector's dominant axis and `velocity` the release velocity
+ * along it, in px/ms, signed the same way as the drag (a release that
+ * decelerates against the drag is the user pulling the sheet back, not
+ * throwing it). The 2D gate is `shouldDismiss`.
  */
 export function shouldCommit(distance: number, velocity: number, dimension: number): boolean {
   if (distance >= commitDistance(dimension)) return true;
   return distance >= MIN_FLICK_DISTANCE && velocity >= FLICK_VELOCITY;
+}
+
+/**
+ * Whether a release commits the dismissal (S7): the release vector's dominant
+ * sector must be dismissible -- an up-dominant release never dismisses -- and
+ * the displacement or release velocity along that sector's axis must pass the
+ * thresholds, exactly as the axis-locked rule did. The velocity component
+ * counts only when it points the way the surface was dragged: a release
+ * decelerating against the drag is the user pulling the sheet back, not
+ * throwing it. `velocityX`/`velocityY` are the release velocity components in
+ * px/ms, stale-aware (see `createVelocityTracker`).
+ */
+export function shouldDismiss(
+  dx: number,
+  dy: number,
+  velocityX: number,
+  velocityY: number,
+  width: number,
+  height: number,
+): boolean {
+  const direction = releaseDirection(dx, dy);
+  if (direction === "up") return false;
+  const horizontal = direction === "left" || direction === "right";
+  const distance = horizontal ? Math.abs(dx) : Math.abs(dy);
+  const raw = horizontal ? velocityX : velocityY;
+  const dragSign = horizontal ? Math.sign(dx) : Math.sign(dy);
+  const velocityAlong = Math.sign(raw) === dragSign ? Math.abs(raw) : 0;
+  return shouldCommit(distance, velocityAlong, horizontal ? width : height);
 }
 
 /**
@@ -169,23 +223,45 @@ export function dragTransform(x: number, y: number, scale: number): string {
 }
 
 /**
- * How far the sheet still has to travel, from its released box, until it is
- * fully outside the viewport along the locked direction.
+ * Where a commit flight ends, starting from the released box (already carried
+ * by the drag offset `dx, dy`): the release vector's direction, extended until
+ * the sheet is fully outside the viewport on every axis it moves along. The
+ * flight therefore inherits the drag's diagonal, not just its dominant axis
+ * (S7: the exit flies along the release vector on both axes).
+ *
+ * Returns the end translation relative to the sheet's resting transform (the
+ * same frame `dragTransform` expects) and `distance`, the path length the
+ * flight still has to cover, for `exitDurationMs`.
  */
-export function exitDistance(
-  direction: Exclude<SwipeDirection, "up">,
+export function exitVector(
+  dx: number,
+  dy: number,
   rect: { left: number; top: number; width: number; height: number },
   viewportWidth: number,
   viewportHeight: number,
-): number {
-  switch (direction) {
-    case "left":
-      return rect.left + rect.width;
-    case "right":
-      return viewportWidth - rect.left;
-    case "down":
-      return viewportHeight - rect.top;
+): { x: number; y: number; distance: number } {
+  const magnitude = Math.hypot(dx, dy);
+  if (magnitude === 0) {
+    // Degenerate (never reached past the slop): fall straight down.
+    const distance = Math.max(viewportHeight - rect.top, 1);
+    return { x: dx, y: dy + distance, distance };
   }
+  const ux = dx / magnitude;
+  const uy = dy / magnitude;
+  // The scale factor that carries the sheet fully outside the viewport: it is
+  // outside once it clears ANY one edge, so the smallest per-axis clearance
+  // wins (finding 1) -- the old largest-t value made a near-vertical release
+  // fly ~78,000 px on a phone and leave after ~1% of the flight, breaking
+  // "exit matches release velocity". A zero axis component never bounds the
+  // flight (the sheet does not travel along it), so only traveled axes count.
+  let t = Infinity;
+  if (ux < 0) t = Math.min(t, (rect.left + rect.width) / -ux);
+  else if (ux > 0) t = Math.min(t, (viewportWidth - rect.left) / ux);
+  if (uy < 0) t = Math.min(t, (rect.top + rect.height) / -uy);
+  else if (uy > 0) t = Math.min(t, (viewportHeight - rect.top) / uy);
+  // Unreachable for a nonzero vector; kept as a guard.
+  if (!Number.isFinite(t)) t = 1;
+  return { x: dx + t * ux, y: dy + t * uy, distance: t };
 }
 
 /**
