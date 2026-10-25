@@ -61,7 +61,7 @@
   color: var(--label-2);
   font-weight: 500;
   font-size: var(--text-body);
-  transition: color var(--dur-hover) ease;
+  transition: color var(--dur-hover) ease, transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .settings-nav-icon { width: 18px; height: 18px; flex: none; position: relative; }

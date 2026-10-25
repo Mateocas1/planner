@@ -51,6 +51,22 @@ export const dur = {
  */
 export const expandBlur = { fine: 8, coarse: 4 } as const;
 
+/**
+ * The press language (odd/tasks/ronda4.md S2), mirrored from the --press-*
+ * tokens in ui/press.css -- the CSS side is authoritative; these constants
+ * exist so JS/Motion code and tests can name the same values. A press sinks
+ * instantly (`scale`, `downMs`) and releases through the damped
+ * `--ease-press-spring` linear() curve with one small overshoot. Large
+ * surfaces (rows, calendar blocks) sink to `scaleLarge` instead, and reduced
+ * motion takes no transform at all.
+ */
+export const press = {
+  scale: 0.96,
+  scaleLarge: 0.99,
+  downMs: 80,
+  releaseMs: 420,
+} as const;
+
 /** The same token in milliseconds, which is what WAAPI's `duration` takes. */
 export const ms = (seconds: number) => Math.round(seconds * 1000);
 

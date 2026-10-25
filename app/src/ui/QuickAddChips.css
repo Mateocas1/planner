@@ -33,7 +33,8 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
+  transition: background-color 120ms ease-out, color 120ms ease-out,
+    transform var(--press-release-dur) var(--ease-press-spring);
 }
 
 .quick-add-chip:hover {

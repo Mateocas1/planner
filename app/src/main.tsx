@@ -11,6 +11,10 @@ import "./app.css";
 // glass.css is imported after app.css on purpose: it owns the glass materials
 // and tokens that app.css used to define.
 import "./ui/glass.css";
+// press.css is imported last on purpose: it owns the one press language every
+// pressable answers with, and its element-level rules must sit after the
+// sheets whose class rules consume its tokens (app.css, glass.css).
+import "./ui/press.css";
 import { installLens } from "./ui/lens.ts";
 import { installSheen } from "./ui/sheen.ts";
 import { installUpdatePrompt } from "./pwa-update.ts";

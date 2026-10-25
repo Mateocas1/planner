@@ -74,10 +74,11 @@
   color: var(--label-2);
   font-size: var(--text-caption);
   font-weight: 500;
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease;
+  /* Press timing is the shared language (ui/press.css): the scale-down itself
+     comes from there too. */
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease;
 }
-
-.focus-action:active { transform: scale(0.96); }
 
 @media (hover: hover) and (pointer: fine) {
   .focus-action:hover { color: var(--label); }
@@ -111,10 +112,9 @@
   margin: -4px -4px -4px 0;
   border-radius: 50%;
   color: var(--label-3);
-  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) ease, color var(--dur-hover) ease;
+  transition: transform var(--press-release-dur) var(--ease-press-spring),
+    background-color var(--dur-hover) ease, color var(--dur-hover) ease;
 }
-
-.focus-start:active { transform: scale(0.94); }
 
 .focus-play {
   width: 14px;
