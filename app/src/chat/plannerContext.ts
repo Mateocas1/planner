@@ -35,6 +35,9 @@ export type ContextTask = {
 export type PlannerSnapshot = {
   blocks: ContextBlock[];
   tasks: ContextTask[];
+  /** Holiday labels (ronda4 S4): the context text and the read/hide tools
+   * see the user's own classification. Optional so older fixtures compile. */
+  holidays?: Array<{ id: string; date: string; title: string; kind: string; hidden?: boolean }>;
 };
 
 const WEEK_DAYS = 7;

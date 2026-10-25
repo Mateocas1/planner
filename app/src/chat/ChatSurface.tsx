@@ -32,7 +32,21 @@ import { buildExtractionRequest, parseMemoryOps } from "./memoryExtract.ts";
 import type { Memory } from "./memoryStore.ts";
 import { createMockTransport } from "./mockTransport.ts";
 import { buildSystemPrompt } from "./systemPrompt.ts";
-import { validateToolCall, type ChatToolContext, type NormalizedCreateTask, type NormalizedMoveTask } from "./tools.ts";
+import {
+  buildGetTaskResult,
+  buildListHolidaysResult,
+  buildListMemoriesResult,
+  buildListTasksResult,
+  isReadTool,
+  validateToolCall,
+  type ChatToolContext,
+  type NormalizedCreateTask,
+  type NormalizedGetTask,
+  type NormalizedListTasks,
+  type NormalizedMoveTask,
+  type ReadResult,
+} from "./tools.ts";
+import { setChatReadExecutor, type ChatReadOutcome } from "./readTools.ts";
 import { createTauriChatTransport } from "./tauriTransport.ts";
 import type { ChatToolCall, ChatTransport } from "./types.ts";
 import { usePlannerSnapshot } from "./usePlannerSnapshot.ts";
@@ -105,7 +119,13 @@ export function ChatSurface({
    * confirm from the live refs, so ids, titles and `todayKey` are current. */
   const buildToolContext = useCallback((): ChatToolContext => {
     const live = liveRef.current;
-    return { tasks: live.snapshot.tasks, timeZone: live.timeZone, todayKey: dateKey(new Date(), live.timeZone) };
+    return {
+      tasks: live.snapshot.tasks,
+      blocks: live.snapshot.blocks,
+      holidays: live.snapshot.holidays,
+      timeZone: live.timeZone,
+      todayKey: dateKey(new Date(), live.timeZone),
+    };
   }, []);
 
   // R1 (spec S1) + ronda4 (S4): the confirm flow. Validation is pure
@@ -188,6 +208,39 @@ export function ChatSurface({
     },
     [uid, buildToolContext],
   );
+
+  /** Reads (S4): run the moment the model proposes them — no confirmation.
+   * Validation is the same pure rules the card used; the data comes from the
+   * live context (tasks, blocks, holidays) or the live notes store, never
+   * from the render that happened to be on screen when the request started. */
+  const executeReadTool = useCallback(
+    async (call: ChatToolCall): Promise<ChatReadOutcome> => {
+      if (!isReadTool(call.name)) return { ok: false, error: `Unknown action "${call.name}".` };
+      const toolContext = buildToolContext();
+      const check = validateToolCall(call, toolContext);
+      if (!check.ok) return { ok: false, error: check.error };
+      const found = ({ summary, result }: ReadResult): ChatReadOutcome => ({ ok: true, summary, result });
+      if (call.name === "list_tasks") return found(buildListTasksResult(check.value as NormalizedListTasks, toolContext));
+      if (call.name === "get_task") return found(buildGetTaskResult((check.value as NormalizedGetTask).taskId, toolContext));
+      if (call.name === "list_holidays") return found(buildListHolidaysResult(toolContext));
+      // list_memories reads the live notes store, not the render-time mirror.
+      try {
+        const notes = await backend.list();
+        return found(buildListMemoriesResult(notes));
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    [backend, buildToolContext],
+  );
+
+  // The panel's own useChat call site is owned by another worker, so the
+  // executor is installed through the readTools registry (see that module's
+  // header) instead of a new panel prop.
+  useEffect(() => {
+    setChatReadExecutor(executeReadTool);
+    return () => setChatReadExecutor(null);
+  }, [executeReadTool]);
 
   const onConversationEnd = useCallback(
     (turns: ChatTurn[]) => {

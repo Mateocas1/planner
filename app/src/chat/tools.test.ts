@@ -3,14 +3,22 @@ import test from "node:test";
 import {
   CHAT_TOOLS,
   MAX_TOOL_CALLS_PER_ANSWER,
+  buildGetTaskResult,
+  buildListHolidaysResult,
+  buildListMemoriesResult,
+  buildListTasksResult,
   checkCreateTask,
+  checkGetTask,
+  checkListTasks,
   checkMoveTask,
   describeToolCall,
+  isReadTool,
   isValidDayKey,
   toolResultContent,
   validateToolCall,
   type ChatToolContext,
 } from "./tools.ts";
+import type { Memory } from "./memoryStore.ts";
 
 const context: ChatToolContext = {
   tasks: [
@@ -21,20 +29,47 @@ const context: ChatToolContext = {
   todayKey: "2026-10-29",
 };
 
-test("the two tools carry OpenAI function schemas with required fields", () => {
+const readContext: ChatToolContext = {
+  tasks: [
+    { id: "t1", title: "Pay the invoice", deadline: "2026-10-28", estimateMinutes: 45 },
+    { id: "t2", title: "Deep clean", estimateMinutes: 90, completed: true },
+    { id: "t3", title: "Milk the moment" },
+  ],
+  blocks: [
+    { id: "b1", start: "2026-10-30T14:00:00Z", end: "2026-10-30T14:45:00Z", taskId: "t1" },
+  ],
+  holidays: [
+    { id: "h1", date: "2026-11-02", title: "Independence Day", kind: "public" },
+    { id: "h2", date: "2026-11-01", title: "Halloween", kind: "observance", hidden: true },
+  ],
+  timeZone: "UTC",
+  todayKey: "2026-10-29",
+};
+
+test("the tools carry OpenAI function schemas; reads are marked and ride every request", () => {
   assert.deepEqual(
     CHAT_TOOLS.map(tool => tool.function.name),
-    ["create_task", "move_task"],
+    ["create_task", "move_task", "list_tasks", "get_task", "list_holidays", "list_memories"],
   );
   for (const tool of CHAT_TOOLS) {
     assert.equal(tool.type, "function");
     assert.equal(typeof tool.function.description, "string");
     assert.equal(tool.function.parameters.type, "object");
   }
+  // Reads never confirm; writes do.
+  assert.deepEqual(CHAT_TOOLS.filter(tool => isReadTool(tool.function.name)).map(tool => tool.function.name), [
+    "list_tasks",
+    "get_task",
+    "list_holidays",
+    "list_memories",
+  ]);
+  assert.equal(isReadTool("create_task"), false);
+  assert.equal(isReadTool("delete_everything"), false);
   // move_task must name its id and day requirements so the model sends them.
   assert.ok((MOVE_REQUIRED("move_task") as string[]).includes("taskId"));
   assert.ok((MOVE_REQUIRED("move_task") as string[]).includes("day"));
   assert.ok(!(MOVE_REQUIRED("create_task") as string[]).includes("day"), "day stays optional for create");
+  assert.ok(!(MOVE_REQUIRED("list_tasks") as string[]).includes("fromDay"), "read filters stay optional");
 });
 
 function MOVE_REQUIRED(name: string): unknown {
@@ -212,4 +247,114 @@ test("toolResultContent: a write outcome's result (ids and fields) rides to the 
   assert.match(content, /id=t9/);
   // Without a result the outcome is the fallback, exactly as before.
   assert.match(toolResultContent({ status: "confirmed", outcome: "Task created." }), /Task created\./);
+});
+
+/* ---------- read tools (S4): pure validation and results ---------- */
+
+test("list_tasks validates its filters purely", () => {
+  const ok = checkListTasks('{"fromDay":"2026-10-29","toDay":"2026-11-04","query":"milk"}', readContext);
+  assert.ok(ok.ok);
+  assert.deepEqual(ok.value, { fromDay: "2026-10-29", toDay: "2026-11-04", query: "milk", includeCompleted: false });
+  assert.match(ok.description, /Look up tasks/);
+  const emptyArgs = checkListTasks("{}", readContext);
+  assert.ok(emptyArgs.ok, "no filters is fine");
+  const reversed = checkListTasks('{"fromDay":"2026-11-04","toDay":"2026-10-29"}', readContext);
+  assert.ok(!reversed.ok);
+  assert.match(reversed.ok ? "" : reversed.error, /fromDay/);
+  const badDay = checkListTasks('{"fromDay":"soon"}', readContext);
+  assert.ok(!badDay.ok);
+  const badCompleted = checkListTasks('{"includeCompleted":"yes"}', readContext);
+  assert.ok(!badCompleted.ok);
+  const longQuery = checkListTasks(JSON.stringify({ query: "x".repeat(121) }), readContext);
+  assert.ok(!longQuery.ok);
+  assert.ok(checkListTasks(JSON.stringify({ query: "x".repeat(120) }), readContext).ok, "120 chars is fine");
+  assert.ok(!checkListTasks("42", readContext).ok);
+});
+
+test("get_task validates the id against the live context", () => {
+  const ok = checkGetTask('{"taskId":"t1"}', readContext);
+  assert.ok(ok.ok);
+  assert.match(ok.description, /Pay the invoice/);
+  const ghost = checkGetTask('{"taskId":"ghost"}', readContext);
+  assert.ok(!ghost.ok);
+  assert.match(ghost.ok ? "" : ghost.error, /not in your planner/);
+  assert.ok(!checkGetTask("{}", readContext).ok);
+});
+
+test("buildListTasksResult filters, reports ids and respects the caps", () => {
+  const all = buildListTasksResult({ includeCompleted: false }, readContext);
+  assert.equal(all.summary, "2 tasks found.");
+  assert.match(all.result, /\[t1\] "Pay the invoice" · due Wed, Oct 28 · tomorrow 14:00–14:45 · 45 min/);
+  assert.match(all.result, /\[t3\] "Milk the moment" · no due date/);
+  assert.doesNotMatch(all.result, /Deep clean/, "completed tasks stay out unless asked");
+
+  const withCompleted = buildListTasksResult({ includeCompleted: true }, readContext);
+  assert.match(withCompleted.result, /Deep clean.*done/);
+
+  const byQuery = buildListTasksResult({ includeCompleted: false, query: "MILK" }, readContext);
+  assert.equal(byQuery.summary, "1 task found.");
+  assert.match(byQuery.result, /\[t3\]/);
+
+  // A block inside the range matches a task with no deadline in it.
+  const byBlock = buildListTasksResult({ fromDay: "2026-10-30", toDay: "2026-10-30", includeCompleted: false }, readContext);
+  assert.match(byBlock.result, /\[t1\]/);
+  assert.doesNotMatch(byBlock.result, /\[t3\]/);
+
+  const none = buildListTasksResult({ query: "nothing-matches", includeCompleted: false }, readContext);
+  assert.equal(none.summary, "No matching tasks found.");
+
+  // Cap: 40 tasks, cap 30.
+  const many: ChatToolContext["tasks"] = Array.from({ length: 40 }, (_, index) => ({
+    id: `m${index}`,
+    title: `Task ${index}`,
+  }));
+  const capped = buildListTasksResult({ includeCompleted: false }, { ...readContext, tasks: many });
+  assert.match(capped.result, /\(\+10 more\)/);
+  assert.equal(capped.result.split("\n").length, 31);
+});
+
+test("buildGetTaskResult reports one task with its blocks; list_holidays flags hidden ones", () => {
+  const one = buildGetTaskResult("t1", readContext);
+  assert.equal(one.summary, '"Pay the invoice"');
+  assert.match(one.result, /\[t1\].*14:00–14:45/);
+  const unplaced = buildGetTaskResult("t3", readContext);
+  assert.match(unplaced.result, /not placed on the schedule/);
+
+  const holidays = buildListHolidaysResult(readContext);
+  assert.equal(holidays.summary, "2 holidays found.");
+  assert.match(holidays.result, /\[h2\].*hidden/, "hidden holidays are flagged, never dropped");
+  assert.match(holidays.result, /\[h1\].*Independence Day/);
+  assert.equal(buildListHolidaysResult({ ...readContext, holidays: [] }).summary, "No holidays found.");
+});
+
+test("buildListMemoriesResult lists notes newest first with their topicKeys", () => {
+  const notes: Memory[] = [
+    { id: "m1", topicKey: "planning-style", title: "Prefers short answers", content: "Short, concrete.", updatedAt: 10 },
+    { id: "m2", topicKey: "timezone", title: "Lives in UTC", content: "Profile zone is UTC.", updatedAt: 20 },
+  ];
+  const found = buildListMemoriesResult(notes);
+  assert.equal(found.summary, "2 notes found.");
+  const order = found.result.indexOf("[timezone]");
+  assert.ok(order >= 0 && order < found.result.indexOf("[planning-style]"), "newest first");
+  assert.equal(buildListMemoriesResult([]).summary, "No notes found.");
+});
+
+test("toolResultContent: a read's result is the data, no confirmation wording", () => {
+  const content = toolResultContent({ status: "read", outcome: "2 tasks found.", result: "- [t1] one" });
+  assert.match(content, /Result: /);
+  assert.match(content, /\[t1\]/);
+  assert.doesNotMatch(content, /confirm/i);
+  assert.match(toolResultContent({ status: "read" }), /no data/);
+});
+
+test("validateToolCall routes the reads", () => {
+  assert.ok(validateToolCall({ name: "list_tasks", arguments: "{}" }, readContext).ok);
+  assert.ok(validateToolCall({ name: "get_task", arguments: '{"taskId":"t1"}' }, readContext).ok);
+  assert.ok(validateToolCall({ name: "list_holidays", arguments: "{}" }, readContext).ok);
+  assert.ok(validateToolCall({ name: "list_memories", arguments: "{}" }, readContext).ok);
+  assert.ok(!validateToolCall({ name: "get_task", arguments: '{"taskId":"ghost"}' }, readContext).ok);
+  const listed = validateToolCall({ name: "list_tasks", arguments: '{"query":"milk"}' }, readContext);
+  assert.ok(listed.ok);
+  const described = describeToolCall({ name: "list_tasks", arguments: '{"query":"milk"}' }, readContext);
+  assert.match(described, /matching "milk"/);
 });

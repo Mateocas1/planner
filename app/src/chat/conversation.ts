@@ -17,8 +17,10 @@ import type { ChatEvent, ChatErrorCode } from "./types.ts";
 
 /** The lifecycle of one proposed tool call on its action card (spec S1).
  * `pending` waits for the user; the others are terminal and become the `tool`
- * message the next request sends back to the model. */
-export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed";
+ * message the next request sends back to the model. `read` is a read tool
+ * the hook executed without asking (S4): it resolves on its own, never
+ * behind Confirm/Discard buttons. */
+export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed" | "read";
 
 export type ToolCallCard = {
   /** The model's call id; the `tool` message answers it by this id. */
@@ -72,7 +74,7 @@ export type ConversationAction =
   | { type: "stop" }
   | { type: "retry"; id: string }
   | { type: "newChat" }
-  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed"; outcome?: string; result?: string };
+  | { type: "toolCallResolved"; callId: string; status: "confirmed" | "discarded" | "failed" | "read"; outcome?: string; result?: string };
 
 export const emptyConversation: ConversationState = { turns: [], phase: "idle", requestId: null, error: null };
 
