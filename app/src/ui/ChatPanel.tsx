@@ -11,6 +11,7 @@ import { browserTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
 import { dateKey } from "./time.ts";
 import { dur, easeOutBackCss, ms } from "./motion.ts";
+import { useSwipeDismiss } from "./useSwipeDismiss.ts";
 import { matchesEvent, parseAccelerator, useShortcutBinding } from "./settings/shortcutRegistry.ts";
 import { CallsDroppedNote, ChatActionCard } from "./ChatActionCard.tsx";
 import { CloseIcon } from "./icons.tsx";
@@ -32,6 +33,20 @@ import "./ChatPanel.css";
  * `inert`, `chat-panel-out` plays, and `animationend` — with a ~200 ms
  * timeout fallback — hides it). The exit never cancels an in-flight stream:
  * the request keeps running hidden, so reopening shows the finished answer.
+ *
+ * Swipe to dismiss (Ronda 4 S1, task T5): the panel shares the sheets'
+ * gesture language through useSwipeDismiss — a drag on its header
+ * (`data-drag-handle`) or on non-text, non-scrolled surface follows the
+ * pointer, and a release past the distance/velocity thresholds flies the
+ * panel out in the drag direction carrying the release velocity, then runs
+ * the ordinary close path above (same `setOpen(false)`, same focus return,
+ * `onConversationEnd` timing unchanged). The commit flight ends by holding
+ * the panel invisible inline, so the CSS exit starts hidden instead of
+ * flashing back to rest; the hook clears its styles when the panel is
+ * active again. On the phone breakpoint the panel is the full viewport
+ * (radius 0), so the drag rounds its corners 0 → 28 px with a
+ * `clip-path: inset(0 round …)` as it shrinks; desktop keeps its
+ * `--r-sheet` corners.
  */
 
 /** The result of one confirmed (or failed) proposal, rendered on the card and
@@ -269,6 +284,7 @@ export function ChatPanel({
   const chatChord = useShortcutBinding("chat");
 
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -287,6 +303,21 @@ export function ChatPanel({
    * inert until `animationend` (or the fallback timer) hides it. */
   const [closing, setClosing] = useState(false);
   const closeFallback = useRef<number | null>(null);
+  /** The latest open state, read by the gesture's declined-commit probe. */
+  const openRef = useRef(open);
+  openRef.current = open;
+  // Swipe to dismiss (S1): the sheet's exact gesture language on the chat
+  // panel. The header is the drag handle; listeners run only while the panel
+  // is open. A commit flies the panel out, then closes it through the
+  // ordinary path — the same `setOpen(false)` Esc and the close button use.
+  useSwipeDismiss({
+    surfaceRef: panelRef,
+    handleSelector: ".chat-head",
+    reduced,
+    active: open,
+    onDismiss: () => setOpen(false),
+    closeStarted: () => !openRef.current,
+  });
   /** The send button's rect at the last submit: the user bubble's flight
    * origin (S3). Consumed by the flight effect so it never re-flies. */
   const [sendOrigin, setSendOrigin] = useState<SendOrigin | null>(null);
@@ -546,6 +577,7 @@ export function ChatPanel({
         <ChatIcon />
       </button>
       <section
+        ref={panelRef}
         className="chat-panel glass glass-thick"
         data-open={open}
         data-closing={closing || undefined}

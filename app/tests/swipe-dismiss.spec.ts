@@ -91,9 +91,14 @@ function swipeState(page: Page) {
     const sheet = document.querySelector<HTMLElement>(".sheet");
     const scrim = document.querySelector<HTMLElement>(".scrim");
     if (!sheet || !scrim) return null;
+    const computed = getComputedStyle(sheet);
+    const clip = computed.clipPath.match(/inset\(0px round ([\d.]+)px\)/);
     return {
       transform: sheet.style.transform,
-      radius: parseFloat(getComputedStyle(sheet).borderTopLeftRadius),
+      radius: clip ? parseFloat(clip[1]) : 0,
+      // The resting border-radius must stay untouched while the gesture
+      // rounds the corners on clip-path instead.
+      borderRadius: parseFloat(computed.borderTopLeftRadius),
       scrimOpacity: scrim.style.opacity,
     };
   });
@@ -183,6 +188,50 @@ test.describe("mouse", () => {
     await page.mouse.up();
     await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
     await clearedUp(page);
+  });
+
+  test("a committed swipe holds the sheet invisible from the flight's end to the unmount", async ({ page }) => {
+    // A creation sheet: not shared, so the commit takes the real flight path
+    // (a task-details sheet closes through the view transition, which owns
+    // the close and never flies).
+    await signUp(page, newEmail("swipe-invisible-exit"));
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await nav.getByRole("button", { name: "Tasks" }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    await expect(page.getByRole("complementary", { name: "New task" })).toBeVisible();
+    await settle(page);
+    // The commit flight's `done` (useSwipeDismiss) cancels the flight, clears
+    // its `fill: forwards` hold and leaves the sheet holding an inline
+    // `opacity: 0` before the close path runs, so the presence exit starts
+    // hidden instead of flashing back to rest. Record every inline opacity-0
+    // write on the sheet and its removal, in order, and pin that sequence.
+    await page.evaluate(() => {
+      const events: string[] = [];
+      (window as unknown as { __sheetExitEvents?: string[] }).__sheetExitEvents = events;
+      const observer = new MutationObserver(records => {
+        for (const record of records) {
+          if (record.type === "attributes") {
+            const target = record.target as HTMLElement;
+            if (target.classList.contains("sheet") && target.style.opacity === "0") events.push("opacity0");
+          } else if (record.type === "childList") {
+            for (const node of record.removedNodes) {
+              if (node instanceof HTMLElement && node.querySelector(".sheet")) events.push("removed");
+              if (node instanceof HTMLElement && node.classList.contains("sheet")) events.push("removed");
+            }
+          }
+        }
+      });
+      observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+    });
+    const from = await handlePoint(page);
+    await dragMouse(page, from, { x: from.x + 300, y: from.y });
+    await expect(page.locator(".sheet")).toHaveCount(0);
+    const events = await page.evaluate(() => (window as unknown as { __sheetExitEvents?: string[] }).__sheetExitEvents ?? []);
+    // The sheet went to inline opacity 0 before anything removed it: the exit
+    // starts hidden (the extraction's deliberate change over the old Sheet
+    // code, pinned here).
+    expect(events, JSON.stringify(events)).toContain("opacity0");
+    expect(events.indexOf("opacity0"), JSON.stringify(events)).toBeLessThan(events.indexOf("removed"));
   });
 
   test("a mouse drag on body copy selects text and never moves the sheet", async ({ page }) => {
@@ -323,8 +372,10 @@ test.describe("touch, phone viewport", () => {
     const mid = await readAtMidway(page, from, { x: from.x, y: from.y + 280 });
     expect(mid!.transform).toContain("translate(");
     // Phone only: the corners round as the sheet shrinks (S1). The inset phone
-    // sheet rests at --r-sheet (26 px), so the drag grows the radius past it.
+    // sheet rests at --r-sheet (26 px), so the drag grows the radius past it --
+    // on clip-path, while the CSS border-radius stays at rest.
     expect(mid!.radius).toBeGreaterThan(26);
+    expect(mid!.borderRadius).toBeCloseTo(26, 0);
     expect(parseFloat(mid!.scrimOpacity)).toBeLessThan(1);
     await expect(page.locator(".sheet")).toHaveCount(0);
   });

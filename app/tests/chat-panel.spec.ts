@@ -468,3 +468,318 @@ test("tool cards: the outcome rides to the next request as tool messages (R1, S1
     )
     .toBe(true);
 });
+
+/* ---------------------------------------------------------------------------
+ * Swipe to dismiss (Ronda 4 T5, S1): the panel shares the sheets' gesture
+ * language through useSwipeDismiss. A drag on the header or plain surface
+ * follows the pointer; past the distance/velocity thresholds the panel closes
+ * through its ordinary close path, shorter drags spring back. The thread
+ * scroller and text selection never become gestures.
+ * ------------------------------------------------------------------------- */
+
+type Point = { x: number; y: number };
+
+/** A point on the drag handle (the header), away from its buttons. */
+async function headerPoint(page: Page): Promise<Point> {
+  const box = (await panel(page).locator(".chat-head").boundingBox())!;
+  return { x: box.x + 30, y: box.y + box.height / 2 };
+}
+
+async function dragMouse(page: Page, from: Point, to: Point, steps = 6): Promise<void> {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= steps; step += 1) {
+    await page.mouse.move(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps);
+  }
+  await page.mouse.up();
+}
+
+/** What the gesture wrote on the panel, read mid-drag. */
+function swipeState(page: Page) {
+  return page.evaluate(() => {
+    const element = document.querySelector<HTMLElement>(".chat-panel");
+    if (!element) return null;
+    const clip = getComputedStyle(element).clipPath.match(/inset\(0px round ([\d.]+)px\)/);
+    return {
+      transform: element.style.transform,
+      radius: clip ? parseFloat(clip[1]) : 0,
+      opacity: element.style.opacity,
+    };
+  });
+}
+
+/** The panel's inline gesture styles are gone again after a snap-back. */
+async function clearedUp(page: Page) {
+  await expect
+    .poll(async () => (await swipeState(page))?.transform ?? "", { timeout: 5_000 })
+    .toBe("");
+}
+
+/** Real touch input over CDP: trusted pointer events with a live pointer id. */
+async function touchSwipe(page: Page, from: Point, to: Point, { steps = 10, moveDelayMs = 0 }: { steps?: number; moveDelayMs?: number } = {}): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const point = (step: number): Point => ({
+    x: from.x + ((to.x - from.x) * step) / steps,
+    y: from.y + ((to.y - from.y) * step) / steps,
+  });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...point(0), id: 1 }] });
+  for (let step = 1; step <= steps; step += 1) {
+    if (moveDelayMs) await page.waitForTimeout(moveDelayMs);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...point(step), id: 1 }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+/** A scrollable thread: a textless spacer the scroller can move over. */
+async function makeThreadScrollable(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const column = document.querySelector(".chat-column");
+    const spacer = document.createElement("div");
+    spacer.id = "test-spacer";
+    spacer.style.height = "1200px";
+    column!.appendChild(spacer);
+  });
+  await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>(".chat-scroll")!;
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+}
+
+test.describe("swipe to dismiss (T5, S1)", () => {
+  test("a short drag on the header follows the finger and snaps back, keeping the panel open", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    const from = await headerPoint(page);
+
+    // 100 px is past the 8 px slop but under the commit threshold (~35% of the
+    // panel's size), and the moves are spaced past the velocity window so the
+    // release carries no flick: the panel follows, then springs back.
+    let mid: Awaited<ReturnType<typeof swipeState>> = null;
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 4; step += 1) {
+      await page.mouse.move(from.x - (100 * step) / 4, from.y);
+      await page.waitForTimeout(130);
+    }
+    mid = await swipeState(page);
+    await page.mouse.up();
+
+    expect(mid, "the gesture wrote its state mid-drag").not.toBeNull();
+    expect(mid!.transform).toContain("translate(");
+    expect(mid!.transform).toContain("scale(");
+    await clearedUp(page);
+    await expect(panel(page)).toHaveAttribute("data-open", "true");
+  });
+
+  test("a long drag left closes the panel; focus returns to the launcher and a reopen is clean", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    const from = await headerPoint(page);
+    await dragMouse(page, from, { x: from.x - 300, y: from.y });
+    // The ordinary close path ran: hidden, and the caret back on the launcher.
+    await expect(panel(page)).toBeHidden();
+    await expect(launcher(page)).toBeFocused();
+    // Reopening after a swipe close starts from a clean panel: the commit
+    // flight's hold must never survive into the next open.
+    await page.keyboard.press("Control+j");
+    await expect(panel(page)).toHaveAttribute("data-open", "true");
+    await expect(panel(page)).toBeVisible();
+    await expect(field(page)).toBeFocused();
+    expect((await swipeState(page))!.transform).toBe("");
+    // The hook reactivated clean (dismissed state and styles reset): a second
+    // swipe commit still closes the panel through the same path.
+    await settleAnimations(page); // the reopened entrance owns the box until it lands
+    const second = await headerPoint(page);
+    await dragMouse(page, second, { x: second.x - 300, y: second.y });
+    await expect(panel(page)).toBeHidden();
+    await expect(launcher(page)).toBeFocused();
+    // And the panel opens a third time, still clean.
+    await page.keyboard.press("Control+j");
+    await expect(panel(page)).toBeVisible();
+    expect((await swipeState(page))!.transform).toBe("");
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+  });
+
+  test("a commit flight cancelled mid-flight never runs the close path's hold", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    // Record the panel's inline opacity-0 write (the commit flight's end hold)
+    // and the exit's data-closing, in order. The close path's hold belongs
+    // before the exit; a flight the cleanup cancelled (Escape mid-flight) must
+    // never run `done` and write it afterwards.
+    await page.evaluate(() => {
+      const events: string[] = [];
+      (window as unknown as { __panelFlightEvents?: string[] }).__panelFlightEvents = events;
+      const observer = new MutationObserver(records => {
+        for (const record of records) {
+          const target = record.target as HTMLElement;
+          if (record.type === "attributes" && target.classList.contains("chat-panel")) {
+            if (target.style.opacity === "0") events.push("opacity0");
+            if (target.hasAttribute("data-closing")) events.push("closing");
+          }
+        }
+      });
+      observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["style", "data-closing"] });
+    });
+    const from = await headerPoint(page);
+    // A long left drag commits with a flight of up to 300 ms; Escape lands
+    // inside it, the panel closes through the ordinary path, and the hook's
+    // cleanup cancels the flight. Either way the hold write, if any, must
+    // precede the exit.
+    await dragMouse(page, from, { x: from.x - 400, y: from.y });
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+    const events = await page.evaluate(
+      () => (window as unknown as { __panelFlightEvents?: string[] }).__panelFlightEvents ?? [],
+    );
+    const hold = events.indexOf("opacity0");
+    if (hold !== -1) {
+      expect(events.indexOf("closing"), JSON.stringify(events)).toBeGreaterThan(hold);
+    }
+    // Whatever happened mid-flight, the close was the ordinary one: the
+    // launcher has the caret back.
+    await expect(launcher(page)).toBeFocused();
+  });
+
+  test("a fast flick down closes the panel from a distance the threshold alone would reject", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    const from = await headerPoint(page);
+    // Three coarse moves in quick succession: ~120 px, well under the distance
+    // threshold, but released fast enough to read as a throw.
+    await dragMouse(page, from, { x: from.x, y: from.y + 120 }, 3);
+    await expect(panel(page)).toBeHidden();
+    await expect(launcher(page)).toBeFocused();
+  });
+
+  test("a drag down inside the thread scroller never closes the panel", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await settleAnimations(page);
+    await makeThreadScrollable(page);
+    const scroller = panel(page).locator(".chat-scroll");
+    const box = (await scroller.boundingBox())!;
+    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const scrollTop = await scroller.evaluate(element => element.scrollTop);
+    await dragMouse(page, from, { x: from.x, y: from.y + 200 });
+    // The scroller can still move toward the start, so the drag belongs to it,
+    // not to the dismissal: the panel never followed and never closed.
+    await clearedUp(page);
+    await expect(panel(page)).toHaveAttribute("data-open", "true");
+    expect(await scroller.evaluate(element => element.scrollTop)).toBe(scrollTop);
+  });
+
+  test("a mouse drag across a message selects its text and never moves the panel", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPanel(page);
+    await field(page).fill("Selectable message");
+    await field(page).press("Enter");
+    const bubble = panel(page).locator(".chat-user").last();
+    await expect(bubble).toBeVisible();
+    // The send flight (S3) is still moving the bubble right after it appears:
+    // wait for its animations to finish, or the box measured below lands off
+    // the text and the drag reads as a surface gesture instead of a selection.
+    await bubble
+      .evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)))
+      .catch(() => {}); // an interrupted animation rejects; the box is stable by then
+    // Drag across the text span itself: a drag on the pill's padding is plain
+    // surface and would be a gesture (covered by the surface test on the
+    // sheet); the message's text belongs to selection.
+    const box = (await bubble.locator(".chat-user-text").boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 5 });
+    const mid = await swipeState(page);
+    await page.mouse.up();
+    // The drag selected copy, and the panel never followed: the gesture never
+    // started, so `user-select: none` never took hold either.
+    const selected = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+    expect(selected.trim().length, "the drag selected message text").toBeGreaterThan(0);
+    expect(mid!.transform, "the panel stayed at rest").toBe("");
+    await expect(panel(page)).toHaveAttribute("data-open", "true");
+  });
+
+  test.describe("touch, phone viewport (full-screen panel)", () => {
+    test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+
+    test("a down drag rounds the corners 0 → 28 px while the panel shrinks, then closes", async ({ page }) => {
+      test.setTimeout(60_000);
+      await openPanel(page);
+      await settleAnimations(page);
+      // The phone breakpoint: the panel is the full viewport, resting radius 0.
+      const box = (await panel(page).boundingBox())!;
+      expect(box.width).toBe(390);
+      expect(box.height).toBe(844);
+      expect((await swipeState(page))!.radius).toBe(0);
+      const from = await headerPoint(page);
+      let mid: Awaited<ReturnType<typeof swipeState>> = null;
+      const cdp = await page.context().newCDPSession(page);
+      const point = (step: number): Point => ({ x: from.x, y: from.y + (320 * step) / 10 });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...point(0), id: 1 }] });
+      for (let step = 1; step <= 10; step += 1) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...point(step), id: 1 }] });
+        if (step === 5) mid = await swipeState(page);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp.detach();
+      // Phone only: the corners round from 0 as the panel shrinks (S1).
+      expect(mid!.transform).toContain("translate(");
+      expect(mid!.radius).toBeGreaterThan(4);
+      await expect(panel(page)).toBeHidden();
+    });
+
+    test("a down drag in the scrolled thread scrolls instead of closing", async ({ page }) => {
+      test.setTimeout(60_000);
+      await openPanel(page);
+      await settleAnimations(page);
+      await makeThreadScrollable(page);
+      const scroller = panel(page).locator(".chat-scroll");
+      const box = (await scroller.boundingBox())!;
+      const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const scrollTop = await scroller.evaluate(element => element.scrollTop);
+      expect(scrollTop).toBeGreaterThan(0);
+      await touchSwipe(page, from, { x: from.x, y: from.y + 200 }, { moveDelayMs: 40 });
+      // The browser kept the pan (the scroller could move toward the start):
+      // the thread scrolled and the panel is still open.
+      await expect(panel(page)).toHaveAttribute("data-open", "true");
+      expect(await scroller.evaluate(element => element.scrollTop)).toBeLessThan(scrollTop);
+      await clearedUp(page);
+    });
+  });
+
+  test.describe("reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("the panel never follows, and a past-threshold release still closes", async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await openPanel(page);
+      // The reduced entrance is still an animation on the panel, and a
+      // pointerdown while it runs is refused (an entry flight owns the box).
+      await settleAnimations(page);
+      const from = await headerPoint(page);
+      let mid: Awaited<ReturnType<typeof swipeState>> = null;
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let step = 1; step <= 4; step += 1) await page.mouse.move(from.x, from.y + (300 * step) / 4);
+      mid = await swipeState(page);
+      await page.mouse.up();
+      expect(mid, "nothing followed the pointer").not.toBeNull();
+      expect(mid!.transform).toBe("");
+      await expect(panel(page)).toBeHidden();
+      await expect(launcher(page)).toBeFocused();
+    });
+  });
+});
