@@ -35,7 +35,7 @@ You have **two blocks** left, and the *Deep Work* session on the chat panel is n
 
 If you want to plan tomorrow, just ask with \`plan tomorrow\` — details in [the planner guide](https://example.com/planner-guide).`;
 
-export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit" | "agent-delete" | "agent-holiday";
+export type MockScenario = "answer" | "error" | "tools" | "agent-read" | "agent-edit" | "agent-delete" | "agent-holiday" | "agent-memory";
 
 export function createMockTransport(scenario: MockScenario = "answer"): MockChatTransport {
   /** Pending timers per request id, so `cancel` stops the whole chain. */
@@ -115,6 +115,15 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           let call: { id: string; name: string; args: string };
           if (scenario === "agent-read") {
             call = { id: "call_read", name: "list_tasks", args: JSON.stringify({ includeCompleted: true }) };
+          } else if (scenario === "agent-memory") {
+            // First call saves a note; once its card is confirmed, the
+            // follow-up call forgets it by the topic key from the tool
+            // result — the model-side counterpart of the memory tools.
+            const remembered = request.messages.map(message => message.content).find(content => content.includes("(topic ")) ?? "";
+            const topicKey = /\(topic ([\w-]+)\)/.exec(remembered)?.[1];
+            call = topicKey === undefined
+              ? { id: "call_remember", name: "remember", args: JSON.stringify({ title: "Prefers morning planning", content: "The user plans their day before 09:00." }) }
+              : { id: "call_forget", name: "forget", args: JSON.stringify({ topicKey }) };
           } else if (scenario === "agent-delete" || scenario === "agent-holiday") {
             // The id comes from the planner context, exactly like the real
             // model's: the seeded row must already be visible to the request.

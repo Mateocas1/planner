@@ -40,16 +40,19 @@ import {
   buildListHolidaysResult,
   buildListMemoriesResult,
   buildListTasksResult,
+  deriveTopicKey,
   isReadTool,
   validateToolCall,
   type ChatToolContext,
   type NormalizedCompleteTask,
   type NormalizedCreateTask,
   type NormalizedDeleteTask,
+  type NormalizedForget,
   type NormalizedGetTask,
   type NormalizedHideHoliday,
   type NormalizedListTasks,
   type NormalizedMoveTask,
+  type NormalizedRemember,
   type NormalizedUpdateTask,
   type ReadResult,
 } from "./tools.ts";
@@ -57,6 +60,7 @@ import { setChatReadExecutor, type ChatReadOutcome } from "./readTools.ts";
 import { createTauriChatTransport } from "./tauriTransport.ts";
 import type { ChatToolCall, ChatTransport } from "./types.ts";
 import { usePlannerSnapshot } from "./usePlannerSnapshot.ts";
+import { MEMORIES_CHANGED_EVENT } from "./memoryStore.ts";
 
 export function ChatSurface({
   signedIn,
@@ -102,6 +106,13 @@ export function ChatSurface({
   useEffect(() => {
     void refreshMemories();
   }, [refreshMemories]);
+
+  /** The AI settings memory list refreshes when the notes change under it
+   * (a confirmed remember/forget, or extraction): one window event, one
+   * listener in the settings tab. */
+  const notifyMemoriesChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(MEMORIES_CHANGED_EVENT));
+  }, []);
 
   // The live view of the planner, mirrored on every render so per-request
   // builders read the latest committed store state (see the header comment).
@@ -281,12 +292,33 @@ export function ChatSurface({
               : `Holiday "${value.title}" hidden — the calendar shows it no more (the Holidays sheet can bring it back).`,
           };
         }
+        if (call.name === "remember") {
+          const value = check.value as NormalizedRemember;
+          const topicKey = value.topicKey ?? deriveTopicKey(value.title);
+          setLatestMemories(await backend.apply([{ op: "upsert", topicKey, title: value.title, content: value.content }]));
+          notifyMemoriesChanged();
+          return {
+            status: "confirmed",
+            message: `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
+          };
+        }
+        if (call.name === "forget") {
+          const value = check.value as NormalizedForget;
+          // The note's existence is checked against the LIVE store: a topic
+          // proposed from a stale notes block must fail, never no-op.
+          const current = await backend.list();
+          const note = current.find(memory => memory.topicKey === value.topicKey);
+          if (note === undefined) return { status: "failed", message: `That topic (${value.topicKey}) is not in your notes.` };
+          setLatestMemories(await backend.apply([{ op: "delete", topicKey: value.topicKey }]));
+          notifyMemoriesChanged();
+          return { status: "confirmed", message: `Removed the note "${note.title}".` };
+        }
         return { status: "failed", message: `Unknown action "${call.name}".` };
       } catch (error) {
         return { status: "failed", message: error instanceof Error ? error.message : String(error) };
       }
     },
-    [uid, buildToolContext],
+    [uid, buildToolContext, backend, notifyMemoriesChanged],
   );
 
   /** Reads (S4): run the moment the model proposes them — no confirmation.
@@ -337,13 +369,14 @@ export function ChatSurface({
           const ops = parseMemoryOps(raw);
           if (ops.length === 0) return;
           setLatestMemories(await backend.apply(ops));
+          notifyMemoriesChanged();
         } catch (error) {
           // Silent to the user except a console warning; never blocks the UI.
           console.warn("chat: memory extraction failed", error);
         }
       })();
     },
-    [backend, transport, setLatestMemories],
+    [backend, transport, setLatestMemories, notifyMemoriesChanged],
   );
 
   // Display-only context for the panel's card descriptions (the words a card
