@@ -168,6 +168,87 @@ test.describe("mouse", () => {
     await expect(page.locator(".sheet")).toHaveCount(0);
   });
 
+  test("a flick followed by a 300 ms hold snaps back instead of committing", async ({ page }) => {
+    await signUp(page, newEmail("swipe-hesitant"));
+    await addTask(page, "Hesitant release");
+    await openTaskDetails(page, "Hesitant release");
+    const from = await handlePoint(page);
+    // Three quick moves (~120 px: a flick), then the pointer holds still well
+    // past the 60 ms stale bound before lifting short of the 35 % threshold:
+    // a hesitant release throws nothing.
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 3; step += 1) await page.mouse.move(from.x - (120 * step) / 3, from.y);
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
+    await clearedUp(page);
+  });
+
+  test("a mouse drag on body copy selects text and never moves the sheet", async ({ page }) => {
+    await signUp(page, newEmail("swipe-body-text"));
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await nav.getByRole("button", { name: "Calendar" }).click();
+    await page.getByRole("button", { name: "New block" }).click();
+    const sheet = page.getByRole("complementary", { name: "New block" });
+    await expect(sheet).toBeVisible();
+    await settle(page);
+    const note = sheet.locator(".sheet-note");
+    const box = (await note.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 5 });
+    const mid = await swipeState(page);
+    await page.mouse.up();
+    // The drag selected copy, and the sheet never followed: the gesture never
+    // started, so `user-select: none` never took hold either.
+    const selected = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+    expect(selected.trim().length, "the drag selected body text").toBeGreaterThan(0);
+    expect(mid!.transform, "the sheet stayed at rest").toBe("");
+    await expect(sheet).toBeVisible();
+  });
+
+  test("a mouse drag from the empty surface still dismisses", async ({ page }) => {
+    await signUp(page, newEmail("swipe-surface"));
+    await addTask(page, "Surface drag");
+    await openTaskDetails(page, "Surface drag");
+    // The sheet's bottom padding: not the handle, not text, not a control --
+    // exactly the surface a mouse gesture must still start from.
+    const box = (await page.locator(".sheet").boundingBox())!;
+    const from = { x: box.x + box.width / 2, y: box.y + box.height - 10 };
+    await dragMouse(page, from, { x: from.x - 400, y: from.y });
+    await expect(page.locator(".sheet")).toHaveCount(0);
+  });
+
+  test("a click on a clickable div inside the sheet still fires", async ({ page }) => {
+    await signUp(page, newEmail("swipe-click-div"));
+    await addTask(page, "Clickable div");
+    await openTaskDetails(page, "Clickable div");
+    // A clickable non-button div is the case capture-on-pointerdown used to
+    // break: the capture retargeted its click to the sheet, so onClick never
+    // ran. No sheet ships one today, so the test stamps its own.
+    await page.evaluate(() => {
+      const div = document.createElement("div");
+      div.id = "test-clickable";
+      div.style.cssText = "width: 80px; height: 40px; background: #888;";
+      div.addEventListener("click", () => {
+        const state = window as unknown as { __testDivClicks?: number };
+        state.__testDivClicks = (state.__testDivClicks ?? 0) + 1;
+      });
+      document.querySelector(".sheet-body")!.appendChild(div);
+    });
+    const box = (await page.locator("#test-clickable").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await page.evaluate(() => (window as unknown as { __testDivClicks?: number }).__testDivClicks)).toBe(1);
+    // A press that wiggles inside the 8 px slop is still a click.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 4, box.y + box.height / 2, { steps: 2 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => (window as unknown as { __testDivClicks?: number }).__testDivClicks)).toBe(2);
+    await expect(page.getByRole("complementary", { name: "Task details" })).toBeVisible();
+  });
+
   test("an upward drag never closes the sheet", async ({ page }) => {
     await signUp(page, newEmail("swipe-up"));
     await addTask(page, "Drag up");

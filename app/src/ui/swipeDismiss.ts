@@ -79,6 +79,14 @@ export const EXIT_MS_MAX = 300;
 export const VELOCITY_WINDOW_MS = 100;
 
 /**
+ * A release this long after the last sample is a hold, not a throw: whatever
+ * flick speed the pointer carried earlier is stale, and the release velocity
+ * is zero (Sheet.tsx only reports velocity for throws the pointer is still
+ * making when it lifts).
+ */
+export const VELOCITY_STALE_MS = 60;
+
+/**
  * The axis a gesture locks to, or null while the pointer is inside the slop.
  * The axis that reaches the slop first wins; on a diagonal the horizontal axis
  * wins ties, matching how sheets are dismissed far more often than scrolled.
@@ -183,7 +191,10 @@ export function exitDistance(
 /**
  * Tracks pointer positions over a short window and reports the release
  * velocity along one axis, in px/ms. The window -- not the last event pair --
- * is what makes the velocity stable against a slow final frame.
+ * is what makes the velocity stable against a slow final frame, and `now`
+ * (the release's `event.timeStamp`) is what makes a hesitant release honest:
+ * a flick followed by a hold reads as zero, because the pointer had already
+ * stopped when it lifted.
  */
 export function createVelocityTracker(windowMs: number = VELOCITY_WINDOW_MS) {
   let samples: Array<{ x: number; y: number; t: number }> = [];
@@ -196,10 +207,16 @@ export function createVelocityTracker(windowMs: number = VELOCITY_WINDOW_MS) {
       const cutoff = t - windowMs;
       while (samples.length > 2 && samples[0].t < cutoff) samples.shift();
     },
-    velocity(axis: "x" | "y"): number {
+    velocity(axis: "x" | "y", now: number): number {
+      if (samples.length === 0) return 0;
+      const cutoff = now - windowMs;
+      while (samples.length > 1 && samples[0].t < cutoff) samples.shift();
+      const last = samples[samples.length - 1];
+      // The pointer stopped holding the velocity before it let go: the earlier
+      // flick belongs to a gesture the user already changed their mind about.
+      if (now - last.t > VELOCITY_STALE_MS) return 0;
       if (samples.length < 2) return 0;
       const first = samples[0];
-      const last = samples[samples.length - 1];
       const dt = last.t - first.t;
       if (dt <= 0) return 0;
       return (last[axis] - first[axis]) / dt;

@@ -7,6 +7,7 @@ import {
   MOBILE_RADIUS_MAX,
   SCALE_SHRINK,
   SWIPE_SLOP,
+  VELOCITY_STALE_MS,
   commitDistance,
   createVelocityTracker,
   dragTransform,
@@ -128,20 +129,34 @@ test("dragTransform is one composited string, never four props", () => {
 
 test("velocityTracker reports velocity over its window and resets cleanly", () => {
   const tracker = createVelocityTracker(100);
-  assert.equal(tracker.velocity("x"), 0);
+  assert.equal(tracker.velocity("x", 0), 0);
   tracker.add(0, 0, 0);
   tracker.add(50, 0, 50);
   // Inside the window: 50 px over 50 ms.
-  assert.equal(tracker.velocity("x"), 1);
+  assert.equal(tracker.velocity("x", 50), 1);
   tracker.add(90, 0, 100);
   // The 0 ms sample is still inside the window (cutoff is exclusive): 90 px over 100 ms.
-  assert.equal(tracker.velocity("x"), 0.9);
+  assert.equal(tracker.velocity("x", 100), 0.9);
   tracker.add(95, 0, 140);
   // The 0 ms sample aged out of the 100 ms window: 95-50 px over 140-50 ms.
-  assert.equal(tracker.velocity("x"), (95 - 50) / 90);
+  assert.equal(tracker.velocity("x", 140), (95 - 50) / 90);
   tracker.reset();
-  assert.equal(tracker.velocity("x"), 0);
+  assert.equal(tracker.velocity("x", 140), 0);
   // A single sample has no velocity.
   tracker.add(5, 5, 10);
-  assert.equal(tracker.velocity("y"), 0);
+  assert.equal(tracker.velocity("y", 10), 0);
+});
+
+test("a flick followed by a hold releases with velocity 0 (stale samples)", () => {
+  const tracker = createVelocityTracker(100);
+  tracker.add(0, 0, 0);
+  tracker.add(-30, 0, 15);
+  tracker.add(-60, 0, 30); // a fast flick left: -60 px over 30 ms
+  assert.equal(tracker.velocity("x", 30), -2);
+  // Exactly at the stale bound the flick still counts (strictly greater is stale).
+  assert.equal(tracker.velocity("x", 30 + VELOCITY_STALE_MS), -2);
+  // One millisecond past it, the pointer had already stopped: no throw.
+  assert.equal(tracker.velocity("x", 30 + VELOCITY_STALE_MS + 1), 0);
+  // The 300 ms hold of the hesitant-release rule.
+  assert.equal(tracker.velocity("x", 330), 0);
 });
