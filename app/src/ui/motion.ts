@@ -40,7 +40,19 @@ export const dur = {
    *  a focus pull, short enough that the field the panel focuses is crisp again
    *  before the user types (odd/research/melon-expand.md §b). */
   blur: 0.26,
+  /** The user bubble's flight from the send button into its thread slot
+   *  (Ronda 4 S3): a short spring that still settles inside the 300 ms UI
+   *  budget. */
+  sendFlight: 0.26,
 } as const;
+
+/**
+ * easeOutBack (easings.co): the one overshoot curve in the product. WAAPI
+ * cannot take a Motion spring, so the user bubble's send flight expresses its
+ * short spring as this curve — the pill overshoots its slot by a hair and
+ * settles.
+ */
+export const easeOutBackCss = "cubic-bezier(0.22, 1.2, 0.36, 1)";
 
 /**
  * How far out of focus the content of a panel starts (in px), before the card

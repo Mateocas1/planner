@@ -10,6 +10,7 @@ import { useChat } from "../chat/useChat.ts";
 import { browserTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
 import { dateKey } from "./time.ts";
+import { dur, easeOutBackCss, ms } from "./motion.ts";
 import { matchesEvent, parseAccelerator, useShortcutBinding } from "./settings/shortcutRegistry.ts";
 import { CallsDroppedNote, ChatActionCard } from "./ChatActionCard.tsx";
 import { CloseIcon } from "./icons.tsx";
@@ -76,6 +77,10 @@ const Spinner = () => (
   </svg>
 );
 
+/** The send button's rect at the moment of a send: the origin the user
+ * bubble flies from (Ronda 4 S3). */
+type SendOrigin = { left: number; top: number; width: number; height: number };
+
 /** Reduced motion, cached (review #4): `matchMedia` is read once per mount
  * and re-read on changes, never per frame. */
 function useReducedMotion(): boolean {
@@ -121,6 +126,76 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
     }
     tops.current = newTops;
   }, [appendKey, reduced, columnRef]);
+}
+
+/**
+ * The user bubble's send flight (Ronda 4 S3): the bubble appears to leave the
+ * send button. The submit handler measures the button's rect before the send
+ * swaps it for the stop button; this effect measures the landed bubble and
+ * animates only the compensating `transform` (FLIP, top-left anchored) plus a
+ * resolving blur (≤ 6 px) and opacity, with a short spring (easeOutBack —
+ * WAAPI cannot take a Motion spring). It runs after the scroll effect, so the
+ * delta is measured from the slot the bubble actually lands in.
+ *
+ * The contents cross-fade instead of riding the scale (the shared-element
+ * rule: never distort text): the pill flies blurred, and the text fades in
+ * once the scale is close to 1. `data-flown` stays on the bubble so the CSS
+ * mount entrance (`chat-user-in`) never replays under it — the flight *is*
+ * the entrance. Reduced motion: skipped entirely; the CSS opacity fade plays.
+ *
+ * Interruptible: each send targets its own freshly mounted bubble, so two
+ * sends never stack transforms on one element (and a second send cannot fire
+ * while one is in flight — the submit guard blocks it). The origin is
+ * consumed whether or not a flight runs, so a stale origin never re-flies.
+ */
+function useSendFlight(
+  columnRef: React.RefObject<HTMLDivElement | null>,
+  origin: SendOrigin | null,
+  reduced: boolean,
+  consumeOrigin: () => void,
+) {
+  const flown = useRef<WeakSet<Element>>(new WeakSet());
+  useLayoutEffect(() => {
+    if (origin === null) return;
+    consumeOrigin();
+    if (reduced) return;
+    const column = columnRef.current;
+    if (column === null) return;
+    const bubbles = column.querySelectorAll<HTMLElement>(".chat-user");
+    const bubble = bubbles[bubbles.length - 1];
+    if (bubble === undefined || flown.current.has(bubble)) return;
+    flown.current.add(bubble);
+    bubble.setAttribute("data-flown", "");
+    const rect = bubble.getBoundingClientRect();
+    if (rect.width < 4 || rect.height < 4) return; // never painted — skip
+    const scaleX = origin.width / rect.width;
+    const scaleY = origin.height / rect.height;
+    const deltaX = origin.left - rect.left;
+    const deltaY = origin.top - rect.top;
+    const config = { duration: ms(dur.sendFlight), easing: easeOutBackCss };
+    bubble.style.transformOrigin = "top left";
+    const shell = bubble.animate(
+      [
+        {
+          transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`,
+          opacity: 0.6,
+          filter: "blur(4px)",
+        },
+        { transform: "translate(0px, 0px) scale(1, 1)", opacity: 1, filter: "blur(0px)" },
+      ],
+      config,
+    );
+    shell.finished.then(() => {
+      bubble.style.transformOrigin = "";
+    }, () => {}); // cancelled (bubble unmounted): nothing to restore
+    const text = bubble.querySelector<HTMLElement>(".chat-user-text");
+    if (text !== null) {
+      text.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], {
+        duration: config.duration,
+        easing: "ease-out",
+      });
+    }
+  }, [origin, reduced, columnRef, consumeOrigin]);
 }
 
 /** The aria form of the current chord ("Control+Shift+J"), for assistive
@@ -194,6 +269,7 @@ export function ChatPanel({
   const chatChord = useShortcutBinding("chat");
 
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
@@ -211,6 +287,9 @@ export function ChatPanel({
    * inert until `animationend` (or the fallback timer) hides it. */
   const [closing, setClosing] = useState(false);
   const closeFallback = useRef<number | null>(null);
+  /** The send button's rect at the last submit: the user bubble's flight
+   * origin (S3). Consumed by the flight effect so it never re-flies. */
+  const [sendOrigin, setSendOrigin] = useState<SendOrigin | null>(null);
 
   // No API key (S3, C3a): the desktop panel opens onto a setup empty state
   // instead of a chat that can only fail. Checked on every open: the panel
@@ -262,6 +341,11 @@ export function ChatPanel({
   // text growth inside a turn deliberately does not.
   const appendKey = state.turns.length + (state.phase === "pending" || state.phase === "reasoning" ? 1 : 0);
   useGlideOnAppend(columnRef, appendKey, reduced);
+
+  // The send flight measures after the scroll effect above, so it starts from
+  // the slot the bubble actually lands in.
+  const consumeOrigin = useCallback(() => setSendOrigin(null), []);
+  useSendFlight(columnRef, sendOrigin, reduced, consumeOrigin);
 
   const onScroll = useCallback(() => {
     const scroller = scrollRef.current;
@@ -350,8 +434,15 @@ export function ChatPanel({
     event?.preventDefault();
     const text = draft.trim();
     if (text === "" || inFlight) return;
+    // Measure the send button before the send swaps it for the stop button:
+    // the bubble flies from where the user just clicked (S3). The composer
+    // clears in the same commit, in sync with the flight.
+    const button = sendButtonRef.current?.getBoundingClientRect();
     send(text);
     setDraft("");
+    if (button !== undefined) {
+      setSendOrigin({ left: button.left, top: button.top, width: button.width, height: button.height });
+    }
   };
 
   const onFieldKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -424,7 +515,7 @@ export function ChatPanel({
     if (turn.role === "user") {
       return (
         <div className="chat-bubble chat-user" key={turn.id}>
-          {turn.text}
+          <span className="chat-user-text">{turn.text}</span>
         </div>
       );
     }
@@ -540,7 +631,7 @@ export function ChatPanel({
                 <StopIcon />
               </button>
             ) : (
-              <button type="submit" className="chat-send" aria-label="Send" disabled={!canSend}>
+              <button ref={sendButtonRef} type="submit" className="chat-send" aria-label="Send" disabled={!canSend}>
                 <SendIcon />
               </button>
             )}
