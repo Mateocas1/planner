@@ -20,7 +20,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel, type ToolOutcome } from "../ui/ChatPanel.tsx";
-import { moveTaskWithBlock, createChatTask } from "../data/chatMove.ts";
+import { createChatTask, applyChatTaskUpdate } from "../data/chatMove.ts";
+import { setHolidayHidden } from "../data/holidays.ts";
+import { setTaskCompleted, deleteTask } from "../data/tasks.ts";
 import { db } from "../data/client.ts";
 import { isTauri } from "../desktop.ts";
 import { formatDateKey } from "../ui/format.ts";
@@ -33,6 +35,7 @@ import type { Memory } from "./memoryStore.ts";
 import { createMockTransport } from "./mockTransport.ts";
 import { buildSystemPrompt } from "./systemPrompt.ts";
 import {
+  affectedBlockIds,
   buildGetTaskResult,
   buildListHolidaysResult,
   buildListMemoriesResult,
@@ -40,10 +43,14 @@ import {
   isReadTool,
   validateToolCall,
   type ChatToolContext,
+  type NormalizedCompleteTask,
   type NormalizedCreateTask,
+  type NormalizedDeleteTask,
   type NormalizedGetTask,
+  type NormalizedHideHoliday,
   type NormalizedListTasks,
   type NormalizedMoveTask,
+  type NormalizedUpdateTask,
   type ReadResult,
 } from "./tools.ts";
 import { setChatReadExecutor, type ChatReadOutcome } from "./readTools.ts";
@@ -131,15 +138,13 @@ export function ChatSurface({
   // R1 (spec S1) + ronda4 (S4): the confirm flow. Validation is pure
   // (tools.ts) and runs against the LIVE context at confirm time; the write
   // goes through the app's own data functions for the signed-in user only.
-  // `move_task` maps onto what the app already does: a target day is
-  // `setTaskDeadline`'s deadline (null = unschedule), and a start time — the
-  // app's primitive for placing a task at a time — adds a task-linked work
-  // block for the estimate's duration. Both land in ONE writeBatch
-  // (`moveTaskWithBlock`), so a move is atomic; `create_task` with a start
-  // time lands its task and its block in ONE batch (`createChatTask`). Every
-  // outcome carries the created/changed task's id and fields in `result`,
-  // which rides the next request's `tool` message so the model can reference
-  // what it just changed. Invalid proposals fail before any write.
+  // Every task change lands in ONE writeBatch (`createChatTask` for creates
+  // with their placement block, `applyChatTaskUpdate` for moves, updates and
+  // unschedules with the blocks they replace or drop), so a failed write can
+  // never leave half a change behind. Every outcome carries the created or
+  // changed task's id and fields in the message, which rides the next
+  // request's `tool` message so the model can reference what it just
+  // changed. Invalid proposals fail before any write.
   const executeToolCall = useCallback(
     async (call: ChatToolCall): Promise<ToolOutcome> => {
       if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
@@ -178,10 +183,15 @@ export function ChatSurface({
           const value = check.value as NormalizedMoveTask;
           const task = toolContext.tasks.find(entry => entry.id === value.taskId);
           const estimate = task?.estimateMinutes ?? 60;
-          await moveTaskWithBlock(uid, {
+          const removals = affectedBlockIds(
+            value.taskId,
+            { clearDay: value.day === null, ...(value.startMinutes !== undefined && value.day !== null ? { startDay: value.day } : {}) },
+            toolContext,
+          );
+          await applyChatTaskUpdate(uid, {
             taskId: value.taskId,
             title: task?.title ?? value.title,
-            ...(value.day === null ? {} : { deadline: value.day }),
+            ...(value.day === null ? { clearDeadline: true } : value.day !== undefined ? { deadline: value.day } : {}),
             ...(value.startMinutes !== undefined && value.day !== null
               ? {
                   block: {
@@ -190,15 +200,85 @@ export function ChatSurface({
                   },
                 }
               : {}),
+            ...(removals.length > 0 ? { removeBlockIds: removals.map(entry => entry.id) } : {}),
           }, db);
-          const target = value.day === null ? "no date" : formatDateKey(value.day, toolContext.todayKey);
+          const title = task?.title ?? value.title;
+          const target = value.day === null ? "no date" : value.day === undefined ? undefined : formatDateKey(value.day, toolContext.todayKey);
           const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
+          const removed = removals.length > 0 ? `, removed ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
           return {
             status: "confirmed",
             message:
               value.day === null
-                ? `Unscheduled task id=${value.taskId} — "${task?.title ?? value.title}" (due date cleared)`
-                : `Moved task id=${value.taskId} — "${task?.title ?? value.title}" to ${target}${at}`,
+                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared${removed})`
+                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${removed}`,
+          };
+        }
+        if (call.name === "update_task") {
+          const value = check.value as NormalizedUpdateTask;
+          const task = toolContext.tasks.find(entry => entry.id === value.taskId);
+          // Removals recompute from the LIVE context at confirm time: a block
+          // created or removed after the card was proposed is still handled
+          // exactly (S4 freshness).
+          const removals = affectedBlockIds(
+            value.taskId,
+            { clearDay: value.clearDay, ...(value.startDay !== undefined ? { startDay: value.startDay } : {}) },
+            toolContext,
+          );
+          const placementEstimate = value.estimateMinutes ?? (value.clearEstimate === true ? undefined : task?.estimateMinutes) ?? 60;
+          await applyChatTaskUpdate(uid, {
+            taskId: value.taskId,
+            title: task?.title ?? value.title,
+            ...(value.newTitle !== undefined ? { newTitle: value.newTitle } : {}),
+            ...(value.clearDay === true ? { clearDeadline: true } : value.day !== undefined ? { deadline: value.day } : {}),
+            ...(value.clearEstimate === true
+              ? { clearEstimate: true }
+              : value.estimateMinutes !== undefined
+                ? { estimate: value.estimateMinutes }
+                : {}),
+            ...(value.startMinutes !== undefined && value.startDay !== undefined
+              ? {
+                  block: {
+                    start: toZonedInstant(localValue(value.startDay, value.startMinutes), toolContext.timeZone),
+                    end: toZonedInstant(localValue(value.startDay, value.startMinutes + placementEstimate), toolContext.timeZone),
+                  },
+                }
+              : {}),
+            ...(removals.length > 0 ? { removeBlockIds: removals.map(entry => entry.id) } : {}),
+          }, db);
+          const title = value.newTitle ?? task?.title ?? value.title;
+          const target = value.clearDay === true ? "no date" : value.day !== undefined ? formatDateKey(value.day, toolContext.todayKey) : undefined;
+          const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
+          const removed = removals.length > 0 ? `, removed ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
+          const estimateWord = value.estimateMinutes !== undefined || value.clearEstimate === true ? ", estimate updated" : "";
+          return {
+            status: "confirmed",
+            message: `Updated task id=${value.taskId} — "${title}"${target === undefined ? "" : ` · ${target}`}${at}${estimateWord}${removed}`,
+          };
+        }
+        if (call.name === "complete_task") {
+          const value = check.value as NormalizedCompleteTask;
+          await setTaskCompleted(uid, value.taskId, value.completed);
+          return {
+            status: "confirmed",
+            message: value.completed
+              ? `Completed task id=${value.taskId} — "${value.title}"`
+              : `Reopened task id=${value.taskId} — "${value.title}"`,
+          };
+        }
+        if (call.name === "delete_task") {
+          const value = check.value as NormalizedDeleteTask;
+          await deleteTask(uid, value.taskId);
+          return { status: "confirmed", message: `Deleted task id=${value.taskId} — "${value.title}"` };
+        }
+        if (call.name === "hide_holiday") {
+          const value = check.value as NormalizedHideHoliday;
+          await setHolidayHidden(uid, value.holidayId, !value.show);
+          return {
+            status: "confirmed",
+            message: value.show
+              ? `Holiday "${value.title}" is visible again.`
+              : `Holiday "${value.title}" hidden — the calendar shows it no more (the Holidays sheet can bring it back).`,
           };
         }
         return { status: "failed", message: `Unknown action "${call.name}".` };

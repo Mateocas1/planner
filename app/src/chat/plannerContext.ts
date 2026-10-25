@@ -11,6 +11,7 @@
  */
 
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wallDayKey } from "../ui/time.ts";
+import { formatDateKey } from "../ui/format.ts";
 
 /** The subset of a stored block the context needs (domain shape, read-only). */
 export type ContextBlock = {
@@ -45,6 +46,8 @@ const TITLE_MAX = 48;
 const TODAY_BLOCKS_CAP = 14;
 const WEEK_BLOCKS_PER_DAY_CAP = 6;
 const OPEN_TASKS_CAP = 12;
+const HOLIDAY_DAYS = 14;
+const HOLIDAYS_CAP = 8;
 /** ≈1.5k tokens of headroom for the whole context text. */
 const CHAR_BUDGET = 6_000;
 
@@ -167,6 +170,21 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
       lines.push(`- [${item.id}] ${truncate(item.title)}${estimate}${deadline}`);
     }
     if (open.length > OPEN_TASKS_CAP) lines.push(`(+${open.length - OPEN_TASKS_CAP} more)`);
+    lines.push("");
+  }
+
+  // Holidays ahead (ronda4 S4): day labels only, with ids so the model can
+  // hide one the way the Holidays sheet does. Hidden labels are not shown.
+  const holidays = (snap.holidays ?? [])
+    .filter(holiday => holiday.hidden !== true)
+    .filter(holiday => holiday.date >= todayKey && holiday.date <= wallDayKey(todayWall + HOLIDAY_DAYS * dayMs))
+    .sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title));
+  if (holidays.length > 0) {
+    lines.push(`Holidays in the next ${HOLIDAY_DAYS} days:`);
+    for (const holiday of holidays.slice(0, HOLIDAYS_CAP)) {
+      lines.push(`- [${holiday.id}] ${formatDateKey(holiday.date, todayKey)} · ${truncate(holiday.title)} · ${holiday.kind}`);
+    }
+    if (holidays.length > HOLIDAYS_CAP) lines.push(`(+${holidays.length - HOLIDAYS_CAP} more)`);
     lines.push("");
   }
 

@@ -49,7 +49,7 @@ const readContext: ChatToolContext = {
 test("the tools carry OpenAI function schemas; reads are marked and ride every request", () => {
   assert.deepEqual(
     CHAT_TOOLS.map(tool => tool.function.name),
-    ["create_task", "move_task", "list_tasks", "get_task", "list_holidays", "list_memories"],
+    ["create_task", "move_task", "update_task", "complete_task", "delete_task", "hide_holiday", "list_tasks", "get_task", "list_holidays", "list_memories"],
   );
   for (const tool of CHAT_TOOLS) {
     assert.equal(tool.type, "function");
@@ -357,4 +357,115 @@ test("validateToolCall routes the reads", () => {
   assert.ok(listed.ok);
   const described = describeToolCall({ name: "list_tasks", arguments: '{"query":"milk"}' }, readContext);
   assert.match(described, /matching "milk"/);
+});
+
+/* ---------- write tools beyond create/move (S4) ---------- */
+
+import { checkCompleteTask, checkDeleteTask, checkHideHoliday, checkUpdateTask } from "./tools.ts";
+
+const updateContext: ChatToolContext = {
+  ...readContext,
+  tasks: [
+    { id: "t1", title: "Pay the invoice", deadline: "2026-10-30", estimateMinutes: 45 },
+    { id: "t2", title: "Deep clean", estimateMinutes: 90, completed: true },
+    { id: "t3", title: "Milk the moment" },
+  ],
+  blocks: [
+    { id: "b1", start: "2026-10-30T14:00:00Z", end: "2026-10-30T14:45:00Z", taskId: "t1" },
+    { id: "b2", start: "2026-10-27T09:00:00Z", end: "2026-10-27T10:00:00Z", taskId: "t1" },
+  ],
+};
+
+test("update_task: any field change survives; a proposal that changes nothing fails", () => {
+  const ok = checkUpdateTask('{"taskId":"t1","title":"Pay the rent","day":"2026-11-02","estimateMinutes":30}', updateContext);
+  assert.ok(ok.ok);
+  assert.deepEqual(
+    ok.ok ? { newTitle: ok.value.newTitle, day: ok.value.day, estimateMinutes: ok.value.estimateMinutes } : {},
+    { newTitle: "Pay the rent", day: "2026-11-02", estimateMinutes: 30 },
+  );
+  const nothing = checkUpdateTask('{"taskId":"t1"}', updateContext);
+  assert.ok(!nothing.ok);
+  assert.match(nothing.ok ? "" : nothing.error, /changes nothing/);
+  const same = checkUpdateTask('{"taskId":"t1","title":"Pay the invoice","day":"2026-10-30","estimateMinutes":45}', updateContext);
+  assert.ok(!same.ok, "same values are treated as no change");
+  const ghost = checkUpdateTask('{"taskId":"ghost","title":"X"}', updateContext);
+  assert.ok(!ghost.ok);
+});
+
+test("update_task: null day unschedules and null estimate clears", () => {
+  const clear = checkUpdateTask('{"taskId":"t1","day":null,"estimateMinutes":null}', updateContext);
+  assert.ok(clear.ok);
+  assert.equal(clear.ok && clear.value.clearDay, true);
+  assert.equal(clear.ok && clear.value.clearEstimate, true);
+  // A task with nothing to clear fails as a no-op.
+  const pointless = checkUpdateTask('{"taskId":"t3","day":null,"estimateMinutes":null}', updateContext);
+  assert.ok(!pointless.ok);
+});
+
+test("update_task: a start time resolves its day from the proposal or the current due day", () => {
+  const withDay = checkUpdateTask('{"taskId":"t1","startTime":"16:00"}', updateContext);
+  assert.ok(withDay.ok, "falls back to the task's current due day");
+  assert.equal(withDay.ok && withDay.value.startDay, "2026-10-30");
+  const explicit = checkUpdateTask('{"taskId":"t3","day":"2026-11-02","startTime":"09:30"}', updateContext);
+  assert.ok(explicit.ok);
+  assert.equal(explicit.ok && explicit.value.startDay, "2026-11-02");
+  const noDay = checkUpdateTask('{"taskId":"t3","startTime":"09:30"}', updateContext);
+  assert.ok(!noDay.ok);
+  assert.match(noDay.ok ? "" : noDay.error, /needs a day/);
+  const withClear = checkUpdateTask('{"taskId":"t1","day":null,"startTime":"09:30"}', updateContext);
+  assert.ok(!withClear.ok);
+  const overflow = checkUpdateTask('{"taskId":"t3","day":"2026-11-02","startTime":"23:30"}', updateContext);
+  assert.ok(!overflow.ok);
+});
+
+test("update_task: the card describes exactly what changes, removals included (S4)", () => {
+  // Placing t1 at 16:00 on its due day replaces that day's existing block.
+  const place = checkUpdateTask('{"taskId":"t1","startTime":"16:00"}', updateContext);
+  assert.ok(place.ok);
+  assert.match(place.ok ? place.description : "", /place tomorrow 16:00–17:00 \(replaces tomorrow 14:00–14:45\)/);
+  // Unscheduling names the upcoming blocks it removes — and not the past one.
+  const unschedule = checkUpdateTask('{"taskId":"t1","day":null}', updateContext);
+  assert.ok(unschedule.ok);
+  assert.match(unschedule.ok ? unschedule.description : "", /removes its upcoming blocks: tomorrow 14:00–14:45/);
+  assert.doesNotMatch(unschedule.ok ? unschedule.description : "", /09:00/, "past blocks stay");
+});
+
+test("complete_task validates the flag and the id; the card says complete or reopen", () => {
+  const done = checkCompleteTask('{"taskId":"t1","completed":true}', updateContext);
+  assert.ok(done.ok);
+  assert.match(done.ok ? done.description : "", /Complete "Pay the invoice"/);
+  const reopen = checkCompleteTask('{"taskId":"t2","completed":false}', updateContext);
+  assert.ok(reopen.ok);
+  assert.match(reopen.ok ? reopen.description : "", /Reopen "Deep clean"/);
+  const bad = checkCompleteTask('{"taskId":"t1","completed":"yes"}', updateContext);
+  assert.ok(!bad.ok);
+  const ghost = checkCompleteTask('{"taskId":"ghost","completed":true}', updateContext);
+  assert.ok(!ghost.ok);
+});
+
+test("delete_task validates the id and the card names exactly what is removed (S4)", () => {
+  const ok = checkDeleteTask('{"taskId":"t1"}', updateContext);
+  assert.ok(ok.ok);
+  assert.match(ok.ok ? ok.description : "", /Delete task "Pay the invoice" · due tomorrow · 45 min · 2 blocks stay on the calendar/);
+  const bare = checkDeleteTask('{"taskId":"t3"}', updateContext);
+  assert.ok(bare.ok);
+  assert.equal(bare.ok && bare.description, 'Delete task "Milk the moment"');
+  const ghost = checkDeleteTask('{"taskId":"ghost"}', updateContext);
+  assert.ok(!ghost.ok);
+});
+
+test("hide_holiday validates against the known holidays and rejects no-ops", () => {
+  const hide = checkHideHoliday('{"holidayId":"h1"}', updateContext);
+  assert.ok(hide.ok);
+  assert.match(hide.ok ? hide.description : "", /Hide holiday "Independence Day"/);
+  const show = checkHideHoliday('{"holidayId":"h2","show":true}', updateContext);
+  assert.ok(show.ok);
+  assert.match(show.ok ? show.description : "", /Show holiday "Halloween"/);
+  const alreadyHidden = checkHideHoliday('{"holidayId":"h2"}', updateContext);
+  assert.ok(!alreadyHidden.ok);
+  const alreadyVisible = checkHideHoliday('{"holidayId":"h1","show":true}', updateContext);
+  assert.ok(!alreadyVisible.ok);
+  const ghost = checkHideHoliday('{"holidayId":"ghost"}', updateContext);
+  assert.ok(!ghost.ok);
+  assert.match(ghost.ok ? "" : ghost.error, /not in your planner/);
 });

@@ -137,11 +137,95 @@ const LIST_MEMORIES: ChatToolSpec = {
   },
 };
 
+const UPDATE_TASK: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "update_task",
+    description:
+      "Change a task's fields: rename it, set or clear its due day (day: null unschedules it), set or clear its estimate, or place it on a day's schedule at a start time. Omitted fields stay as they are. The user must confirm before anything changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task's id, exactly as it appears in the context or in a tool result." },
+        title: { type: "string", description: "Optional new title." },
+        day: {
+          type: ["string", "null"],
+          description:
+            "New due day as YYYY-MM-DD, or null to unschedule (clear the due day and remove its upcoming placements). Omit to leave the day alone.",
+        },
+        estimateMinutes: {
+          type: ["integer", "null"],
+          description: "New estimate in whole minutes (1–1440), or null to clear it. Omit to leave it alone.",
+        },
+        startTime: {
+          type: "string",
+          description:
+            "Optional wall-clock HH:MM (24 h) to place the task at on a day: the given day, or the task's current due day. Replaces that day's existing placement for the task.",
+        },
+      },
+      required: ["taskId"],
+    },
+  },
+};
+
+const COMPLETE_TASK: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "complete_task",
+    description: "Mark a task completed, or reopen a completed one. The user must confirm before anything changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task's id, exactly as it appears in the context or in a tool result." },
+        completed: { type: "boolean", description: "true to complete, false to reopen." },
+      },
+      required: ["taskId", "completed"],
+    },
+  },
+};
+
+const DELETE_TASK: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "delete_task",
+    description:
+      "Permanently delete one task. Say what it was and, when the user seems to mean several tasks, confirm the list with them first. The user must confirm before anything is deleted.",
+    parameters: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task's id, exactly as it appears in the context or in a tool result." },
+      },
+      required: ["taskId"],
+    },
+  },
+};
+
+const HIDE_HOLIDAY: ChatToolSpec = {
+  type: "function",
+  function: {
+    name: "hide_holiday",
+    description:
+      "Hide a holiday label from the calendar, or show it again — exactly what the app's Holidays sheet does. The user must confirm before anything changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        holidayId: { type: "string", description: "The holiday's id, exactly as it appears in the context or in a list_holidays result." },
+        show: { type: "boolean", description: "true shows it again; false (default) hides it." },
+      },
+      required: ["holidayId"],
+    },
+  },
+};
+
 /** The tools every chat request carries (extraction requests carry none).
  * Reads run without confirmation (S4); writes render confirmation cards. */
 export const CHAT_TOOLS: ChatToolSpec[] = [
   CREATE_TASK,
   MOVE_TASK,
+  UPDATE_TASK,
+  COMPLETE_TASK,
+  DELETE_TASK,
+  HIDE_HOLIDAY,
   LIST_TASKS,
   GET_TASK,
   LIST_HOLIDAYS,
@@ -300,9 +384,7 @@ const TITLE_TOO_LONG = `The title is too long (at most ${MAX_TOOL_TITLE_CHARS} c
 function describeCreateTask(value: NormalizedCreateTask, todayKey: string): string {
   const parts = [`Create task "${value.title}"`];
   if (value.day !== undefined) parts.push(formatDateKey(value.day, todayKey));
-  if (value.startMinutes !== undefined) {
-    parts.push(`${String(Math.floor(value.startMinutes / 60)).padStart(2, "0")}:${String(value.startMinutes % 60).padStart(2, "0")}`);
-  }
+  if (value.startMinutes !== undefined) parts.push(hhmm(value.startMinutes));
   if (value.estimateMinutes !== undefined) parts.push(`${value.estimateMinutes} min`);
   return parts.join(" · ");
 }
@@ -311,11 +393,7 @@ function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["task
   const label = (day: string | undefined | null) =>
     day === undefined || day === null ? "No date" : formatDateKey(day, context.todayKey);
   const parts = [`Move "${task.title}"`, `${label(task.deadline)} → ${value.day === null ? "No date" : label(value.day)}`];
-  if (value.startMinutes !== undefined) {
-    const hour = Math.floor(value.startMinutes / 60);
-    const minute = value.startMinutes % 60;
-    parts.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
-  }
+  if (value.startMinutes !== undefined) parts.push(hhmm(value.startMinutes));
   return parts.join(" · ");
 }
 
@@ -545,18 +623,234 @@ export function buildListMemoriesResult(memories: ReadonlyArray<Memory>): ReadRe
 
 const NOTES_RESULTS_CAP = 20;
 
+/* ---------- write tools (S4): confirmed cards, pure validation ---------- */
+
+export type NormalizedUpdateTask = {
+  taskId: string;
+  /** The task's title (for validation and descriptions). */
+  title: string;
+  newTitle?: string;
+  day?: string;
+  clearDay?: boolean;
+  estimateMinutes?: number;
+  clearEstimate?: boolean;
+  /** Minutes since midnight; needs a resolvable day (`startDay`). */
+  startMinutes?: number;
+  /** The day the placement lands on: the given `day`, or the task's current
+   * due day when the proposal names only a time ("put it at 14"). */
+  startDay?: string;
+};
+
+/** Validates `update_task`: only real changes survive (a proposal that
+ * changes nothing fails); a start time resolves its day from the proposal or
+ * the task's current due day; every removal it implies is computed here so
+ * the card can describe exactly what will happen. */
+export function checkUpdateTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedUpdateTask> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const taskId = optionalString(parsed.value.taskId);
+  if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
+  const task = context.tasks.find(entry => entry.id === taskId);
+  if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
+
+  const value: NormalizedUpdateTask = { taskId, title: task.title };
+
+  const rawTitle = parsed.value.title;
+  if (rawTitle !== undefined && rawTitle !== null) {
+    if (typeof rawTitle !== "string") return { ok: false, error: "The title must be text." };
+    const title = rawTitle.trim();
+    if (title === "") return { ok: false, error: "The title must not be empty." };
+    if (title.length > MAX_TOOL_TITLE_CHARS) return { ok: false, error: TITLE_TOO_LONG };
+    if (title !== task.title) value.newTitle = title;
+  }
+
+  const rawDay = parsed.value.day;
+  if (rawDay === null) {
+    if (task.deadline !== undefined) value.clearDay = true;
+  } else if (rawDay !== undefined && rawDay !== "") {
+    if (typeof rawDay !== "string" || !isValidDayKey(rawDay.trim())) {
+      return { ok: false, error: `"${String(rawDay)}" is not a valid day (YYYY-MM-DD).` };
+    }
+    if (rawDay.trim() !== task.deadline) value.day = rawDay.trim();
+  }
+
+  const rawEstimate = parsed.value.estimateMinutes;
+  if (rawEstimate === null) {
+    if (task.estimateMinutes !== undefined) value.clearEstimate = true;
+  } else if (rawEstimate !== undefined) {
+    const estimate = checkEstimate(rawEstimate);
+    if ("error" in estimate) return { ok: false, error: estimate.error };
+    if (estimate.estimateMinutes !== task.estimateMinutes) value.estimateMinutes = estimate.estimateMinutes;
+  }
+
+  const rawStart = parsed.value.startTime;
+  if (rawStart !== undefined && rawStart !== null) {
+    if (rawDay === null) return { ok: false, error: "A start time cannot go with clearing the day." };
+    const time = checkStartTime(rawStart);
+    if ("error" in time) return { ok: false, error: time.error };
+    const startDay = value.day ?? task.deadline;
+    if (startDay === undefined) {
+      return { ok: false, error: "A start time needs a day: pass one, or give the task a due day first." };
+    }
+    const estimateForRoom = value.estimateMinutes ?? (value.clearEstimate === true ? undefined : task.estimateMinutes) ?? ASSUMED_ESTIMATE_MINUTES;
+    if (time.startMinutes + estimateForRoom > 1440) {
+      return { ok: false, error: "The start time leaves no room before midnight for this task's duration." };
+    }
+    value.startMinutes = time.startMinutes;
+    value.startDay = startDay;
+  }
+
+  if (value.newTitle === undefined && value.day === undefined && value.clearDay !== true && value.estimateMinutes === undefined && value.clearEstimate !== true && value.startMinutes === undefined) {
+    return { ok: false, error: "The proposal changes nothing on this task." };
+  }
+  return { ok: true, value, description: describeUpdateTask(value, context) };
+}
+
+/** The task-linked blocks an update or unschedule would remove, computed
+ * from the context so the card names them exactly. A placement replaces the
+ * task's blocks on the target day; an unschedule (day: null) removes the
+ * task's upcoming blocks (today onwards) and leaves past history alone. */
+export function affectedBlockIds(
+  taskId: string,
+  change: { clearDay?: boolean; startDay?: string },
+  context: ChatToolContext,
+): Array<{ id: string; label: string }> {
+  const blocks = context.blocks ?? [];
+  if (change.clearDay === true) {
+    return blocks
+      .filter(block => block.taskId === taskId && dateKey(new Date(block.start), context.timeZone) >= context.todayKey)
+      .map(block => ({ id: block.id, label: blockLabel(block, context) }));
+  }
+  if (change.startDay !== undefined) {
+    return blocks
+      .filter(block => block.taskId === taskId && dateKey(new Date(block.start), context.timeZone) === change.startDay)
+      .map(block => ({ id: block.id, label: blockLabel(block, context) }));
+  }
+  return [];
+}
+
+function blockLabel(block: { start: string; end: string }, context: ChatToolContext): string {
+  return `${formatDateKey(dateKey(new Date(block.start), context.timeZone), context.todayKey)} ${timeLabel(new Date(block.start), context.timeZone)}–${timeLabel(new Date(block.end), context.timeZone)}`;
+}
+
+function describeUpdateTask(value: NormalizedUpdateTask, context: ChatToolContext): string {
+  const parts = [`Update "${value.title}"`];
+  if (value.newTitle !== undefined) parts.push(`rename to "${value.newTitle}"`);
+  if (value.clearDay === true) parts.push("clear the due day");
+  else if (value.day !== undefined) parts.push(`due ${formatDateKey(value.day, context.todayKey)}`);
+  if (value.clearEstimate === true) parts.push("clear the estimate");
+  else if (value.estimateMinutes !== undefined) parts.push(`${value.estimateMinutes} min`);
+  if (value.startMinutes !== undefined && value.startDay !== undefined) {
+    const replaced = affectedBlockIds(value.taskId, { startDay: value.startDay }, context);
+    const estimateForRoom = value.estimateMinutes ?? ASSUMED_ESTIMATE_MINUTES;
+    parts.push(`place ${formatDateKey(value.startDay, context.todayKey)} ${hhmm(value.startMinutes)}–${hhmm(value.startMinutes + estimateForRoom)}${replaced.length > 0 ? ` (replaces ${replaced.map(entry => entry.label).join(", ")})` : ""}`);
+  }
+  if (value.clearDay === true) {
+    const removed = affectedBlockIds(value.taskId, { clearDay: true }, context);
+    if (removed.length > 0) parts.push(`removes its upcoming blocks: ${removed.map(entry => entry.label).join(", ")}`);
+  }
+  return parts.join(" · ");
+}
+
+/** Minutes since midnight as wall-clock HH:MM (descriptions only — pure
+ * arithmetic, no zone involved). */
+function hhmm(minutes: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60, minutes));
+  return `${String(Math.floor(clamped / 60) % 24).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+}
+
+export type NormalizedCompleteTask = { taskId: string; title: string; completed: boolean };
+
+/** Validates `complete_task`: the task must exist and `completed` must be a
+ * real boolean. */
+export function checkCompleteTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedCompleteTask> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const taskId = optionalString(parsed.value.taskId);
+  if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
+  const task = context.tasks.find(entry => entry.id === taskId);
+  if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
+  if (typeof parsed.value.completed !== "boolean") {
+    return { ok: false, error: "The proposal needs completed: true to complete, or false to reopen." };
+  }
+  const completed = parsed.value.completed;
+  return {
+    ok: true,
+    value: { taskId, title: task.title, completed },
+    description: completed ? `Complete "${task.title}"` : `Reopen "${task.title}"`,
+  };
+}
+
+export type NormalizedDeleteTask = { taskId: string; title: string };
+
+/** Validates `delete_task`: the task must exist, and the card names exactly
+ * what will be removed — the task itself, and what stays behind. */
+export function checkDeleteTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedDeleteTask> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const taskId = optionalString(parsed.value.taskId);
+  if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
+  const task = context.tasks.find(entry => entry.id === taskId);
+  if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
+  const parts = [`Delete task "${task.title}"`];
+  if (task.deadline !== undefined) parts.push(`due ${formatDateKey(task.deadline, context.todayKey)}`);
+  if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
+  const blocks = (context.blocks ?? []).filter(block => block.taskId === taskId);
+  if (blocks.length > 0) {
+    parts.push(`${blocks.length} ${blocks.length === 1 ? "block stays" : "blocks stay"} on the calendar`);
+  }
+  return { ok: true, value: { taskId, title: task.title }, description: parts.join(" · ") };
+}
+
+export type NormalizedHideHoliday = { holidayId: string; title: string; show: boolean };
+
+/** Validates `hide_holiday`: the holiday must be one the context knows, and
+ * the requested visibility must actually change something. */
+export function checkHideHoliday(raw: string, context: ChatToolContext): ToolCheck<NormalizedHideHoliday> {
+  const parsed = parseArguments(raw);
+  if (!parsed.ok) return parsed;
+  const holidayId = optionalString(parsed.value.holidayId);
+  if (holidayId === undefined) return { ok: false, error: "The proposal needs a holiday id." };
+  const holiday = (context.holidays ?? []).find(entry => entry.id === holidayId);
+  if (holiday === undefined) return { ok: false, error: "That holiday id is not in your planner." };
+  if (parsed.value.show !== undefined && typeof parsed.value.show !== "boolean") {
+    return { ok: false, error: "show must be true or false." };
+  }
+  const show = parsed.value.show === true;
+  if (show && holiday.hidden !== true) {
+    return { ok: false, error: `"${holiday.title}" is already visible.` };
+  }
+  if (!show && holiday.hidden === true) {
+    return { ok: false, error: `"${holiday.title}" is already hidden.` };
+  }
+  const when = formatDateKey(holiday.date, context.todayKey);
+  return {
+    ok: true,
+    value: { holidayId, title: holiday.title, show },
+    description: show ? `Show holiday "${holiday.title}" · ${when} again` : `Hide holiday "${holiday.title}" · ${when}`,
+  };
+}
+
 /** Validates one proposed call; `ok` carries the plain-words description the
  * card shows. Unsupported tool names fail (never render as a write). Reads
  * validate against the same pure rules the executor re-runs. */
 export function validateToolCall(
   call: Pick<ChatToolCall, "name" | "arguments">,
   context: ChatToolContext,
-): ToolCheck<NormalizedCreateTask | NormalizedMoveTask | NormalizedListTasks | NormalizedGetTask | NormalizedNoArgs> {
+): ToolCheck<NormalizedCreateTask | NormalizedMoveTask | NormalizedUpdateTask | NormalizedCompleteTask | NormalizedDeleteTask | NormalizedHideHoliday | NormalizedListTasks | NormalizedGetTask | NormalizedNoArgs> {
   switch (call.name) {
     case "create_task":
       return checkCreateTask(call.arguments, context.todayKey);
     case "move_task":
       return checkMoveTask(call.arguments, context);
+    case "update_task":
+      return checkUpdateTask(call.arguments, context);
+    case "complete_task":
+      return checkCompleteTask(call.arguments, context);
+    case "delete_task":
+      return checkDeleteTask(call.arguments, context);
+    case "hide_holiday":
+      return checkHideHoliday(call.arguments, context);
     case "list_tasks":
       return checkListTasks(call.arguments, context);
     case "get_task":

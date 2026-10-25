@@ -126,3 +126,25 @@ test("an empty planner still renders a usable header", () => {
   assert.ok(text.includes("no blocks"));
   assert.ok(text.length < 1200);
 });
+
+test("holidays in the next 14 days ride with their ids; hidden and far ones stay out (S4)", () => {
+  const text = buildPlannerContext(
+    {
+      blocks: [],
+      tasks: [],
+      holidays: [
+        { id: "h-near", date: "2026-11-02", title: "Independence Day", kind: "public" },
+        { id: "h-hidden", date: "2026-11-03", title: "Secret", kind: "other", hidden: true },
+        { id: "h-past", date: "2026-10-01", title: "Long gone", kind: "other" },
+        { id: "h-far", date: "2026-12-25", title: "Christmas", kind: "public" },
+      ],
+    },
+    new Date("2026-10-29T12:00:00Z"),
+    "UTC",
+  );
+  assert.match(text, /Holidays in the next 14 days:/);
+  assert.match(text, /\[h-near\] [^\n]*Independence Day · public/);
+  assert.ok(!text.includes("Secret"), "hidden labels are not shown");
+  assert.ok(!text.includes("Long gone"), "past labels are not shown");
+  assert.ok(!text.includes("Christmas"), "labels beyond 14 days are not shown");
+});
