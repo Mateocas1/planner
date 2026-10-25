@@ -11,6 +11,8 @@ import {
   checkGetTask,
   checkListTasks,
   checkMoveTask,
+  createConfirmGuard,
+  moveTaskRemovals,
   describeToolCall,
   isReadTool,
   isValidDayKey,
@@ -19,6 +21,28 @@ import {
   type ChatToolContext,
 } from "./tools.ts";
 import type { Memory } from "./memoryStore.ts";
+
+test("move_task: a start time replaces same-day blocks, and the card says so", () => {
+  // t1 has block b1 on 2026-10-30 14:00–14:45; moving it to 16:00 that day
+  // replaces it — the description must state it, exactly like update_task's.
+  const check = checkMoveTask('{"taskId":"t1","day":"2026-10-30","startTime":"16:00"}', readContext);
+  assert.ok(check.ok);
+  assert.match(check.ok ? check.description : "", /replaces 1 block: .*14:00–14:45/);
+  // The executor computes the same removals from the same pure rule, so the
+  // write matches the card word for word.
+  const removals = moveTaskRemovals(check.ok ? check.value : { taskId: "t1", title: "", day: null }, readContext);
+  assert.deepEqual(removals.map(entry => entry.id), ["b1"]);
+});
+
+test("move_task: null day clears only the due date and removes NO blocks", () => {
+  // Parent decision: move_task keeps setTaskDeadline's contract. t1's block
+  // on 2026-10-30 is upcoming; unscheduling must leave it alone (removing
+  // placements is update_task's job, whose card lists them).
+  const check = checkMoveTask('{"taskId":"t1","day":null}', readContext);
+  assert.ok(check.ok);
+  assert.doesNotMatch(check.ok ? check.description : "", /removes|replaces/);
+  assert.deepEqual(moveTaskRemovals(check.ok ? check.value : { taskId: "t1", title: "", day: null }, readContext), []);
+});
 
 const context: ChatToolContext = {
   tasks: [
@@ -230,6 +254,25 @@ test("describeToolCall falls back to a neutral line for invalid arguments", () =
   assert.match(describeToolCall({ name: "create_task", arguments: '{"title":"OK"}' }, context), /Create task "OK"/);
 });
 
+test("a resolved remember card keeps the description it was confirmed with", () => {
+  const memoryTopics = [{ topicKey: "prefers-morning-planning", title: "Prefers morning planning" }];
+  const args = '{"title":"Prefers morning planning","content":"Plans before 09:00."}';
+  // Pending: the live context names the note the confirm will replace.
+  const pending = describeToolCall({ name: "remember", arguments: args }, { ...readContext, memoryTopics });
+  assert.match(pending, /Replace note "Prefers morning planning"/);
+  // Resolved: the note now exists because this very confirm created it — the
+  // card must not flip to "Replace note" against its own "Remembered" outcome.
+  const resolved = describeToolCall({ name: "remember", arguments: args, status: "confirmed" }, { ...readContext, memoryTopics });
+  assert.match(resolved, /^Remember "/);
+});
+
+test("createConfirmGuard claims a callId exactly once, so a card can never write twice", () => {
+  const guard = createConfirmGuard();
+  assert.equal(guard.claim("c1"), true);
+  assert.equal(guard.claim("c1"), false, "a repeated confirm with the same id never reaches a write");
+  assert.equal(guard.claim("c2"), true, "a different card still confirms");
+});
+
 test("toolResultContent maps every card state to a tool message", () => {
   assert.match(toolResultContent({ status: "confirmed", outcome: "Task created." }), /applied/i);
   assert.match(toolResultContent({ status: "failed", outcome: "offline" }), /failed: offline/);
@@ -311,6 +354,31 @@ test("buildListTasksResult filters, reports ids and respects the caps", () => {
   const capped = buildListTasksResult({ includeCompleted: false }, { ...readContext, tasks: many });
   assert.match(capped.result, /\(\+10 more\)/);
   assert.equal(capped.result.split("\n").length, 31);
+});
+
+test("read lines are bounded: at most 10 blocks per task and 120-char titles", () => {
+  // 14 placements for one task: the read shows 10 and counts the rest.
+  const blocks = Array.from({ length: 14 }, (_, index) => ({
+    id: `b${index}`,
+    start: `2026-11-${String(10 + index).padStart(2, "0")}T14:00:00Z`,
+    end: `2026-11-${String(10 + index).padStart(2, "0")}T15:00:00Z`,
+    taskId: "t1",
+  }));
+  const placed = buildListTasksResult({ includeCompleted: false }, { ...readContext, blocks });
+  assert.match(placed.result, /\(\+4 more\)/);
+  assert.equal((placed.result.match(/14:00–15:00/g) ?? []).length, 10, "only 10 block stamps on the line");
+  // get_task (all past placements included) is capped the same way.
+  const one = buildGetTaskResult("t1", { ...readContext, blocks });
+  assert.match(one.result, /\(\+4 more\)/);
+  assert.equal((one.result.match(/14:00–15:00/g) ?? []).length, 10);
+  // A title longer than 120 characters is truncated in the read output.
+  const longTitle = "x".repeat(130);
+  const long = buildListTasksResult(
+    { includeCompleted: false },
+    { ...readContext, tasks: [{ id: "t9", title: longTitle }] },
+  );
+  assert.ok(!long.result.includes(longTitle), "the full 130-char title never rides the read");
+  assert.match(long.result, /"x{119}…"/);
 });
 
 test("buildGetTaskResult reports one task with its blocks; list_holidays flags hidden ones", () => {
@@ -485,6 +553,22 @@ test("remember validates bounded title/content and an optional topic key", () =>
   assert.ok(checkRemember(JSON.stringify({ title: "T", content: "C".repeat(800) })).ok, "800 chars is the cap");
   assert.ok(!checkRemember('{"title":"T","content":"C","topicKey":""}').ok);
   assert.ok(!checkRemember(JSON.stringify({ title: "T", content: "C", topicKey: "k".repeat(121) })).ok);
+});
+
+test("remember over an existing key describes the replacement, not a silent overwrite", () => {
+  const memoryTopics = [{ topicKey: "planning-style", title: "Prefers short answers" }];
+  // A derived key colliding with an existing note names the note it will
+  // replace (review finding 3) — the card cannot say just "Remember X".
+  const derived = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}', { ...readContext, memoryTopics });
+  assert.ok(derived.ok);
+  assert.match(derived.ok ? derived.description : "", /Replace note "Prefers short answers"/);
+  const explicit = checkRemember('{"title":"T","content":"C","topicKey":"planning-style"}', { ...readContext, memoryTopics });
+  assert.ok(explicit.ok);
+  assert.match(explicit.ok ? explicit.description : "", /Replace note "Prefers short answers"/);
+  // An unknown key stays a plain Remember.
+  const fresh = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}', readContext);
+  assert.ok(fresh.ok);
+  assert.match(fresh.ok ? fresh.description : "", /^Remember "/);
 });
 
 test("deriveTopicKey slugs the title the way the store keys notes", () => {

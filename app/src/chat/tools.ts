@@ -71,12 +71,12 @@ const MOVE_TASK: ChatToolSpec = {
         day: {
           type: ["string", "null"],
           description:
-            "The target day as YYYY-MM-DD, or null to unschedule the task (clear its date).",
+            "The target day as YYYY-MM-DD, or null to unschedule (clears the due date only — placed blocks stay; use update_task with day: null to also remove its upcoming placements).",
         },
         startTime: {
           type: "string",
           description:
-            "Optional wall-clock HH:MM (24 h) to also place the task on that day's schedule; needs a day.",
+            "Optional wall-clock HH:MM (24 h) to also place the task on that day's schedule; needs a day. Replaces the task's existing blocks on that day.",
         },
       },
       required: ["taskId", "day"],
@@ -427,11 +427,28 @@ function describeCreateTask(value: NormalizedCreateTask, todayKey: string): stri
   return parts.join(" · ");
 }
 
+/** The task-linked blocks a confirmed `move_task` removes, computed from the
+ * live context — the same rule the card's description states, so the
+ * executor writes exactly what the card described. A start-time move
+ * replaces the task's blocks on the target day; `day: null` clears only the
+ * due date and removes NO blocks (unscheduling WITH block removal is
+ * `update_task`'s job, whose card lists the affected blocks). */
+export function moveTaskRemovals(value: NormalizedMoveTask, context: ChatToolContext): Array<{ id: string; label: string }> {
+  if (value.day === null || value.startMinutes === undefined) return [];
+  return affectedBlockIds(value.taskId, { startDay: value.day }, context);
+}
+
 function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["tasks"][number], context: ChatToolContext): string {
   const label = (day: string | undefined | null) =>
     day === undefined || day === null ? "No date" : formatDateKey(day, context.todayKey);
   const parts = [`Move "${task.title}"`, `${label(task.deadline)} → ${value.day === null ? "No date" : label(value.day)}`];
-  if (value.startMinutes !== undefined) parts.push(hhmm(value.startMinutes));
+  if (value.startMinutes !== undefined) {
+    parts.push(hhmm(value.startMinutes));
+    // Same wording as describeUpdateTask: the card names the placements a
+    // start-time move replaces, so the user sees the whole change.
+    const replaced = moveTaskRemovals(value, context);
+    if (replaced.length > 0) parts.push(`replaces ${replaced.length} ${replaced.length === 1 ? "block" : "blocks"}: ${replaced.map(entry => entry.label).join(", ")}`);
+  }
   return parts.join(" · ");
 }
 
@@ -567,19 +584,31 @@ export type ReadResult = { summary: string; result: string };
 
 const emptyResult = (noun: string): ReadResult => ({ summary: `No ${noun} found.`, result: `No ${noun} found.` });
 
+/** The read lines' caps (review finding 4): at most this many block stamps
+ * per task, and titles longer than this are truncated. Everything here is
+ * fed back to the model, so it stays bounded. */
+const TASK_BLOCKS_CAP = 10;
+const READ_TITLE_MAX_CHARS = 120;
+
+function readTitle(title: string): string {
+  return title.length <= READ_TITLE_MAX_CHARS ? title : `${title.slice(0, READ_TITLE_MAX_CHARS - 1)}…`;
+}
+
 function taskLine(
   task: ChatToolContext["tasks"][number],
   blocks: ReadonlyArray<{ start: string; end: string; taskId?: string }>,
   context: ChatToolContext,
 ): string {
-  const parts = [`[${task.id}] "${task.title}"`];
+  const parts = [`[${task.id}] "${readTitle(task.title)}"`];
   parts.push(task.deadline === undefined ? "no due date" : `due ${formatDateKey(task.deadline, context.todayKey)}`);
   const linked = blocks.filter(block => block.taskId === task.id);
   if (linked.length > 0) {
+    const shown = linked.slice(0, TASK_BLOCKS_CAP);
+    const more = linked.length > shown.length ? ` (+${linked.length - shown.length} more)` : "";
     parts.push(
-      linked
+      shown
         .map(block => `${formatDateKey(dateKey(new Date(block.start), context.timeZone), context.todayKey)} ${timeLabel(new Date(block.start), context.timeZone)}–${timeLabel(new Date(block.end), context.timeZone)}`)
-        .join(", "),
+        .join(", ") + more,
     );
   }
   if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
@@ -747,7 +776,8 @@ export function checkUpdateTask(raw: string, context: ChatToolContext): ToolChec
 /** The task-linked blocks an update or unschedule would remove, computed
  * from the context so the card names them exactly. A placement replaces the
  * task's blocks on the target day; an unschedule (day: null) removes the
- * task's upcoming blocks (today onwards) and leaves past history alone. */
+ * task's upcoming blocks (today onwards) and leaves past history alone.
+ * `move_task` never uses the unschedule branch — see `moveTaskRemovals`. */
 export function affectedBlockIds(
   taskId: string,
   change: { clearDay?: boolean; startDay?: string },
@@ -865,9 +895,12 @@ export function deriveTopicKey(title: string): string {
 }
 
 /** Validates `remember`: bounded title and content (the store's own caps), a
- * bounded topic key when given. Existence checks are the executor's job (it
- * sees the live notes). */
-export function checkRemember(raw: string): ToolCheck<NormalizedRemember> {
+ * bounded topic key when given. When the note's key (explicit or derived
+ * from the title) matches an existing note, the card says so — the user
+ * must see that confirming replaces that note's content, not that it adds
+ * a new one (review finding 3). Whether the key is still free is re-checked
+ * against the live store at confirm time. */
+export function checkRemember(raw: string, context?: ChatToolContext): ToolCheck<NormalizedRemember> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
   const title = optionalString(parsed.value.title);
@@ -880,16 +913,23 @@ export function checkRemember(raw: string): ToolCheck<NormalizedRemember> {
   if (content.length > MEMORY_CONTENT_MAX) {
     return { ok: false, error: `The note content is too long (at most ${MEMORY_CONTENT_MAX} characters).` };
   }
+  let topicKey: string | undefined;
   const rawKey = parsed.value.topicKey;
   if (rawKey !== undefined && rawKey !== null) {
     if (typeof rawKey !== "string" || rawKey.trim() === "") return { ok: false, error: "The topic key must be non-empty text." };
     if (rawKey.trim().length > MEMORY_TOPIC_MAX) {
       return { ok: false, error: `The topic key is too long (at most ${MEMORY_TOPIC_MAX} characters).` };
     }
-    const topicKey = rawKey.trim();
-    return { ok: true, value: { title, content, topicKey }, description: `Remember "${title}" — ${content}` };
+    topicKey = rawKey.trim();
   }
-  return { ok: true, value: { title, content }, description: `Remember "${title}" — ${content}` };
+  const effectiveKey = topicKey ?? deriveTopicKey(title);
+  const known = (context?.memoryTopics ?? []).find(entry => entry.topicKey === effectiveKey);
+  const description = known === undefined ? `Remember "${title}" — ${content}` : `Replace note "${known.title}" — ${content}`;
+  return {
+    ok: true,
+    value: topicKey === undefined ? { title, content } : { title, content, topicKey },
+    description,
+  };
 }
 
 /** Validates `forget`: a bounded topic key; whether the note exists is
@@ -967,7 +1007,7 @@ export function validateToolCall(
     case "hide_holiday":
       return checkHideHoliday(call.arguments, context);
     case "remember":
-      return checkRemember(call.arguments);
+      return checkRemember(call.arguments, context);
     case "forget":
       return checkForget(call.arguments, context);
     case "list_tasks":
@@ -983,12 +1023,43 @@ export function validateToolCall(
   }
 }
 
+/** A per-callId once-guard for the confirm path (review finding 7): the
+ * first confirm attempt for a callId claims it; any later attempt with the
+ * same id is refused, so one card can never drive two writes, even if the
+ * panel's own busy guard is bypassed. */
+export function createConfirmGuard(): { claim: (callId: string) => boolean } {
+  const claimed = new Set<string>();
+  return {
+    claim: (callId: string) => {
+      if (claimed.has(callId)) return false;
+      claimed.add(callId);
+      return true;
+    },
+  };
+}
+
 /** The plain-words description of a still-pending proposal, or a neutral line
  * when the arguments do not parse (the card never invents a description from
  * unvalidated data). */
-export function describeToolCall(call: Pick<ChatToolCall, "name" | "arguments">, context: ChatToolContext): string {
-  const check = validateToolCall(call, context);
-  return check.ok ? check.description : "The assistant proposed an action, but its details are not valid.";
+export function describeToolCall(
+  call: Pick<ChatToolCall, "name" | "arguments"> & { status?: string },
+  context: ChatToolContext,
+): string {
+  // A resolved card keeps the description it was confirmed with: the write it
+  // describes already changed the live state (a created note makes the same
+  // remember proposal re-validate as a replacement), so re-reading the live
+  // memory topics would contradict the card's own outcome line. Pending
+  // cards keep the live context — naming an existing note before the user
+  // confirms is the point (review finding 3).
+  const resolved = call.status !== undefined && call.status !== "pending";
+  const check = validateToolCall(call, resolved ? { ...context, memoryTopics: [] } : context);
+  if (check.ok) return check.description;
+  // A RESOLVED card whose proposal no longer validates — the write itself
+  // changed or removed the data it described (a deleted task, a hidden
+  // holiday) — keeps a neutral line instead of claiming the proposal was
+  // invalid: the outcome line carries what actually happened.
+  if (resolved) return "This action was already resolved.";
+  return "The assistant proposed an action, but its details are not valid.";
 }
 
 /** The `tool` message content each card state sends back to the model, so the

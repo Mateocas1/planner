@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { DEFAULT_CHAT_MODEL } from "./config.ts";
-import { emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
+import { createAnswerCallGate, emptyConversation, hasExchange, lastUserText, reduceConversation, type ChatTurn, type ConversationState, type ToolCallStatus } from "./conversation.ts";
 import { createPacer, type StreamPacer } from "./pacer.ts";
 import { getChatReadExecutor, type ChatReadExecutor } from "./readTools.ts";
 import { CHAT_TOOLS, isReadTool, toolResultContent } from "./tools.ts";
@@ -163,6 +163,10 @@ export function useChat(options: {
       });
       pacerRef.current = pacer;
       activeIdRef.current = id;
+      // The per-answer gate mirrors the reducer's cap/duplicate decisions for
+      // this answer, so a read the reducer will drop never executes (finding
+      // 5): the reducer may not have processed the earlier events yet.
+      const answerCallGate = createAnswerCallGate();
       void transport.stream(
         { id, model: DEFAULT_CHAT_MODEL, messages: buildMessages(buildSystemPrompt(), state.turns), tools: CHAT_TOOLS },
         event => {
@@ -172,9 +176,11 @@ export function useChat(options: {
           return;
         }
         if (event.type === "tool_call") {
+          const proposed = answerCallGate(event.call.id);
           dispatchEvent(event);
-          // Reads run at once (S4); writes wait for the user on their card.
-          if (isReadTool(event.call.name)) runReadTool(event.call);
+          // Reads run at once (S4) — but only when the call actually renders
+          // a card; writes wait for the user on their card.
+          if (proposed && isReadTool(event.call.name)) runReadTool(event.call);
           return;
         }
         if (event.type === "done" || event.type === "cancelled" || event.type === "error") {

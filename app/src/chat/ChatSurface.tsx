@@ -42,6 +42,8 @@ import {
   buildListTasksResult,
   deriveTopicKey,
   isReadTool,
+  createConfirmGuard,
+  moveTaskRemovals,
   validateToolCall,
   type ChatToolContext,
   type NormalizedCompleteTask,
@@ -91,8 +93,12 @@ export function ChatSurface({
    * without re-creating `startStream` on every apply. */
   const memoriesRef = useRef<Memory[]>([]);
   const setLatestMemories = useCallback((list: Memory[]) => {
-    memoriesRef.current = list;
-    setMemories(list);
+    // The store contract is an array; a transport that answers null (a Tauri
+    // stub, a drifted Rust shape) must not poison every render that reads the
+    // notes. One choke point keeps the ref and the state shape-true.
+    const safe = Array.isArray(list) ? list : [];
+    memoriesRef.current = safe;
+    setMemories(safe);
   }, []);
 
   const refreshMemories = useCallback(async () => {
@@ -141,6 +147,7 @@ export function ChatSurface({
       tasks: live.snapshot.tasks,
       blocks: live.snapshot.blocks,
       holidays: live.snapshot.holidays,
+      memoryTopics: (memoriesRef.current ?? []).map(memory => ({ topicKey: memory.topicKey, title: memory.title })),
       timeZone: live.timeZone,
       todayKey: dateKey(new Date(), live.timeZone),
     };
@@ -156,9 +163,19 @@ export function ChatSurface({
   // changed task's id and fields in the message, which rides the next
   // request's `tool` message so the model can reference what it just
   // changed. Invalid proposals fail before any write.
+  //
+  // Confirms also carry a per-callId once-guard (review finding 7): the first
+  // confirm attempt claims the id, so the same card can never write twice.
+  const confirmGuard = useMemo(() => createConfirmGuard(), []);
   const executeToolCall = useCallback(
     async (call: ChatToolCall): Promise<ToolOutcome> => {
       if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
+      // One Confirm, one write (review finding 7): the per-callId guard
+      // claims the id before any await, so a repeated confirm can never run
+      // a second write even if the panel's own busy guard is bypassed.
+      if (!confirmGuard.claim(call.id)) {
+        return { status: "failed", message: "This action was already confirmed once." };
+      }
       const toolContext = buildToolContext();
       const check = validateToolCall(call, toolContext);
       if (!check.ok) return { status: "failed", message: check.error };
@@ -194,11 +211,10 @@ export function ChatSurface({
           const value = check.value as NormalizedMoveTask;
           const task = toolContext.tasks.find(entry => entry.id === value.taskId);
           const estimate = task?.estimateMinutes ?? 60;
-          const removals = affectedBlockIds(
-            value.taskId,
-            { clearDay: value.day === null, ...(value.startMinutes !== undefined && value.day !== null ? { startDay: value.day } : {}) },
-            toolContext,
-          );
+          // The removals the card described (moveTaskRemovals): a start-time
+          // move replaces the task's same-day blocks; `day: null` clears only
+          // the due date and removes NO blocks (that is update_task's job).
+          const removals = moveTaskRemovals(value, toolContext);
           await applyChatTaskUpdate(uid, {
             taskId: value.taskId,
             title: task?.title ?? value.title,
@@ -216,13 +232,13 @@ export function ChatSurface({
           const title = task?.title ?? value.title;
           const target = value.day === null ? "no date" : value.day === undefined ? undefined : formatDateKey(value.day, toolContext.todayKey);
           const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
-          const removed = removals.length > 0 ? `, removed ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
+          const replaced = removals.length > 0 ? `, replaced ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
           return {
             status: "confirmed",
             message:
               value.day === null
-                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared${removed})`
-                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${removed}`,
+                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared; its placed blocks stay)`
+                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${replaced}`,
           };
         }
         if (call.name === "update_task") {
@@ -295,11 +311,18 @@ export function ChatSurface({
         if (call.name === "remember") {
           const value = check.value as NormalizedRemember;
           const topicKey = value.topicKey ?? deriveTopicKey(value.title);
+          // The outcome matches the card: when the key was already in the
+          // live notes, this replaced that note's content (review finding 3).
+          const current = await backend.list();
+          const existing = current.find(memory => memory.topicKey === topicKey);
           setLatestMemories(await backend.apply([{ op: "upsert", topicKey, title: value.title, content: value.content }]));
           notifyMemoriesChanged();
           return {
             status: "confirmed",
-            message: `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
+            message:
+              existing === undefined
+                ? `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`
+                : `Replaced the note "${existing.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
           };
         }
         if (call.name === "forget") {
@@ -318,7 +341,7 @@ export function ChatSurface({
         return { status: "failed", message: error instanceof Error ? error.message : String(error) };
       }
     },
-    [uid, buildToolContext, backend, notifyMemoriesChanged],
+    [uid, buildToolContext, backend, notifyMemoriesChanged, confirmGuard],
   );
 
   /** Reads (S4): run the moment the model proposes them — no confirmation.
@@ -380,14 +403,19 @@ export function ChatSurface({
   );
 
   // Display-only context for the panel's card descriptions (the words a card
-  // shows while pending). The authoritative validation at confirm time and
-  // every request's prompt read the live refs instead, so this memo only
-  // needs to track the snapshot for re-rendering descriptions.
-  const displayToolContext = useMemo<ChatToolContext>(
-    () => buildToolContext(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot identity changes on every store event
-    [snapshot, timeZone, buildToolContext],
-  );
+  // shows while pending). Built per render — a cheap object — so the "today"
+  // wording is computed at describe time instead of frozen in a memo from
+  // whatever render first built it (review finding 6). The authoritative
+  // confirm-time validation and every request's prompt still read the live
+  // refs via buildToolContext.
+  const displayToolContext: ChatToolContext = {
+    tasks: snapshot.tasks,
+    blocks: snapshot.blocks,
+    holidays: snapshot.holidays,
+    memoryTopics: (memories ?? []).map(memory => ({ topicKey: memory.topicKey, title: memory.title })),
+    timeZone,
+    todayKey: dateKey(new Date(), timeZone),
+  };
 
   return (
     <ChatPanel
