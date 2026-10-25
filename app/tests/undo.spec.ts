@@ -179,6 +179,61 @@ test("deleting a task offers undo, and undo restores that task with its completi
   await expect(page.locator("li.task.completed", { hasText: "Pack bags" })).toHaveCount(1);
 });
 
+test("deleting a task deletes its work blocks, and undo restores both (S8)", async ({ page }) => {
+  const email = newEmail("undo-task-blocks");
+  await signUp(page, email);
+  await openTasks(page);
+
+  const deadline = dayKey(3);
+  await addTaskThroughForm(page, "Paint fence", deadline);
+  // One work block linked to the task, today — the calendar's own week, so
+  // the block is on screen across the reload too.
+  await openCalendar(page);
+  await revealBlockForm(page);
+  // Scope to the sheet: other surfaces (focus, settings) carry Start/End labels too.
+  const blockForm = page.getByRole("complementary", { name: "New block" });
+  const blockDay = dayKey(0);
+  await blockForm.getByLabel("Start").fill(`${blockDay}T14:00`);
+  await blockForm.getByLabel("End").fill(`${blockDay}T15:30`);
+  await blockForm.getByLabel("Task").selectOption({ label: "Paint fence" });
+  await page.getByRole("button", { name: "Add block" }).click();
+  await settleSheet(page, "New block");
+  const slot = page.locator(`[data-date="${blockDay}"] .calendar-block`).filter({ hasText: "Paint fence" });
+  await expect(slot).toHaveCount(1);
+  await expect.poll(async () => (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined), poll).toHaveLength(1);
+
+  // Deleting the task takes the block off the calendar with it — the old
+  // orphan-block bug (S8).
+  await openTasks(page);
+  // The row button (not the calendar's "Focus: Paint fence" pill that the
+  // block just created).
+  await page.getByRole("button", { name: /Paint fence due/ }).click();
+  await page.getByRole("button", { name: "Delete task" }).click();
+  await expectToastSentence(page, "Task deleted");
+  await expect(page.locator(".task-title", { hasText: "Paint fence" })).toHaveCount(0);
+  await expectRemoteTasks(email, []);
+  await expect.poll(() => readRemoteBlocks(email), poll).toEqual([]);
+  await openCalendar(page);
+  await expect(page.locator(`[data-date="${blockDay}"] .calendar-block`)).toHaveCount(0);
+
+  // Undo restores the task AND the block, under the same link.
+  await undoToast(page).getByRole("button", { name: "Undo" }).click();
+  await expect(undoToast(page)).toHaveCount(0);
+  await openTasks(page);
+  await expect(page.locator(".task-title", { hasText: "Paint fence" })).toHaveCount(1);
+  await expectRemoteTasks(email, [{ title: "Paint fence", completed: false, deadline }]);
+  await expect.poll(async () => (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined), poll).toHaveLength(1);
+  await openCalendar(page);
+  await expect(page.locator(`[data-date="${blockDay}"] .calendar-block`).filter({ hasText: "Paint fence" })).toHaveCount(1);
+
+  // Stored state, not a local echo.
+  await page.reload();
+  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await expect.poll(async () => (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined), poll).toHaveLength(1);
+  await openCalendar(page);
+  await expect(page.locator(`[data-date="${blockDay}"] .calendar-block`).filter({ hasText: "Paint fence" })).toHaveCount(1);
+});
+
 test("deleting a series offers undo, and undo restores the same id, schedule and completion history", async ({ page }) => {
   const email = newEmail("undo-series");
   await signUp(page, email);

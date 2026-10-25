@@ -429,7 +429,7 @@ test("validateToolCall routes the reads", () => {
 
 /* ---------- write tools beyond create/move (S4) ---------- */
 
-import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deriveTopicKey } from "./tools.ts";
+import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deleteTaskKeptNote, deriveTopicKey } from "./tools.ts";
 
 const updateContext: ChatToolContext = {
   ...readContext,
@@ -511,15 +511,40 @@ test("complete_task validates the flag and the id; the card says complete or reo
   assert.ok(!ghost.ok);
 });
 
-test("delete_task validates the id and the card names exactly what is removed (S4)", () => {
+test("delete_task validates the id and the card names every work block it removes (S4, S8)", () => {
   const ok = checkDeleteTask('{"taskId":"t1"}', updateContext);
   assert.ok(ok.ok);
-  assert.match(ok.ok ? ok.description : "", /Delete task "Pay the invoice" · due tomorrow · 45 min · 2 blocks stay on the calendar/);
+  assert.match(
+    ok.ok ? ok.description : "",
+    /Delete task "Pay the invoice" · due tomorrow · 45 min · and its 2 work blocks: .*09:00–10:00, .*14:00–14:45/,
+  );
+  // The normalized value carries the exact blocks the card named, so the
+  // executor deletes exactly those and nothing else.
+  // Chronological (start order), the order the calendar shows them in.
+  assert.deepEqual(ok.ok ? ok.value.blocks.map(block => block.id) : [], ["b2", "b1"]);
   const bare = checkDeleteTask('{"taskId":"t3"}', updateContext);
   assert.ok(bare.ok);
   assert.equal(bare.ok && bare.description, 'Delete task "Milk the moment"');
+  assert.ok(bare.ok && bare.value.blocks.length === 0);
   const ghost = checkDeleteTask('{"taskId":"ghost"}', updateContext);
   assert.ok(!ghost.ok);
+});
+
+test("delete_task's kept note reports only blocks the card did not name, with count and plurals (S8)", () => {
+  const card = [{ id: "b1" }, { id: "b2" }];
+  // Everything left was named by the card: nothing to report.
+  assert.equal(deleteTaskKeptNote(card, [{ id: "b2" }, { id: "b1" }]), "");
+  assert.equal(deleteTaskKeptNote(card, []), "");
+  // One unconfirmed survivor: the exact sentence the outcome appends.
+  assert.equal(
+    deleteTaskKeptNote(card, [{ id: "b9" }]),
+    ". 1 more block linked to this task was created after the card and was kept",
+  );
+  // Two or more: plural verb and count.
+  assert.equal(
+    deleteTaskKeptNote(card, [{ id: "b9" }, { id: "b8" }]),
+    ". 2 more blocks linked to this task were created after the card and were kept",
+  );
 });
 
 test("hide_holiday validates against the known holidays and rejects no-ops", () => {
