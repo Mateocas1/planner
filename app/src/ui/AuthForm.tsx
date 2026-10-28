@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { authErrorKey } from "../data/authErrors.ts";
+import { authErrorKey, type AuthErrorKey } from "../data/authErrors.ts";
 import { createAccount, signIn } from "../data/session.ts";
-import { t, useLocale, type MessageKey } from "../i18n/index.ts";
+import { t, useLocale } from "../i18n/index.ts";
 
 export function AuthForm() {
   useLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<MessageKey | null>(null);
+  const [error, setError] = useState<AuthErrorKey | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(action: () => Promise<unknown>) {
