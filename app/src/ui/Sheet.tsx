@@ -371,6 +371,9 @@ export function Sheet({
   // no claim on it.
   useEffect(() => {
     const sheet = sheetRef.current;
+    // Read while the panel is still attached: by cleanup time it is detached.
+    const holders: Element[] = [];
+    for (let node = sheet?.parentElement ?? null; node; node = node.parentElement) holders.push(node);
     return () => {
       if (!origin?.isConnected) return;
       const active = document.activeElement;
@@ -382,7 +385,7 @@ export function Sheet({
         active === document.body ||
         active === sheet ||
         sheet?.contains(active) === true ||
-        (sheet !== null && active.contains(sheet));
+        holders.includes(active);
       if (!loose) return;
       // A row holds a check and its title button; the button is the control that
       // opened the panel, so it is the one that gets the caret back.
