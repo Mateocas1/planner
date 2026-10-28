@@ -411,6 +411,7 @@ function TodayPage({
             task={selectedTask}
             origin={selected.origin}
             shared
+            today={today}
             busy={false}
             biasSamples={biasSamples}
             onClose={() => morphClose(() => setSelected(null), selected.origin)}

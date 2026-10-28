@@ -1,0 +1,98 @@
+/*
+ * DateField (form-controls.md §6.2): a button that shows the date in words, and
+ * the quick list inside its popover. The surface itself is Popover.css; the
+ * month grid is MonthGrid.css. The trigger keeps the `.form-control` look (the
+ * row, the radius, the accent text) and adds what a button needs.
+ */
+
+.date-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 32px;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
+}
+
+.date-trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-trigger[data-empty] { color: var(--label-3); }
+
+.date-trigger-icon {
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--label-3);
+}
+
+.date-trigger[aria-expanded="true"] { background: var(--accent-soft); }
+
+.date-trigger:disabled { opacity: 0.55; cursor: default; }
+
+@media (hover: hover) and (pointer: fine) {
+  .date-trigger:not(:disabled):not([aria-expanded="true"]):hover { background: var(--fill-press); }
+}
+
+/* iOS zooms the page when a focused control's text is under 16 px: the same
+   rule app.css applies to inputs, for the button that replaced one. */
+@media (pointer: coarse), (max-width: 760px) {
+  .date-trigger { font-size: max(16px, 1em); }
+}
+
+/* The popover: 7 cells + the 8 px surface padding + a 4 px inset on each side
+   (304 px with a mouse, 332 px on touch, which fits a 390 px phone). */
+.date-panel { padding-inline: 4px; }
+
+.date-quick { display: grid; gap: 0; }
+
+.date-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--label);
+  font: 400 var(--text-body) / 1.3 var(--font);
+  text-align: start;
+  transition: background-color var(--dur-hover) ease,
+    transform var(--press-release-dur) var(--ease-press-spring);
+}
+
+.date-row-hint {
+  color: var(--label-3);
+  font-size: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.date-row[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
+
+.date-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .date-row:hover { background: var(--fill-hover); }
+}
+
+@media (pointer: coarse) {
+  .date-row { min-block-size: 44px; }
+}
+
+.date-sep {
+  margin: 4px 8px;
+  border: 0;
+  border-top: 0.5px solid var(--separator);
+}
+
+@media (forced-colors: active) {
+  .date-row[aria-pressed="true"] { outline: 1px solid Highlight; }
+}

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { chooseOption, expectChoice, submitAuthForm } from "./browser-helpers.ts";
+import { chooseOption, expectChoice, pickDate, submitAuthForm } from "./browser-helpers.ts";
 
 test.setTimeout(90_000);
 
@@ -256,7 +256,7 @@ test.describe("Select on a desktop viewport", () => {
     await expect(sheet.locator("select")).toHaveCount(0);
     await sheet.getByLabel("Task title").fill("Water the plants");
     await chooseOption(sheet, "Repeat", "Daily");
-    await sheet.getByLabel("Start date").fill("2026-11-02");
+    await pickDate(sheet, "Start date", "2026-11-02");
     await sheet.getByRole("button", { name: "Add task" }).click();
     await expect(page.getByRole("complementary", { name: "New task" })).toHaveCount(0);
     await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
