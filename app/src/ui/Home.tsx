@@ -55,9 +55,9 @@ export function Home(props: HomeProps) {
     return (
       <section className="view" aria-labelledby="home-heading">
         <header className="page-head">
-          <h2 id="home-heading" className="large-title">Today</h2>
+          <h2 id="home-heading" className="large-title">{t("home.title")}</h2>
         </header>
-        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner…</p>}
+        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">{t("home.loading")}</p>}
       </section>
     );
   }
@@ -139,7 +139,7 @@ function TodayPage({
   const current = todayBlocks.find(block => Date.parse(block.start) <= nowMs && nowMs < Date.parse(block.end));
   const next = todayBlocks.find(block => Date.parse(block.start) > nowMs);
   const blocksLeft = todayBlocks.filter(block => Date.parse(block.start) > nowMs).length;
-  const blockName = (block: BlockView) => titleOf(block.taskId)?.title ?? "Work block";
+  const blockName = (block: BlockView) => titleOf(block.taskId)?.title ?? t("home.workBlock");
 
   const dueTasks = tasks
     .filter(task => !task.completed && task.deadline !== undefined && task.deadline <= today)
@@ -180,7 +180,7 @@ function TodayPage({
     void settle(setTaskDeadline(uid, task.id, task.title, deadline))
       .then(() =>
         onOfferUndo?.({
-          message: `Deadline moved to ${formatDateKey(deadline, today)}`,
+          message: t("home.undo.deadlineMoved", { date: formatDateKey(deadline, today) }),
           restore: () => setTaskDeadline(uid, task.id, task.title, task.deadline),
         }),
       )
@@ -193,7 +193,7 @@ function TodayPage({
     void settle(setBlockTimes(uid, block.id, next.start, next.end))
       .then(() =>
         onOfferUndo?.({
-          message: `Block moved to ${day}`,
+          message: t("home.undo.blockMoved", { day }),
           restore: () => settle(setBlockTimes(uid, block.id, block.start, block.end)),
         }),
       )
@@ -238,22 +238,22 @@ function TodayPage({
     <section className="view" aria-labelledby="home-heading" ref={scope}>
       <header className="page-head">
         <div>
-          <h2 id="home-heading" className="large-title">Today</h2>
+          <h2 id="home-heading" className="large-title">{t("home.title")}</h2>
           <p className="subtitle">
             {formatWall(todayUtc, { weekday: "long", month: "long", day: "numeric" })}
-            {!empty && ` · ${blocksLeft === 0 ? "no blocks left" : `${blocksLeft} ${blocksLeft === 1 ? "block" : "blocks"} left`}`}
+            {!empty && ` · ${blocksLeft === 0 ? t("home.noBlocksLeft") : t("home.blocksLeft", { count: blocksLeft })}`}
           </p>
         </div>
       </header>
 
       {closing && (
         <section className="shutdown-banner" aria-labelledby="shutdown-banner-text">
-          <p id="shutdown-banner-text" className="shutdown-banner-text">Time to close the day.</p>
+          <p id="shutdown-banner-text" className="shutdown-banner-text">{t("home.closeDay.text")}</p>
           {/* Criterion 8: a fine pointer gets a visible action. A thumb turns the
               page instead, which is the gesture the sheet teaches. */}
           {!phone && (
             <button type="button" className="button" onClick={event => onCloseDay(event.currentTarget)}>
-              Close day
+              {t("home.closeDay.button")}
             </button>
           )}
         </section>
@@ -274,8 +274,8 @@ function TodayPage({
 
       {empty ? (
         <div className="empty-state" role="status">
-          <p className="empty-title">No tasks and no work blocks yet. Your planner is empty.</p>
-          <p>Add a task with New task, then set time aside for it in the calendar.</p>
+          <p className="empty-title">{t("home.empty.title")}</p>
+          <p>{t("home.empty.body")}</p>
           <button type="button" className="button button-accent empty-action" onClick={event => onNewTask(event.currentTarget)}>
             <PlusIcon />{t("today.addFirstTask")}
           </button>
@@ -323,16 +323,16 @@ function TodayPage({
 
             <section className="list-section" aria-labelledby="due-heading">
               <div className="section-head">
-                <h3 id="due-heading" className="section-title">Due today</h3>
-                {dueTasks.length + dueSeries.length > 0 && <span className="section-meta">{dueTasks.length + dueSeries.length} left</span>}
+                <h3 id="due-heading" className="section-title">{t("home.due.title")}</h3>
+                {dueTasks.length + dueSeries.length > 0 && <span className="section-meta">{t("home.due.left", { count: dueTasks.length + dueSeries.length })}</span>}
               </div>
               {dueTasks.length + dueSeries.length === 0 ? (
-                <p className="group group-empty">Nothing due today.</p>
+                <p className="group group-empty">{t("home.due.empty")}</p>
               ) : (
                 <ul className="group">
                   {dueTasks.map(task => (
                     <li key={task.id} className="row" data-pending={task.pending ? "true" : "false"}>
-                      <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
+                      <input type="checkbox" className="check" checked={false} aria-label={t("tasks.complete", { title: task.title })} onChange={() => complete(task)} />
                       <button
                         type="button"
                         className="row-main"
@@ -354,7 +354,7 @@ function TodayPage({
                         type="checkbox"
                         className="check"
                         checked={false}
-                        aria-label={`Complete: ${entry.title} on ${occurrence!.date}`}
+                        aria-label={t("tasks.completeOn", { title: entry.title, date: occurrence!.date })}
                         onChange={() => void settle(completeOccurrence(uid, entry.id, occurrence!.date)).catch(() => undefined)}
                       />
                       <button
@@ -365,7 +365,7 @@ function TodayPage({
                         onFocus={() => onRowFocus(entry.id)}
                       >
                         <span className="row-title" title={entry.title}>{entry.title}</span>
-                        <span className="row-meta has-icon is-today"><RepeatIcon className="meta-icon" /><span className="row-meta-text">{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span></span>
+                        <span className="row-meta has-icon is-today"><RepeatIcon className="meta-icon" /><span className="row-meta-text">{t(`tasks.frequency.${entry.frequency}`)}</span></span>
                       </button>
                     </li>
                   ))}
@@ -375,16 +375,16 @@ function TodayPage({
 
             <section className="list-section" aria-labelledby="upcoming-heading">
               <div className="section-head">
-                <h3 id="upcoming-heading" className="section-title">Coming up</h3>
-                <span className="section-meta">Next 7 days</span>
+                <h3 id="upcoming-heading" className="section-title">{t("home.upcoming.title")}</h3>
+                <span className="section-meta">{t("home.upcoming.window")}</span>
               </div>
               {upcoming.length === 0 ? (
-                <p className="group group-empty">No deadlines this week.</p>
+                <p className="group group-empty">{t("home.upcoming.empty")}</p>
               ) : (
                 <ul className="group">
                   {upcoming.map(task => (
                     <li key={task.id} className="row">
-                      <input type="checkbox" className="check" checked={false} aria-label={`Complete: ${task.title}`} onChange={() => complete(task)} />
+                      <input type="checkbox" className="check" checked={false} aria-label={t("tasks.complete", { title: task.title })} onChange={() => complete(task)} />
                       <button
                         type="button"
                         className="row-main"
@@ -405,8 +405,8 @@ function TodayPage({
 
           <section className="list-section" aria-labelledby="schedule-heading">
             <div className="section-head">
-              <h3 id="schedule-heading" className="section-title">Schedule</h3>
-              <button type="button" className="link-button" onClick={onOpenCalendar}>Open calendar</button>
+              <h3 id="schedule-heading" className="section-title">{t("home.schedule.title")}</h3>
+              <button type="button" className="link-button" onClick={onOpenCalendar}>{t("home.schedule.openCalendar")}</button>
             </div>
             <Agenda blocks={todayBlocks} now={now} timeZone={timeZone} name={blockName} activeId={activeId} order={rowOrder} onRowFocus={onRowFocus} />
           </section>
@@ -441,14 +441,14 @@ function TodayPage({
               void linkedBlocks(uid, deleted.id)
                 .then(deletedBlocks =>
                   settle(deleteTask(uid, deleted.id, deletedBlocks)).then(() => {
-                    onOfferUndo?.({ message: "Task deleted", restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) });
+                    onOfferUndo?.({ message: t("tasks.deleted"), restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) });
                   }),
                 )
                 .catch((cause: unknown) => {
                   // The batch guard and the rules must be seen: a delete that
                   // changed nothing is reported, not swallowed silently.
                   window.dispatchEvent(
-                    new CustomEvent(writeErrorEvent, { detail: cause instanceof Error ? cause.message : "A change could not be saved." }),
+                    new CustomEvent(writeErrorEvent, { detail: cause instanceof Error ? cause.message : t("home.saveFailed") }),
                   );
                 });
             }}
@@ -468,6 +468,17 @@ function focusedRowId(): string | null {
 
 function formatWallKey(wallUtc: number): string {
   return new Date(wallUtc).toISOString().slice(0, 10);
+}
+
+/** "Next **name** at time": the template is split around the name so the bold span keeps the language's word order. */
+function nextSentence(name: string, time: string) {
+  const marker = "\u0001";
+  const [before = "", after = ""] = t("home.now.next", { name: marker, time }).split(marker);
+  return (
+    <>
+      {before}<b>{name}</b>{after}
+    </>
+  );
 }
 
 function NowCard({
@@ -498,28 +509,28 @@ function NowCard({
     const total = (end - start) / 60_000;
     return (
       <article className="card now-card" aria-labelledby="now-title">
-        <p className={`now-label${current.taskId ? " for-task" : ""}`}><span className="now-dot" aria-hidden="true" />Now</p>
+        <p className={`now-label${current.taskId ? " for-task" : ""}`}><span className="now-dot" aria-hidden="true" />{t("home.now.label")}</p>
         <h3 id="now-title" className="now-title">{name(current)}</h3>
         <p className="now-when">{range(current)}</p>
         <div className={`progress${current.taskId ? " for-task" : ""}`} aria-hidden="true">
           <i style={{ transform: `scaleX(${Math.min(1, Math.max(0, elapsed / total))})` }} />
         </div>
         <div className="progress-row">
-          <span>{formatDuration(elapsed)} in</span>
-          <span>{formatDuration(total - elapsed)} left</span>
+          <span>{t("home.now.elapsed", { duration: formatDuration(elapsed) })}</span>
+          <span>{t("home.now.remaining", { duration: formatDuration(total - elapsed) })}</span>
         </div>
         <div className="now-foot">
           {next && (
             <p className="now-next">
-              Next <b>{name(next)}</b> at {timeLabel(new Date(next.start), timeZone)}
+              {nextSentence(name(next), timeLabel(new Date(next.start), timeZone))}
             </p>
           )}
           {task && !task.completed && (
             <button type="button" className="button" onClick={() => onComplete(task)}>
-              Mark task done
+              {t("home.now.markDone")}
             </button>
           )}
-          <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
+          <button type="button" className="link-button" onClick={onOpenNow}>{t("home.now.fullScreen")}</button>
         </div>
       </article>
     );
@@ -530,17 +541,17 @@ function NowCard({
     const minutes = (Date.parse(next.start) - now.getTime()) / 60_000;
     return (
       <article className="card now-card" aria-labelledby="now-title">
-        <p className="now-label is-free">Free now</p>
+        <p className="now-label is-free">{t("home.now.freeNow")}</p>
         <h3 id="now-title" className="now-title">{name(next)}</h3>
-        <p className="now-when">Starts at {timeLabel(new Date(next.start), timeZone)}, in {formatDuration(minutes)}</p>
+        <p className="now-when">{t("home.now.startsIn", { time: timeLabel(new Date(next.start), timeZone), duration: formatDuration(minutes) })}</p>
       </article>
     );
   }
   return (
     <article className="card now-card" aria-labelledby="now-title">
-      <p className="now-label is-free">Nothing scheduled</p>
-      <h3 id="now-title" className="now-title">The rest of today is open</h3>
-      <p className="now-when">Plan a work block from the calendar when you are ready.</p>
+      <p className="now-label is-free">{t("home.now.nothingScheduled")}</p>
+      <h3 id="now-title" className="now-title">{t("home.now.restOpen")}</h3>
+      <p className="now-when">{t("home.now.planPrompt")}</p>
     </article>
   );
 }
@@ -565,13 +576,13 @@ function Agenda({
   order: readonly string[];
   onRowFocus: (id: string) => void;
 }) {
-  if (blocks.length === 0) return <p className="group group-empty">No work blocks today.</p>;
+  if (blocks.length === 0) return <p className="group group-empty">{t("home.schedule.empty")}</p>;
   const nowMs = now.getTime();
   const items: React.ReactNode[] = [];
   let placedNow = false;
   let cursor: number | null = null;
   const nowRow = (
-    <li key="now" className="agenda-now" aria-label={`Now, ${timeLabel(now, timeZone)}`}>
+    <li key="now" className="agenda-now" aria-label={t("home.schedule.nowAria", { time: timeLabel(now, timeZone) })}>
       <time>{timeLabel(now, timeZone)}</time>
       <span className="agenda-now-line" aria-hidden="true" />
     </li>
@@ -585,7 +596,7 @@ function Agenda({
     }
     if (cursor !== null && start > nowMs) {
       const gap = (start - Math.max(cursor, nowMs)) / 60_000;
-      if (gap >= 30) items.push(<li key={`gap-${block.id}`} className="agenda-gap">Free for {formatDuration(gap)}</li>);
+      if (gap >= 30) items.push(<li key={`gap-${block.id}`} className="agenda-gap">{t("home.schedule.freeFor", { duration: formatDuration(gap) })}</li>);
     }
     items.push(
       <li key={block.id} className={`agenda-item${end <= nowMs ? " is-past" : ""}`}>

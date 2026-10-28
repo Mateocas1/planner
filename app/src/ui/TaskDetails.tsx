@@ -108,10 +108,10 @@ function EstimateField({
  * absent. A committed write arrives back through the store and the field
  * follows it while unfocused; a rejected one leaves the user's draft in place.
  */
-const frequencyOptions = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
+const frequencyOptions = () => [
+  { value: "daily", label: t("tasks.frequency.daily") },
+  { value: "weekly", label: t("tasks.frequency.weekly") },
+  { value: "monthly", label: t("tasks.frequency.monthly") },
 ];
 
 export function TaskDetails({
@@ -162,15 +162,15 @@ export function TaskDetails({
   };
 
   return (
-    <Sheet label="Task details" className="task-details" origin={origin} shared={shared} onClose={onClose}>
+    <Sheet label={t("details.task.label")} className="task-details" origin={origin} shared={shared} onClose={onClose}>
       <header className="sheet-head">
-        <span className="sheet-kind">Task</span>
-        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+        <span className="sheet-kind">{t("details.task.kind")}</span>
+        <button type="button" className="icon-button" aria-label={t("shortcuts.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
       <label className="sr-only" htmlFor="task-details-title">
-        Rename task
+        {t("details.task.rename")}
       </label>
       <input
         id="task-details-title"
@@ -195,7 +195,7 @@ export function TaskDetails({
       <ActualSummary estimate={task.estimate} actualMinutes={task.actualMinutes} completed={task.completed} />
       <div className="form-group">
         <div className="form-row">
-          <label htmlFor="task-details-deadline">Deadline</label>
+          <label htmlFor="task-details-deadline">{t("details.task.deadline")}</label>
           <DateField
             id="task-details-deadline"
             value={task.deadline ?? ""}
@@ -218,7 +218,7 @@ export function TaskDetails({
           onAccept={onEstimateChange}
         />
         <div className="form-row">
-          <label htmlFor="task-details-completed">Completed</label>
+          <label htmlFor="task-details-completed">{t("details.task.completed")}</label>
           <input
             id="task-details-completed"
             type="checkbox"
@@ -231,7 +231,7 @@ export function TaskDetails({
         </div>
       </div>
       <button type="button" className="button-danger" disabled={busy} onClick={onDelete}>
-        Delete task
+        {t("details.task.delete")}
       </button>
     </Sheet>
   );
@@ -288,15 +288,15 @@ export function SeriesDetails({
   };
 
   return (
-    <Sheet label="Series details" className="task-details" origin={origin} shared={shared} onClose={onClose}>
+    <Sheet label={t("details.series.label")} className="task-details" origin={origin} shared={shared} onClose={onClose}>
       <header className="sheet-head">
-        <span className="sheet-kind">Repeating task</span>
-        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+        <span className="sheet-kind">{t("details.series.kind")}</span>
+        <button type="button" className="icon-button" aria-label={t("shortcuts.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
       <label className="sr-only" htmlFor="series-details-title">
-        Rename series
+        {t("details.series.rename")}
       </label>
       <input
         id="series-details-title"
@@ -318,18 +318,18 @@ export function SeriesDetails({
       />
       <div className="form-group">
         <div className="form-row">
-          <label htmlFor="series-details-frequency">Frequency</label>
+          <label htmlFor="series-details-frequency">{t("details.series.frequency")}</label>
           <Select
             id="series-details-frequency"
-            label="Frequency"
+            label={t("details.series.frequency")}
             value={series.frequency}
-            options={frequencyOptions}
+            options={frequencyOptions()}
             disabled={busy}
             onChange={value => onFrequencyChange(value as SeriesView["frequency"])}
           />
         </div>
         <div className="form-row">
-          <label htmlFor="series-details-anchor">Anchor</label>
+          <label htmlFor="series-details-anchor">{t("details.series.anchor")}</label>
           <DateField
             id="series-details-anchor"
             value={series.anchorDate}
@@ -347,10 +347,10 @@ export function SeriesDetails({
         />
       </div>
       {hasHistory && (
-        <p className="sheet-note">Changing the schedule changes future occurrences. Completed occurrences stay as history.</p>
+        <p className="sheet-note">{t("details.series.historyNote")}</p>
       )}
       <section className="sheet-section" aria-labelledby="series-occurrences-heading">
-        <h4 id="series-occurrences-heading" className="sheet-section-title">Upcoming</h4>
+        <h4 id="series-occurrences-heading" className="sheet-section-title">{t("details.series.upcoming")}</h4>
         <ul className="form-group series-occurrences">
           {occurrences.map(occurrence => (
             <li key={occurrence.id} className={`form-row occurrence${occurrence.completed ? " done" : ""}`}>
@@ -361,8 +361,8 @@ export function SeriesDetails({
                 disabled={busy || occurrence.completed}
                 aria-label={
                   occurrence.completed
-                    ? `Completed: ${series.title} on ${occurrence.date}`
-                    : `Complete: ${series.title} on ${occurrence.date}`
+                    ? t("details.series.completedOn", { title: series.title, date: occurrence.date })
+                    : t("tasks.completeOn", { title: series.title, date: occurrence.date })
                 }
                 onChange={() => onCompleteOccurrence(occurrence.date)}
               />
@@ -370,11 +370,11 @@ export function SeriesDetails({
               <span className="occurrence-date">{formatDateKey(occurrence.date, today)}</span>
             </li>
           ))}
-          {occurrences.length === 0 && <li className="form-row sheet-note">No upcoming occurrences in the current window.</li>}
+          {occurrences.length === 0 && <li className="form-row sheet-note">{t("details.series.noUpcoming")}</li>}
         </ul>
       </section>
       <button type="button" className="button-danger" disabled={busy} onClick={onDelete}>
-        Delete series
+        {t("details.series.delete")}
       </button>
     </Sheet>
   );

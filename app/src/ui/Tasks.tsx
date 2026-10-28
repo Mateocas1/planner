@@ -49,8 +49,6 @@ function upcomingOccurrences(series: SeriesView, completions: Record<string, str
   }));
 }
 
-const frequencyLabel: Record<SeriesView["frequency"], string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
-
 /** The row the caret is on, as the keyboard's actions read it: the cursor is
  * real focus, so the row under it is the row to act on. */
 function focusedRow(): { kind: "task" | "series"; id: string } | null {
@@ -182,7 +180,7 @@ export function Tasks({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
+      setError(cause instanceof Error ? cause.message : t("tasks.error.generic"));
     } finally {
       setBusy(false);
     }
@@ -281,7 +279,7 @@ export function Tasks({
     const deadline = task.deadline === undefined || task.deadline <= today ? tomorrowKey(today) : tomorrowKey(task.deadline);
     void run(() => setTaskDeadline(uid, task.id, task.title, deadline)).then(() =>
       onDeleted({
-        message: `Deadline moved to ${formatDateKey(deadline, today)}`,
+        message: t("home.undo.deadlineMoved", { date: formatDateKey(deadline, today) }),
         restore: () => setTaskDeadline(uid, task.id, task.title, task.deadline),
       }),
     );
@@ -308,7 +306,7 @@ export function Tasks({
         className="check task-check"
         checked={task.completed}
         disabled={busy}
-        aria-label={`${task.completed ? "Reopen" : "Complete"}: ${task.title}`}
+        aria-label={t(task.completed ? "tasks.reopen" : "tasks.complete", { title: task.title })}
         onChange={() => completeTask(task, !task.completed)}
       />
       <button
@@ -332,7 +330,7 @@ export function Tasks({
           <span
             className={`row-meta task-deadline${!task.completed && isPastDateKey(task.deadline, today) ? " task-deadline-overdue" : ""}${!task.completed && task.deadline === today ? " task-deadline-today" : ""}`}
           >
-            due {formatDateKey(task.deadline, today)}
+            {t("tasks.due", { date: formatDateKey(task.deadline, today) })}
           </span>
         )}
       </button>
@@ -355,10 +353,12 @@ export function Tasks({
     <section className="view" aria-labelledby="tasks-heading">
       <header className="page-head">
         <div>
-          <h2 id="tasks-heading" className="large-title">Tasks</h2>
+          <h2 id="tasks-heading" className="large-title">{t("tasks.title")}</h2>
           {!empty && (
             <p className="subtitle">
-              {tasks.length - completed.length} open{overdue > 0 ? `, ${overdue} overdue` : ""}
+              {overdue > 0
+                ? t("tasks.summary.openOverdue", { open: tasks.length - completed.length, overdue })
+                : t("tasks.summary.open", { open: tasks.length - completed.length })}
             </p>
           )}
         </div>
@@ -366,8 +366,8 @@ export function Tasks({
       {error && <p className="inline-error" role="alert">{error}</p>}
       {empty ? (
         <div className="empty-state" role="status">
-          <p className="empty-title">No tasks yet.</p>
-          <p>Add your first one with New task. Give it a deadline, or make it repeat.</p>
+          <p className="empty-title">{t("tasks.empty.title")}</p>
+          <p>{t("tasks.empty.body")}</p>
           <button type="button" className="button button-accent empty-action" onClick={event => onNewTask(event.currentTarget)}>
             <PlusIcon />{t("today.addFirstTask")}
           </button>
@@ -378,7 +378,7 @@ export function Tasks({
             {series.length > 0 && (
               <section className="list-section task-group">
                 <h3 className="section-title">
-                  Repeating <span className="heading-count">{series.length}</span>
+                  {t("tasks.group.repeating")} <span className="heading-count">{series.length}</span>
                 </h3>
                 <ul className="group task-list">
                   {series.map(seriesRow => {
@@ -395,7 +395,7 @@ export function Tasks({
                           className="check task-check"
                           checked={false}
                           disabled={busy || next === null}
-                          aria-label={next === null ? `Complete: ${seriesRow.title}` : `Complete: ${seriesRow.title} on ${next.date}`}
+                          aria-label={next === null ? t("tasks.complete", { title: seriesRow.title }) : t("tasks.completeOn", { title: seriesRow.title, date: next.date })}
                           onChange={() => {
                             if (next) void run(() => completeOccurrence(uid, seriesRow.id, next.date));
                           }}
@@ -416,9 +416,9 @@ export function Tasks({
                           <span className="row-meta has-icon">
                             <span className="series-frequency">
                               <RepeatIcon className="meta-icon" />
-                              <span className="row-meta-text">{frequencyLabel[seriesRow.frequency] ?? seriesRow.frequency}</span>
+                              <span className="row-meta-text">{t(`tasks.frequency.${seriesRow.frequency}`)}</span>
                             </span>
-                            {next && <span className={`task-deadline${next.date === today ? " task-deadline-today" : ""}`}>next {formatDateKey(next.date, today)}</span>}
+                            {next && <span className={`task-deadline${next.date === today ? " task-deadline-today" : ""}`}>{t("tasks.next", { date: formatDateKey(next.date, today) })}</span>}
                           </span>
                         </button>
                       </li>
@@ -427,8 +427,8 @@ export function Tasks({
                 </ul>
               </section>
             )}
-            {open.length > 0 && group("Open", open)}
-            {completed.length > 0 && group("Completed", completed)}
+            {open.length > 0 && group(t("tasks.group.open"), open)}
+            {completed.length > 0 && group(t("tasks.group.completed"), completed)}
           </div>
         </LayoutGroup>
       )}
@@ -455,7 +455,7 @@ export function Tasks({
               const deleted = selectedSeries;
               setSelected(null);
               void settle(deleteSeries(uid, deleted.id))
-                .then(() => onDeleted({ message: "Series deleted", restore: () => restoreSeries(uid, deleted) }))
+                .then(() => onDeleted({ message: t("tasks.seriesDeleted"), restore: () => restoreSeries(uid, deleted) }))
                 .catch(() => undefined);
             }}
           />
@@ -489,13 +489,13 @@ export function Tasks({
               void linkedBlocks(uid, deleted.id)
                 .then(deletedBlocks =>
                   settle(deleteTask(uid, deleted.id, deletedBlocks)).then(() => {
-                    onDeleted({ message: "Task deleted", restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) });
+                    onDeleted({ message: t("tasks.deleted"), restore: () => restoreTaskWithBlocks(uid, deleted, deletedBlocks) });
                   }),
                 )
                 .catch((cause: unknown) =>
                   // The batch guard and the rules must be seen: the view's own
                   // error line, not a silent swallow (review finding 3).
-                  setError(cause instanceof Error ? cause.message : "Something went wrong. Try again."),
+                  setError(cause instanceof Error ? cause.message : t("tasks.error.generic")),
                 );
             }}
           />
