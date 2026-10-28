@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { DueMoment } from "../../planning/weekly.ts";
+import { t } from "../../i18n/index.ts";
 import { momentLabel } from "./weeklyFlow.ts";
 import { dur, easeOut } from "../motion.ts";
 
@@ -66,22 +67,22 @@ export function WeeklyBanner({
       transition={{ duration: dur.enter, ease: easeOut }}
     >
       <div className="weekly-banner-text">
-        <p id="weekly-banner-text">Time to close the week.</p>
+        <p id="weekly-banner-text">{t("weekly.banner.text")}</p>
         <p className="weekly-banner-when">{momentLabel(due.moment)}</p>
       </div>
       <div className="weekly-banner-actions">
         <button type="button" className="button button-accent weekly-banner-start" onClick={onOpen}>
-          Start review
+          {t("weekly.banner.start")}
         </button>
         <button type="button" className="weekly-quiet" onClick={onLater}>
-          Later
+          {t("weekly.banner.later")}
         </button>
         <div className="weekly-banner-more" ref={more}>
           <button
             ref={trigger}
             type="button"
             className="weekly-quiet weekly-banner-dots"
-            aria-label="More weekly review options"
+            aria-label={t("weekly.banner.more")}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(open => !open)}
           >
@@ -92,7 +93,7 @@ export function WeeklyBanner({
               <motion.div
                 className="weekly-banner-menu"
                 role="group"
-                aria-label="Weekly review options"
+                aria-label={t("weekly.banner.options")}
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, transition: { duration: dur.page, ease: easeOut } }}
@@ -106,7 +107,7 @@ export function WeeklyBanner({
                     onSkip();
                   }}
                 >
-                  Skip this week
+                  {t("weekly.banner.skip")}
                 </button>
                 <button
                   type="button"
@@ -116,7 +117,7 @@ export function WeeklyBanner({
                     onOpenSettings();
                   }}
                 >
-                  Schedule
+                  {t("weekly.banner.schedule")}
                 </button>
               </motion.div>
             )}

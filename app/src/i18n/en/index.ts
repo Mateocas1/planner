@@ -5,6 +5,7 @@ import { controls } from "./controls.ts";
 import { forms } from "./forms.ts";
 import { palette } from "./palette.ts";
 import { gcal } from "./gcal.ts";
+import { rituals } from "./rituals.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 import { today } from "./today.ts";
@@ -18,6 +19,7 @@ export const en = {
   ...forms,
   ...palette,
   ...gcal,
+  ...rituals,
   ...settings,
   ...shell,
   ...today,

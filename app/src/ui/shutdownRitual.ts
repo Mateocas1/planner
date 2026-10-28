@@ -1,5 +1,6 @@
 import { freeSlots, type Interval, type WorkWindow } from "../planning/window.ts";
 import { isDayKey, type UndoRefusal } from "../planning/shutdown.ts";
+import { t } from "../i18n/index.ts";
 import { dateKey, formatWall, keyToWallUtc, pad, wallMinutes } from "./time.ts";
 
 /**
@@ -22,23 +23,23 @@ import { dateKey, formatWall, keyToWallUtc, pad, wallMinutes } from "./time.ts";
  */
 
 /** Criterion 5: one batch, so a refused write changed nothing at all. */
-export const closeFailedMessage = "Couldn't close the day. Nothing changed.";
+export const closeFailedMessage = (): string => t("shutdown.closeFailed");
 
 /** The toast's sentence; its `Undo` action is the undo toast's own button. */
-export const closeToastMessage = "Day closed.";
+export const closeToastMessage = (): string => t("shutdown.closeToast");
 
 /**
  * The sheet outlived its own day: it stayed open past midnight, so committing
  * would close the day the page under it used to be. Nothing is written and the
  * sheet re-reads the day instead (F3c review item 2).
  */
-export const dayChangedMessage = "The day changed. Review it again.";
+export const dayChangedMessage = (): string => t("shutdown.dayChanged");
 
 /** An undo whose write was accepted locally and then rejected by the server. */
-export const undoFailedMessage = "The undo could not be saved.";
+export const undoFailedMessage = (): string => t("shutdown.undoFailed");
 
 /** Undo found the profile stamped by a close that is not the one it reverts. */
-export const laterCloseMessage = "The day was closed again, so nothing was undone.";
+export const laterCloseMessage = (): string => t("shutdown.laterClose");
 
 /**
  * A close the server rejected after the sheet had already turned the page and
@@ -47,7 +48,7 @@ export const laterCloseMessage = "The day was closed again, so nothing was undon
  * promised to revert a batch that never landed.
  */
 export function lateCloseFailure(): { message: string; withdrawUndo: true } {
-  return { message: closeFailedMessage, withdrawUndo: true };
+  return { message: closeFailedMessage(), withdrawUndo: true };
 }
 
 /**
@@ -73,11 +74,11 @@ export function undoMessage(outcome: UndoOutcome): string | null {
     case "reverted":
       return null;
     case "refused":
-      return outcome.refusal === "later-close" ? laterCloseMessage : null;
+      return outcome.refusal === "later-close" ? laterCloseMessage() : null;
     case "unsaved":
-      return undoFailedMessage;
+      return undoFailedMessage();
     case "rejected":
-      return closeFailedMessage;
+      return closeFailedMessage();
   }
 }
 
@@ -133,8 +134,8 @@ export function minutesLabel(minutes: number): string {
  * action instead of a pair of zeros.
  */
 export function leftoverSummary(input: { done: number; leftOver: number }): string {
-  if (input.leftOver === 0) return "Nothing left over. Close the day.";
-  return `${input.done} done · ${input.leftOver} left over`;
+  if (input.leftOver === 0) return t("shutdown.summary.none");
+  return t("shutdown.summary.counts", { done: input.done, leftOver: input.leftOver });
 }
 
 /**
@@ -146,8 +147,8 @@ export function leftoverSummary(input: { done: number; leftOver: number }): stri
  */
 export function closeAnnouncement(input: { moved: number; tomorrowKey: string }): string {
   const weekday = formatWall(keyToWallUtc(input.tomorrowKey), { weekday: "long" });
-  if (input.moved === 0) return "Day closed. Nothing moved.";
-  return `Day closed. ${input.moved} ${input.moved === 1 ? "task" : "tasks"} moved to ${weekday}.`;
+  if (input.moved === 0) return t("shutdown.announce.none");
+  return t("shutdown.announce.moved", { count: input.moved, weekday });
 }
 
 /**
@@ -207,10 +208,13 @@ export function morningBriefText(input: {
   firstFreeSlotMinutes?: number;
 }): string | null {
   if (input.blockCount === 0) return null;
-  const blocks = `${input.blockCount} ${input.blockCount === 1 ? "block" : "blocks"}`;
-  const first = input.firstStartMinutes === undefined ? "" : `, first at ${minutesLabel(input.firstStartMinutes)}.`;
-  const free = input.firstFreeSlotMinutes === undefined ? "" : ` First free slot ${minutesLabel(input.firstFreeSlotMinutes)}.`;
-  return `Today: ${blocks}${first}${free}`;
+  const count = input.blockCount;
+  const first = input.firstStartMinutes === undefined ? undefined : minutesLabel(input.firstStartMinutes);
+  const free = input.firstFreeSlotMinutes === undefined ? undefined : minutesLabel(input.firstFreeSlotMinutes);
+  if (first !== undefined && free !== undefined) return t("brief.full", { count, first, free });
+  if (first !== undefined) return t("brief.noFree", { count, first });
+  if (free !== undefined) return t("brief.noFirst", { count, free });
+  return t("brief.plain", { count });
 }
 
 /**
@@ -308,5 +312,5 @@ export function hasFreeTimeAhead(
  * a mouse drags, and only a fine pointer has a `Close day` button to press.
  */
 export function turnHint(input: { touch: boolean }): string {
-  return input.touch ? "Swipe left to close the day" : "Drag left, or press Close day";
+  return input.touch ? t("shutdown.hint.touch") : t("shutdown.hint.pointer");
 }

@@ -146,7 +146,7 @@ export function WeeklyReview({
   };
 
   return (
-    <section aria-label="Weekly review" className="weekly">
+    <section aria-label={t("weekly.flow.label")} className="weekly">
       <div className="weekly-head page-head">
         <button type="button" className="weekly-back" onClick={onBack}>
           <ChevronLeft className="weekly-back-icon" />
@@ -155,12 +155,12 @@ export function WeeklyReview({
         <header className="weekly-title">
           <h2 className="large-title">{t("shell.title.weekly")}</h2>
           <p className="subtitle">
-            {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · Step {index + 1} of {steps.length}
+            {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · {t("weekly.flow.stepOf", { step: index + 1, total: steps.length })}
           </p>
         </header>
       </div>
 
-      <ol className="weekly-rail" aria-label="Review steps">
+      <ol className="weekly-rail" aria-label={t("weekly.flow.rail")}>
         {steps.map((entry, entryIndex) => (
           <li key={entry}>
             <button
@@ -182,7 +182,7 @@ export function WeeklyReview({
       </ol>
 
       {loading ? (
-        <p className="weekly-empty" role="status">Loading your week…</p>
+        <p className="weekly-empty" role="status">{t("weekly.flow.loading")}</p>
       ) : (
         <>
           <motion.div
@@ -233,7 +233,7 @@ export function WeeklyReview({
               disabled={index === 0}
               onClick={() => setIndex(current => Math.max(current - 1, 0))}
             >
-              Back
+              {t("weekly.flow.back")}
             </button>
             <button
               type="button"
@@ -243,7 +243,7 @@ export function WeeklyReview({
                 advance();
               }}
             >
-              {last ? "Finish" : "Next"}
+              {last ? t("weekly.flow.finish") : t("weekly.flow.next")}
             </button>
           </div>
         </>
