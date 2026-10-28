@@ -4,6 +4,7 @@ import { calendar } from "./calendar.ts";
 import { chat } from "./chat.ts";
 import { controls } from "./controls.ts";
 import { forms } from "./forms.ts";
+import { home } from "./home.ts";
 import { palette } from "./palette.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
@@ -16,6 +17,7 @@ export const es: Dictionary = {
   ...chat,
   ...controls,
   ...forms,
+  ...home,
   ...palette,
   ...settings,
   ...shell,

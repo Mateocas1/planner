@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { setHolidayHidden, setHolidayKindOverride } from "../data/holidays.ts";
-import { effectiveKind, HOLIDAY_KINDS, holidayKindLabels, type Holiday, type HolidayKind } from "../domain/holidays.ts";
+import { effectiveKind, HOLIDAY_KINDS, type Holiday, type HolidayKind } from "../domain/holidays.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey } from "./format.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -13,6 +14,11 @@ import "./Holidays.css";
  * label opens a small sheet where the user decides what the day is (Argentina
  * sometimes works a "día no laborable"), or hides it.
  */
+
+/** How each kind reads on screen, in the current language. */
+function kindLabel(kind: HolidayKind): string {
+  return t(`holiday.kind.${kind}`);
+}
 
 /** The holidays of one day that the user has not hidden. */
 export function visibleHolidays(holidays: Holiday[], date: string): Holiday[] {
@@ -29,8 +35,8 @@ export function HolidayChips({ holidays, onOpen }: { holidays: Holiday[]; onOpen
             key={holiday.id}
             type="button"
             className={`holiday-chip is-${kind}`}
-            title={`${holiday.title} — ${holidayKindLabels[kind]}`}
-            aria-label={`${holiday.title}, ${holidayKindLabels[kind]}`}
+            title={t("holiday.chip.title", { title: holiday.title, kind: kindLabel(kind) })}
+            aria-label={t("holiday.chip.aria", { title: holiday.title, kind: kindLabel(kind) })}
             onClick={event => onOpen(holiday, event.currentTarget)}
           >
             <span>{holiday.title}</span>
@@ -65,7 +71,7 @@ export function HolidaySheet({
     try {
       await setHolidayKindOverride(uid, holiday.id, kind === holiday.kind ? undefined : kind);
     } catch {
-      setError("The change could not be saved. Try again.");
+      setError(t("holiday.error.save"));
     }
   }
 
@@ -74,42 +80,40 @@ export function HolidaySheet({
     try {
       await setHolidayHidden(uid, holiday.id, true);
       onOfferUndo({
-        message: "Holiday hidden",
+        message: t("holiday.hidden"),
         restore: () => setHolidayHidden(uid, holiday.id, false),
       });
       onClose();
     } catch {
-      setError("The holiday could not be hidden. Try again.");
+      setError(t("holiday.error.hide"));
     }
   }
 
   return (
-    <Sheet label="Holiday" className="holiday-sheet" origin={origin} onClose={onClose}>
+    <Sheet label={t("holiday.label")} className="holiday-sheet" origin={origin} onClose={onClose}>
       <div className="sheet-form">
         <header className="sheet-head">
-          <span className="sheet-kind">Holiday</span>
-          <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+          <span className="sheet-kind">{t("holiday.label")}</span>
+          <button type="button" className="icon-button" aria-label={t("shortcuts.close")} onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
         <h3 className="sheet-title">{holiday.title}</h3>
         <p className="holiday-sheet-date">{formatDateKey(holiday.date, todayKey)}</p>
         <fieldset className="holiday-kinds">
-          <legend className="sheet-section-title">What is this day?</legend>
-          <div className="segmented" role="group" aria-label="Holiday kind">
+          <legend className="sheet-section-title">{t("holiday.whatIsDay")}</legend>
+          <div className="segmented" role="group" aria-label={t("holiday.kindGroup")}>
             {HOLIDAY_KINDS.map(kind => (
               <button key={kind} type="button" aria-pressed={current === kind} onClick={() => void choose(kind)}>
-                {holidayKindLabels[kind]}
+                {kindLabel(kind)}
               </button>
             ))}
           </div>
         </fieldset>
-        <p className="gcal-note">
-          Labels only: capacity, Plan my day and reminders ignore holidays.
-        </p>
+        <p className="gcal-note">{t("holiday.labelsOnly")}</p>
         {error !== "" && <p className="inline-error" role="alert">{error}</p>}
         <div className="holiday-actions">
-          <button type="button" className="button" onClick={() => void hide()}>Hide this holiday</button>
+          <button type="button" className="button" onClick={() => void hide()}>{t("holiday.hide")}</button>
         </div>
       </div>
     </Sheet>
