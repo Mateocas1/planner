@@ -1,0 +1,160 @@
+/* The popover surface (Popover.tsx, usePopover.ts, placePopover.ts).
+
+   Material: a solid raised surface, never glass. The trigger sits inside a
+   glass sheet and DESIGN.md says never glass on glass; a 88%-tint blur over a
+   form would be invisible anyway and the 12% bleed would ghost the fields under
+   it. It keeps the glass rim and shadow so it belongs to the family, and it
+   spends no backdrop-filter layer (the phone already pays for tab bar, FAB and
+   sheet). Both --surface and --surface-2 are contrast-checked in
+   scripts/glass-contrast.mjs; no new colour tokens.
+
+   Motion: Materialize (DESIGN.md §4). The surface grows from the trigger's edge
+   (--pop-ox/--pop-oy, set by usePopover after every flip, clamp or slide) and
+   fades in; the content, not the surface, comes into focus (blur 8px -> 0, 4px
+   on touch), so the rim and shadow stay crisp. It is CSS transitions plus
+   @starting-style: a popover has no gesture to hand off, and a transition
+   retargets from its current value when it is reversed mid-flight. The exit is
+   the closed state: opacity + scale .98 in 120 ms, no blur, with display and
+   overlay (the top layer) held by transition-behavior: allow-discrete until it
+   ends. Only opacity, transform and filter move.
+
+   Support: popover (Chromium 114), @starting-style and allow-discrete display
+   (Chromium 117) are all in WebView2 and current Chrome/Edge, Safari 17.5+ and
+   Firefox 129+. An engine without @starting-style opens without the entrance
+   but never with a broken surface; one without the popover attribute is caught
+   by the @supports block at the end. */
+
+.pop {
+  --pop-bg: var(--surface);
+  --pop-blur: 8px;
+  --pop-scale-in: 0.96;
+  --pop-scale-out: 0.98;
+  box-sizing: border-box;
+  /* [popover] gets inset:0 and margin:auto from the UA: placement is ours.
+     `display` is deliberately not set here, so the UA's display:none for a
+     closed popover keeps applying (and can be transitioned out). */
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  /* 4pt grid; concentric: 18 outer radius = 10 row radius + 8 padding */
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--pop-bg);
+  color: var(--label);
+  box-shadow:
+    0 0 0 0.5px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim-mid),
+    var(--glass-shadow);
+  min-width: var(--pop-min-w, 0);
+  max-width: calc(100vw - 24px);
+  /* set by placement; the body scrolls, not the shell */
+  max-height: var(--pop-max-h, calc(100dvh - 24px));
+  overflow: hidden;
+  transform-origin: var(--pop-ox, 100%) var(--pop-oy, 0);
+
+  /* The closed state is also the exit target. No will-change: a one-off
+     transition does not earn a permanent compositor layer. */
+  opacity: 0;
+  transform: scale(var(--pop-scale-out));
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 120ms var(--ease-out),
+    display 120ms allow-discrete,
+    overlay 120ms allow-discrete;
+}
+
+:root[data-theme="dark"] .pop { --pop-bg: var(--surface-2); }
+
+.pop:popover-open {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  transform: scale(1);
+  /* A Select (higher frequency) sets --pop-enter: 160ms on its popover. */
+  transition:
+    opacity 140ms var(--ease-out),
+    transform var(--pop-enter, 200ms) var(--ease-out),
+    display 120ms allow-discrete,
+    overlay 120ms allow-discrete;
+}
+
+/* The programmatic focus target of a dialog is the container: the control the
+   user lands on inside it carries the focus ring. */
+.pop:focus-visible { outline: none; }
+
+.pop-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Open only: the content lands a beat after the surface and sharpens. The exit
+   has no rule here on purpose, so the body leaves with the surface unblurred. */
+.pop:popover-open .pop-body {
+  transition:
+    opacity 140ms var(--ease-out) 30ms,
+    filter var(--pop-enter, 200ms) var(--ease-out) 30ms;
+}
+
+@starting-style {
+  .pop:popover-open {
+    opacity: 0;
+    transform: scale(var(--pop-scale-in));
+  }
+  .pop:popover-open .pop-body {
+    opacity: 0;
+    filter: blur(var(--pop-blur));
+  }
+}
+
+/* The card is held at arm's length on a phone, and that is the low-end GPU:
+   the same 4 px as the sheet (motion.ts expandBlur). */
+@media (pointer: coarse) {
+  .pop { --pop-blur: 4px; }
+}
+
+/* Gentler, not zero: opacity only, no scale, no blur. */
+@media (prefers-reduced-motion: reduce) {
+  .pop {
+    --pop-scale-in: 1;
+    --pop-scale-out: 1;
+    --pop-blur: 0px;
+    transition:
+      opacity 120ms ease,
+      display 120ms allow-discrete,
+      overlay 120ms allow-discrete;
+  }
+  .pop:popover-open {
+    transition:
+      opacity 120ms ease,
+      display 120ms allow-discrete,
+      overlay 120ms allow-discrete;
+  }
+  .pop:popover-open .pop-body { transition: none; }
+}
+
+@media (prefers-contrast: more) {
+  .pop { box-shadow: 0 0 0 1px var(--label-3); }
+}
+
+@media (forced-colors: active) {
+  .pop {
+    background: Canvas;
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* No popover attribute support: the element is a plain fixed box, so its
+   open/closed state is the attribute usePopover's host sets on it. */
+@supports not selector(:popover-open) {
+  .pop[data-state="closed"] { display: none; }
+  .pop[data-state="open"] {
+    display: flex;
+    flex-direction: column;
+    opacity: 1;
+    transform: none;
+  }
+}
