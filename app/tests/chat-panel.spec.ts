@@ -17,12 +17,26 @@ const shots = new URL("../../odd/runs/chat-c2-shots/", import.meta.url).pathname
 
 let server: ChildProcess | null = null;
 
+function stopServer() {
+  if (server?.pid === undefined) return;
+  try {
+    process.kill(-server.pid, "SIGTERM");
+  } catch {
+    // already gone
+  }
+}
+
 test.beforeAll(async () => {
+  test.setTimeout(90_000); // a cold vite start on a loaded machine outlasts the 30 s hook default
   await mkdir(shots, { recursive: true });
   server = spawn("npx", ["vite", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
     cwd: new URL("..", import.meta.url).pathname,
     stdio: "ignore",
+    // Its own process group: npx starts vite as a grandchild, so killing npx
+    // alone left vite holding the fixed port for every later run.
+    detached: true,
   });
+  process.once("exit", stopServer);
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     try {
@@ -37,7 +51,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  server?.kill("SIGTERM");
+  stopServer();
 });
 
 const launcher = (page: Page) => page.getByRole("button", { name: "Chat" });
