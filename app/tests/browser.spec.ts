@@ -1279,7 +1279,7 @@ test.describe("profile timezone (I6b)", () => {
     await signInAs(page, email);
     await openCalendar(page);
 
-    await expect(page.getByText(`Times in ${profileZone}`)).toBeVisible();
+    await expect(page.locator(`.subtitle span[title="${profileZone}"]`)).toBeVisible();
     const block = page.locator(`[data-date="${day}"] .calendar-block`);
     await expect(block).toHaveCount(1);
     await expect(block).toContainText(wallClockIn(new Date(start), profileZone).time);
@@ -1314,7 +1314,7 @@ test.describe("profile timezone (I6b)", () => {
     // update lands races the propagation: the old week still holds the block,
     // the step below is skipped, and the update then hides the column. The
     // final assertions below still require the block with the new wall time.
-    await expect(page.getByText(`Times in ${nextZone}`)).toBeVisible();
+    await expect(page.locator(`.subtitle span[title="${nextZone}"]`)).toBeVisible();
 
     // Switching zones can also roll the visible week: Madrid is five hours
     // ahead of São Paulo, so for part of every day it is already on the next
@@ -1333,7 +1333,7 @@ test.describe("profile timezone (I6b)", () => {
     await expect(dayColumn).toHaveCount(1);
     await expect(dayColumn).toContainText(wallClockIn(new Date(start), nextZone).time);
     await expect(dayColumn).toHaveAttribute("data-start", start);
-    await expect(page.getByText(`Times in ${nextZone}`)).toBeVisible();
+    await expect(page.locator(`.subtitle span[title="${nextZone}"]`)).toBeVisible();
   });
 });
 
@@ -1381,7 +1381,7 @@ test("a clean account creates the profile on first use and renders the planner i
   expect(() => new Intl.DateTimeFormat("en-US", { timeZone: zone })).not.toThrow();
 
   await openCalendar(page);
-  await expect(page.getByText(`Times in ${zone}`)).toBeVisible();
+  await expect(page.locator(`.subtitle span[title="${zone}"]`)).toBeVisible();
 
   // A form-created block renders in the profile (= browser) zone.
   const day = wallClockIn(new Date(), zone).date;

@@ -13,6 +13,10 @@
  * have been a bug. */
 .calendar-day {
   contain: layout paint;
+  /* A size container, so a short block can hide its time in a narrow column
+     (the @container rule in app.css). Inline-size only: the column's height is
+     still the grid's. */
+  container-type: inline-size;
 }
 
 /* Containment clips to this column's paint box, so a focus ring drawn outside a

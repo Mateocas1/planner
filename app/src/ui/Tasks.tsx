@@ -406,10 +406,10 @@ export function Tasks({
                           }}
                         >
                           <span className="task-title" title={seriesRow.title}>{seriesRow.title}</span>
-                          <span className="row-meta">
+                          <span className="row-meta has-icon">
                             <span className="series-frequency">
                               <RepeatIcon className="meta-icon" />
-                              {frequencyLabel[seriesRow.frequency] ?? seriesRow.frequency}
+                              <span className="row-meta-text">{frequencyLabel[seriesRow.frequency] ?? seriesRow.frequency}</span>
                             </span>
                             {next && <span className={`task-deadline${next.date === today ? " task-deadline-today" : ""}`}>next {formatDateKey(next.date, today)}</span>}
                           </span>

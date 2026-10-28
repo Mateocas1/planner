@@ -513,6 +513,7 @@ test("F7 a block label clips as whole lines, never mid-glyph, at 200 % zoom", as
         fontSize: style ? parseFloat(style.fontSize) : 0,
         lineHeight: style ? parseFloat(style.lineHeight) : 0,
         whiteSpace: style?.whiteSpace ?? null,
+        titleEllipsis: style?.textOverflow ?? null,
         timeOverflow: timeStyle?.overflow ?? null,
         timeEllipsis: timeStyle?.textOverflow ?? null,
       };
@@ -520,7 +521,9 @@ test("F7 a block label clips as whole lines, never mid-glyph, at 200 % zoom", as
   );
 
   expect(label.found, "the 30 minute block is on the grid").toBe(true);
-  expect(label.whiteSpace, "the title wraps instead of escaping the block").toBe("normal");
+  // A short block is one line (R5-11): the title ellipsizes instead of wrapping into a clipped column.
+  expect(label.whiteSpace, "the title stays on one line").toBe("nowrap");
+  expect(label.titleEllipsis, "and says so with an ellipsis").toBe("ellipsis");
   expect(label.lineHeight / label.fontSize, "its lines are whole, so a clip lands between them").toBeGreaterThanOrEqual(1.1);
   expect(label.timeOverflow, "the time clips inside its own box").toBe("hidden");
   expect(label.timeEllipsis, "and says so with an ellipsis").toBe("ellipsis");

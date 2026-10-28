@@ -357,7 +357,7 @@ function TodayPage({
                         onFocus={() => onRowFocus(entry.id)}
                       >
                         <span className="row-title" title={entry.title}>{entry.title}</span>
-                        <span className="row-meta is-today"><RepeatIcon className="meta-icon" />{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span>
+                        <span className="row-meta has-icon is-today"><RepeatIcon className="meta-icon" /><span className="row-meta-text">{entry.frequency === "daily" ? "Daily" : entry.frequency === "weekly" ? "Weekly" : "Monthly"}</span></span>
                       </button>
                     </li>
                   ))}
