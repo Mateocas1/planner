@@ -3,6 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
 import { useProfileTimeZone } from "./data/profile.ts";
+import { useLocale, useSyncedLanguage } from "./i18n/index.ts";
 import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
@@ -60,6 +61,9 @@ export default function App() {
   // The keyboard inset is published once for the whole app: the sign-in gate and
   // every sheet and the palette size themselves against the same variable.
   useKeyboardInset();
+  // Re-renders the whole tree on a language switch: `t()` and the date
+  // formatters read the current language, so a root subscription is enough.
+  useLocale();
   const { loading, user } = useSession();
   const [view, setView] = useState<View>("home");
   // Settings (Ronda 2, S1) is a view in the shell; the tab it opens on lives
@@ -145,6 +149,7 @@ function Shell({
   const shellNow = useNow();
   const { loading, tasks, blocks, series, holidays, completions, pendingWrites: pending } = useStore(user.uid);
   const profile = useProfileTimeZone(user.uid);
+  useSyncedLanguage(profile.loading || profile.error !== null ? undefined : profile.language);
   const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   // A sign-in launch (T10) shows the window only when today's brief applies.
   useSignInReveal({ ready: !loading && !profile.loading, blocks, timeZone: profile.timeZone, workWindow: profile.workWindow });

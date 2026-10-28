@@ -20,6 +20,7 @@ import {
   readPillEnabled,
   type PillSnapshot,
 } from "./focusPillState.ts";
+import { useLocale } from "../i18n/index.ts";
 // The pill's own paint ships beside it (AGENTS.md: co-located styles).
 import "./FocusPill.css";
 
@@ -81,6 +82,8 @@ function CloseIcon() {
 }
 
 export function FocusPill() {
+  // No profile in this window: it follows the cached last language (storage event).
+  useLocale();
   const [snapshot, setSnapshot] = useState<PillSnapshot | null>(() =>
     pillSnapshot(readStoredSession(), Date.now()),
   );
