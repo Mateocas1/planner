@@ -340,7 +340,8 @@ export function Sheet({
      and a sheet the user can see would then ignore its own dismissal key. */
   useLayoutEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      // A popover over the sheet claims Escape first (usePopover prevents it).
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
