@@ -1,0 +1,152 @@
+/* EstimateControl: preset chips, a digits-only field with a `min` adornment and
+ * a ghost -/+ stepper. The native number spinner is gone; the replacement
+ * buttons are transparent glyphs (hover --fill-hover, pressed --fill-press),
+ * never a solid fill. Chips follow the .quick-add-chip family. Only
+ * background-color and color transition; reduced motion drops them.
+ */
+
+.est-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.est-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.est-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--label-2);
+  font-family: inherit;
+  font-size: var(--text-sub);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 140ms ease-out, color 140ms ease-out;
+}
+
+.est-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .est-chip:hover:not([aria-pressed="true"]):not(:disabled) {
+    background: var(--fill-hover);
+  }
+}
+
+.est-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.est-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.est-field {
+  display: flex;
+  flex: 1 1 144px;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.est-field:has(.est-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.est-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--label);
+  font-family: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.est-input::placeholder {
+  color: var(--label-3);
+}
+
+.est-unit {
+  margin-right: 4px;
+  color: var(--label-3);
+  font-size: var(--text-sub);
+  pointer-events: none;
+}
+
+.est-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color 140ms ease-out;
+}
+
+@media (hover: hover) {
+  .est-step:hover:not(:disabled) {
+    background: var(--fill-hover);
+  }
+}
+
+.est-step:active:not(:disabled) {
+  background: var(--fill-press);
+}
+
+.est-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .est-chip {
+    min-height: 44px;
+    padding: 6px 14px;
+  }
+
+  .est-field {
+    height: 44px;
+  }
+
+  .est-step {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .est-chip,
+  .est-step {
+    transition: none;
+  }
+}
