@@ -37,6 +37,7 @@ import { matchesEvent, useShortcutBinding } from "./ui/settings/shortcutRegistry
 import { dueMoment, snoozedUntil } from "./planning/weekly.ts";
 import { skipWeeklyReview, snoozeWeeklyReview } from "./data/weeklyReview.ts";
 import { useNow } from "./ui/motion.ts";
+import { Select } from "./ui/Select.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
 import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
 import { Sidebar, ThemeSwitch, views } from "./ui/Sidebar.tsx";
@@ -53,6 +54,13 @@ import { useKeyboardInset } from "./ui/viewport.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
+
+const repeatOptions = [
+  { value: "off", label: "Never" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
 
 export type View = "home" | "tasks" | "calendar" | "settings" | "weekly";
 
@@ -909,17 +917,13 @@ function NewTaskSheet({
           </div>
           <div className="form-row">
             <label htmlFor="task-repeat">Repeat</label>
-            <select
+            <Select
               id="task-repeat"
-              className="form-control"
+              label="Repeat"
               value={repeat}
-              onChange={event => setRepeatEdit(event.target.value as Frequency | "off")}
-            >
-              <option value="off">Never</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
+              options={repeatOptions}
+              onChange={value => setRepeatEdit(value as Frequency | "off")}
+            />
           </div>
           {repeat !== "off" && (
             <div className="form-row">

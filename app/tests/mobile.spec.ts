@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { submitAuthForm } from "./browser-helpers.ts";
+import { submitAuthForm, chooseOption } from "./browser-helpers.ts";
 
 test.setTimeout(90_000);
 
@@ -149,7 +149,7 @@ test("a sheet that shrinks under a field it already focused keeps that field abo
   const sheet = page.getByRole("complementary", { name: "New task" });
   await expect(sheet).toBeVisible();
   await settled(sheet);
-  await page.getByLabel("Repeat").selectOption("weekly");
+  await chooseOption(page, "Repeat", "Weekly");
   const start = sheet.getByLabel("Start date");
   await start.focus();
   expectInside(await start.boundingBox(), await visibleBand(page), "the start date before the keyboard");

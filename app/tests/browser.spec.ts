@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData, chooseOption, expectChoice } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -735,7 +735,7 @@ function dayKey(daysFromNow: number) {
 async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily" | "Weekly" | "Monthly", start: string) {
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
-  await page.getByLabel("Repeat").selectOption({ label: frequency });
+  await chooseOption(page, "Repeat", frequency);
   await page.getByLabel("Start date").fill(start);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: title })).toBeVisible();
@@ -848,7 +848,7 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   const panel = page.getByRole("complementary", { name: "Series details" });
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
-  await expect(panel.getByLabel("Frequency")).toHaveValue("weekly");
+  await expectChoice(panel, "Frequency", "Weekly");
   await expect(panel.getByLabel("Anchor")).toHaveValue(start);
   // C1: the panel shows human dates; the ISO keys are gone from the display
   // (the checkbox below still addresses the occurrence by its ISO key)
@@ -936,10 +936,10 @@ test("changing a series' frequency persists and the row's next occurrence update
   await expect(row).toHaveAttribute("data-next-occurrence", dayKey(4));
 
   const panel = await openSeriesPanel(page, "Stretch");
-  await panel.getByLabel("Frequency").selectOption({ label: "Daily" });
+  await chooseOption(panel, "Frequency", "Daily");
 
   await expect(row).toHaveAttribute("data-next-occurrence", dayKey(0));
-  await expect(panel.getByLabel("Frequency")).toHaveValue("daily");
+  await expectChoice(panel, "Frequency", "Daily");
 
   await expectRemoteSeriesField(email, "frequency", "daily");
   await expectRemoteSeriesField(email, "anchorDate", anchor);
@@ -1107,7 +1107,7 @@ test("a block linked to a task shows that task's title", async ({ page }) => {
   const day = localDateKey(new Date());
   await page.getByLabel("Start", { exact: true }).fill(`${day}T14:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T15:00`);
-  await page.getByLabel("Task", { exact: true }).selectOption({ label: "Deep work" });
+  await chooseOption(page, "Task", "Deep work");
   await page.getByRole("button", { name: "Add block" }).click();
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);

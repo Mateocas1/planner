@@ -5,6 +5,7 @@ import type { BiasSample } from "../planning/bias.ts";
 import { ActualSummary, BiasHint } from "./BiasHint.tsx";
 import { formatDateKey } from "./format.ts";
 import { CloseIcon } from "./icons.tsx";
+import { Select } from "./Select.tsx";
 import { Sheet } from "./Sheet.tsx";
 import "./EstimateField.css";
 
@@ -106,6 +107,12 @@ function EstimateField({
  * (which arrives back through the store) remounts it on the new value while a
  * rejected one leaves the user's draft in place.
  */
+const frequencyOptions = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
 export function TaskDetails({
   task,
   origin,
@@ -309,17 +316,14 @@ export function SeriesDetails({
       <div className="form-group">
         <div className="form-row">
           <label htmlFor="series-details-frequency">Frequency</label>
-          <select
+          <Select
             id="series-details-frequency"
-            className="form-control"
+            label="Frequency"
             value={series.frequency}
+            options={frequencyOptions}
             disabled={busy}
-            onChange={event => onFrequencyChange(event.target.value as SeriesView["frequency"])}
-          >
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
+            onChange={value => onFrequencyChange(value as SeriesView["frequency"])}
+          />
         </div>
         <div className="form-row">
           <label htmlFor="series-details-anchor">Anchor</label>
