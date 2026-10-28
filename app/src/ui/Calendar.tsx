@@ -13,6 +13,8 @@ import { HolidayChips, HolidaySheet, visibleHolidays } from "./Holidays.tsx";
 import { ChevronLeft, ChevronRight, CloseIcon, FlagIcon, PlusIcon } from "./icons.tsx";
 import { easeOut, narrowQuery, phoneQuery, spring, useMediaQuery, useNow } from "./motion.ts";
 import { Sheet } from "./Sheet.tsx";
+import { intlLocale, t, useLocale } from "../i18n/index.ts";
+import { zoneName } from "./zoneName.ts";
 import { PlanMyDay } from "./PlanMyDay.tsx";
 import { type UndoableDelete } from "./UndoToast.tsx";
 import {
@@ -132,6 +134,7 @@ function CalendarView({
   onDeleted: (item: UndoableDelete) => void;
 }) {
   const now = useNow();
+  const locale = useLocale();
   const phone = useMediaQuery(phoneQuery);
   // The shell is a phone; the grid needs a second, wider line: below 1000 px a
   // seven-column week is 55 px a column even though the shell is a desktop's.
@@ -443,7 +446,7 @@ function CalendarView({
             )}
           </h2>
           <p className="subtitle">
-            <span>Times in {timeZone}</span>
+            <span title={timeZone}>{t("calendar.timesIn", { zone: zoneName(timeZone, intlLocale(locale), now) })}</span>
             {!loading && visible.length === 0 && (
               <span role="status"> · {isDay ? "No work blocks on this day." : "No work blocks this week."}</span>
             )}
@@ -585,6 +588,7 @@ function CalendarView({
                           // in this column; resizing it would persist the clip, so it
                           // is not resizable here (the known D3 limitation).
                           const resizable = dateKey(new Date(item.block.end), timeZone) === item.key;
+                          const blockName = task ? task.title : item.block.title ?? "Work block";
                           const range = live
                             ? `${minutesLabel(startMinutes)}–${minutesLabel(endMinutes)}`
                             : `${timeLabel(new Date(item.block.start), timeZone)}–${timeLabel(new Date(item.block.end), timeZone)}`;
@@ -594,6 +598,7 @@ function CalendarView({
                               type="button"
                               className={`calendar-block ${task ? "cat-task" : "cat-focus"}${item.block.pending ? " calendar-block-pending" : ""}${height < 40 ? " is-short" : ""}${past ? " is-past" : ""}`}
                               data-block={item.block.id}
+                              title={`${blockName} ${range}`}
                               data-row-cursor={item.block.id}
                               tabIndex={rovingTabIndex(activeId, item.block.id, blockOrder)}
                               onFocus={() => onRowFocus(item.block.id)}
@@ -614,7 +619,7 @@ function CalendarView({
                                 resizeByKeyboard(item, event.key === "ArrowDown" ? 1 : -1);
                               }}
                             >
-                              <b>{task ? task.title : item.block.title ?? "Work block"}</b>
+                              <b>{blockName}</b>
                               <span>{range}</span>
                               {resizable && (
                                 <>
@@ -838,6 +843,7 @@ function BlockForm({
   origin: HTMLElement | null;
   onClose: () => void;
 }) {
+  const locale = useLocale();
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
   const [taskId, setTaskId] = useState("");
@@ -891,7 +897,7 @@ function BlockForm({
           </div>
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
-        <p className="sheet-note">Times are in {timeZone}.</p>
+        <p className="sheet-note" title={timeZone}>{t("calendar.timesAreIn", { zone: zoneName(timeZone, intlLocale(locale)) })}</p>
         <button type="submit" className="button-primary" disabled={busy}>Add block</button>
       </form>
     </Sheet>
