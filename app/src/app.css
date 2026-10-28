@@ -601,6 +601,9 @@ time,
   overflow-y: auto;
 }
 
+/* No child gives way to a short window except the scroll region (ui/Sidebar.css). */
+.sidebar > * { flex-shrink: 0; }
+
 .mini-month { padding: 0 6px; }
 
 .mini-head {
@@ -655,7 +658,7 @@ time,
     transform var(--press-release-dur) var(--ease-press-spring);
 }
 
-.mini-day.is-out { color: var(--label-3); opacity: 0.6; }
+.mini-day.is-out { color: var(--label-3); }
 
 .mini-day.has-blocks::after {
   content: "";

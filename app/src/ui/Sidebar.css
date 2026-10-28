@@ -19,6 +19,26 @@
   container-name: sidebar;
 }
 
+/* ---------- the scroll region (R5-10) ----------
+ *
+ * Every direct child of the sidebar keeps its declared height (app.css:
+ * `.sidebar > * { flex-shrink: 0 }`); this region is the one that gives, so
+ * a long Due soon list scrolls here and never squeezes the nav items or
+ * pushes the footer out of the window. The small negative margin and equal
+ * padding keep the focus rings of its rows from being clipped. */
+
+.sidebar > .side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: -3px;
+  padding: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* ---------- block chrome ---------- */
 
 .side-block {
@@ -31,11 +51,9 @@
 .side-label {
   margin: 0;
   padding: 0 10px;
-  font-size: var(--text-tiny);
+  font-size: var(--text-sub);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--label-3);
+  color: var(--label-2);
 }
 
 .side-empty {
@@ -142,15 +160,12 @@
   .side-due-open:hover .side-due-title { color: var(--accent); }
 }
 
-/* ---------- footer rows ----------
+/* ---------- footer rows (R5-22) ----------
  *
- * A 244 px column holds 204 px of footer. The gear and the theme control need
- * 144 px of that (30 + 8 + 106), which used to leave the address 52 px -- room
- * for "day-de…" and nothing else -- and the two links no room at all. So both
- * rows wrap now: the identity keeps its line (166 px, an ordinary address
- * whole) with the gear at the right edge, the theme control takes the next
- * line, and the links wrap between themselves rather than being cut by the
- * sidebar's edge. */
+ * The address takes a line of its own, whole as far as the column allows and
+ * with its full form in the title. The gear and the theme control share the
+ * next line, and the two actions are small button rows below, Sign out last
+ * and neutral. */
 
 .side-foot-row {
   display: flex;
@@ -160,10 +175,8 @@
   min-width: 0;
 }
 
-/* The address is what the row is for. It still truncates (an address can be
-   longer than the column), and the full one is its title. */
 .side-foot-row .who {
-  flex: 1 1 120px;
+  flex: 1 1 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -172,29 +185,21 @@
   color: var(--label-3);
 }
 
-/* The theme control keeps the column's right edge, as it always had: the gear
-   ends the identity's line and the control sits under it. */
+/* The gear sits at the left of the control line, the theme control at the
+   right edge of the column. */
 .side-foot-row .theme-switch {
   flex: none;
   margin-left: auto;
 }
 
-.side-foot-links {
+.side-foot-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  column-gap: 10px;
-  row-gap: 2px;
-  /* A label is one word-run: the row wraps between the two links rather than
-     breaking one of them in the middle. */
-  white-space: nowrap;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
 }
 
-.side-signout {
-  align-self: flex-start;
-  font-size: var(--text-caption);
-}
+.side-foot-actions .button { width: 100%; }
 
 @media (pointer: coarse) {
   .side-due-open { min-height: 44px; }
@@ -212,4 +217,14 @@
 
 @container sidebar (max-height: 620px) {
   .side-up-next { display: none; }
+  /* Both blocks are gone: so is their (empty) region and the gap it costs. */
+  .sidebar > .side-scroll { display: none; }
+}
+
+/* The shortest windows keep the whole footer too: the two actions share one
+   row (Sign out keeps its place last) and the column's gaps tighten. */
+@container sidebar (max-height: 620px) {
+  .side-foot-actions { flex-direction: row; gap: 6px; margin-top: 0; }
+  .side-foot-actions .button { width: auto; flex: 1 1 auto; padding: 0 8px; }
+  .side-foot-actions .button:last-child { flex: 0 0 auto; }
 }
