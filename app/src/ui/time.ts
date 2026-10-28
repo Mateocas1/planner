@@ -13,6 +13,7 @@
  */
 
 import { pad, wallAsUtc, wallParts, type WallParts } from "../domain/instant.ts";
+import { getLocale, intlLocale, type Locale } from "../i18n/index.ts";
 
 export { dateKey, pad, toZonedInstant, wallAsUtc, wallParts } from "../domain/instant.ts";
 export type { WallParts } from "../domain/instant.ts";
@@ -61,9 +62,21 @@ export function localValue(key: string, minutes: number): string {
 
 const utc = { timeZone: "UTC" } as const;
 
-/** Formats a wall-UTC day value with the given options (en-US, read as UTC). */
-export function formatWall(wallUtc: number, options: Intl.DateTimeFormatOptions): string {
-  return new Date(wallUtc).toLocaleDateString("en-US", { ...utc, ...options });
+const wallFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Formats a wall-UTC day value with the given options, read as UTC, in the app
+ * language (English is en-US as it always was). Formatters are cached per
+ * language and options.
+ */
+export function formatWall(wallUtc: number, options: Intl.DateTimeFormatOptions, locale: Locale = getLocale()): string {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = wallFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(intlLocale(locale), { ...utc, ...options });
+    wallFormatters.set(key, formatter);
+  }
+  return formatter.format(new Date(wallUtc));
 }
 
 /** A duration in minutes as the planner writes it: "40 min", "1 h", "1 h 30 min". */

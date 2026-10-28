@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useSession } from "../data/session.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
+import { useLocale } from "../i18n/index.ts";
 import { addSeries, type Frequency } from "../data/series.ts";
 import { addTask } from "../data/tasks.ts";
 import { parseQuickAdd } from "../domain/quickAdd.ts";
@@ -41,6 +42,9 @@ const BASE_HEIGHT = 150;
 const CHIP_ROW_HEIGHT = 40;
 
 export function QuickAddWindow() {
+  // The last language the main window used (cached in localStorage); the
+  // `storage` event switches this window live.
+  useLocale();
   const { loading, user } = useSession();
   const profile = useProfileTimeZone(user?.uid ?? null);
   const timeZone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
