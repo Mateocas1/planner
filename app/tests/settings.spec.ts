@@ -245,3 +245,40 @@ test("phone screenshot at 390 x 844", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, "no horizontal scroll at 390 px").toBeLessThanOrEqual(0);
 });
+
+test.describe("phone page grammar and touch targets (R5-15, R5-16)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+
+  test("Settings has a title, a back chevron and a view-specific document title; no control is under 44 px", async ({ page }) => {
+    await enter(page, "settings-touch");
+    await expect(page).toHaveTitle("Today · Personal Planner");
+
+    await page.keyboard.press("Control+,");
+    await expect(view(page)).toBeVisible();
+    await expect(page).toHaveTitle("Settings · Personal Planner");
+    await expect(view(page).getByRole("heading", { name: "Settings", level: 2 })).toBeVisible();
+    const fontSize = await view(page).getByRole("heading", { name: "Settings", level: 2 })
+      .evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+    expect(fontSize).toBeGreaterThanOrEqual(32);
+
+    for (const tab of ["General", "Rituals", "Shortcuts"]) {
+      await rail(page).getByRole("button", { name: tab, exact: true }).click();
+      await expect(view(page).getByRole("heading", { name: tab, exact: true })).toBeVisible();
+      await page.waitForTimeout(250);
+      const small = await view(page).evaluate(root =>
+        [...root.querySelectorAll<HTMLElement>("button, input:not([type=checkbox]), select, a[href], [role=switch], [role=radio]")]
+          .filter(node => node.getClientRects().length > 0)
+          .map(node => {
+            const box = node.getBoundingClientRect();
+            return { text: (node.getAttribute("aria-label") ?? node.textContent ?? node.className).trim().slice(0, 30), width: Math.round(box.width), height: Math.round(box.height) };
+          })
+          .filter(entry => entry.height < 44 || entry.width < 44),
+      );
+      expect.soft(small, `${tab}: controls under 44 px`).toEqual([]);
+    }
+
+    await view(page).getByRole("button", { name: "Back", exact: true }).click();
+    await expect(view(page)).toHaveCount(0);
+    await expect(page).toHaveTitle("Today · Personal Planner");
+  });
+});

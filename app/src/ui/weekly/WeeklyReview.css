@@ -38,11 +38,13 @@
   .weekly-back:hover { color: var(--label); background: var(--fill-hover); }
 }
 
-.weekly-title h2 {
-  margin: 0;
-  font-size: var(--text-headline);
-  font-weight: 600;
-  color: var(--label);
+.weekly .weekly-head { flex-wrap: nowrap; align-items: center; justify-content: flex-start; margin: 0; }
+
+/* The 34 px title is the page grammar's (.large-title); only the margin resets. */
+.weekly-title h2 { margin: 0; }
+
+@media (pointer: coarse) {
+  .weekly-back { min-height: 44px; min-width: 44px; justify-content: center; }
 }
 
 .weekly-title p {

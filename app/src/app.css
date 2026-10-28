@@ -606,6 +606,14 @@ time,
 
   /* An inline link has no pill to grow wide, but it can claim the height. */
   .link-button { min-height: 44px; }
+
+  /* Settings (R5-16): the rail items, the language segments, the shortcut chip
+     and the Back button were 32-40 px; the row's own padding keeps the layout. */
+  .settings-nav-item,
+  .settings-back,
+  .shortcut-chip,
+  .day-time,
+  .settings .form-control { min-height: 44px; }
 }
 
 /* ---------- shell ---------- */
