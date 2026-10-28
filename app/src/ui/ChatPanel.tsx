@@ -14,7 +14,7 @@ import { dur, easeOutBackCss, ms } from "./motion.ts";
 import { useSwipeDismiss } from "./useSwipeDismiss.ts";
 import { matchesEvent, parseAccelerator, useShortcutBinding } from "./settings/shortcutRegistry.ts";
 import { CallsDroppedNote, ChatActionCard } from "./ChatActionCard.tsx";
-import { CloseIcon } from "./icons.tsx";
+import { CloseIcon, ICON_STROKE } from "./icons.tsx";
 import "./ChatPanel.css";
 
 /**
@@ -65,13 +65,13 @@ const unwiredTransport: ChatTransport = {
 };
 
 const ChatIcon = () => (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3 9 9 0 0 1-3.2-.6L4 20l1-4.1a8 8 0 0 1-1.5-4.4A8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3Z" />
   </svg>
 );
 
 const SendIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M5 12h13" />
     <path d="M12 5.5 18.5 12 12 18.5" />
   </svg>
