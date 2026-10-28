@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
+import { t } from "../../i18n/index.ts";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import type { WorkWindow } from "../../planning/window.ts";
 import {
@@ -146,14 +147,14 @@ export function WeeklyReview({
 
   return (
     <section aria-label="Weekly review" className="weekly">
-      <div className="weekly-head">
+      <div className="weekly-head page-head">
         <button type="button" className="weekly-back" onClick={onBack}>
           <ChevronLeft className="weekly-back-icon" />
-          Back
+          {t("shell.back")}
         </button>
         <header className="weekly-title">
-          <h2>Weekly review</h2>
-          <p>
+          <h2 className="large-title">{t("shell.title.weekly")}</h2>
+          <p className="subtitle">
             {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · Step {index + 1} of {steps.length}
           </p>
         </header>

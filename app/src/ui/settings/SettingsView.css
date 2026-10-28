@@ -7,10 +7,27 @@
 .settings {
   display: grid;
   grid-template-columns: 196px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   gap: 0 40px;
   max-width: 880px;
   padding: 8px 32px 48px;
 }
+
+/* The page head spans both columns; the rail and pane start below it. */
+.settings-page-head { grid-column: 1 / -1; align-items: center; justify-content: flex-start; gap: 4px; }
+
+.settings-back-icon-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-left: -10px;
+  border-radius: var(--r-control);
+  color: var(--label-2);
+}
+
+.settings-back-icon-button .settings-back-icon { width: 22px; height: 22px; }
 
 /* ---------- the rail ---------- */
 
@@ -93,7 +110,7 @@
   gap: 28px;
 }
 
-.settings-head h2 {
+.settings-head h3 {
   margin: 0;
   font-size: var(--text-headline);
   font-weight: 600;
@@ -279,8 +296,6 @@
   background: var(--surface);
   border-bottom: 0.5px solid var(--separator);
 }
-
-.settings.is-phone .settings-back { display: none; }
 
 .settings.is-phone .settings-nav {
   flex-direction: row;

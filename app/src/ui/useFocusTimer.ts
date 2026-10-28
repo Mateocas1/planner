@@ -264,6 +264,10 @@ export function useFocusTimer({
      page its own title back on a pause-free stop or on unmount. */
   const prefixed = enabled && session !== null && (status === "running" || status === "paused");
   const titleBase = useRef<string | null>(null);
+  /* The shell publishes the view's title as `data-page-title` (App.tsx), which
+     stays current when the view changes mid-countdown or the shell's effect
+     runs after this one; the captured title is the fallback outside the shell. */
+  const pageTitle = () => document.documentElement.dataset.pageTitle ?? titleBase.current ?? document.title;
   useEffect(() => {
     if (prefixed) {
       if (titleBase.current === null) titleBase.current = document.title;
@@ -271,13 +275,13 @@ export function useFocusTimer({
       return;
     }
     if (titleBase.current !== null) {
-      document.title = titleBase.current;
+      document.title = pageTitle();
       titleBase.current = null;
     }
   }, [prefixed, remaining, label]);
   useEffect(
     () => () => {
-      if (titleBase.current !== null) document.title = titleBase.current;
+      if (titleBase.current !== null) document.title = pageTitle();
     },
     [],
   );

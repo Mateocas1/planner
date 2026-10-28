@@ -146,7 +146,7 @@ test("the ▶ on an Up next row starts a countdown that survives a reload, a pau
   /* Stop clears the session and the tab title, and the row is up next again.
      The card's own departure is a Motion exit, which a paused clock never runs
      (see the mounting test below): here the state is what is asserted. */
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
   await expect(up.getByRole("button", { name: "Focus: Write the brief" })).toBeVisible();
   expect(await page.evaluate(key => window.localStorage.getItem(key), STORAGE_KEY)).toBeNull();
 });
@@ -175,7 +175,7 @@ test("the last five minutes count in seconds, then the block ends calmly", async
      page's own title back (nothing is counting down any more). */
   await page.clock.fastForward("00:01:00");
   await expect(digits(page)).toHaveText("Done");
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
   await expect(timer(page).getByRole("button", { name: "Pause" })).toHaveCount(0);
   await expect(timer(page).getByRole("button", { name: "Resume" })).toHaveCount(0);
   await expect(timer(page).getByRole("button", { name: "Stop" })).toBeVisible();
@@ -184,7 +184,7 @@ test("the last five minutes count in seconds, then the block ends calmly", async
   await expect(up.getByText("Nothing else today.")).toBeVisible();
 
   await timer(page).getByRole("button", { name: "Stop" }).click();
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
   expect(await page.evaluate(key => window.localStorage.getItem(key), STORAGE_KEY)).toBeNull();
 });
 
@@ -244,7 +244,7 @@ test("the timer is fully operable from the keyboard", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Stop" })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
   expect(await page.evaluate(key => window.localStorage.getItem(key), STORAGE_KEY)).toBeNull();
 });
 
@@ -296,7 +296,7 @@ test("the card lands on a running clock and leaves on Stop", async ({ page }) =>
 
   await timer(page).getByRole("button", { name: "Stop" }).click();
   await expect(timer(page)).toHaveCount(0);
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
   await expect(up.getByRole("button", { name: "Focus: Sketch the layout" })).toBeVisible();
 });
 
@@ -352,7 +352,7 @@ test("a phone runs no timer: there is no Up next and no focus command", async ({
   await expect(upNext(page)).toHaveCount(0);
   await expect(timer(page)).toHaveCount(0);
   await expect(focusButtons(page)).toHaveCount(0);
-  await expect(page).toHaveTitle("Personal Planner");
+  await expect(page).toHaveTitle("Today · Personal Planner");
 
   /* The palette is still reachable, and it offers no timer it could not show. */
   await page.getByRole("button", { name: "Command palette" }).click();
