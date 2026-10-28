@@ -80,12 +80,11 @@ test("Complete task is listed with its key, and runs on the focused row", async 
   await page.keyboard.press("Control+k");
   await expect(dialog(page)).toBeVisible();
   await field(page).fill("complete");
-  // the row shows the key the keyboard answers with, and the create row is first
+  // the row shows the key the keyboard answers with, and ranks above create
   const action = options(page).filter({ hasText: "Complete task" });
   await expect(action).toHaveCount(1);
   await expect(action.locator("kbd")).toHaveText("x");
 
-  await page.keyboard.press("ArrowDown");
   await expect(action).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
 
@@ -108,7 +107,6 @@ test("Move to tomorrow moves the focused task's deadline by one day", async ({ p
   await field(page).fill("tomorrow");
   const action = options(page).filter({ hasText: "Move to tomorrow" });
   await expect(action.locator("kbd")).toHaveText("t");
-  await page.keyboard.press("ArrowDown");
   await expect(action).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
 

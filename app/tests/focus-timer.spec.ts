@@ -216,7 +216,7 @@ test("the palette starts, pauses, resumes and stops the timer, and offers only w
      pause, resume and stop are gone and the palette says so. */
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox", { name: "Search tasks or run a command" }).fill("focus");
-  await expect(page.getByRole("option")).toHaveText(["Create “focus”", "Start focus on next block"]);
+  await expect(page.getByRole("option")).toHaveText(["Start focus on next block", "Create “focus”"]);
   await page.keyboard.press("Escape");
 });
 

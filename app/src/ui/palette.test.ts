@@ -25,9 +25,27 @@ test("an empty query offers the destinations and never a create row", () => {
   assert.equal(buildCommands("   ", tasks, destinations).some(command => command.kind === "create"), false);
 });
 
-test("a typed query makes create the first row, with the trimmed title", () => {
+test("a typed query offers create with the trimmed title, ranked after every match", () => {
   const commands = buildCommands("  Buy milk  ", tasks, destinations);
-  assert.deepEqual(commands[0], { kind: "create", id: "create", title: "Buy milk" });
+  assert.deepEqual(commands.at(-1), { kind: "create", id: "create", title: "Buy milk" });
+  assert.deepEqual(buildCommands("zzz", tasks, destinations), [{ kind: "create", id: "create", title: "zzz" }]);
+});
+
+/* R5-02: a command's own label finds it, tokens in any order, and Enter on it
+   never creates a junk task. */
+test("a command's own label finds it, first, with create still offered last", () => {
+  for (const [query, id] of [
+    ["weekly review", "action-weekly-review"],
+    ["review weekly", "action-weekly-review"],
+    ["now mode", "action-now-mode"],
+    ["mode now", "action-now-mode"],
+    ["close the day", "action-close-day"],
+    ["the day close", "action-close-day"],
+  ] as const) {
+    const ids = buildCommands(query, [], destinations).map(command => command.id);
+    assert.equal(ids[0], id, query);
+    assert.equal(ids.at(-1), "create", query);
+  }
 });
 
 test("tasks match by title, case-insensitively, sorted, and capped", () => {
@@ -45,11 +63,11 @@ test("tasks match by title, case-insensitively, sorted, and capped", () => {
 test("a query names a destination after the tasks, never before the create row", () => {
   assert.deepEqual(
     buildCommands("cal", [], destinations).map(command => command.id),
-    ["create", "navigate-calendar"],
+    ["navigate-calendar", "action-gcal-import", "create"],
   );
   assert.deepEqual(
     buildCommands("buy", tasks, destinations).map(command => command.id),
-    ["create", "task-t1", "task-t2"],
+    ["task-t1", "task-t2", "create"],
   );
 });
 

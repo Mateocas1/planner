@@ -201,9 +201,7 @@ test("a task found by title opens in its details panel from any view", async ({ 
   await expect(options(page)).toHaveCount(2);
   await expect(page.getByRole("option", { name: "Water the plants" })).toHaveCount(0);
   const row = page.getByRole("option", { name: "Pay the rent" });
-  await expect(row).toHaveAttribute("aria-selected", "false");
-
-  await page.keyboard.press("ArrowDown");
+  // a match outranks the create row, so Enter opens the task
   await expect(row).toHaveAttribute("aria-selected", "true");
   await expect(field(page)).toHaveAttribute("aria-activedescendant", /^palette-option-task-/);
   await page.keyboard.press("Enter");
@@ -333,7 +331,6 @@ test("the top bar trigger opens it, arrows wrap, Enter runs a destination, and a
   await expect(dialog(page)).toBeVisible();
   await field(page).fill("tasks");
   await expect(options(page)).toHaveCount(2);
-  await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("option", { name: "Go to Tasks" })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
   expect(await dialog(page).count()).toBe(0);
