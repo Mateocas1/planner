@@ -20,7 +20,7 @@ import {
   readPillEnabled,
   type PillSnapshot,
 } from "./focusPillState.ts";
-import { useLocale } from "../i18n/index.ts";
+import { t, useLocale } from "../i18n/index.ts";
 // The pill's own paint ships beside it (AGENTS.md: co-located styles).
 import { ICON_STROKE } from "./icons.tsx";
 import "./FocusPill.css";
@@ -88,7 +88,7 @@ export function FocusPill() {
   const [snapshot, setSnapshot] = useState<PillSnapshot | null>(() =>
     pillSnapshot(readStoredSession(), Date.now()),
   );
-  const [label, setLabel] = useState("Focus");
+  const [label, setLabel] = useState(() => t("focus.title"));
   /** Null until Rust answers; treated as "main in front" (pill hidden). */
   const [mainFocused, setMainFocused] = useState<boolean | null>(null);
   const [enabled, setEnabled] = useState(() => readPillEnabled());
@@ -237,13 +237,13 @@ export function FocusPill() {
       <span className="focus-pill-title" title={label}>{label}</span>
       <span className="focus-pill-time">{formatRemaining(snapshot.remaining)}</span>
       <div className="focus-pill-actions">
-        <button type="button" className="focus-pill-button" aria-label={paused ? "Resume focus" : "Pause focus"} onClick={togglePause}>
+        <button type="button" className="focus-pill-button" aria-label={paused ? t("focus.resumeFocus") : t("focus.pauseFocus")} onClick={togglePause}>
           {paused ? <PlayIcon /> : <PauseIcon />}
         </button>
         <button
           type="button"
           className="focus-pill-button"
-          aria-label="Hide for this session"
+          aria-label={t("focus.hide")}
           onClick={() => setHiddenByUser(true)}
         >
           <CloseIcon />

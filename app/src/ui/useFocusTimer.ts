@@ -23,6 +23,7 @@ import { dateKey } from "./time.ts";
 import { consumePendingSubtraction, sessionKeyOf } from "../domain/idle.ts";
 import { minutesToRecord } from "../domain/idleFlow.ts";
 import { currentAndNext } from "../domain/upNext.ts";
+import { t } from "../i18n/index.ts";
 
 /**
  * The focus timer, as React state: one session for the document, kept per
@@ -104,7 +105,7 @@ export type FocusControls = {
 };
 
 /** The product's own word for a block with no task (`Calendar.tsx` says the same). */
-export const unlinkedBlockTitle = "Work block";
+export const unlinkedBlockTitle = (): string => t("cal.workBlock");
 
 function readStored(): FocusSession | null {
   try {
@@ -257,7 +258,7 @@ export function useFocusTimer({
     setNow(stamp);
   }, [report, session]);
 
-  const label = session ? tasks.find(task => task.id === session.taskId)?.title ?? unlinkedBlockTitle : "";
+  const label = session ? tasks.find(task => task.id === session.taskId)?.title ?? unlinkedBlockTitle() : "";
   const remaining = session ? remainingMs(session, now) : 0;
 
   /* The tab title carries the countdown while the timer is live and gives the

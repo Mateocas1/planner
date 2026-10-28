@@ -30,7 +30,7 @@ test("tokens: lowercased, accent-stripped, three letters or more, stop words dro
 });
 
 test("no suggestion below the thresholds, and the empty hint names the timer", () => {
-  assert.equal(noBiasHint, "Track a few tasks with the timer to learn your pace.");
+  assert.equal(noBiasHint(), "Track a few tasks with the timer to learn your pace.");
   assert.equal(suggestEstimate([], { title: "Send invoice", estimate: 30 }), null);
   assert.equal(
     suggestEstimate([sample("invoice", 30, 45), sample("invoice", 30, 45)], { title: "Send invoice", estimate: 30 }),

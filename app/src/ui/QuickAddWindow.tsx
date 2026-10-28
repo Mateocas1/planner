@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useSession } from "../data/session.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
-import { useLocale } from "../i18n/index.ts";
+import { t, useLocale } from "../i18n/index.ts";
 import { addSeries, type Frequency } from "../data/series.ts";
 import { addTask } from "../data/tasks.ts";
 import { parseQuickAdd } from "../domain/quickAdd.ts";
@@ -138,7 +138,7 @@ export function QuickAddWindow() {
       setUndone([]);
       hide();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
+      setError(cause instanceof Error ? cause.message : t("cal.error.generic"));
     } finally {
       setBusy(false);
     }
@@ -147,21 +147,21 @@ export function QuickAddWindow() {
   return (
     <div className="quickadd" key={enterCount}>
       {loading ? (
-        <p className="quickadd-note" role="status">Checking your session…</p>
+        <p className="quickadd-note" role="status">{t("quickAdd.checking")}</p>
       ) : !user ? (
         <form className="quickadd-form" onSubmit={event => void onSubmit(event)}>
-          <p className="quickadd-note" role="status">Sign in in Planner first.</p>
-          <p className="quickadd-hint">Press Enter to open the main window.</p>
+          <p className="quickadd-note" role="status">{t("quickAdd.signInFirst")}</p>
+          <p className="quickadd-hint">{t("quickAdd.openMain")}</p>
         </form>
       ) : (
         <form className="quickadd-form" onSubmit={event => void onSubmit(event)}>
-          <label className="sr-only" htmlFor="quickadd-title">Task title</label>
+          <label className="sr-only" htmlFor="quickadd-title">{t("quickAdd.taskTitle")}</label>
           <input
             id="quickadd-title"
             ref={fieldRef}
             className="quickadd-input"
             type="text"
-            placeholder="What needs doing?"
+            placeholder={t("quickAdd.placeholder")}
             autoFocus
             autoComplete="off"
             value={title}
@@ -175,7 +175,7 @@ export function QuickAddWindow() {
           />
           <QuickAddChips parts={parsed.parts} today={parsed.today} onUndo={part => setUndone(list => [...list, part.text])} />
           {error && <p className="quickadd-hint quickadd-error" role="alert">{error}</p>}
-          {!error && <p className="quickadd-hint">Enter saves to your planner · Esc closes</p>}
+          {!error && <p className="quickadd-hint">{t("quickAdd.hint")}</p>}
         </form>
       )}
     </div>

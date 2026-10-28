@@ -87,8 +87,8 @@ export function PlanMyDay({
   const noTimeLeft = !hasFreeTimeAhead(todayIntervals, workWindow, wallMinutes(now, timeZone));
   const lede =
     unscheduled.length === 0
-      ? "Every open task has time set aside."
-      : `${unscheduled.length} ${unscheduled.length === 1 ? "task has" : "tasks have"} no time set aside.`;
+      ? t("plan.allPlaced")
+      : t("plan.lede", { count: unscheduled.length });
 
   function propose() {
     setError(null);
@@ -97,7 +97,7 @@ export function PlanMyDay({
     setPlan(empty ? null : next);
     // A press that finds nothing to write says so instead of opening an empty
     // proposal: the second press of a day already planned is exactly that case.
-    setMessage(next.placements.length === 0 ? "Nothing to plan." : null);
+    setMessage(next.placements.length === 0 ? t("plan.nothing") : null);
   }
 
   function close() {
@@ -117,7 +117,7 @@ export function PlanMyDay({
       const fresh = planDay({ day: today, now, timeZone, window: workWindow, tasks: tasks as PlanTask[], blocks });
       if (!samePlan(fresh, plan)) {
         setPlan(fresh.placements.length === 0 && fresh.unplaced.length === 0 ? null : fresh);
-        setMessage(fresh.placements.length === 0 ? "Nothing to plan." : "Your day changed. Review the updated plan.");
+        setMessage(fresh.placements.length === 0 ? t("plan.nothing") : t("plan.changed"));
         return;
       }
       const writes = plan.placements.map(placement => ({
@@ -128,7 +128,7 @@ export function PlanMyDay({
       const count = writes.length;
       const { ids, done } = addBlocks(uid, writes);
       const offer: UndoableDelete = {
-        message: `Planned ${count} ${count === 1 ? "block" : "blocks"}.`,
+        message: t("plan.planned", { count }),
         restore: () => settle(removeBlocks(uid, ids)),
       };
       await settle(done);
@@ -138,7 +138,7 @@ export function PlanMyDay({
       if (onOfferUndo) onOfferUndo(offer);
       else setUndo({ ...offer, id: openCount.current });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The plan could not be saved.");
+      setError(cause instanceof Error ? cause.message : t("plan.saveFailed"));
     } finally {
       applying.current = false;
       setBusy(false);
@@ -155,7 +155,7 @@ export function PlanMyDay({
     >
       {variant === "brief" ? (
         <div className="plan-head">
-          <h3 id="plan-heading" className="section-title">Plan my day</h3>
+          <h3 id="plan-heading" className="section-title">{t("plan.title")}</h3>
           <p className="plan-lede">{lede}</p>
         </div>
       ) : null}
@@ -168,14 +168,14 @@ export function PlanMyDay({
         disabled={noTimeLeft && !plan}
         onClick={() => (plan ? close() : propose())}
       >
-        Plan my day
+        {t("plan.title")}
       </button>
       {noTimeLeft && !plan && <p id="plan-no-time" className="plan-status">{t("today.plan.noFreeTime")}</p>}
       {plan && (
         <div
           className="plan-panel"
           role="group"
-          aria-label="Proposed plan"
+          aria-label={t("plan.proposed")}
           onKeyDown={event => {
             if (event.key !== "Escape") return;
             event.preventDefault();
@@ -204,10 +204,10 @@ export function PlanMyDay({
           {count > 0 && (
             <div className="plan-actions">
               <button ref={applyRef} type="button" className="button-primary" disabled={busy} onClick={() => void apply()}>
-                Apply {count} {count === 1 ? "block" : "blocks"}
+                {t("plan.apply", { count })}
               </button>
               <button type="button" className="button" onClick={close}>
-                Cancel
+                {t("plan.cancel")}
               </button>
             </div>
           )}
