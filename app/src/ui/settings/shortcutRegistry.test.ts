@@ -58,6 +58,13 @@ describe("parseAccelerator / acceleratorOf / keycaps", () => {
     assert.deepEqual(keycaps("meta+Digit1"), ["Win", "1"]);
   });
 
+  it("prints the platform's modifier, matching the help sheet", () => {
+    assert.deepEqual(keycaps("ctrl+KeyK", true), ["⌘", "K"]);
+    assert.deepEqual(keycaps("ctrl+KeyK", false), ["Ctrl", "K"]);
+    assert.deepEqual(keycaps("meta+KeyK", true), ["⌘", "K"]);
+    assert.deepEqual(keycaps("meta+KeyK", false), ["Win", "K"]);
+  });
+
   it("labels accelerators the way messages quote them", () => {
     assert.equal(acceleratorLabel("ctrl+alt+Space"), "Ctrl+Alt+Space");
     assert.equal(acceleratorLabel("ctrl+Comma"), "Ctrl+,");

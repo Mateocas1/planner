@@ -315,7 +315,33 @@ export type ShortcutHelpEntry = {
 
 export type ShortcutHelpGroup = { title: string; entries: readonly ShortcutHelpEntry[] };
 
-export const shortcutHelp: readonly ShortcutHelpGroup[] = [
+/** The shape `isApplePlatform` reads from `navigator`. */
+export type PlatformInfo = { platform?: string; userAgentData?: { platform?: string } } | undefined;
+
+/** True on macOS and iOS/iPadOS, where the primary modifier is Command. */
+export function isApplePlatform(nav: PlatformInfo = typeof navigator === "undefined" ? undefined : navigator): boolean {
+  const name = nav?.userAgentData?.platform ?? nav?.platform ?? "";
+  return /mac|iphone|ipad|ipod/i.test(name);
+}
+
+/** The primary modifier's keycap: "⌘" on Apple platforms, "Ctrl" elsewhere.
+ * The help sheet and the Settings recorder both print it, so they agree. */
+export function modifierLabel(apple: boolean = isApplePlatform()): string {
+  return apple ? "⌘" : "Ctrl";
+}
+
+export function shortcutHelpFor(apple: boolean): readonly ShortcutHelpGroup[] {
+  const mod = modifierLabel(apple);
+  return shortcutHelpGroups.map(group => ({
+    ...group,
+    entries: group.entries.map(entry => ({ ...entry, keys: entry.keys.map(key => (key === modifierToken ? mod : key)) })),
+  }));
+}
+
+/** Placeholder for the platform's modifier in the table below. */
+const modifierToken = "Mod";
+
+const shortcutHelpGroups: readonly ShortcutHelpGroup[] = [
   {
     title: "Move",
     entries: [
@@ -351,10 +377,13 @@ export const shortcutHelp: readonly ShortcutHelpGroup[] = [
   {
     title: "Anywhere",
     entries: [
-      { keys: ["⌘", "K"], label: "Command palette" },
-      { keys: ["Ctrl", "J"], label: "Chat panel" },
+      { keys: [modifierToken, "K"], label: "Command palette" },
+      { keys: [modifierToken, "J"], label: "Chat panel" },
       { keys: ["?"], label: "This sheet", action: "help" },
       { keys: ["Esc"], label: "Close what is open" },
     ],
   },
 ];
+
+/** The help table for this device, resolved once at load. */
+export const shortcutHelp: readonly ShortcutHelpGroup[] = shortcutHelpFor(isApplePlatform());

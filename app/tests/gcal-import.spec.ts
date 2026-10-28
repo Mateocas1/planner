@@ -420,8 +420,7 @@ test("the whole import runs from the keyboard", async ({ page }) => {
   await page.keyboard.type("import");
   const command = palette.getByRole("option", { name: "Import from Google Calendar" });
   await expect(command).toBeVisible();
-  // The create row comes first by design; the arrows are the way to the command.
-  await palette.getByRole("combobox").press("ArrowDown");
+  // The command outranks the create row, so Enter runs it.
   await expect(palette.getByRole("combobox")).toHaveAttribute("aria-activedescendant", "palette-option-action-gcal-import");
   await page.keyboard.press("Enter");
 

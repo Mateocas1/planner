@@ -3,10 +3,13 @@ import test from "node:test";
 import {
   blockTomorrow,
   createShortcutRouter,
+  isApplePlatform,
   isTypingTarget,
+  modifierLabel,
   rovingTabIndex,
   sequenceTimeoutMs,
   shortcutHelp,
+  shortcutHelpFor,
   tomorrowKey,
   type KeyTarget,
   type RouterContext,
@@ -238,4 +241,22 @@ test("a block that ends at midnight ends at the next midnight", () => {
     start: "2026-05-05T23:00:00+02:00",
     end: "2026-05-06T00:00:00+02:00",
   });
+});
+
+test("modifierLabel is the Apple glyph on Apple platforms and Ctrl elsewhere", () => {
+  assert.equal(modifierLabel(true), "⌘");
+  assert.equal(modifierLabel(false), "Ctrl");
+  assert.equal(isApplePlatform({ platform: "MacIntel" }), true);
+  assert.equal(isApplePlatform({ platform: "iPhone" }), true);
+  assert.equal(isApplePlatform({ platform: "Win32" }), false);
+  assert.equal(isApplePlatform({ platform: "Linux x86_64", userAgentData: { platform: "Linux" } }), false);
+  assert.equal(isApplePlatform({ userAgentData: { platform: "macOS" } }), true);
+  assert.equal(isApplePlatform(undefined), false);
+});
+
+test("the help sheet's chords use the platform's modifier", () => {
+  const chords = (apple: boolean) =>
+    shortcutHelpFor(apple).find(group => group.title === "Anywhere")!.entries.filter(entry => entry.keys.length === 2);
+  assert.deepEqual(chords(true).map(entry => entry.keys), [["⌘", "K"], ["⌘", "J"]]);
+  assert.deepEqual(chords(false).map(entry => entry.keys), [["Ctrl", "K"], ["Ctrl", "J"]]);
 });
