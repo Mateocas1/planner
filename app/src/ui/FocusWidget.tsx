@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import { formatRemaining, type FocusStatus } from "../domain/focus.ts";
+import { t } from "../i18n/index.ts";
 import { dur, easeOut, spring } from "./motion.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
 // The timer's own paint ships beside it (AGENTS.md: co-located styles).
@@ -34,7 +35,7 @@ export function PlayIcon() {
 /** The ▶ at the end of an Up next row. */
 export function FocusStartButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" className="focus-start" aria-label={`Focus: ${label}`} onClick={onClick}>
+    <button type="button" className="focus-start" aria-label={t("focus.startFor", { label })} onClick={onClick}>
       <PlayIcon />
     </button>
   );
@@ -42,9 +43,9 @@ export function FocusStartButton({ label, onClick }: { label: string; onClick: (
 
 /** What an assistive technology hears when the state changes, never per tick. */
 function announcement(status: FocusStatus | null): string {
-  if (status === "paused") return "Focus paused";
-  if (status === "done") return "Focus done";
-  return "Focus running";
+  if (status === "paused") return t("focus.paused");
+  if (status === "done") return t("focus.done");
+  return t("focus.running");
 }
 
 export function FocusWidget({ focus }: { focus: FocusControls }) {
@@ -55,7 +56,7 @@ export function FocusWidget({ focus }: { focus: FocusControls }) {
     <motion.div
       className="side-card focus-card"
       role="group"
-      aria-label="Focus timer"
+      aria-label={t("focus.timer")}
       initial={{ opacity: 0, transform: "translateY(-4px)" }}
       animate={{ opacity: 1, transform: "translateY(0px)" }}
       exit={{ opacity: 0, transform: "translateY(-4px)", transition: { duration: dur.pop, ease: easeOut } }}
@@ -64,17 +65,17 @@ export function FocusWidget({ focus }: { focus: FocusControls }) {
       <p className="focus-line">
         <span className="focus-title" title={label}>{label}</span>
         <span className={`focus-time${paused ? " is-paused" : ""}${done ? " is-done" : ""}`}>
-          {done ? "Done" : formatRemaining(remaining)}
+          {done ? t("focus.doneShort") : formatRemaining(remaining)}
         </span>
       </p>
       <p className="sr-only" aria-live="polite">{announcement(status)}</p>
       <div className="focus-actions">
         {!done && (
           <button type="button" className="focus-action" onClick={paused ? focus.resume : focus.pause}>
-            {paused ? "Resume" : "Pause"}
+            {paused ? t("focus.resume") : t("focus.pause")}
           </button>
         )}
-        <button type="button" className="focus-action" onClick={focus.stop}>Stop</button>
+        <button type="button" className="focus-action" onClick={focus.stop}>{t("focus.stop")}</button>
       </div>
     </motion.div>
   );

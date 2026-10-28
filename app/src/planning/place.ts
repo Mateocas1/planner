@@ -25,6 +25,7 @@
 
 import { pad, wallParts } from "../domain/instant.ts";
 import { ASSUMED_ESTIMATE_MINUTES, parseEstimate } from "../domain/model.ts";
+import { t } from "../i18n/index.ts";
 import { freeSlots, minutesPerDay, validateWorkWindow, type Interval, type WorkWindow } from "./window.ts";
 
 const dayMs = 86_400_000;
@@ -154,10 +155,10 @@ export function samePlan(left: Plan, right: Plan): boolean {
  * `2 tasks didn't fit today: Report, Taxes. Plan tomorrow?`. Empty when every
  * candidate was placed; `when` lets a caller say the day it planned.
  */
-export function unplacedNotice(unplaced: readonly Unplaced[], when = "today"): string {
+export function unplacedNotice(unplaced: readonly Unplaced[], when = t("plan.whenToday")): string {
   if (unplaced.length === 0) return "";
   const names = unplaced.map(item => item.task.title).join(", ");
-  return `${unplaced.length} ${unplaced.length === 1 ? "task" : "tasks"} didn't fit ${when}: ${names}. Plan tomorrow?`;
+  return t("plan.unplaced", { count: unplaced.length, when, names });
 }
 
 /** Deadline ascending (undated last), then the longer plan first, then id. */

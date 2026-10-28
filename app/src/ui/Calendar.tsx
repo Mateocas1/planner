@@ -93,9 +93,9 @@ export function Calendar({
     return (
       <section className="view" aria-labelledby="calendar-heading">
         <header className="page-head">
-          <h2 id="calendar-heading" className="large-title">Calendar</h2>
+          <h2 id="calendar-heading" className="large-title">{t("cal.title")}</h2>
         </header>
-        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">Loading your planner timezone…</p>}
+        {profileError ? <p className="inline-error" role="alert">{profileError}</p> : <p className="subtitle" role="status">{t("cal.loadingZone")}</p>}
       </section>
     );
   }
@@ -198,8 +198,8 @@ function CalendarView({
     setPlanError(null);
     void settle(setBlockTimes(uid, block.id, next.start, next.end))
       .then(() => {
-        announce(`Block moved to ${day}.`);
-        onDeleted({ message: `Block moved to ${day}`, restore: () => settle(setBlockTimes(uid, block.id, block.start, block.end)) });
+        announce(t("cal.blockMovedSentence", { day }));
+        onDeleted({ message: t("cal.blockMoved", { day }), restore: () => settle(setBlockTimes(uid, block.id, block.start, block.end)) });
       })
       .catch(fail);
   });
@@ -269,7 +269,7 @@ function CalendarView({
     setPlanError(null);
     const slot = free.find(([start, end]) => end - start >= planLength);
     if (!slot) {
-      setPlanError(`No free hour left on ${formatDateKey(planDayKey, todayKey)}.`);
+      setPlanError(t("cal.noFreeHour", { day: formatDateKey(planDayKey, todayKey) }));
       return;
     }
     try {
@@ -285,12 +285,12 @@ function CalendarView({
       const scroller = scrollRef.current;
       if (scroller) scroller.scrollTo({ top: Math.max(0, (slot[0] / 60) * hourHeight - scroller.clientHeight / 3), behavior: reduced ? "auto" : "smooth" });
     } catch (cause) {
-      setPlanError(cause instanceof Error ? cause.message : "The block could not be planned.");
+      setPlanError(cause instanceof Error ? cause.message : t("cal.error.plan"));
     }
   }
 
   const fail = (cause: unknown) => {
-    setPlanError(cause instanceof Error ? cause.message : "The block could not be saved.");
+    setPlanError(cause instanceof Error ? cause.message : t("cal.error.save"));
   };
 
   /** Persists a block's edges in the profile zone. The local cache applies the
@@ -339,7 +339,7 @@ function CalendarView({
         task.id,
       ),
     )
-      .then(() => announce(`Planned ${task.title} at ${minutesLabel(slot.minutes)} on ${formatDateKey(slot.key, todayKey)}.`))
+      .then(() => announce(t("cal.plannedAt", { task: task.title, time: minutesLabel(slot.minutes), day: formatDateKey(slot.key, todayKey) })))
       .catch(fail);
   }
 
@@ -391,7 +391,7 @@ function CalendarView({
       const snapped = movedEdge(edge, delta, base.start, base.end);
       if (snapped.start === base.start && snapped.end === base.end) return;
       void saveTimes(item, snapped.start, snapped.end)
-        .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
+        .then(() => announce(t("cal.blockNow", { start: minutesLabel(snapped.start), end: minutesLabel(snapped.end) })))
         .catch(fail);
     };
 
@@ -423,7 +423,7 @@ function CalendarView({
     if (snapped.end === base.end) return;
     setPlanError(null);
     void saveTimes(item, snapped.start, snapped.end)
-      .then(() => announce(`Block is now ${minutesLabel(snapped.start)}–${minutesLabel(snapped.end)}.`))
+      .then(() => announce(t("cal.blockNow", { start: minutesLabel(snapped.start), end: minutesLabel(snapped.end) })))
       .catch(fail);
   }
 
@@ -436,7 +436,7 @@ function CalendarView({
       <header className="page-head">
         <div>
           <h2 id="calendar-heading" className="large-title">
-            <span className="sr-only">Calendar, </span>
+            <span className="sr-only">{t("cal.title")}, </span>
             {isDay && !phone ? (
               <>
                 {formatWall(selectedUtc, { weekday: "long" })} <span className="soft">{formatWall(selectedUtc, { month: "long", day: "numeric" })}</span>
@@ -450,35 +450,35 @@ function CalendarView({
           <p className="subtitle">
             <span title={timeZone}>{t("calendar.timesIn", { zone: zoneName(timeZone, intlLocale(locale), now) })}</span>
             {!loading && visible.length === 0 && (
-              <span role="status"> · {isDay ? "No work blocks on this day." : "No work blocks this week."}</span>
+              <span role="status"> · {isDay ? t("cal.noBlocksDay") : t("cal.noBlocksWeek")}</span>
             )}
           </p>
         </div>
-        <div className="toolbar" role="group" aria-label="Calendar navigation">
+        <div className="toolbar" role="group" aria-label={t("cal.navigation")}>
           {!phone && (
-            <div className="segmented" role="group" aria-label="Range">
+            <div className="segmented" role="group" aria-label={t("cal.range")}>
               {(["day", "week"] as const).map(option => (
                 <button key={option} type="button" aria-pressed={range === option} onClick={() => setRange(option)}>
-                  {option === "day" ? "Day" : "Week"}
+                  {option === "day" ? t("cal.day") : t("cal.week")}
                 </button>
               ))}
             </div>
           )}
-          <button type="button" className="button icon" aria-label={isDay ? "Previous day" : "Previous week"} onClick={() => step(-1)}>
+          <button type="button" className="button icon" aria-label={isDay ? t("cal.previousDay") : t("cal.previousWeek")} onClick={() => step(-1)}>
             <ChevronLeft />
           </button>
-          <button type="button" className="button" onClick={goToday}>Today</button>
-          <button type="button" className="button icon" aria-label={isDay ? "Next day" : "Next week"} onClick={() => step(1)}>
+          <button type="button" className="button" onClick={goToday}>{t("cal.today")}</button>
+          <button type="button" className="button icon" aria-label={isDay ? t("cal.nextDay") : t("cal.nextWeek")} onClick={() => step(1)}>
             <ChevronRight />
           </button>
           <button ref={newBlockRef} type="button" className="button button-accent" onClick={() => openCreate(null, null, newBlockRef.current)}>
-            <PlusIcon />New block
+            <PlusIcon />{t("cal.newBlock")}
           </button>
         </div>
       </header>
 
       {phone && (
-        <div className="week-strip" role="group" aria-label="Week">
+        <div className="week-strip" role="group" aria-label={t("cal.week")}>
           {weekUtc.map(utc => {
             const key = wallDayKey(utc);
             const count = laid.filter(item => item.key === key).length;
@@ -526,7 +526,7 @@ function CalendarView({
             </div>
           )}
           <div className="cal-due">
-            <div className="cal-due-label">Due</div>
+            <div className="cal-due-label">{t("cal.due")}</div>
             {dayKeys.map(key => {
               const due = tasks.filter(task => !task.completed && task.deadline === key);
               return (
@@ -590,7 +590,7 @@ function CalendarView({
                           // in this column; resizing it would persist the clip, so it
                           // is not resizable here (the known D3 limitation).
                           const resizable = dateKey(new Date(item.block.end), timeZone) === item.key;
-                          const blockName = task ? task.title : item.block.title ?? "Work block";
+                          const blockName = task ? task.title : item.block.title ?? t("cal.workBlock");
                           const range = live
                             ? `${minutesLabel(startMinutes)}–${minutesLabel(endMinutes)}`
                             : `${timeLabel(new Date(item.block.start), timeZone)}–${timeLabel(new Date(item.block.end), timeZone)}`;
@@ -675,9 +675,9 @@ function CalendarView({
 
         <aside className="card tray" aria-labelledby="tray-heading">
           <div>
-            <h3 id="tray-heading" className="tray-title">Unscheduled</h3>
+            <h3 id="tray-heading" className="tray-title">{t("cal.unscheduled")}</h3>
             <p className="tray-note">
-              Open tasks with no work block ahead. Plan sets aside an hour in the next free slot {planDayKey === todayKey ? "today" : `on ${formatDateKey(planDayKey, todayKey)}`}.
+              {t("cal.trayNote", { when: planDayKey === todayKey ? t("cal.whenToday") : t("cal.whenOn", { day: formatDateKey(planDayKey, todayKey) }) })}
             </p>
           </div>
           {/* Plan my day (F4): the day's open tasks proposed as blocks and
@@ -692,7 +692,7 @@ function CalendarView({
             onOfferUndo={onDeleted}
           />
           {unscheduled.length === 0 ? (
-            <p className="tray-note">Every open task has time set aside.</p>
+            <p className="tray-note">{t("cal.trayEmpty")}</p>
           ) : (
             <ul className="tray-list">
               <AnimatePresence initial={false}>
@@ -710,11 +710,11 @@ function CalendarView({
                     <div>
                       <b>{task.title}</b>
                       {task.deadline && (
-                        <span className={isPastDateKey(task.deadline, todayKey) ? "is-overdue" : ""}>due {formatDateKey(task.deadline, todayKey)}</span>
+                        <span className={isPastDateKey(task.deadline, todayKey) ? "is-overdue" : ""}>{t("cal.dueOn", { day: formatDateKey(task.deadline, todayKey) })}</span>
                       )}
                     </div>
                     <DragGrip task={task} />
-                    <button type="button" className="button small" onClick={() => void plan(task)}>Plan</button>
+                    <button type="button" className="button small" onClick={() => void plan(task)}>{t("cal.plan")}</button>
                   </motion.li>
                 ))}
               </AnimatePresence>
@@ -722,7 +722,7 @@ function CalendarView({
           )}
           {planError && <p className="inline-error" role="alert">{planError}</p>}
           <p className="tray-sum">
-            <span>Free {planDayKey === todayKey ? "for the rest of today" : `on ${formatDateKey(planDayKey, todayKey)}`}</span>
+            <span>{planDayKey === todayKey ? t("cal.freeToday") : t("cal.freeOn", { day: formatDateKey(planDayKey, todayKey) })}</span>
             <b>{formatDuration(freeMinutes)}</b>
           </p>
         </aside>
@@ -766,7 +766,7 @@ function CalendarView({
               const deleted = selectedBlock;
               setOpenBlock(null);
               void settle(deleteBlock(uid, deleted.id))
-                .then(() => onDeleted({ message: "Block deleted", restore: () => restoreBlock(uid, deleted) }))
+                .then(() => onDeleted({ message: t("cal.blockDeleted"), restore: () => restoreBlock(uid, deleted) }))
                 .catch(() => undefined);
             }}
           />
@@ -853,7 +853,7 @@ function BlockForm({
   const [end, setEnd] = useState(initialEnd);
   const [taskId, setTaskId] = useState("");
   const taskOptions = useMemo(
-    () => [{ value: "", label: "No task" }, ...tasks.filter(task => !task.completed).map(task => ({ value: task.id, label: task.title }))],
+    () => [{ value: "", label: t("cal.noTask") }, ...tasks.filter(task => !task.completed).map(task => ({ value: task.id, label: task.title }))],
     [tasks],
   );
   const [error, setError] = useState<string | null>(null);
@@ -872,38 +872,38 @@ function BlockForm({
       await settle(addBlock(uid, toZonedInstant(start, timeZone), toZonedInstant(end, timeZone), taskId === "" ? undefined : taskId));
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
+      setError(cause instanceof Error ? cause.message : t("cal.error.generic"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet label="New block" className="block-sheet" origin={origin} onClose={onClose}>
+    <Sheet label={t("cal.newBlock")} className="block-sheet" origin={origin} onClose={onClose}>
       <form className="sheet-form" onSubmit={event => void onSubmit(event)}>
         <header className="sheet-head">
-          <span className="sheet-kind">New work block</span>
-          <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+          <span className="sheet-kind">{t("cal.newWorkBlock")}</span>
+          <button type="button" className="icon-button" aria-label={t("cal.cancel")} onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
         <div className="form-group">
           <div className="form-row">
-            <label htmlFor="block-start">Start</label>
+            <label htmlFor="block-start">{t("cal.start")}</label>
             <DateTimeField id="block-start" timeId="block-start-time" value={start} onChange={setStart} today={todayKey} dateLabels={dateFieldLabels} timeLabel={t("block.startTime")} />
           </div>
           <div className="form-row">
-            <label htmlFor="block-end">End</label>
+            <label htmlFor="block-end">{t("cal.end")}</label>
             <DateTimeField id="block-end" timeId="block-end-time" value={end} onChange={setEnd} today={todayKey} dateLabels={dateFieldLabels} timeLabel={t("block.endTime")} />
           </div>
           <div className="form-row">
-            <label htmlFor="block-task">Task</label>
-            <Select id="block-task" label="Task" value={taskId} options={taskOptions} onChange={setTaskId} />
+            <label htmlFor="block-task">{t("cal.task")}</label>
+            <Select id="block-task" label={t("cal.task")} value={taskId} options={taskOptions} onChange={setTaskId} />
           </div>
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
         <p className="sheet-note" title={timeZone}>{t("calendar.timesAreIn", { zone: zoneName(timeZone, intlLocale(locale)) })}</p>
-        <button type="submit" className="button-primary" disabled={busy}>Add block</button>
+        <button type="submit" className="button-primary" disabled={busy}>{t("cal.addBlock")}</button>
       </form>
     </Sheet>
   );
@@ -930,35 +930,35 @@ function BlockDetails({
   const end = new Date(block.end);
   const minutes = (end.getTime() - start.getTime()) / 60_000;
   return (
-    <Sheet label="Block details" className="block-sheet" origin={origin} onClose={onClose}>
+    <Sheet label={t("cal.blockDetails")} className="block-sheet" origin={origin} onClose={onClose}>
       <header className="sheet-head">
-        <span className="sheet-kind">Work block</span>
-        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+        <span className="sheet-kind">{t("cal.workBlock")}</span>
+        <button type="button" className="icon-button" aria-label={t("cal.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
-      <h3 className="sheet-title as-heading">{task ? task.title : "Work block"}</h3>
+      <h3 className="sheet-title as-heading">{task ? task.title : t("cal.workBlock")}</h3>
       <dl className="form-group">
         <div className="form-row">
-          <dt>Day</dt>
+          <dt>{t("cal.dayLabel")}</dt>
           <dd>{formatDateKey(dateKey(start, timeZone), todayKey)}</dd>
         </div>
         <div className="form-row">
-          <dt>Time</dt>
+          <dt>{t("cal.time")}</dt>
           <dd className="tnum">{timeLabel(start, timeZone)} – {timeLabel(end, timeZone)} · {formatDuration(minutes)}</dd>
         </div>
         <div className="form-row">
-          <dt>For task</dt>
-          <dd>{task ? task.title : "None"}</dd>
+          <dt>{t("cal.forTask")}</dt>
+          <dd>{task ? task.title : t("cal.none")}</dd>
         </div>
         {block.pending && (
           <div className="form-row">
-            <dt>Sync</dt>
-            <dd>Saved on this device, waiting to sync</dd>
+            <dt>{t("cal.sync")}</dt>
+            <dd>{t("cal.syncPending")}</dd>
           </div>
         )}
       </dl>
-      <button type="button" className="button-danger" onClick={onDelete}>Delete block</button>
+      <button type="button" className="button-danger" onClick={onDelete}>{t("cal.deleteBlock")}</button>
     </Sheet>
   );
 }

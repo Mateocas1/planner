@@ -7,6 +7,7 @@ import {
   suggestEstimate,
   type BiasSample,
 } from "../planning/bias.ts";
+import { t } from "../i18n/index.ts";
 import { useKeyboardUp } from "./viewport.ts";
 // The lesson's own paint ships beside it (AGENTS.md: co-located styles).
 import "./BiasHint.css";
@@ -109,7 +110,7 @@ export function BiasHint({
             onAccept(suggestion.minutes);
           }}
         >
-          Use {suggestion.minutes}
+          {t("bias.use", { minutes: suggestion.minutes })}
         </button>
       </div>
     );
@@ -119,7 +120,7 @@ export function BiasHint({
      lesson is learned. A neutral pace (enough samples, ratio near 1) stays
      quiet -- the estimate is already right. */
   if (!showEmptyHint || usableSamples(samples) >= MIN_GLOBAL_SAMPLES) return null;
-  return <p className="sheet-note bias-hint-empty">{noBiasHint}</p>;
+  return <p className="sheet-note bias-hint-empty">{noBiasHint()}</p>;
 }
 
 /**
@@ -142,8 +143,8 @@ export function ActualSummary({
 }) {
   if (actualMinutes === undefined || actualMinutes < 1) return null;
   const planned = estimate === undefined
-    ? `Assumed ${formatEstimate(ASSUMED_ESTIMATE_MINUTES)}`
-    : `Estimated ${formatEstimate(estimate)}`;
+    ? t("plan.assumed", { estimate: formatEstimate(ASSUMED_ESTIMATE_MINUTES) })
+    : t("bias.estimated", { estimate: formatEstimate(estimate) });
   const minutes = formatEstimate(actualMinutes);
-  return <p className="actual-summary">{completed ? `${planned} · took ${minutes}` : `${planned} · tracked ${minutes} so far`}</p>;
+  return <p className="actual-summary">{completed ? t("bias.tookDone", { planned, actual: minutes }) : t("bias.tookOpen", { planned, actual: minutes })}</p>;
 }

@@ -1,11 +1,12 @@
 import type { QuickAddFrequency, QuickAddPart } from "../domain/quickAdd.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey } from "./format.ts";
 import "./QuickAddChips.css";
 
-const frequencyLabels: Record<QuickAddFrequency, string> = {
-  daily: "Daily",
-  weekly: "Weekly",
-  monthly: "Monthly",
+const frequencyLabels: Record<QuickAddFrequency, () => string> = {
+  daily: () => t("quickAdd.daily"),
+  weekly: () => t("quickAdd.weekly"),
+  monthly: () => t("quickAdd.monthly"),
 };
 
 /**
@@ -15,7 +16,7 @@ const frequencyLabels: Record<QuickAddFrequency, string> = {
  * never disagree about the same parse.
  */
 export function quickAddPartLabel(part: QuickAddPart, today: string): string {
-  return part.kind === "date" ? formatDateKey(part.date, today) : frequencyLabels[part.frequency];
+  return part.kind === "date" ? formatDateKey(part.date, today) : frequencyLabels[part.frequency]();
 }
 
 /**
@@ -44,7 +45,7 @@ export function QuickAddChips({
 }) {
   if (parts.length === 0) return null;
   return (
-    <ul className="quick-add-chips" aria-label="Recognized from the text" aria-live="polite">
+    <ul className="quick-add-chips" aria-label={t("quickAdd.chips")} aria-live="polite">
       {parts.map(part => {
         const label = quickAddPartLabel(part, today);
         return (
@@ -52,7 +53,7 @@ export function QuickAddChips({
             <button
               type="button"
               className="quick-add-chip"
-              aria-label={`${label} — undo, keeps “${part.text}” in the title`}
+              aria-label={t("quickAdd.chipUndo", { label, text: part.text })}
               onClick={() => onUndo(part)}
             >
               <span className="quick-add-chip-label">{label}</span>

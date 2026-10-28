@@ -1,3 +1,5 @@
+import { t } from "../i18n/index.ts";
+
 /**
  * A task's tracked minutes, attributed per profile-zone day (ronda 2 S3/L6):
  * every increment or decrement of `actualMinutes` also moves the matching
@@ -195,7 +197,7 @@ export function formatEstimate(minutes: number): string {
  * bias hint that follow) says the same thing about the same absence.
  */
 export function estimateNote(estimate: number | undefined): string {
-  return estimate === undefined ? `Assumed ${formatEstimate(ASSUMED_ESTIMATE_MINUTES)}` : formatEstimate(estimate);
+  return estimate === undefined ? t("plan.assumed", { estimate: formatEstimate(ASSUMED_ESTIMATE_MINUTES) }) : formatEstimate(estimate);
 }
 
 export function createTask(id: string, title: string, deadline?: string, estimate?: number): Task {

@@ -3,6 +3,7 @@ import type { BlockView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
 import { currentAndNext } from "../domain/upNext.ts";
 import { formatRemaining } from "../domain/focus.ts";
+import { t } from "../i18n/index.ts";
 import { CloseIcon } from "./icons.tsx";
 import { formatDuration, timeLabel } from "./time.ts";
 import { unlinkedBlockTitle, type FocusControls } from "./useFocusTimer.ts";
@@ -234,7 +235,7 @@ export function NowMode({
 
   const taskOf = (entry: BlockView | undefined) =>
     entry?.taskId === undefined ? undefined : tasks.find(candidate => candidate.id === entry.taskId);
-  const nameOf = (entry: BlockView) => taskOf(entry)?.title ?? unlinkedBlockTitle;
+  const nameOf = (entry: BlockView) => taskOf(entry)?.title ?? unlinkedBlockTitle();
   const task = taskOf(current);
 
   const start = current ? Date.parse(current.start) : 0;
@@ -244,10 +245,10 @@ export function NowMode({
   const progress = total > 0 ? Math.min(1, Math.max(0, (nowMs - start) / total)) : 0;
   const remaining =
     remainingMs < secondsBelowMs
-      ? `${formatRemaining(remainingMs)} left`
-      : `${formatDuration(remainingMs / 60_000)} left`;
+      ? t("now.left", { time: formatRemaining(remainingMs) })
+      : t("now.left", { time: formatDuration(remainingMs / 60_000) });
 
-  const nextLine = (entry: BlockView) => `Next: ${timeLabel(new Date(entry.start), timeZone)} ${nameOf(entry)}`;
+  const nextLine = (entry: BlockView) => t("now.next", { time: timeLabel(new Date(entry.start), timeZone), name: nameOf(entry) });
   const upNext = next === undefined ? null : nextLine(next);
   const minutesToNext = next === undefined ? 0 : (Date.parse(next.start) - nowMs) / 60_000;
 
@@ -255,7 +256,7 @@ export function NowMode({
     void settle(setTaskCompleted(uid, entry.id, true)).catch(() => undefined);
   };
 
-  const timerLabel = focus.status === "paused" ? "Resume focus" : focus.status === "running" ? "Pause focus" : "Start focus";
+  const timerLabel = focus.status === "paused" ? t("focus.resumeFocus") : focus.status === "running" ? t("focus.pauseFocus") : t("focus.startFocus");
   const runTimer = () => {
     if (focus.status === "paused") focus.resume();
     else if (focus.status === "running") focus.pause();
@@ -288,14 +289,14 @@ export function NowMode({
       className={`now-mode${idle ? " is-idle" : ""}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Now mode"
+      aria-label={t("now.title")}
       tabIndex={-1}
       data-wake-lock={wake}
       data-fullscreen={fullscreen}
       onKeyDown={onKeyDown}
     >
       <div className="now-chrome now-chrome-top">
-        <button type="button" className="icon-button large now-close" aria-label="Close Now mode" onClick={onClose}>
+        <button type="button" className="icon-button large now-close" aria-label={t("now.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </div>
@@ -303,11 +304,11 @@ export function NowMode({
       <div className="now-content">
         {current ? (
           <>
-            <p className="now-kicker">Now</p>
+            <p className="now-kicker">{t("now.kicker")}</p>
             <div
               className="now-ring"
               role="progressbar"
-              aria-label="Block progress"
+              aria-label={t("now.progress")}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(progress * 100)}
@@ -316,13 +317,15 @@ export function NowMode({
               <span className="now-remaining">{remaining}</span>
             </div>
             <h2 className="now-headline">{nameOf(current)}</h2>
-            <p className="now-up-next">{upNext ?? "Nothing else today."}</p>
+            <p className="now-up-next">{upNext ?? t("now.nothingElse")}</p>
           </>
         ) : (
           <>
-            <p className="now-kicker">Free now</p>
+            <p className="now-kicker">{t("now.freeNow")}</p>
             <h2 className="now-headline tabular">
-              {next === undefined ? "Nothing else today." : `${nextLine(next)} in ${formatDuration(minutesToNext)}`}
+              {next === undefined
+                ? t("now.nothingElse")
+                : t("now.nextIn", { time: timeLabel(new Date(next.start), timeZone), name: nameOf(next), duration: formatDuration(minutesToNext) })}
             </h2>
           </>
         )}
@@ -331,7 +334,7 @@ export function NowMode({
       <footer className="now-chrome now-actions">
         {current && task && !task.completed && (
           <button type="button" className="button button-accent" onClick={() => complete(task)}>
-            Mark task done
+            {t("now.markDone")}
           </button>
         )}
         {hasTimer && (
