@@ -13,7 +13,7 @@ test.setTimeout(120_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const englishDay = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [A-Z][a-z]+ \d{1,2}/;
-const spanishDay = /^(lunes|martes|miércoles|jueves|viernes|sábado|domingo), \d{1,2} de [a-zé]+/;
+const spanishDay = /^(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo), \d{1,2} de [a-zé]+/;
 
 const poll = { timeout: 15_000, intervals: [250, 500, 1_000] };
 
@@ -102,4 +102,30 @@ test("Español for every device is saved to the account and a second device foll
   } finally {
     await other.close();
   }
+});
+
+test("Spanish dates start with a capital, the DateField reads Mañana and the mini-month starts on L", async ({ page }) => {
+  await enter(page);
+  await openSettings(page);
+  await deviceOnly(page).click();
+  await spanish(page).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+  await page.keyboard.press("Escape");
+
+  // The Today subtitle opens the line with a capital letter ("Martes, 29 de septiembre").
+  await expect(dateLine(page)).toHaveText(spanishDay);
+
+  // The mini-month: weekday letters from Intl, Monday first, and a capitalised title.
+  const month = page.locator(".mini-month");
+  await expect(month.locator(".mini-dow")).toHaveText(["L", "M", "X", "J", "V", "S", "D"]);
+  await expect(month.locator(".mini-title")).toHaveText(/^[A-ZÁÉÍÓÚÑ]/);
+
+  // The DateField trigger: tomorrow is a word, capitalised because it is a label.
+  await page.getByRole("button", { name: "Nueva tarea" }).first().click();
+  const sheet = page.getByRole("complementary", { name: "Nueva tarea" });
+  const deadline = sheet.getByLabel("Fecha límite");
+  await deadline.click();
+  // The quick rows keep their (not yet translated) labels; the second one is tomorrow.
+  await page.locator(".date-quick .date-row").nth(1).click();
+  await expect(deadline).toHaveText("Mañana");
 });
