@@ -34,7 +34,7 @@ const spanish = (page: Page) => page.getByRole("button", { name: "Español", exa
 const deviceOnly = (page: Page) => page.getByRole("switch", { name: /^(Only on this device|Solo en este dispositivo)$/ });
 
 async function openSettings(page: Page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^(Settings|Ajustes)$/ }).click();
   await expect(settings(page)).toBeVisible();
 }
 

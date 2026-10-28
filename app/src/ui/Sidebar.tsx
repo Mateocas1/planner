@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { View } from "../App.tsx";
 import type { BlockView, TaskView } from "../data/store.ts";
 import { setTaskCompleted } from "../data/tasks.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { currentAndNext } from "../domain/upNext.ts";
 import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
@@ -20,9 +21,9 @@ import { settle } from "./write.ts";
 import "./Sidebar.css";
 
 export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
-  { id: "home", label: "Today", Icon: TodayIcon },
-  { id: "tasks", label: "Tasks", Icon: TasksIcon },
-  { id: "calendar", label: "Calendar", Icon: CalendarIcon },
+  { id: "home", get label() { return t("shell.title.home"); }, Icon: TodayIcon },
+  { id: "tasks", get label() { return t("shell.title.tasks"); }, Icon: TasksIcon },
+  { id: "calendar", get label() { return t("shell.title.calendar"); }, Icon: CalendarIcon },
 ];
 
 /** The weekly review's rail icon: the cycle the ritual closes, drawn on the
@@ -94,7 +95,7 @@ export function Sidebar({
   return (
     <aside className="sidebar glass glass-regular">
       {timeZone && <MiniMonth blocks={blocks} timeZone={timeZone} selectedDay={selectedDay} onPickDay={onPickDay} />}
-      <nav aria-label="Main" className="side-nav">
+      <nav aria-label={t("app.mainNav")} className="side-nav">
         {views.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -111,7 +112,7 @@ export function Sidebar({
             {id === "tasks" && openCount > 0 && (
               <span className="nav-count">
                 {openCount}
-                <span className="sr-only"> open</span>
+                <span className="sr-only">{t("sidebar.openCount")}</span>
               </span>
             )}
           </button>
@@ -128,7 +129,7 @@ export function Sidebar({
         onClick={onOpenWeeklyReview}
       >
         <WeeklyIcon className="nav-icon" />
-        <span className="nav-label">Weekly review</span>
+        <span className="nav-label">{t("sidebar.weeklyReview")}</span>
       </button>
       {/* The one region that gives way when the window is short (R5-10): the
           month, the navigation and the footer keep their size, so a long Due
@@ -148,14 +149,14 @@ export function Sidebar({
               accessible name only, so the email itself gets the width. It takes
               the line for itself when the column cannot hold it beside the
               controls, which is every desktop width. */}
-          <span className="who" title={email}><span className="sr-only">Signed in as </span>{email}</span>
+          <span className="who" title={email}><span className="sr-only">{t("sidebar.signedInPrefix")}</span>{email}</span>
           {/* Settings, one press from the account whose preferences they are.
               The row is the account row, so the entry lives in it. While the
               view is open the gear carries the nav's current marker. */}
           <button
             type="button"
             className="icon-button side-settings"
-            aria-label="Settings"
+            aria-label={t("app.settings")}
             aria-current={view === "settings" ? "page" : undefined}
             onClick={() => onOpenSettings()}
           >
@@ -171,13 +172,13 @@ export function Sidebar({
           <button
             type="button"
             className="button small"
-            aria-label="Import from Google Calendar"
-            title="Import from Google Calendar"
+            aria-label={t("app.importGoogle")}
+            title={t("app.importGoogle")}
             onClick={event => onImport(event.currentTarget)}
           >
-            Import from Google
+            {t("sidebar.importShort")}
           </button>
-          <button type="button" className="button small" onClick={onSignOut}>Sign out</button>
+          <button type="button" className="button small" onClick={onSignOut}>{t("app.signOut")}</button>
         </div>
       </div>
     </aside>
@@ -189,7 +190,7 @@ export function Sidebar({
 /** The block's own name: the task it belongs to, or the product's word for an
  * unlinked block (`Calendar.tsx` uses the same wording). */
 function blockTitle(block: BlockView, tasks: TaskView[]): string {
-  return tasks.find(task => task.id === block.taskId)?.title ?? "Work block";
+  return tasks.find(task => task.id === block.taskId)?.title ?? t("sidebar.workBlock");
 }
 
 /** "14:00 – 15:00" in the profile zone. */
@@ -229,13 +230,13 @@ function UpNext({
 
   return (
     <section className="side-block side-up-next" aria-labelledby="side-up-next-heading">
-      <h3 id="side-up-next-heading" className="side-label">Up next</h3>
+      <h3 id="side-up-next-heading" className="side-label">{t("sidebar.upNext")}</h3>
       {/* The card takes the focused block's row: the countdown already names it. */}
       <AnimatePresence initial={false}>
         {focus.session && <FocusWidget key="focus" focus={focus} />}
       </AnimatePresence>
       {rows.length === 0 ? (
-        <p className="side-empty">Nothing else today.</p>
+        <p className="side-empty">{t("sidebar.nothingElse")}</p>
       ) : (
         <ul className="side-card">
           {rows.map(({ block, running }) => {
@@ -246,7 +247,7 @@ function UpNext({
                 <div className="side-row-body">
                   <p className="side-row-title" title={title}>{title}</p>
                   <p className="side-row-meta">
-                    {running ? "now" : `in ${formatDuration((Date.parse(block.start) - nowMs) / 60_000)}`}
+                    {running ? t("sidebar.now") : t("sidebar.in", { duration: formatDuration((Date.parse(block.start) - nowMs) / 60_000) })}
                     {" · "}
                     {blockRange(block, timeZone)}
                   </p>
@@ -293,9 +294,9 @@ function DueSoon({
 
   return (
     <section className="side-block side-due" aria-labelledby="side-due-heading">
-      <h3 id="side-due-heading" className="side-label">Due soon</h3>
+      <h3 id="side-due-heading" className="side-label">{t("sidebar.dueSoon")}</h3>
       {due.length === 0 ? (
-        <p className="side-empty">Nothing due this week.</p>
+        <p className="side-empty">{t("sidebar.nothingDue")}</p>
       ) : (
         <ul className="side-card">
           {due.map(task => {
@@ -306,13 +307,13 @@ function DueSoon({
                   type="checkbox"
                   className="check"
                   checked={false}
-                  aria-label={`Complete: ${task.title}`}
+                  aria-label={t("sidebar.complete", { title: task.title })}
                   onChange={() => complete(task)}
                 />
                 <button type="button" className="side-due-open" onClick={() => onOpenTask(task.id)}>
                   <span className="side-due-title" title={task.title}>{task.title}</span>
                   <span className={`side-due-meta${overdue ? " is-overdue" : ""}`}>
-                    {overdue ? `Overdue · ${formatDateKey(task.deadline!, today)}` : formatDateKey(task.deadline!, today)}
+                    {overdue ? t("sidebar.overdue", { date: formatDateKey(task.deadline!, today) }) : formatDateKey(task.deadline!, today)}
                   </span>
                 </button>
               </li>
@@ -398,18 +399,18 @@ function MiniMonth({
   };
 
   return (
-    <section className="mini-month" aria-label="Month">
+    <section className="mini-month" aria-label={t("sidebar.month")}>
       <div className="mini-head">
         <p className="mini-title">
           {formatWall(first, { month: "long" })} <span>{formatWall(first, { year: "numeric" })}</span>
         </p>
         <div className="mini-nav">
-          <button type="button" aria-label="Previous month" onClick={() => shift(-1)}><ChevronLeft /></button>
-          <button type="button" aria-label="Next month" onClick={() => shift(1)}><ChevronRight /></button>
+          <button type="button" aria-label={t("sidebar.previousMonth")} onClick={() => shift(-1)}><ChevronLeft /></button>
+          <button type="button" aria-label={t("sidebar.nextMonth")} onClick={() => shift(1)}><ChevronRight /></button>
         </div>
       </div>
       <div ref={gridRef} className="mini-grid" onKeyDown={onGridKeyDown}>
-        {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
+        {Array.from({ length: 7 }, (_, index) => formatWall(keyToWallUtc("2024-01-01") + index * dayMs, { weekday: "narrow" })).map((letter, index) => (
           <span key={index} className="mini-dow" aria-hidden="true">{letter}</span>
         ))}
         {days.map(key => {
@@ -447,10 +448,10 @@ function MiniMonth({
  * The three values of the theme switch, in the order the control shows them.
  * System is the default: the page follows the OS until the user picks one.
  */
-const themeOptions: { id: ThemePreference; label: string }[] = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+const themeOptions: { id: ThemePreference; labelKey: "sidebar.theme.system" | "sidebar.theme.light" | "sidebar.theme.dark" }[] = [
+  { id: "system", labelKey: "sidebar.theme.system" },
+  { id: "light", labelKey: "sidebar.theme.light" },
+  { id: "dark", labelKey: "sidebar.theme.dark" },
 ];
 
 /**
@@ -537,7 +538,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
       ref={groupRef}
       className={`theme-switch${className ? ` ${className}` : ""}`}
       role="radiogroup"
-      aria-label="Theme"
+      aria-label={t("sidebar.theme")}
       onKeyDown={onKeyDown}
     >
       {themeOptions.map(option => (
@@ -550,7 +551,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
           onClick={() => choose(option.id)}
         >
           <ThemeIcon preference={option.id} />
-          <span className="sr-only">{option.label}</span>
+          <span className="sr-only">{t(option.labelKey)}</span>
         </button>
       ))}
     </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { t } from "../i18n/index.ts";
 import { CloseIcon } from "./icons.tsx";
 import "./UndoToast.css";
 
@@ -77,7 +78,7 @@ export function UndoToast({
   const undo = () => {
     dismiss();
     void item.restore().catch(cause => {
-      onError(cause instanceof Error ? cause.message : "The item could not be restored.");
+      onError(cause instanceof Error ? cause.message : t("undo.restoreFailed"));
     });
   };
 
@@ -87,8 +88,8 @@ export function UndoToast({
         {item.message}
         <span className="undo-toast-separator" aria-hidden="true"> · </span>
       </span>
-      <button type="button" className="undo-toast-action" onClick={undo}>Undo</button>
-      <button type="button" className="undo-toast-close" aria-label="Dismiss" onClick={dismiss}>
+      <button type="button" className="undo-toast-action" onClick={undo}>{t("undo.action")}</button>
+      <button type="button" className="undo-toast-close" aria-label={t("undo.dismiss")} onClick={dismiss}>
         <CloseIcon />
       </button>
     </div>
