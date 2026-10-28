@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { BlockView } from "../data/store.ts";
 import { type WorkWindow } from "../planning/window.ts";
+import { t } from "../i18n/index.ts";
 import { CloseIcon } from "./icons.tsx";
 import { briefVisible, morningBriefState, readBriefDismissal, writeBriefDismissal } from "./shutdownRitual.ts";
 import "./MorningBrief.css";
@@ -44,8 +45,8 @@ export function MorningBrief({
   return (
     <section className="brief card" aria-labelledby="brief-heading" data-brief="open">
       <div className="brief-head">
-        <h3 id="brief-heading" className="section-title">Morning brief</h3>
-        <button type="button" className="icon-button" aria-label="Dismiss morning brief" onClick={dismiss}>
+        <h3 id="brief-heading" className="section-title">{t("brief.title")}</h3>
+        <button type="button" className="icon-button" aria-label={t("brief.dismiss")} onClick={dismiss}>
           <CloseIcon />
         </button>
       </div>

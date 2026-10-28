@@ -14,6 +14,7 @@ import {
   type WeeklyReviewSettings,
   type WeeklyReviewStep,
 } from "../../planning/weekly.ts";
+import { t } from "../../i18n/index.ts";
 import { ChevronLeft } from "../icons.tsx";
 import { dur, easeOut, spring } from "../motion.ts";
 import type { UndoableDelete } from "../UndoToast.tsx";
@@ -145,21 +146,21 @@ export function WeeklyReview({
   };
 
   return (
-    <section aria-label="Weekly review" className="weekly">
+    <section aria-label={t("weekly.flow.label")} className="weekly">
       <div className="weekly-head">
         <button type="button" className="weekly-back" onClick={onBack}>
           <ChevronLeft className="weekly-back-icon" />
-          Back
+          {t("weekly.flow.back")}
         </button>
         <header className="weekly-title">
-          <h2>Weekly review</h2>
+          <h2>{t("weekly.flow.title")}</h2>
           <p>
-            {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · Step {index + 1} of {steps.length}
+            {weekNumberLabel(week.week)} · {weekRangeLabel(week.monday, week.sunday)} · {t("weekly.flow.stepOf", { step: index + 1, total: steps.length })}
           </p>
         </header>
       </div>
 
-      <ol className="weekly-rail" aria-label="Review steps">
+      <ol className="weekly-rail" aria-label={t("weekly.flow.rail")}>
         {steps.map((entry, entryIndex) => (
           <li key={entry}>
             <button
@@ -181,7 +182,7 @@ export function WeeklyReview({
       </ol>
 
       {loading ? (
-        <p className="weekly-empty" role="status">Loading your week…</p>
+        <p className="weekly-empty" role="status">{t("weekly.flow.loading")}</p>
       ) : (
         <>
           <motion.div
@@ -232,7 +233,7 @@ export function WeeklyReview({
               disabled={index === 0}
               onClick={() => setIndex(current => Math.max(current - 1, 0))}
             >
-              Back
+              {t("weekly.flow.back")}
             </button>
             <button
               type="button"
@@ -242,7 +243,7 @@ export function WeeklyReview({
                 advance();
               }}
             >
-              {last ? "Finish" : "Next"}
+              {last ? t("weekly.flow.finish") : t("weekly.flow.next")}
             </button>
           </div>
         </>

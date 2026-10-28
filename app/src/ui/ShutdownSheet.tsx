@@ -9,6 +9,7 @@ import {
   type ShutdownState,
 } from "../planning/shutdown.ts";
 import { type WorkWindow } from "../planning/window.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey } from "./format.ts";
 import { CloseIcon } from "./icons.tsx";
 import { useMediaQuery } from "./motion.ts";
@@ -179,7 +180,7 @@ export function ShutdownSheet({
     const currentDay = dateKey(new Date(), timeZone);
     if (currentDay !== today) {
       setToday(currentDay);
-      setError(dayChangedMessage);
+      setError(dayChangedMessage());
       return false;
     }
     /* One close per owner and day, across sheet instances: a sheet reopened
@@ -203,7 +204,7 @@ export function ShutdownSheet({
         return true;
       }
       if (plan.refused !== undefined) {
-        setError(closeFailedMessage);
+        setError(closeFailedMessage());
         return false;
       }
       /* `settleTracked` accepts the close as soon as Firestore queues it
@@ -219,11 +220,11 @@ export function ShutdownSheet({
       await land();
       setTurned(true);
       setAnnouncement(closeAnnouncement({ moved: plan.moves.length, tomorrowKey: tomorrow }));
-      offeredUndo.current = onOfferUndo({ message: closeToastMessage, restore: () => reopen(plan) });
+      offeredUndo.current = onOfferUndo({ message: closeToastMessage(), restore: () => reopen(plan) });
       void write.late.then(() => retract());
       return true;
     } catch {
-      setError(closeFailedMessage);
+      setError(closeFailedMessage());
       return false;
     } finally {
       committing.current = false;
@@ -300,15 +301,15 @@ export function ShutdownSheet({
         <div>
           {/* The turn lands here: the heading is what the eye and the screen
               reader are given after the commit (F3, "Screen reader"). */}
-          <h2 id="shutdown-tomorrow" ref={heading} tabIndex={-1} className="shutdown-kind">Tomorrow</h2>
+          <h2 id="shutdown-tomorrow" ref={heading} tabIndex={-1} className="shutdown-kind">{t("shutdown.tomorrow")}</h2>
           <p className="shutdown-date">{tomorrowDate}</p>
         </div>
-        <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+        <button type="button" className="icon-button" aria-label={t("shutdown.cancel")} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
       {tomorrowBlocks.length === 0 ? (
-        <p className="shutdown-empty">Nothing planned yet.</p>
+        <p className="shutdown-empty">{t("shutdown.nothingPlanned")}</p>
       ) : (
         <ol className="group shutdown-list">
           {tomorrowBlocks.map(block => (
@@ -323,17 +324,17 @@ export function ShutdownSheet({
           ))}
         </ol>
       )}
-      {tomorrowFree === undefined ? null : <p className="shutdown-note">First free slot {minutesLabel(tomorrowFree)}.</p>}
+      {tomorrowFree === undefined ? null : <p className="shutdown-note">{t("shutdown.firstFree", { time: minutesLabel(tomorrowFree) })}</p>}
     </div>
   );
 
   function blockName(block: BlockView): string {
-    if (block.taskId === undefined) return "Work block";
-    return tasks.find(task => task.id === block.taskId)?.title ?? "Work block";
+    if (block.taskId === undefined) return t("shutdown.workBlock");
+    return tasks.find(task => task.id === block.taskId)?.title ?? t("shutdown.workBlock");
   }
 
   return (
-    <Sheet label="Close the day" className="shutdown-sheet" origin={origin} onClose={onClose}>
+    <Sheet label={t("shutdown.sheetLabel")} className="shutdown-sheet" origin={origin} onClose={onClose}>
       {turned ? (
         tomorrowPage
       ) : (
@@ -341,10 +342,10 @@ export function ShutdownSheet({
           <div className="shutdown-page">
             <header className="shutdown-head">
               <div>
-                <p className="shutdown-kind">Today</p>
+                <p className="shutdown-kind">{t("shutdown.today")}</p>
                 <p className="shutdown-date">{formatWall(keyToWallUtc(today), { weekday: "long", month: "long", day: "numeric" })}</p>
               </div>
-              <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+              <button type="button" className="icon-button" aria-label={t("shutdown.cancel")} onClick={onClose}>
                 <CloseIcon />
               </button>
             </header>
@@ -358,11 +359,11 @@ export function ShutdownSheet({
             <div className="shutdown-groups">
               <section className="list-section" aria-labelledby="shutdown-done">
                 <div className="section-head">
-                  <h3 id="shutdown-done" className="section-title">Done</h3>
+                  <h3 id="shutdown-done" className="section-title">{t("shutdown.doneHeading")}</h3>
                   <span className="section-meta">{groups.done.length}</span>
                 </div>
                 {groups.done.length === 0 ? (
-                  <p className="group group-empty">Nothing done today.</p>
+                  <p className="group group-empty">{t("shutdown.nothingDone")}</p>
                 ) : (
                   <ul className="group shutdown-list">
                     {groups.done.map(task => (
@@ -378,18 +379,18 @@ export function ShutdownSheet({
 
               <section className="list-section" aria-labelledby="shutdown-left">
                 <div className="section-head">
-                  <h3 id="shutdown-left" className="section-title">Left over</h3>
+                  <h3 id="shutdown-left" className="section-title">{t("shutdown.leftOverHeading")}</h3>
                   <span className="section-meta">{groups.leftOver.length}</span>
                 </div>
                 {groups.leftOver.length === 0 ? (
-                  <p className="group group-empty">Nothing left over.</p>
+                  <p className="group group-empty">{t("shutdown.nothingLeft")}</p>
                 ) : (
                   <ul className="group shutdown-list">
                     {groups.leftOver.map(task => (
                       <li key={task.id} className="row">
                         <span className="row-main">
                           <span className="row-title" title={task.title}>{task.title}</span>
-                          <span className="row-meta">{task.deadline === undefined ? "No deadline" : formatDateKey(task.deadline, today)}</span>
+                          <span className="row-meta">{task.deadline === undefined ? t("shutdown.noDeadline") : formatDateKey(task.deadline, today)}</span>
                         </span>
                       </li>
                     ))}
@@ -402,7 +403,7 @@ export function ShutdownSheet({
 
             <div className="shutdown-actions">
               <button type="button" className="button-primary" onClick={() => void commit()}>
-                Close day
+                {t("shutdown.closeDay")}
               </button>
             </div>
 
@@ -423,10 +424,10 @@ export function ShutdownSheet({
               className="button-primary"
               onClick={onOpenWeeklyReview}
             >
-              Close the week too?
+              {t("shutdown.closeWeekToo")}
             </button>
           )}
-          <button type="button" className="button" onClick={onClose}>Done</button>
+          <button type="button" className="button" onClick={onClose}>{t("shutdown.doneButton")}</button>
         </div>
       )}
     </Sheet>

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import { weeklyNumbers, type ReviewTask, type ReviewBlock, type WeeklyNumbers } from "../../planning/weekly.ts";
+import { t } from "../../i18n/index.ts";
 import { reviewSentences, topTaskLines } from "./weeklyFlow.ts";
 
 /**
@@ -46,9 +47,9 @@ export function ReviewStep({
         ))}
       </dl>
       <section className="weekly-top" aria-labelledby="weekly-top-heading">
-        <h4 id="weekly-top-heading" className="weekly-subtitle">Where the time went</h4>
+        <h4 id="weekly-top-heading" className="weekly-subtitle">{t("weekly.topHeading")}</h4>
         {top.length === 0 ? (
-          <p className="weekly-empty">Nothing tracked this week yet.</p>
+          <p className="weekly-empty">{t("weekly.topEmpty")}</p>
         ) : (
           <ul className="weekly-top-list">
             {top.map((entry, index) => (

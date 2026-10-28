@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { t } from "../../i18n/index.ts";
 import { addBlocks, removeBlocks } from "../../data/blocks.ts";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import { unplacedNotice, type PlanBlock, type PlanTask, type Unplaced } from "../../planning/place.ts";
@@ -90,12 +91,12 @@ export function PlanStep({
       const { ids, done } = addBlocks(uid, writes);
       await settle(done);
       onOfferUndo({
-        message: `Planned ${count} ${count === 1 ? "block" : "blocks"} for next week.`,
+        message: t("weekly.plan.planned", { count }),
         restore: () => settle(removeBlocks(uid, ids)),
       });
       setPlan(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The plan could not be saved.");
+      setError(cause instanceof Error ? cause.message : t("weekly.plan.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -105,11 +106,11 @@ export function PlanStep({
     <div className="weekly-pane-body">
       <p className="weekly-lede">
         {picked.length === 0
-          ? "Pick the tasks that must move next week."
-          : `${picked.length} ${picked.length === 1 ? "priority" : "priorities"} picked.`}
+          ? t("weekly.plan.pickPrompt")
+          : t("weekly.plan.picked", { count: picked.length })}
       </p>
       {open.length === 0 ? (
-        <p className="weekly-empty">No open tasks to plan.</p>
+        <p className="weekly-empty">{t("weekly.plan.noOpen")}</p>
       ) : (
         <ul className="weekly-pick">
           {open.map(task => (
@@ -133,11 +134,11 @@ export function PlanStep({
       {plan === null ? (
         <div className="weekly-plan-actions">
           <button type="button" className="button" disabled={picked.length === 0} onClick={propose}>
-            Place blocks on next week
+            {t("weekly.plan.place")}
           </button>
         </div>
       ) : (
-        <div className="weekly-plan-panel" role="group" aria-label="Proposed week">
+        <div className="weekly-plan-panel" role="group" aria-label={t("weekly.plan.proposed")}>
           {plan.placements.length > 0 && (
             <ul className="weekly-plan-list">
               {plan.placements.map((placement, index) => (
@@ -153,14 +154,14 @@ export function PlanStep({
           {plan.placements.length > 0 ? (
             <div className="weekly-plan-actions">
               <button type="button" className="button-primary" disabled={busy} onClick={() => void apply()}>
-                Apply {plan.placements.length} {plan.placements.length === 1 ? "block" : "blocks"}
+                {t("weekly.plan.apply", { count: plan.placements.length })}
               </button>
               <button type="button" className="button" onClick={() => setPlan(null)}>
-                Cancel
+                {t("weekly.plan.cancel")}
               </button>
             </div>
           ) : (
-            <p className="weekly-empty">Next week is already full — nothing could be placed.</p>
+            <p className="weekly-empty">{t("weekly.plan.full")}</p>
           )}
         </div>
       )}

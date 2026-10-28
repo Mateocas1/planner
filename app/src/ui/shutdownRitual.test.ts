@@ -20,6 +20,7 @@ import {
   turnHint,
   undoMessage,
 } from "./shutdownRitual.ts";
+import { setDeviceLanguage } from "../i18n/index.ts";
 
 test("the brief state counts only the blocks that start today, in the planner's zone", () => {
   const state = morningBriefState({
@@ -147,12 +148,12 @@ test("the first free slot is the first stretch of the day still ahead", () => {
 
 test("a close the server rejected says nothing changed and withdraws its undo offer", () => {
   // Criterion 5's sentence: one batch, so a rejected batch changed nothing.
-  assert.equal(closeFailedMessage, "Couldn't close the day. Nothing changed.");
-  assert.deepEqual(lateCloseFailure(), { message: closeFailedMessage, withdrawUndo: true });
+  assert.equal(closeFailedMessage(), "Couldn't close the day. Nothing changed.");
+  assert.deepEqual(lateCloseFailure(), { message: closeFailedMessage(), withdrawUndo: true });
 });
 
 test("the day a sheet outlived is re-read instead of closed", () => {
-  assert.equal(dayChangedMessage, "The day changed. Review it again.");
+  assert.equal(dayChangedMessage(), "The day changed. Review it again.");
 });
 
 test("undo says what each ending means, and never blames a later close for a rejected one", () => {
@@ -166,7 +167,7 @@ test("undo says what each ending means, and never blames a later close for a rej
   assert.equal(undoMessage({ kind: "unsaved" }), "The undo could not be saved.");
   /* S2: the close whose batch the server rejected never closed the day, so its
      undo reports the failed close rather than a later close nobody made. */
-  assert.equal(undoMessage({ kind: "rejected" }), closeFailedMessage);
+  assert.equal(undoMessage({ kind: "rejected" }), closeFailedMessage());
   assert.notEqual(undoMessage({ kind: "rejected" }), undoMessage({ kind: "refused", refusal: "later-close" }));
 });
 
@@ -276,4 +277,17 @@ test("free time ahead is any stretch of the work window of 15 minutes or more af
   assert.equal(hasFreeTimeAhead([{ startMinutes: 13 * 60, endMinutes: 17 * 60 }], window, 13 * 60 + 30), false);
   // A gap before a later block counts.
   assert.equal(hasFreeTimeAhead([{ startMinutes: 15 * 60, endMinutes: 17 * 60 }], window, 13 * 60 + 30), true);
+});
+
+test("the ritual's sentences follow the language", () => {
+  setDeviceLanguage("es");
+  try {
+    assert.equal(closeFailedMessage(), "No se pudo cerrar el día. No ha cambiado nada.");
+    assert.equal(leftoverSummary({ done: 3, leftOver: 2 }), "3 hechas · 2 pendientes");
+    assert.equal(morningBriefText({ blockCount: 1, firstStartMinutes: 540, firstFreeSlotMinutes: 630 }), "Hoy: 1 bloque, el primero a las 09:00. Primer hueco libre 10:30.");
+    assert.equal(morningBriefText({ blockCount: 4, firstStartMinutes: 540 }), "Hoy: 4 bloques, el primero a las 09:00.");
+    assert.match(closeAnnouncement({ moved: 2, tomorrowKey: "2026-10-29" }), /^Día cerrado\. 2 tareas movidas a jueves\.$/);
+  } finally {
+    setDeviceLanguage(null);
+  }
 });

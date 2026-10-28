@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   biasSentence,
-  cleanupActionLabels,
+  cleanupActionLabel,
   cleanupReasonLabel,
   momentLabel,
   momentStepsLabel,
@@ -15,6 +15,7 @@ import {
   weekRangeLabel,
   weekdayName,
 } from "./weeklyFlow.ts";
+import { setDeviceLanguage } from "../../i18n/index.ts";
 import type { WeeklyNumbers } from "../../planning/weekly.ts";
 
 test("stepsToShow keeps flow order and shows everything when opened by hand", () => {
@@ -102,7 +103,25 @@ test("topTaskLines pairs each title with its tracked time", () => {
 });
 
 test("the clean-up action table names the three writes", () => {
-  assert.deepEqual(cleanupActionLabels, { "this-week": "This week", someday: "Someday", delete: "Delete" });
+  assert.deepEqual(
+    (["this-week", "someday", "delete"] as const).map(cleanupActionLabel),
+    ["This week", "Someday", "Delete"],
+  );
   assert.equal(cleanupReasonLabel("overdue", "2026-10-23"), "Overdue");
   assert.equal(cleanupReasonLabel("scheduled-not-done", "2026-10-23"), "Was scheduled this week");
+});
+
+test("the weekly sentences follow the language and keep their plurals", () => {
+  setDeviceLanguage("es");
+  try {
+    assert.equal(stepLabel("cleanup"), "Limpieza");
+    assert.equal(weekNumberLabel("2026-W43"), "Semana 43");
+    assert.equal(weekdayName(0), "domingo");
+    assert.equal(momentLabel({ day: 0, time: 1140, steps: ["plan"] }), "domingo a las 19:00");
+    assert.equal(weekRangeLabel("2026-10-19", "2026-10-25"), "19 oct – 25 oct");
+    const numbers = { plannedMinutes: 90, actualMinutes: 0, biasRatio: null, plannedCount: 1, doneCount: 1, topTasks: [] } as unknown as WeeklyNumbers;
+    assert.deepEqual(reviewSentences(numbers).map(line => line.value), ["1 h 30 min planificadas · aún nada registrado", "1 de 1 tarea planificada completada"]);
+  } finally {
+    setDeviceLanguage(null);
+  }
 });
