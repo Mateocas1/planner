@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { flushSync } from "react-dom";
 import { onSnapshot } from "firebase/firestore";
 import type { View } from "../App.tsx";
+import { t, useLocale } from "../i18n/index.ts";
 import { isTauri } from "../desktop.ts";
 import { parseShortcutsEnabled, profileDocument } from "../data/profile.ts";
 import { addSeries } from "../data/series.ts";
@@ -26,7 +27,7 @@ import "./CommandPalette.css";
  * The destinations, in the sidebar's order and with the sidebar's own labels,
  * so a renamed view never leaves the palette behind.
  */
-const destinations: PaletteDestination[] = views.map(({ id, label }) => ({ id, label: `Go to ${label}` }));
+const destinations = (): PaletteDestination[] => views.map(({ id, label }) => ({ id, label: t("palette.goTo", { view: label }) }));
 
 /** What a Tab may land on inside the dialog, in DOM order. */
 const focusableSelector = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -80,6 +81,7 @@ export function CommandPalette({
   /** Opens the Settings view, optionally on a tab (Ronda 2, S1). */
   onOpenSettings: (tab?: SettingsTab) => void;
 }) {
+  const locale = useLocale();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -108,11 +110,11 @@ export function CommandPalette({
       buildCommands(
         query,
         tasks,
-        destinations,
+        destinations(),
         focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
         { shortcuts: hints, focusedTask: taskFocused, settingsCommands: settingsCommands(desktop) },
       ),
-    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused, desktop],
+    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused, desktop, locale],
   );
   // The same parser the New task sheet uses, so one line creates the same task
   // from either place. The clock is read per keystroke: "tomorrow" follows the
@@ -234,7 +236,7 @@ export function CommandPalette({
       );
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
+      setError(cause instanceof Error ? cause.message : t("palette.error"));
     } finally {
       setBusy(false);
     }
@@ -298,7 +300,7 @@ export function CommandPalette({
       onClick={onBackdropClick}
       onKeyDown={onKeyDown}
     >
-      <h2 id="palette-heading" className="sr-only">Command palette</h2>
+      <h2 id="palette-heading" className="sr-only">{t("palette.heading")}</h2>
       <div className="palette-field">
         <SearchIcon className="palette-icon" />
         <input
@@ -306,7 +308,7 @@ export function CommandPalette({
           className="palette-input"
           type="text"
           role="combobox"
-          aria-label="Search tasks or run a command"
+          aria-label={t("palette.inputLabel")}
           aria-expanded="true"
           aria-haspopup="listbox"
           aria-controls="palette-list"
@@ -314,16 +316,16 @@ export function CommandPalette({
           aria-activedescendant={active ? `palette-option-${active.id}` : undefined}
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search tasks or type a title…"
+          placeholder={t("palette.placeholder")}
           value={query}
           onChange={event => setQuery(event.target.value)}
         />
-        <button type="button" className="icon-button" aria-label="Close palette" onClick={onClose}>
+        <button type="button" className="icon-button" aria-label={t("palette.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </div>
       {error && <p className="palette-error" role="alert">{error}</p>}
-      <ul ref={listRef} id="palette-list" className="palette-list" role="listbox" aria-label="Results">
+      <ul ref={listRef} id="palette-list" className="palette-list" role="listbox" aria-label={t("palette.results")}>
         {commands.map((command, index) => (
           <li
             key={command.id}
@@ -340,7 +342,7 @@ export function CommandPalette({
           </li>
         ))}
       </ul>
-      <p className="palette-hint" aria-hidden="true">↑↓ to move · ↵ to run · esc to close</p>
+      <p className="palette-hint" aria-hidden="true">{t("palette.hint")}</p>
     </dialog>
   );
 }
@@ -355,7 +357,7 @@ function commandLabel(command: PaletteCommand, parsed: QuickAdd): string {
   if (command.kind !== "create") return command.label;
   const title = parsed.title === "" ? command.title : parsed.title;
   const detail = parsed.parts.map(part => quickAddPartLabel(part, parsed.today)).join(" · ");
-  return detail === "" ? `Create “${title}”` : `Create “${title}” — ${detail}`;
+  return detail === "" ? t("palette.create", { title }) : t("palette.createDetail", { title, detail });
 }
 
 /** The key that performs a row's action, when the row shows one. */

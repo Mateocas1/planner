@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { t, useLocale } from "../i18n/index.ts";
 import { CloseIcon } from "./icons.tsx";
 import { shortcutHelp } from "./shortcuts.ts";
 import "./ShortcutHelp.css";
@@ -20,6 +21,7 @@ import "./ShortcutHelp.css";
  * the next frame, fully legible, ready for the next key.
  */
 export function ShortcutHelp({ onClose }: { onClose: () => void }) {
+  useLocale();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   // showModal, not the `open` attribute: only the modal form gives the sheet the
@@ -48,15 +50,15 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
       }}
     >
       <header className="shortcut-help-head">
-        <h2 id="shortcut-help-heading">Keyboard shortcuts</h2>
-        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+        <h2 id="shortcut-help-heading">{t("shortcuts.title")}</h2>
+        <button type="button" className="icon-button" aria-label={t("shortcuts.close")} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
       <div className="shortcut-help-groups">
         {shortcutHelp.map(group => (
-          <section className="shortcut-help-group" key={group.title} aria-labelledby={`shortcut-help-${slug(group.title)}`}>
-            <h3 id={`shortcut-help-${slug(group.title)}`}>{group.title}</h3>
+          <section className="shortcut-help-group" key={group.id} aria-labelledby={`shortcut-help-${group.id}`}>
+            <h3 id={`shortcut-help-${group.id}`}>{group.title}</h3>
             <ul className="shortcut-help-list">
               {group.entries.map(entry => (
                 <li className="shortcut-help-row" key={entry.label}>
@@ -74,13 +76,4 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
       </div>
     </dialog>
   );
-}
-
-/** A stable id fragment for a group title: "Act on the focused row" reads as
- * `act-on-the-focused-row`, which is what `aria-labelledby` points at. */
-function slug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
 }

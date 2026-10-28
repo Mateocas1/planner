@@ -3,6 +3,7 @@ import { calendar } from "./calendar.ts";
 import { chat } from "./chat.ts";
 import { controls } from "./controls.ts";
 import { forms } from "./forms.ts";
+import { palette } from "./palette.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 
@@ -13,6 +14,7 @@ export const en = {
   ...chat,
   ...controls,
   ...forms,
+  ...palette,
   ...settings,
   ...shell,
 } as const;

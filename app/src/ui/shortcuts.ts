@@ -18,6 +18,7 @@
 
 import { instantForEdge } from "./grid.ts";
 import { dateKey, dayMs, keyToWallUtc, wallDayKey, wallMinutes } from "./time.ts";
+import { t } from "../i18n/index.ts";
 
 /**
  * How long the second key of a sequence waits. One second is long enough for a
@@ -313,7 +314,9 @@ export type ShortcutHelpEntry = {
   action?: ShortcutAction;
 };
 
-export type ShortcutHelpGroup = { title: string; entries: readonly ShortcutHelpEntry[] };
+/** `id` is the stable fragment `aria-labelledby` points at; `title` and every
+ * entry `label` read the current language each time they are accessed. */
+export type ShortcutHelpGroup = { id: string; title: string; entries: readonly ShortcutHelpEntry[] };
 
 /** The shape `isApplePlatform` reads from `navigator`. */
 export type PlatformInfo = { platform?: string; userAgentData?: { platform?: string } } | undefined;
@@ -332,9 +335,19 @@ export function modifierLabel(apple: boolean = isApplePlatform()): string {
 
 export function shortcutHelpFor(apple: boolean): readonly ShortcutHelpGroup[] {
   const mod = modifierLabel(apple);
+  // Getters, not copies: the title and labels follow a language switch.
   return shortcutHelpGroups.map(group => ({
-    ...group,
-    entries: group.entries.map(entry => ({ ...entry, keys: entry.keys.map(key => (key === modifierToken ? mod : key)) })),
+    id: group.id,
+    get title() {
+      return group.title;
+    },
+    entries: group.entries.map(entry => ({
+      keys: entry.keys.map(key => (key === modifierToken ? mod : key)),
+      get label() {
+        return entry.label;
+      },
+      action: entry.action,
+    })),
   }));
 }
 
@@ -343,44 +356,59 @@ const modifierToken = "Mod";
 
 const shortcutHelpGroups: readonly ShortcutHelpGroup[] = [
   {
-    title: "Move",
+    id: "move",
+    get title() {
+      return t("shortcuts.group.move");
+    },
     entries: [
-      { keys: ["j", "↓"], label: "Next row", action: "next" },
-      { keys: ["k", "↑"], label: "Previous row", action: "previous" },
+      { keys: ["j", "↓"], get label() { return t("shortcuts.next"); }, action: "next" },
+      { keys: ["k", "↑"], get label() { return t("shortcuts.previous"); }, action: "previous" },
     ],
   },
   {
-    title: "Act on the focused row",
+    id: "act-on-the-focused-row",
+    get title() {
+      return t("shortcuts.group.act");
+    },
     entries: [
-      { keys: ["Enter"], label: "Open details", action: "details" },
-      { keys: ["x"], label: "Complete the task", action: "complete" },
-      { keys: ["t"], label: "Move to the next day", action: "tomorrow" },
+      { keys: ["Enter"], get label() { return t("shortcuts.details"); }, action: "details" },
+      { keys: ["x"], get label() { return t("shortcuts.complete"); }, action: "complete" },
+      { keys: ["t"], get label() { return t("shortcuts.tomorrow"); }, action: "tomorrow" },
     ],
   },
   {
-    title: "Create",
+    id: "create",
+    get title() {
+      return t("shortcuts.group.create");
+    },
     entries: [
-      { keys: ["c"], label: "New task", action: "newTask" },
-      { keys: ["b"], label: "New block", action: "newBlock" },
+      { keys: ["c"], get label() { return t("shortcuts.newTask"); }, action: "newTask" },
+      { keys: ["b"], get label() { return t("shortcuts.newBlock"); }, action: "newBlock" },
     ],
   },
   {
-    title: "Go",
+    id: "go",
+    get title() {
+      return t("shortcuts.group.go");
+    },
     entries: [
-      { keys: ["g", "h"], label: "Today", action: "goToday" },
-      { keys: ["g", "t"], label: "Tasks", action: "goTasks" },
-      { keys: ["g", "c"], label: "Calendar", action: "goCalendar" },
-      { keys: ["n"], label: "Now mode", action: "now" },
-      { keys: ["w"], label: "Weekly review", action: "weekly" },
+      { keys: ["g", "h"], get label() { return t("shortcuts.today"); }, action: "goToday" },
+      { keys: ["g", "t"], get label() { return t("shortcuts.tasks"); }, action: "goTasks" },
+      { keys: ["g", "c"], get label() { return t("shortcuts.calendar"); }, action: "goCalendar" },
+      { keys: ["n"], get label() { return t("shortcuts.now"); }, action: "now" },
+      { keys: ["w"], get label() { return t("shortcuts.weekly"); }, action: "weekly" },
     ],
   },
   {
-    title: "Anywhere",
+    id: "anywhere",
+    get title() {
+      return t("shortcuts.group.anywhere");
+    },
     entries: [
-      { keys: [modifierToken, "K"], label: "Command palette" },
-      { keys: [modifierToken, "J"], label: "Chat panel" },
-      { keys: ["?"], label: "This sheet", action: "help" },
-      { keys: ["Esc"], label: "Close what is open" },
+      { keys: [modifierToken, "K"], get label() { return t("shortcuts.palette"); } },
+      { keys: [modifierToken, "J"], get label() { return t("shortcuts.chat"); } },
+      { keys: ["?"], get label() { return t("shortcuts.help"); }, action: "help" },
+      { keys: ["Esc"], get label() { return t("shortcuts.escape"); } },
     ],
   },
 ];
