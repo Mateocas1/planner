@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { motion } from "motion/react";
-import { t } from "../../i18n/index.ts";
+import { t, useLocale } from "../../i18n/index.ts";
 import { isTauri } from "../../desktop.ts";
 import type { WorkWindow } from "../../planning/window.ts";
 import type { WeeklyReviewSettings } from "../../planning/weekly.ts";
@@ -51,6 +51,7 @@ export function SettingsView({
   /** Returns to the view Settings was opened from. */
   onBack: () => void;
 }) {
+  useLocale();
   const phone = useMediaQuery(phoneQuery);
   const desktop = isTauri();
   const tabs = availableSettingsTabs(desktop);
@@ -72,7 +73,7 @@ export function SettingsView({
   const openGeneral = () => onTab("general");
 
   return (
-    <section aria-label="Settings" className={`settings${phone ? " is-phone" : ""}`}>
+    <section aria-label={t("shell.title.settings")} className={`settings${phone ? " is-phone" : ""}`}>
       {/* The page head every view carries (Today, Tasks, Calendar): the 34 px
           title, and on the phone the back chevron, since the rail's Back is
           desktop-only there. */}
@@ -91,7 +92,7 @@ export function SettingsView({
             {t("shell.back")}
           </button>
         )}
-        <nav aria-label="Settings sections" className="settings-nav">
+        <nav aria-label={t("tabs.navLabel")} className="settings-nav">
           {tabs.map(({ id, label }) => (
             <button
               key={id}

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n/index.ts";
 import { shortcutHelp } from "../../shortcuts.ts";
 import { keycaps, rebindableShortcuts } from "../shortcutRegistry.ts";
 import { Keycap } from "../Keycap.tsx";
@@ -20,9 +21,10 @@ export function ShortcutsTab({
   shortcutsEnabled: boolean;
   onOpenGeneral: () => void;
 }) {
+  useLocale();
   return (
     <>
-      <Section title="Customize" description="Record a new combination; Escape cancels.">
+      <Section title={t("shortcuts.customize.title")} description={t("shortcuts.customize.description")}>
         {/* Desktop-only rows are not rendered on the web: no label without a control. */}
         {rebindableShortcuts.filter(shortcut => desktop || !shortcut.desktopOnly).map(shortcut => (
           <SettingRow
@@ -30,17 +32,17 @@ export function ShortcutsTab({
             label={shortcut.label}
             description={
               shortcut.id === "palette"
-                ? "The search-and-commands surface."
+                ? t("shortcuts.palette.description")
                 : shortcut.id === "chat"
-                  ? "The assistant's panel."
-                  : "Opens the quick-add window from anywhere in Windows."
+                  ? t("shortcuts.chat.description")
+                  : t("shortcuts.quickAdd.description")
             }
           >
             {() => <ShortcutRecorder id={shortcut.id} desktop={desktop} />}
           </SettingRow>
         ))}
       </Section>
-      <Section title="Built in" description="These are fixed; they stay out of the recorder's way.">
+      <Section title={t("shortcuts.builtIn.title")} description={t("shortcuts.builtIn.description")}>
         {shortcutHelp
           .flatMap(group => group.entries)
           .filter(entry => !isRebindable(entry.label))
@@ -59,9 +61,9 @@ export function ShortcutsTab({
       </Section>
       {!shortcutsEnabled && (
         <p className="settings-coming-soon">
-          Keyboard shortcuts are off.{" "}
+          {t("shortcuts.off")}{" "}
           <button type="button" className="link-button" onClick={onOpenGeneral}>
-            Turn them on in General
+            {t("shortcuts.turnOn")}
           </button>
           .
         </p>
