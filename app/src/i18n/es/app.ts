@@ -51,6 +51,8 @@ export const app = {
   "sync.offlineNothing": "Sin conexión · nada pendiente",
   "sync.offlineWaiting": { one: "Sin conexión · {count} cambio pendiente", other: "Sin conexión · {count} cambios pendientes" },
 
+  "profile.error.zone": "No se pudo cargar la zona horaria del planificador.",
+
   "undo.action": "Deshacer",
   "undo.dismiss": "Descartar",
   "undo.restoreFailed": "No se pudo restaurar el elemento.",

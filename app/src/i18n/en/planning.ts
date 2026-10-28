@@ -124,6 +124,7 @@ export const planning = {
   "focus.stop": "Stop",
   "focus.hide": "Hide for this session",
   "idle.away": "You were away {minutes} min — subtract them?",
+  "idle.subtractFailed": "The subtraction could not be saved.",
   "idle.subtract": "Subtract",
   "idle.keep": "Keep",
   "idle.dismiss": "Keep and dismiss",

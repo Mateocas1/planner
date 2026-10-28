@@ -85,8 +85,8 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["ph
       await expect(sheet.getByText("Hechas: 1 · Pendientes: 2")).toBeVisible();
       await expect(sheet.getByRole("region", { name: "Hecho" })).toBeVisible();
       await expect(sheet.getByRole("region", { name: "Pendiente" })).toBeVisible();
-      await expect(sheet.getByText(label === "phone" ? "Desliza a la izquierda para cerrar el día" : "Arrastrar a la izquierda o pulsar Cerrar día")).toBeVisible();
-      if (label === "desktop") await expect(sheet.getByRole("button", { name: "Cerrar día" })).toBeVisible();
+      await expect(sheet.getByText(label === "phone" ? "Desliza a la izquierda para cerrar el día" : "Arrastrar a la izquierda o pulsar Cerrar el día")).toBeVisible();
+      if (label === "desktop") await expect(sheet.getByRole("button", { name: "Cerrar el día" })).toBeVisible();
       await sheet.evaluate(async element => {
         await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)));
       });
@@ -113,7 +113,7 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["ph
       await expect(flow).toBeVisible();
       await expect(flow).toContainText("Semana 43");
       await expect(flow).toContainText("Paso 1 de 4");
-      await expect(flow.getByRole("list", { name: "Pasos de la revisión" })).toContainText("Limpieza");
+      await expect(flow.getByRole("list", { name: "Pasos de la revisión" })).toContainText("Limpiar");
       await expect(flow).toContainText("Cómo fue realmente la semana.");
       await expect(flow).toContainText("Planificado frente a real");
       await expect(flow).toContainText("1 de 1 tarea planificada completada");

@@ -75,7 +75,7 @@ export function ShortcutsTab({
 /** The palette and chat rows live in the recorder above; their default chords
  * must not appear twice in the read-only list. */
 function isRebindable(label: string): boolean {
-  return label === "Command palette" || label === "Chat panel";
+  return label === t("shortcuts.palette") || label === t("shortcuts.chat");
 }
 
 /** The keycaps a recorder chip shows, re-exported for tests. */

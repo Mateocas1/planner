@@ -24,7 +24,8 @@ test("Today, Tasks and the task sheet are in Spanish", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
   await expect(page.getByRole("heading", { name: "Hoy", level: 2 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Vence hoy" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Completar: Pagar el alquiler" })).toBeVisible();
+  // The sidebar's Due soon list names the same task: look in the page content only.
+  await expect(page.locator("main#content").getByRole("checkbox", { name: "Completar: Pagar el alquiler" })).toBeVisible();
 
   await page.locator("nav").getByRole("button", { name: /^(Tasks|Tareas)\b/ }).click();
   await expect(page.getByRole("heading", { name: "Tareas", level: 2 })).toBeVisible();

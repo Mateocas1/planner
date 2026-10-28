@@ -60,6 +60,10 @@
 .est-field {
   display: flex;
   flex: 1 1 144px;
+  /* The input's intrinsic width (size=20) is this item's min-content: without
+     this the field outgrows a narrow control column (measured 334 px in a
+     310 px column at 390 px, in English too). */
+  min-width: 0;
   align-items: center;
   gap: 2px;
   height: 36px;

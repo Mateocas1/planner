@@ -33,7 +33,7 @@ for (const [name, viewport] of [
     await expect(palette.getByRole("combobox", { name: "Buscar tareas o ejecutar un comando" })).toBeVisible();
     await palette.getByRole("combobox").fill("semanal");
     await expect(palette.getByRole("option", { name: "Revisión semanal" })).toBeVisible();
-    await expect(palette.getByRole("option", { name: /^Crear “semanal”/ })).toBeVisible();
+    await expect(palette.getByRole("option", { name: /^Crear «semanal»/ })).toBeVisible();
     await page.screenshot({ path: `${shots}/palette-${name}.png` });
     await page.keyboard.press("Escape");
 

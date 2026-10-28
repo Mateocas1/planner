@@ -17,6 +17,7 @@ import { useProfileTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
 import { subtractionDayKey } from "../domain/idle.ts";
 import { trackedMinutes } from "./useFocusTimer.ts";
+import { t } from "../i18n/index.ts";
 
 /**
  * Idle detection while a focus session runs (task T9, spec S8.5) — the stateful
@@ -221,7 +222,7 @@ export function useIdleAway({
             ? undefined
             : (taskId, minutes) => {
                 void subtractActualMinutes(uid, taskId, minutes, dayKey).catch(() => {
-                  onError?.("The subtraction could not be saved.");
+                  onError?.(t("idle.subtractFailed"));
                 });
               },
       }).books;

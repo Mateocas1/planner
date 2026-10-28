@@ -25,15 +25,15 @@ test("card descriptions are whole sentences in the current language", () => {
   assert.equal(create.ok && create.description, 'Create task "Pay rent" · 30 min');
   setDeviceLanguage("es");
   const spanish = checkCreateTask('{"title":"Pay rent","estimateMinutes":30}', context.todayKey);
-  assert.equal(spanish.ok && spanish.description, 'Crear tarea "Pay rent" · 30 min');
+  assert.equal(spanish.ok && spanish.description, 'Crear tarea «Pay rent» · 30 min');
   const done = checkCompleteTask('{"taskId":"t1","completed":false}', context);
-  assert.equal(done.ok && done.description, 'Reabrir "Write report"');
+  assert.equal(done.ok && done.description, 'Reabrir «Write report»');
 });
 
 test("plurals follow the language's rules", () => {
   setDeviceLanguage("es");
   const remove = checkDeleteTask('{"taskId":"t1"}', context);
-  assert.match(remove.ok ? remove.description : "", /^Eliminar tarea "Write report" · vence .* · 45 min · y su 1 bloque de trabajo: /);
+  assert.match(remove.ok ? remove.description : "", /^Eliminar tarea «Write report» · vence .* · 45 min · y su 1 bloque de trabajo: /);
   assert.equal(deleteTaskKeptNote([], [{ id: "x" }, { id: "y" }]), ". Se crearon 2 bloques más vinculados a esta tarea después de la tarjeta y se mantuvieron");
   assert.equal(buildListTasksResult({ includeCompleted: false }, context).summary, "1 tarea encontrada.");
 });
