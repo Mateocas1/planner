@@ -19,6 +19,7 @@ import { settle } from "./write.ts";
 // The sidebar's own content (value roadmap §3) ships its styles beside it, so
 // this unit never edits the shared sheet it would collide with.
 import "./Sidebar.css";
+import { capitalize } from "../i18n/capitalize.ts";
 
 export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
   { id: "home", get label() { return t("shell.title.home"); }, Icon: TodayIcon },
@@ -402,7 +403,7 @@ function MiniMonth({
     <section className="mini-month" aria-label={t("sidebar.month")}>
       <div className="mini-head">
         <p className="mini-title">
-          {formatWall(first, { month: "long" })} <span>{formatWall(first, { year: "numeric" })}</span>
+          {capitalize(formatWall(first, { month: "long" }))} <span>{formatWall(first, { year: "numeric" })}</span>
         </p>
         <div className="mini-nav">
           <button type="button" aria-label={t("sidebar.previousMonth")} onClick={() => shift(-1)}><ChevronLeft /></button>

@@ -38,6 +38,7 @@ import { Select } from "./Select.tsx";
 import { DateTimeField } from "./DateTimeField.tsx";
 import { dateFieldLabels } from "./DateField.labels.ts";
 import { settle } from "./write.ts";
+import { capitalize } from "../i18n/capitalize.ts";
 
 /**
  * The Calendar surface (DESIGN.md §3, Calendar), rendered in the stored
@@ -439,11 +440,11 @@ function CalendarView({
             <span className="sr-only">{t("cal.title")}, </span>
             {isDay && !phone ? (
               <>
-                {formatWall(selectedUtc, { weekday: "long" })} <span className="soft">{formatWall(selectedUtc, { month: "long", day: "numeric" })}</span>
+                {capitalize(formatWall(selectedUtc, { weekday: "long" }))} <span className="soft">{formatWall(selectedUtc, { month: "long", day: "numeric" })}</span>
               </>
             ) : (
               <>
-                {formatWall(monthUtc, { month: "long" })} <span className="soft">{formatWall(monthUtc, { year: "numeric" })}</span>
+                {capitalize(formatWall(monthUtc, { month: "long" }))} <span className="soft">{formatWall(monthUtc, { year: "numeric" })}</span>
               </>
             )}
           </h2>
@@ -517,7 +518,7 @@ function CalendarView({
                 const load = dayLoads.get(key);
                 return (
                   <div key={key} className={`day-head${key === todayKey ? " is-today" : ""}${weekday % 6 === 0 ? " is-weekend" : ""}`}>
-                    <span aria-hidden="true">{formatWall(utc, { weekday: "short" })}</span>
+                    <span aria-hidden="true">{capitalize(formatWall(utc, { weekday: "short" }))}</span>
                     <span className="day-num" aria-hidden="true">{formatWall(utc, { day: "numeric" })}</span>
                     {load && <DayLoad day={load} />}
                   </div>
