@@ -8,5 +8,13 @@ export const forms = {
   "forms.estimate.presetHours": { one: "{count} hour", other: "{count} hours" },
   "forms.estimate.decrease": "Decrease by 5 minutes",
   "forms.estimate.increase": "Increase by 5 minutes",
+  "forms.date.today": "Today",
+  "forms.date.tomorrow": "Tomorrow",
+  "forms.date.thisWeekend": "This weekend",
+  "forms.date.nextWeek": "Next week",
+  "forms.date.noDate": "No date",
+  "forms.date.choose": "Choose date",
+  "forms.date.prevMonth": "Previous month",
+  "forms.date.nextMonth": "Next month",
   "forms.title.required": "Add a title to create the task.",
 } as const;

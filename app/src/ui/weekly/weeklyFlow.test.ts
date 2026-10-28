@@ -114,7 +114,7 @@ test("the clean-up action table names the three writes", () => {
 test("the weekly sentences follow the language and keep their plurals", () => {
   setDeviceLanguage("es");
   try {
-    assert.equal(stepLabel("cleanup"), "Limpieza");
+    assert.equal(stepLabel("cleanup"), "Limpiar");
     assert.equal(weekNumberLabel("2026-W43"), "Semana 43");
     assert.equal(weekdayName(0), "domingo");
     assert.equal(momentLabel({ day: 0, time: 1140, steps: ["plan"] }), "domingo a las 19:00");

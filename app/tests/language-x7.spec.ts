@@ -62,7 +62,7 @@ for (const [name, size] of [
     await field.fill("hola");
     await panel.getByRole("button", { name: "Enviar" }).click();
     const card = panel.locator(".chat-card").filter({ hasText: "Water the plants" });
-    await expect(card).toContainText('Crear tarea "Water the plants"');
+    await expect(card).toContainText('Crear tarea «Water the plants»');
     await expect(card).toContainText("30 min");
     await expect(card.getByRole("button", { name: "Confirmar" })).toBeVisible();
     await expect(card.getByRole("button", { name: "Descartar" })).toBeVisible();

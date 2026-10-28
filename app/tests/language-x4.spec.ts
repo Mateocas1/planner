@@ -28,7 +28,8 @@ for (const [name, viewport] of [
     await page.locator("nav").first().getByRole("button", { name: /^(Calendar|Calendario)$/ }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Sin programar" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Nuevo bloque" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Hoy", exact: true })).toBeVisible();
+    // The sidebar / tab bar also carry a "Hoy" button: scope to the calendar's own navigation.
+    await expect(page.getByRole("group", { name: "Navegación del calendario" }).getByRole("button", { name: "Hoy", exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Planificar mi día" }).click();
     await expect(page.getByRole("group", { name: "Plan propuesto" })).toBeVisible();

@@ -13,7 +13,7 @@ test("palette rows and the help table follow the language, English unchanged", (
   assert.equal(themeCommands[1].label, "Tema: Claro");
   assert.equal(shortcutHelpFor(false)[0].title, "Moverse");
   assert.equal(shortcutHelpFor(false)[4].entries[0].label, "Paleta de comandos");
-  assert.equal(focusCommands({ canStart: true, status: null })[0].label, "Iniciar foco en el siguiente bloque");
+  assert.equal(focusCommands({ canStart: true, status: null })[0].label, "Iniciar enfoque en el siguiente bloque");
 });
 
 test("a Spanish query finds the Spanish keyword, and the create row is a whole sentence", () => {
