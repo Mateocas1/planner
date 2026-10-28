@@ -1,4 +1,5 @@
 import { ASSUMED_ESTIMATE_MINUTES, expandOccurrences, formatEstimate, type Recurrence } from "../domain/model.ts";
+import { t } from "../i18n/index.ts";
 import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey, wallMinutes } from "../ui/time.ts";
 import { freeSlots, minutesPerDay, type Interval, type WorkWindow } from "./window.ts";
 
@@ -364,5 +365,5 @@ export function capacity(input: CapacityInput): Capacity {
  */
 export function overcommitNote(row: Overcommit): string {
   const day = formatWall(keyToWallUtc(row.deadline), { weekday: "short" });
-  return `${formatEstimate(row.overMinutes)} over for ${day}. Move something or push a deadline.`;
+  return t("radar.overcommit", { over: formatEstimate(row.overMinutes), day });
 }

@@ -39,6 +39,7 @@
  */
 
 import { ASSUMED_ESTIMATE_MINUTES, formatEstimate } from "../domain/model.ts";
+import { t } from "../i18n/index.ts";
 
 /** A tracked session shorter than this is noise, not a measurement. */
 export const MIN_ACTUAL_MINUTES = 5;
@@ -59,7 +60,7 @@ export const NEUTRAL_RATIO_MIN = 0.9;
 export const NEUTRAL_RATIO_MAX = 1.1;
 
 /** The words a hint shows when there is nothing to learn from yet. */
-export const noBiasHint = "Track a few tasks with the timer to learn your pace.";
+export const noBiasHint = (): string => t("bias.empty");
 
 /**
  * A task as the learner reads it: its title, what it was estimated at, and the
@@ -211,6 +212,6 @@ export function suggestEstimate(samples: readonly BiasSample[], query: BiasQuery
     sampleCount: pace.count,
     source: keyed === null ? "global" : "keyed",
     ...(keyed === null ? {} : { token: keyed.token }),
-    message: `Usually takes ${formatEstimate(minutes)} for tasks like this.`,
+    message: t("bias.message", { estimate: formatEstimate(minutes) }),
   };
 }

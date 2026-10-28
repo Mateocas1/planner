@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { t } from "../i18n/index.ts";
 import { CloseIcon } from "./icons.tsx";
 import type { IdlePrompt } from "./useIdleAway.ts";
 import "./IdleToast.css";
@@ -52,14 +53,14 @@ export function IdleToast({
 
   return (
     <div className="undo-toast idle-toast" role="status" data-state="open">
-      <span className="undo-toast-label">You were away {prompt.minutes} min — subtract them?</span>
+      <span className="undo-toast-label">{t("idle.away", { minutes: prompt.minutes })}</span>
       <button type="button" className="undo-toast-action idle-toast-subtract" onClick={subtract} disabled={answering}>
-        Subtract
+        {t("idle.subtract")}
       </button>
       <button type="button" className="undo-toast-action idle-toast-keep" onClick={onKeep} disabled={answering}>
-        Keep
+        {t("idle.keep")}
       </button>
-      <button type="button" className="undo-toast-close" aria-label="Keep and dismiss" onClick={onKeep}>
+      <button type="button" className="undo-toast-close" aria-label={t("idle.dismiss")} onClick={onKeep}>
         <CloseIcon />
       </button>
     </div>

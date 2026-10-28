@@ -3,6 +3,7 @@ import { useProfileTimeZone } from "../data/profile.ts";
 import type { BlockView, SeriesView, TaskView } from "../data/store.ts";
 import { estimateNote } from "../domain/model.ts";
 import { capacity, dayCapacity, overcommitNote, type DayCapacity } from "../planning/capacity.ts";
+import { t } from "../i18n/index.ts";
 import type { WorkWindow } from "../planning/window.ts";
 import { formatDuration, formatWall, keyToWallUtc } from "./time.ts";
 import "./CapacityBar.css";
@@ -30,9 +31,6 @@ import "./CapacityBar.css";
  * to it.
  */
 
-/** The words the radar uses when nobody has estimated anything yet. */
-const noEstimates = "Add estimates to see how full your week is.";
-
 /** One line under the week row: a warning with a deadline, or a disclosure. */
 type RadarNote = { key: string; text: string; kind: "over" | "hint" };
 
@@ -50,21 +48,25 @@ function dayHeading(date: string): string {
 /** The accessible name of one week segment: `Tue, 38% booked`, and the word
  * `Packed` when the day is, because colour is never the only signal. */
 function segmentLabel(day: DayCapacity): string {
-  return `${dayName(day.date)}, ${day.packed ? "Packed, " : ""}${day.percentBooked}% booked`;
+  return t(day.packed ? "radar.segmentPacked" : "radar.segment", { day: dayName(day.date), percent: day.percentBooked });
 }
 
 /** The accessible name of one Calendar header underline, in minutes: the booked
  * share and what is left, which is what the bar draws. */
 function loadLabel(day: DayCapacity): string {
-  return `${dayHeading(day.date)}, ${day.packed ? "Packed, " : ""}${formatDuration(day.bookedMinutes)} booked, ${formatDuration(day.freeMinutes)} free`;
+  return t(day.packed ? "radar.loadPacked" : "radar.load", {
+    day: dayHeading(day.date),
+    booked: formatDuration(day.bookedMinutes),
+    free: formatDuration(day.freeMinutes),
+  });
 }
 
 function repeatingNote(count: number): string {
-  return count === 1 ? "1 repeating task has no estimate." : `${count} repeating tasks have no estimate.`;
+  return t("radar.repeating", { count });
 }
 
 function assumedNote(count: number): string {
-  return `${estimateNote(undefined)} for ${count} ${count === 1 ? "task" : "tasks"} with no estimate.`;
+  return t("radar.assumed", { note: estimateNote(undefined), count });
 }
 
 /**
@@ -199,7 +201,7 @@ export function WeekRadar({
   if (estimated) {
     for (const row of radar.overcommit) notes.push({ key: `over-${row.deadline}`, text: overcommitNote(row), kind: "over" });
   } else {
-    notes.push({ key: "no-estimates", text: noEstimates, kind: "hint" });
+    notes.push({ key: "no-estimates", text: t("radar.noEstimates"), kind: "hint" });
   }
   if (radar.hints.unestimatedSeriesCount > 0) {
     notes.push({ key: "unestimated-series", text: repeatingNote(radar.hints.unestimatedSeriesCount), kind: "hint" });
@@ -211,17 +213,17 @@ export function WeekRadar({
   return (
     <section className="list-section radar" aria-labelledby="radar-heading">
       <div className="section-head">
-        <h3 id="radar-heading" className="section-title">This week</h3>
-        <span className="section-meta">{formatDuration(radar.today.windowMinutes)} a day</span>
+        <h3 id="radar-heading" className="section-title">{t("radar.title")}</h3>
+        <span className="section-meta">{t("radar.perDay", { duration: formatDuration(radar.today.windowMinutes) })}</span>
       </div>
-      <ol className="radar-week" aria-label="Booked share of each day this week">
+      <ol className="radar-week" aria-label={t("radar.weekLabel")}>
         {radar.week.days.map(day => (
           <li key={day.date} className="radar-day">
             <div className="radar-day-box" role="img" aria-label={segmentLabel(day)}>
               <span className="radar-day-name" aria-hidden="true">{dayName(day.date)}</span>
               <CapacityBar percent={day.percentBooked} packed={day.packed} />
               <span className={`radar-day-value${day.packed ? " is-packed" : ""}`} aria-hidden="true">
-                {day.packed ? "Packed" : `${day.percentBooked}%`}
+                {day.packed ? t("radar.packed") : `${day.percentBooked}%`}
               </span>
             </div>
           </li>
