@@ -9,6 +9,7 @@ import type { ChatToolCall, ChatTransport } from "../chat/types.ts";
 import { useChat } from "../chat/useChat.ts";
 import { browserTimeZone } from "../data/profile.ts";
 import { isTauri } from "../desktop.ts";
+import { t, useLocale } from "../i18n/index.ts";
 import { dateKey } from "./time.ts";
 import { dur, easeOutBackCss, ms } from "./motion.ts";
 import { useSwipeDismiss } from "./useSwipeDismiss.ts";
@@ -256,6 +257,7 @@ export function ChatPanel({
    * handled here. */
   onConfirmToolCall?: (call: ChatToolCall) => Promise<ToolOutcome>;
 }) {
+  useLocale();
   const [mockQuery] = useState(() => new URLSearchParams(window.location.search).get("chatMock"));
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -503,7 +505,7 @@ export function ChatPanel({
       try {
         const outcome =
           (await onConfirmToolCall?.({ id: card.callId, name: card.name, arguments: card.arguments })) ??
-          { status: "failed" as const, message: "Proposed actions need a signed-in session." };
+          { status: "failed" as const, message: t("chat.needsSession") };
         resolveToolCall(card.callId, outcome.status, outcome.message);
       } finally {
         busyCallRef.current = null;
@@ -569,7 +571,7 @@ export function ChatPanel({
         ref={launcherRef}
         type="button"
         className="chat-launcher glass glass-float"
-        aria-label="Chat"
+        aria-label={t("chat.name")}
         aria-expanded={open}
         aria-keyshortcuts={ariaKeyShortcuts(chatChord)}
         onClick={() => setOpen(current => !current)}
@@ -583,17 +585,17 @@ export function ChatPanel({
         data-closing={closing || undefined}
         inert={closing || undefined}
         onAnimationEnd={onPanelAnimationEnd}
-        aria-label="Chat"
+        aria-label={t("chat.name")}
         role="dialog"
         aria-modal="false"
       >
         <div className="chat-inner">
           <header className="chat-head">
-            <span className="chat-head-title">Chat</span>
+            <span className="chat-head-title">{t("chat.name")}</span>
             <button type="button" className="chat-new-chat" onClick={newChat} disabled={state.turns.length === 0 && !inFlight}>
-              New chat
+              {t("chat.newChat")}
             </button>
-            <button type="button" className="chat-icon-button" aria-label="Close chat" onClick={() => setOpen(false)}>
+            <button type="button" className="chat-icon-button" aria-label={t("chat.close")} onClick={() => setOpen(false)}>
               <CloseIcon />
             </button>
           </header>
@@ -602,16 +604,16 @@ export function ChatPanel({
               {isEmptyThread ? (
               noKey ? (
                 <div className="chat-empty">
-                  <p className="chat-empty-hi">Your assistant is not set up yet.</p>
-                  <h2 className="chat-empty-heading">Add an API key to start chatting.</h2>
+                  <p className="chat-empty-hi">{t("chat.noKey.hi")}</p>
+                  <h2 className="chat-empty-heading">{t("chat.noKey.heading")}</h2>
                   <button type="button" className="chat-retry" onClick={() => onSetupKey?.()}>
-                    Set up the assistant
+                    {t("chat.noKey.setup")}
                   </button>
                 </div>
               ) : (
                 <div className="chat-empty">
-                  <p className="chat-empty-hi">Hi</p>
-                  <h2 className="chat-empty-heading">What do you need?</h2>
+                  <p className="chat-empty-hi">{t("chat.empty.hi")}</p>
+                  <h2 className="chat-empty-heading">{t("chat.empty.heading")}</h2>
                 </div>
               )
             ) : (
@@ -636,7 +638,7 @@ export function ChatPanel({
                 <div className="chat-error" role="alert">
                   <p className="chat-error-message">{state.error.message}</p>
                   <button type="button" className="chat-retry" onClick={retry} disabled={inFlight}>
-                    Retry
+                    {t("chat.retry")}
                   </button>
                 </div>
               )}
@@ -644,26 +646,26 @@ export function ChatPanel({
           </div>
           {!showJump ? null : (
             <button type="button" className="chat-jump" onClick={jumpToLatest}>
-              Jump to latest ↓
+              {t("chat.jump")}
             </button>
           )}
           <form className="chat-composer" onSubmit={submit}>
             <textarea
               ref={fieldRef}
               className="chat-field"
-              placeholder="Type your message…"
-              aria-label="Message"
+              placeholder={t("chat.placeholder")}
+              aria-label={t("chat.message")}
               rows={1}
               value={draft}
               onChange={event => setDraft(event.target.value)}
               onKeyDown={onFieldKeyDown}
             />
             {inFlight ? (
-              <button type="button" className="chat-send is-stop" aria-label="Stop" onClick={stop}>
+              <button type="button" className="chat-send is-stop" aria-label={t("chat.stop")} onClick={stop}>
                 <StopIcon />
               </button>
             ) : (
-              <button ref={sendButtonRef} type="submit" className="chat-send" aria-label="Send" disabled={!canSend}>
+              <button ref={sendButtonRef} type="submit" className="chat-send" aria-label={t("chat.send")} disabled={!canSend}>
                 <SendIcon />
               </button>
             )}
