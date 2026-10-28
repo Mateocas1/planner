@@ -7,6 +7,7 @@
  * two ever disagree.
  */
 
+import { getLocale, intlLocale, t } from "../../i18n/index.ts";
 import { DEFAULT_CHAT_BASE_URL, type ChatKeyStatus } from "../../chat/keyStore.ts";
 
 /**
@@ -23,14 +24,14 @@ export function providerHost(baseUrl: string): string {
 
 /** The one-line status under the API key row. */
 export function keyStatusText(status: ChatKeyStatus | null): string {
-  if (status === null) return "Checking…";
-  if (!status.hasKey) return "No key.";
-  return `Key saved for ${providerHost(status.baseUrl ?? DEFAULT_CHAT_BASE_URL)}.`;
+  if (status === null) return t("ai.keyStatus.checking");
+  if (!status.hasKey) return t("ai.keyStatus.none");
+  return t("ai.keyStatus.saved", { host: providerHost(status.baseUrl ?? DEFAULT_CHAT_BASE_URL) });
 }
 
 /** The Rust key rules worth repeating in the page: empty after trimming. */
 export function validateKeyClient(key: string): string | null {
-  if (key.trim() === "") return "The API key must not be empty.";
+  if (key.trim() === "") return t("ai.error.keyEmpty");
   return null;
 }
 
@@ -44,12 +45,12 @@ export function validateBaseUrlClient(url: string): string | null {
   try {
     parsed = new URL(url.trim());
   } catch {
-    return "The provider address is not allowed.";
+    return t("ai.error.baseUrl");
   }
-  if (parsed.username !== "" || parsed.password !== "") return "The provider address is not allowed.";
+  if (parsed.username !== "" || parsed.password !== "") return t("ai.error.baseUrl");
   const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
   if (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback)) return null;
-  return "The provider address is not allowed.";
+  return t("ai.error.baseUrl");
 }
 
 /** The memories list is newest first (spec S5); a preview keeps one line. */
@@ -58,9 +59,9 @@ export function memoryPreview(content: string, max = 96): string {
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
 }
 
-/** The row's date, in the app's English UI ("Oct 24, 2026"). */
+/** The row's date in the app's language ("Oct 24, 2026" in English). */
 export function memoryDate(updatedAt: number): string {
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(updatedAt));
+  return new Intl.DateTimeFormat(intlLocale(getLocale()), { dateStyle: "medium" }).format(new Date(updatedAt));
 }
 
 /**
@@ -72,10 +73,10 @@ export function engramStatusText(
   enabled: boolean,
   status: { ok: boolean; synced: number; error: string | null } | null,
 ): string {
-  if (!enabled) return "Mirroring is off. Memories stay on this computer only.";
-  if (status === null) return "Not synced yet.";
-  if (!status.ok) return `Engram unreachable: ${status.error ?? "unknown error"}`;
-  return `Synced ${status.synced} ${status.synced === 1 ? "memory" : "memories"}.`;
+  if (!enabled) return t("ai.engram.off");
+  if (status === null) return t("ai.engram.notSynced");
+  if (!status.ok) return t("ai.engram.unreachable", { error: status.error ?? t("ai.engram.unknownError") });
+  return t("ai.engram.synced", { count: status.synced });
 }
 
 /**
@@ -85,7 +86,7 @@ export function engramStatusText(
  * the Rust command's own wording.
  */
 export function validateEngramAddressClient(url: string): string | null {
-  const refused = "The Engram address must be a loopback address (localhost, 127.0.0.1 or [::1]).";
+  const refused = t("ai.engram.addressError");
   let parsed: URL;
   try {
     parsed = new URL(url.trim());
@@ -104,6 +105,6 @@ export function validateEngramAddressClient(url: string): string | null {
 /** The Rust project rule worth repeating in the page: not empty (Rust also
  * caps the length and rejects control characters; its word wins). */
 export function validateEngramProjectClient(project: string): string | null {
-  if (project.trim() === "") return "The Engram project must not be empty.";
+  if (project.trim() === "") return t("ai.engram.projectError");
   return null;
 }

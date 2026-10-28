@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../desktop.ts";
+import { t, useLocale } from "../../i18n/index.ts";
 import {
   acceleratorLabel,
   captureFromEvent,
@@ -33,11 +34,11 @@ import "./ShortcutRecorder.css";
  */
 
 const QUICKADD_DEFAULT = rebindableShortcut("quickAdd").defaultAccelerator;
-const QUICKADD_STATUS_ERROR = "The hotkey control is not available in this build.";
 
 type QuickAddStatus = { shortcut: string; registered: boolean; error: string | null };
 
 export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "quickAdd"; desktop: boolean }) {
+  useLocale();
   const shortcut = rebindableShortcut(id);
   const isQuickAdd = id === "quickAdd";
   // The registry is the live truth for palette and chat (the listeners read
@@ -53,7 +54,7 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
     if (!isQuickAdd || !desktop) return undefined;
     invoke<QuickAddStatus>("quickadd_get_config")
       .then(setQuickAddStatus)
-      .catch(() => setMessage(QUICKADD_STATUS_ERROR));
+      .catch(() => setMessage(t("recorder.statusError")));
     return undefined;
   }, [isQuickAdd, desktop]);
 
@@ -78,9 +79,9 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
         .catch(cause => {
           // The Rust side already rolled back to the previous shortcut; say
           // what was kept, the way the brief asks.
-          const reason = cause instanceof Error ? cause.message : "Planner could not register that combination.";
+          const reason = cause instanceof Error ? cause.message : t("recorder.registerFailed");
           const current = quickAddStatus?.shortcut ?? QUICKADD_DEFAULT;
-          setMessage(`${reason} Kept ${acceleratorLabel(current)}.`);
+          setMessage(t("recorder.kept", { reason, shortcut: acceleratorLabel(current) }));
         });
       return;
     }
@@ -136,7 +137,10 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
         ref={chipRef}
         type="button"
         className="shortcut-chip"
-        aria-label={`${shortcut.label} shortcut: ${recording ? "press the new combination, Escape to cancel" : caps.join(" + ")}`}
+        aria-label={t("recorder.chipLabel", {
+          label: shortcut.label,
+          state: recording ? t("recorder.chipRecording") : caps.join(" + "),
+        })}
         aria-live="polite"
         data-recording={recording ? "true" : undefined}
         onClick={() => {
@@ -145,21 +149,21 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
         }}
         onBlur={() => setRecording(false)}
       >
-        {recording ? <span className="shortcut-chip-recording">Press keys…</span> : caps.map(cap => <Keycap key={cap}>{cap}</Keycap>)}
+        {recording ? <span className="shortcut-chip-recording">{t("recorder.pressKeys")}</span> : caps.map(cap => <Keycap key={cap}>{cap}</Keycap>)}
       </button>
       {!isDefault && (
         <button type="button" className="link-button shortcut-restore" onClick={() => commit(null)}>
-          Restore default
+          {t("recorder.restoreDefault")}
         </button>
       )}
-      {saved && <span className="shortcut-saved" role="status">✓ Saved</span>}
+      {saved && <span className="shortcut-saved" role="status">{t("recorder.saved")}</span>}
       {recording && (
         <p className="settings-row-desc" aria-live="polite">
-          Recording — press the new combination, Escape to cancel.
+          {t("recorder.recording")}
         </p>
       )}
       {unavailable && !recording && (
-        <p className="settings-row-desc">Planner could not register this shortcut — another app may be using it.</p>
+        <p className="settings-row-desc">{t("recorder.unavailable")}</p>
       )}
       {message && <p className="inline-error shortcut-conflict" role="alert">{message}</p>}
     </div>
