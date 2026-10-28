@@ -11,9 +11,10 @@ import type { ThemePreference } from "./theme.ts";
  *
  * - an empty query offers the destinations only, so Enter never creates a task
  *   the user did not ask for;
- * - a typed query always offers "create this title" first, which is what makes
- *   Enter the quick-add path, then the matching tasks by title, then any
- *   destination the query names, then the theme and action commands it names.
+ * - a typed query offers the matching tasks by title, any destination the query
+ *   names, then the theme and action commands it names, and "create this title"
+ *   last when something matched (alone when nothing did, so Enter is still the
+ *   quick-add path). Every query word must appear in a row's label or keywords.
  *
  * Every row has a stable id: it is the option's DOM id and the value the
  * combobox points at with aria-activedescendant.
@@ -31,9 +32,7 @@ export type PaletteThemeCommand = { kind: "theme"; id: string; pref: ThemePrefer
 
 /**
  * A one-shot command: it opens a surface of its own, or acts on the focused
- * task, instead of navigating or creating. It matches on `keywords` rather than
- * on its label, so typing "cal" still offers only the Calendar destination --
- * the label is a sentence, not a search key.
+ * task, instead of navigating or creating. It matches on its label or `keywords`.
  *
  * `hint` is the key that performs the same action, read from the keyboard's
  * own table (shortcuts.ts). It is absent when the action has no key, and when
@@ -228,32 +227,37 @@ export function buildCommands(
   if (query === "") {
     return destinations.map(destination => navigateCommand(destination));
   }
-  const needle = query.toLowerCase();
+  const tokens = query.toLowerCase().split(/\s+/);
+  /* Postel: every token must appear somewhere in the label or a keyword, in any
+     order, so a command's own name always finds it. */
+  const matches = (label: string, keywords: readonly string[] = []) => {
+    const haystack = [label.toLowerCase(), ...keywords];
+    return tokens.every(token => haystack.some(text => text.includes(token)));
+  };
   const matchedTasks = tasks
-    .filter(task => task.title.toLowerCase().includes(needle))
+    .filter(task => matches(task.title))
     .sort((left, right) => left.title.localeCompare(right.title))
     .slice(0, taskResultLimit)
     .map(task => ({ kind: "task" as const, id: `task-${task.id}`, taskId: task.id, label: task.title }));
-  const matchedDestinations = destinations
-    .filter(destination => destination.label.toLowerCase().includes(needle))
-    .map(navigateCommand);
-  const matchedThemes = themeCommands.filter(command => command.label.toLowerCase().includes(needle));
+  const matchedDestinations = destinations.filter(destination => matches(destination.label)).map(navigateCommand);
+  const matchedThemes = themeCommands.filter(command => matches(command.label));
   const actions = context.focusedTask ? [...taskActionCommands, ...actionCommands] : actionCommands;
   const matchedActions = actions
-    .filter(command => command.keywords.some(keyword => keyword.includes(needle)))
+    .filter(command => matches(command.label, command.keywords))
     .map(command => withHint(command, context.shortcuts));
-  const matchedSettings = (context.settingsCommands ?? []).filter(command =>
-    command.keywords.some(keyword => keyword.includes(needle)),
-  );
-  const matchedFocus = focus.filter(command => command.label.toLowerCase().includes(needle));
+  const matchedSettings = (context.settingsCommands ?? []).filter(command => matches(command.label, command.keywords));
+  const matchedFocus = focus.filter(command => matches(command.label));
+  /* The create row is always offered but ranks last whenever anything else
+     matched, so Enter on a command's own name runs it instead of creating a
+     task titled "weekly review". */
   return [
-    { kind: "create", id: "create", title: query },
     ...matchedTasks,
     ...matchedDestinations,
     ...matchedThemes,
     ...matchedActions,
     ...matchedSettings,
     ...matchedFocus,
+    { kind: "create", id: "create", title: query },
   ];
 }
 

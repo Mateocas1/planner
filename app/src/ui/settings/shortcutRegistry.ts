@@ -23,6 +23,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { isApplePlatform, modifierLabel } from "../shortcuts.ts";
 
 /** The three shortcuts a person may rebind. Quick-add is desktop-only. */
 export type RebindableShortcutId = "palette" | "chat" | "quickAdd";
@@ -125,14 +126,14 @@ const KEY_LABELS: Record<string, string> = {
   PageDown: "PgDn",
 };
 
-export function keycaps(accelerator: Accelerator): string[] {
+export function keycaps(accelerator: Accelerator, apple: boolean = isApplePlatform()): string[] {
   const combo = parseAccelerator(accelerator);
   if (combo === null) return [];
   const caps: string[] = [];
-  if (combo.ctrl) caps.push("Ctrl");
+  if (combo.ctrl) caps.push(modifierLabel(apple));
   if (combo.alt) caps.push("Alt");
   if (combo.shift) caps.push("Shift");
-  if (combo.meta) caps.push("Win");
+  if (combo.meta) caps.push(apple ? "⌘" : "Win");
   const code = combo.code;
   const named = KEY_LABELS[code];
   if (named !== undefined) caps.push(named);
