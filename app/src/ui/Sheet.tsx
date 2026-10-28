@@ -13,6 +13,46 @@ const restTransform = "translate(0px, 0px) scale(1, 1)";
 const flightTransform = (x: number, y: number, scaleX: number, scaleY: number) =>
   `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})`;
 
+/** What stays live around an open sheet: other sheets and their scrims (a
+ * panel opened over one that is still leaving), native modal dialogs (the
+ * palette), and the toasts, which are answered with the pointer. */
+const stayLive = ".sheet, .scrim, dialog, .undo-toast, .toast";
+
+/** How many open sheets hold each element inert, so overlapping sheets (one
+ * leaving, one arriving) never release each other's hold. */
+const holds = new Map<Element, { count: number; wasInert: boolean }>();
+
+/**
+ * Makes everything outside `sheet` inert -- the siblings of the sheet and of
+ * each of its ancestors, up to the body -- and returns the release. Inert takes
+ * the page out of the Tab order, the pointer and the accessibility tree at once,
+ * which is what a scrim alone only pretends to do. A popover opened from the
+ * sheet lives in the sheet's own subtree, so it is not affected.
+ */
+function holdPageInert(sheet: HTMLElement): () => void {
+  const held: Element[] = [];
+  for (let node: HTMLElement | null = sheet; node && node !== document.body; node = node.parentElement) {
+    for (const sibling of node.parentElement?.children ?? []) {
+      if (sibling === node || sibling.matches(stayLive) || sibling.tagName === "SCRIPT" || sibling.tagName === "STYLE") continue;
+      const hold = holds.get(sibling) ?? { count: 0, wasInert: (sibling as HTMLElement).inert };
+      hold.count += 1;
+      holds.set(sibling, hold);
+      (sibling as HTMLElement).inert = true;
+      held.push(sibling);
+    }
+  }
+  return () => {
+    for (const element of held) {
+      const hold = holds.get(element);
+      if (!hold) continue;
+      hold.count -= 1;
+      if (hold.count > 0) continue;
+      holds.delete(element);
+      (element as HTMLElement).inert = hold.wasInert;
+    }
+  };
+}
+
 /**
  * The glass sheet (DESIGN.md §3, "Details"): a floating card centred in what the
  * user can see (app.css, S2/S3) that grows out of the element that opened it and
@@ -307,6 +347,17 @@ export function Sheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPresent]);
 
+  // The page under the scrim is out of reach while the panel is open: Tab,
+  // clicks and screen readers all stay inside it. The hold is released the
+  // moment the dismissal starts (not when the exit animation ends) so a press
+  // on the page during the exit lands, and always before the focus-return
+  // cleanup below, which needs an opener that is no longer inert.
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    if (!sheet || !isPresent) return;
+    return holdPageInert(sheet);
+  }, [isPresent]);
+
   // Focus returns to what opened the sheet. The origin is the row (its box is
   // what the panel grew from), and a row is not focusable by itself: the control
   // inside it is the thing the user pressed, so that is where the caret goes.
@@ -320,10 +371,21 @@ export function Sheet({
   // no claim on it.
   useEffect(() => {
     const sheet = sheetRef.current;
+    // Read while the panel is still attached: by cleanup time it is detached.
+    const holders: Element[] = [];
+    for (let node = sheet?.parentElement ?? null; node; node = node.parentElement) holders.push(node);
     return () => {
       if (!origin?.isConnected) return;
       const active = document.activeElement;
-      const loose = active === null || active === document.body || active === sheet || sheet?.contains(active) === true;
+      // A container that holds the sheet (the skip-link target, <main>) takes
+      // the caret when a press lands on the panel's own chrome: that is not a
+      // place the user went, so it is as loose as the body.
+      const loose =
+        active === null ||
+        active === document.body ||
+        active === sheet ||
+        sheet?.contains(active) === true ||
+        holders.includes(active);
       if (!loose) return;
       // A row holds a check and its title button; the button is the control that
       // opened the panel, so it is the one that gets the caret back.
