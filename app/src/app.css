@@ -36,7 +36,8 @@
   --label-2: var(--ink-800);
   --label-3: var(--ink-700);
   --separator: rgb(19 22 29 / 0.09);
-  --check-ring: rgb(19 22 29 / 0.32);
+  /* 3.2:1 on --surface (WCAG 1.4.11: the ring is what identifies the control) */
+  --check-ring: rgb(19 22 29 / 0.48);
 
   /* one accent, and state colours for state only */
   --accent: var(--brand-600);
@@ -104,11 +105,16 @@
   --fill-press: rgb(244 247 252 / 0.08);
   --label: var(--ink-100);
   --label-2: var(--ink-400);
-  --label-3: var(--ink-500);
+  /* Dark lifts (canon F7 b+c, Log L4): WCAG passed but APCA read |Lc| 46-51 for
+     the tertiary label, accent text and the resting button label. #B1B5BF sits
+     between ink-400 and ink-500 (Lc 60, still 13 below --label-2); brand-450 is
+     the accent for text and for the primary fill (its ink-975 label is Lc 61).
+     Hover steps lighter again, to brand-400. Light mode is unchanged. */
+  --label-3: #B1B5BF;
   --separator: rgb(244 247 252 / 0.08);
-  --check-ring: rgb(244 247 252 / 0.3);
-  --accent: var(--brand-500);
-  --accent-hover: var(--brand-450);
+  --check-ring: rgb(244 247 252 / 0.38);
+  --accent: var(--brand-450);
+  --accent-hover: var(--brand-400);
   --accent-soft: rgb(117 152 255 / 0.16);
   --on-accent: var(--ink-975);
   --now: #F66D62;
@@ -146,6 +152,10 @@
 html {
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
+  /* craft floor (canon F14): native checkbox/range/progress left anywhere take
+     the brand, and a missing weight is never faked into a synthetic bold/italic */
+  accent-color: var(--accent);
+  font-synthesis: none;
 }
 
 body {
@@ -203,6 +213,27 @@ button {
   cursor: pointer;
 }
 
+/* Every pressable draws its own press state (ui/press.css), so the browser's
+   grey tap flash would double it; and a control never needs double-tap zoom.
+   Element selectors lose to the gesture surfaces' own `touch-action` classes
+   (drag grip, sheet head, block handles), which is intended. */
+button,
+a,
+summary,
+select,
+.check,
+.switch {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+summary,
+select,
+input[type="checkbox"] {
+  touch-action: manipulation;
+}
+
 button:disabled {
   cursor: default;
   opacity: 0.5;
@@ -250,8 +281,24 @@ time,
 
 /* Materials, tint tokens and fallbacks live in ui/glass.css. */
 
+/* Increased contrast strengthens the tokens, not the components: the rule that
+   used to live here set `.card, .group` before their own `box-shadow` at the
+   same specificity, so it never won (R5-05). Tokens cannot lose that race, and
+   every consumer of --separator, --check-ring and --label-3 gets the stronger
+   value for free. glass.css repaints the card ring (`--card-shadow`) in its own
+   block because it loads after this file. scripts/glass-contrast.mjs reads this
+   block, so keep the two selectors. */
 @media (prefers-contrast: more) {
-  .card, .group { box-shadow: 0 0 0 1px var(--label-3); }
+  :root {
+    --label-3: var(--label-2);
+    --separator: rgb(19 22 29 / 0.4);
+    --check-ring: var(--label-2);
+  }
+  :root[data-theme="dark"] {
+    --label-3: var(--label-2);
+    --separator: rgb(244 247 252 / 0.4);
+    --check-ring: var(--label-2);
+  }
 }
 
 /* ---------- controls ---------- */
@@ -1498,6 +1545,9 @@ time,
   width: min(520px, calc(100% - 24px));
   max-height: min(84vh, calc(100dvh - 24px - var(--kb-inset, 0px)));
   overflow-y: auto;
+  /* the gutter is reserved before the content overflows, so adding a row (a
+     subtask, an error line) never nudges the sheet's text sideways */
+  scrollbar-gutter: stable;
   /* the panel's own scroll ends at the panel: the page behind never moves */
   overscroll-behavior: contain;
   padding: 16px 18px 20px;
@@ -1874,5 +1924,79 @@ select.form-control { text-align: left; cursor: pointer; }
   ::view-transition-old(*),
   ::view-transition-new(*) {
     animation-duration: 1ms !important;
+  }
+}
+
+/* ---------- forced colours (Windows High Contrast) ----------
+   The mode removes every `box-shadow` and background image, and the app draws
+   most boundaries with shadow rings (cards, groups, the round check, neutral
+   buttons, the switch track). Each of these keeps a real `border` in a system
+   colour instead, so the shapes survive; filled states use Highlight. Fills of
+   a masked tick or a knob are system colours too, because author colours are
+   overridden here. Kept last so it wins at equal specificity. */
+@media (forced-colors: active) {
+  .card,
+  .group,
+  .now-card,
+  .plan-trigger,
+  .form-control,
+  .segmented,
+  .due-chip,
+  .calendar-block {
+    border: 1px solid CanvasText;
+  }
+
+  .button,
+  .button-primary,
+  .button-danger,
+  .button-accent {
+    border: 1px solid ButtonText;
+  }
+
+  .button-primary,
+  .button-accent {
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .segmented button[aria-pressed="true"] {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .check {
+    box-shadow: none;
+    border: 2px solid ButtonText;
+  }
+
+  .check:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  .check::after {
+    background: HighlightText;
+  }
+
+  /* 2 px border + a knob placed from the inside edge keeps the 22 px knob in
+     its 22 px track and the 18 px travel inside the 40 px of room. */
+  .switch {
+    border: 2px solid ButtonText;
+  }
+
+  .switch::after {
+    top: 0;
+    left: 0;
+    background: ButtonText;
+    box-shadow: none;
+  }
+
+  .switch:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  .switch:checked::after {
+    background: HighlightText;
   }
 }
