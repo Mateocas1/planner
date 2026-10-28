@@ -34,6 +34,7 @@ import { dateKey, formatWall, keyToWallUtc, wallMinutes } from "./time.ts";
 import type { UndoableDelete } from "./UndoToast.tsx";
 import { settle, settleTracked } from "./write.ts";
 import "./ShutdownSheet.css";
+import { capitalize } from "../i18n/capitalize.ts";
 
 /**
  * The shutdown ritual (distinctive roadmap F3, F3c): a sheet with two pages.
@@ -293,7 +294,7 @@ export function ShutdownSheet({
     setTurned(false);
   }
 
-  const tomorrowDate = formatWall(keyToWallUtc(tomorrow), { weekday: "long", month: "long", day: "numeric" });
+  const tomorrowDate = capitalize(formatWall(keyToWallUtc(tomorrow), { weekday: "long", month: "long", day: "numeric" }));
 
   const tomorrowPage = (
     <div className="shutdown-page shutdown-tomorrow">
@@ -343,7 +344,7 @@ export function ShutdownSheet({
             <header className="shutdown-head">
               <div>
                 <p className="shutdown-kind">{t("shutdown.today")}</p>
-                <p className="shutdown-date">{formatWall(keyToWallUtc(today), { weekday: "long", month: "long", day: "numeric" })}</p>
+                <p className="shutdown-date">{capitalize(formatWall(keyToWallUtc(today), { weekday: "long", month: "long", day: "numeric" }))}</p>
               </div>
               <button type="button" className="icon-button" aria-label={t("shutdown.cancel")} onClick={onClose}>
                 <CloseIcon />

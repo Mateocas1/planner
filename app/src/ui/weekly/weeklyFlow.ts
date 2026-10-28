@@ -11,8 +11,11 @@
  */
 
 import type { DueMoment, WeeklyMoment, WeeklyNumbers, WeeklyReviewStep } from "../../planning/weekly.ts";
-import { t, type MessageKey } from "../../i18n/index.ts";
-import { formatDuration, formatWall, keyToWallUtc } from "../time.ts";
+import { t } from "../../i18n/index.ts";
+import { dayMs, formatDuration, formatWall, keyToWallUtc } from "../time.ts";
+
+// A known Sunday: weekday names are read off it, never off the browser's today.
+const sundayRef = keyToWallUtc("2023-01-01");
 
 /** The four steps in flow order; each has a label and a one-line lede in the dictionary. */
 export const weeklyStepIds: readonly WeeklyReviewStep[] = ["review", "cleanup", "plan", "reflect"];
@@ -58,7 +61,7 @@ export function momentLabel(moment: WeeklyMoment): string {
 
 /** The JavaScript weekday number (0 = Sunday) as the UI's word. */
 export function weekdayName(day: number): string {
-  return t(`weekly.day.${((day % 7) + 7) % 7}` as MessageKey & `weekly.day.${number}`);
+  return formatWall(sundayRef + (((day % 7) + 7) % 7) * dayMs, { weekday: "long" });
 }
 
 /** The steps a moment runs, as the Rituals row reads them, in flow order. */

@@ -6,10 +6,12 @@ import {
   type WeeklyReviewSettings,
   type WeeklyReviewStep,
 } from "../../../planning/weekly.ts";
+import { capitalize } from "../../../i18n/capitalize.ts";
 import { t, useLocale, type MessageKey } from "../../../i18n/index.ts";
 import { Select } from "../../Select.tsx";
 import { formatClock, parseClock, TimeField } from "../../Settings.tsx";
 import { settle } from "../../write.ts";
+import { weekdayName } from "../../weekly/weeklyFlow.ts";
 import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
 import "./RitualsTab.css";
@@ -203,17 +205,8 @@ export function RitualsTab({
   );
 }
 
-/** The weekday select's options, in stored order (0 = Sunday, as weekly.ts documents). */
-const weekdayKeys = [
-  "rituals.day.0",
-  "rituals.day.1",
-  "rituals.day.2",
-  "rituals.day.3",
-  "rituals.day.4",
-  "rituals.day.5",
-  "rituals.day.6",
-] as const;
-const dayOptions = () => weekdayKeys.map((key, day) => ({ value: String(day), label: t(key) }));
+/** The weekday select's options, in stored order (0 = Sunday, as weekly.ts documents), named by `Intl` in the app language. */
+const dayOptions = () => Array.from({ length: 7 }, (_, day) => ({ value: String(day), label: capitalize(weekdayName(day)) }));
 
 /** The four steps, in flow order, as the chips' labels. */
 const stepKeys = {

@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { getLocale, intlLocale } from "../i18n/index.ts";
+import { capitalize } from "../i18n/capitalize.ts";
 import { ChevronLeft, ChevronRight } from "./icons.tsx";
 import { monthCells, shiftDay, shiftMonth, shiftYear, weekEdges } from "./monthGrid.ts";
 import { keyToWallUtc } from "./time.ts";
@@ -42,7 +44,7 @@ function useFormatters(locale: string) {
 }
 
 export function MonthGrid({
-  locale = "en-US",
+  locale = intlLocale(getLocale()),
   weekStart = 1,
   value,
   today,
@@ -68,7 +70,7 @@ export function MonthGrid({
     () =>
       Array.from({ length: 7 }, (_, index) => {
         const at = sundayRef + ((weekStart + index) % 7) * 86_400_000;
-        return { short: format.short.format(at), long: format.long.format(at) };
+        return { short: capitalize(format.short.format(at), locale), long: capitalize(format.long.format(at), locale) };
       }),
     [format, weekStart],
   );
@@ -121,7 +123,7 @@ export function MonthGrid({
     <div className="month-grid" data-month={month}>
       <div className="month-head">
         <h3 id={titleId} className="month-title" aria-live="polite">
-          {format.month.format(first)} <span>{format.year.format(first)}</span>
+          {capitalize(format.month.format(first), locale)} <span>{format.year.format(first)}</span>
         </h3>
         <div className="month-nav">
           <button type="button" className="month-nav-button" aria-label={prevLabel} onClick={() => page(-1)}>
