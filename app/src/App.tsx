@@ -538,6 +538,7 @@ function Shell({
                   }}
                   onOpenSettings={() => openSettings("rituals")}
                   onOfferUndo={offerUndo}
+                  onNewTask={setCreating}
                 />
               )}
               {view === "tasks" && (
@@ -552,6 +553,7 @@ function Shell({
                   onDeleted={offerUndo}
                   openTaskId={pendingTask}
                   onOpenTaskHandled={clearPendingTask}
+                  onNewTask={setCreating}
                 />
               )}
               {view === "calendar" && (

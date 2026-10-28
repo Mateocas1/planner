@@ -506,6 +506,12 @@ for (const scheme of ["light", "dark"]) {
   /* `::selection` paints `--label` on the accent wash. */
   for (const base of ["--surface", "--bg-top"])
     pairs.push({ name: "selection", backdrop: base, label: "--label", bg: over(get("--accent-soft"), get(base)), floor: AA });
+  /* The tinted pill (R5-19): `.plan-trigger` and the sign-in secondary paint
+     `--accent` on `--accent-soft` over the card or the page. Hover keeps the
+     fill and adds an inset accent ring, so it needs no pair of its own. */
+  for (const base of ["--surface", "--bg-top"]) {
+    pairs.push({ name: "tinted-pill", backdrop: base, label: "--accent", bg: over(get("--accent-soft"), get(base)), floor: AA });
+  }
   /* Semantic state text, proven on every solid it is printed on. */
   for (const state of ["--red", "--orange", "--green", "--now"])
     for (const base of ["--surface", "--bg-top", "--surface-2"])

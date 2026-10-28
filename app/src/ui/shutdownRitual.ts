@@ -182,6 +182,20 @@ export function briefVisible(input: { storedDay: string | null; today: string; b
   return input.storedDay !== input.today;
 }
 
+/** After this wall-clock minute (12:00) the morning brief is over, whatever the blocks say. */
+export const briefEndMinutes = 12 * 60;
+
+/**
+ * The brief is the morning's: it is over once the day's first block has
+ * started (the day is under way, the sentence would describe the past) and at
+ * noon at the latest, which also covers a day whose first block is late. A day
+ * with no blocks has no first start and only the noon rule applies.
+ */
+export function briefExpired(input: { nowMinutes: number; firstStartMinutes?: number }): boolean {
+  if (input.nowMinutes >= briefEndMinutes) return true;
+  return input.firstStartMinutes !== undefined && input.nowMinutes >= input.firstStartMinutes;
+}
+
 /**
  * Criterion 7's sentence: `Today: 4 blocks, first at 09:00. First free slot
  * 10:30.` The free-slot clause is dropped when the working window has no free
@@ -214,9 +228,12 @@ export function morningBriefState(input: {
   const todays = input.blocks
     .filter(block => dateKey(new Date(block.start), input.timeZone) === today)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-  const text = morningBriefText({
+  const nowMinutes = wallMinutes(input.now, input.timeZone);
+  const firstStartMinutes = todays.length === 0 ? undefined : wallMinutes(new Date(todays[0].start), input.timeZone);
+  const expired = briefExpired({ nowMinutes, firstStartMinutes });
+  const text = expired ? null : morningBriefText({
     blockCount: todays.length,
-    firstStartMinutes: todays.length === 0 ? undefined : wallMinutes(new Date(todays[0].start), input.timeZone),
+    firstStartMinutes,
     firstFreeSlotMinutes: firstFreeSlot(
       todays.map(block => {
         const startMinutes = wallMinutes(new Date(block.start), input.timeZone);
@@ -224,7 +241,7 @@ export function morningBriefState(input: {
         return { startMinutes, endMinutes: endMinutes <= startMinutes ? 1440 : endMinutes };
       }),
       input.workWindow,
-      wallMinutes(input.now, input.timeZone),
+      nowMinutes,
     ),
   });
   return { today, blockCount: todays.length, text };
@@ -270,6 +287,20 @@ export function firstFreeSlot(
     return start;
   }
   return undefined;
+}
+
+/**
+ * Whether any part of the work window is still free ahead of `nowMinutes`:
+ * what Plan my day can place into. Uses `freeSlots` from the quarter hour after
+ * now, the same start `planDay` plans from, so the button and the plan agree.
+ */
+export function hasFreeTimeAhead(
+  items: readonly Interval[],
+  window: WorkWindow,
+  nowMinutes: number,
+  minimumMinutes = 15,
+): boolean {
+  return freeSlots(items, window, nowMinutes).some(([start, end]) => end - start >= minimumMinutes);
 }
 
 /**

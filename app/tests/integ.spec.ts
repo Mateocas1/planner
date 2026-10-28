@@ -168,16 +168,16 @@ test("the palette still offers Close the day, and choosing it opens the sheet", 
 });
 
 test("the morning brief is a card, not a dialog: the keyboard keeps working over it", async ({ page }) => {
-  const base = at(10, 0);
+  const base = at(7, 30);
   await openAs(page, base, newEmail("integ-keys-brief"), {
     tasks: [{ title: "Review the draft", deadline: dayKey(base) }],
-    blocks: [blockOn(base, "09:00", "10:30"), blockOn(base, "12:00", "13:00")],
+    blocks: [blockOn(base, "08:00", "10:30"), blockOn(base, "12:00", "13:00")],
   });
 
   /* Criterion 7's sentence is on screen and it never takes focus, so the keys
      it sits under still work: a brief that silenced `?` would make Home's
      keyboard depend on a dismissal. */
-  await expect(page.getByText("Today: 2 blocks, first at 09:00. First free slot 10:30.")).toBeVisible();
+  await expect(page.getByText("Today: 2 blocks, first at 08:00. First free slot 10:30.")).toBeVisible();
   await page.keyboard.press("?");
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
   await page.keyboard.press("Escape");

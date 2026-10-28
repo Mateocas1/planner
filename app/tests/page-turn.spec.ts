@@ -192,8 +192,12 @@ test.describe("on a phone", () => {
   test("a left swipe turns the page", async ({ page }) => {
     await openToday(page, "turn-swipe", 6);
     const width = (await pageLayer(page).boundingBox())!.width;
+    /* Start on the page heading: a control under the finger (Plan my day sat at
+       y=400 once the Full screen link left the Now card) is not a turn. */
+    const head = (await page.locator(".page-head").first().boundingBox())!;
+    const y = head.y + head.height / 2;
 
-    await swipe(page, { x: 340, y: 400 }, { x: 90, y: 400 });
+    await swipe(page, { x: 340, y }, { x: 90, y });
 
     const frames = await sample(page);
     expect(frames.some(frame => frame.state === "commit")).toBe(true);

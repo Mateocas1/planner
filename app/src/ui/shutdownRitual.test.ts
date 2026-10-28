@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   bannerVisible,
+  briefExpired,
   briefVisible,
   claimCloseDay,
   closeAnnouncement,
@@ -9,6 +10,7 @@ import {
   closeFailedMessage,
   dayChangedMessage,
   firstFreeSlot,
+  hasFreeTimeAhead,
   lateCloseFailure,
   leftoverSummary,
   minutesLabel,
@@ -32,7 +34,19 @@ test("the brief state counts only the blocks that start today, in the planner's 
   assert.deepEqual(state, {
     today: "2026-10-22",
     blockCount: 1,
-    text: "Today: 1 block, first at 09:00. First free slot 10:00.",
+    text: null,
+  });
+  // Before the first block starts the brief says what it knows.
+  const morning = morningBriefState({
+    blocks: [{ start: "2026-10-22T09:00:00Z", end: "2026-10-22T10:00:00Z" }],
+    timeZone: "UTC",
+    workWindow: { startMinutes: 480, endMinutes: 1080 },
+    now: new Date("2026-10-22T08:30:00Z"),
+  });
+  assert.deepEqual(morning, {
+    today: "2026-10-22",
+    blockCount: 1,
+    text: "Today: 1 block, first at 09:00. First free slot 08:00.",
   });
   const empty = morningBriefState({ blocks: [], timeZone: "UTC", workWindow: { startMinutes: 480, endMinutes: 1080 }, now: new Date("2026-10-22T10:30:00Z") });
   assert.deepEqual(empty, { today: "2026-10-22", blockCount: 0, text: null });
@@ -224,4 +238,42 @@ test("minutes read as a clock, and the hint follows the pointer", () => {
   assert.equal(minutesLabel(0), "00:00");
   assert.equal(turnHint({ touch: true }), "Swipe left to close the day");
   assert.equal(turnHint({ touch: false }), "Drag left, or press Close day");
+});
+
+test("the brief is over once the first block has started or at noon, whichever comes first", () => {
+  // Before the first block: still the morning's brief.
+  assert.equal(briefExpired({ nowMinutes: 8 * 60 + 59, firstStartMinutes: 9 * 60 }), false);
+  // The first block has started: the day is under way, the brief has nothing to add.
+  assert.equal(briefExpired({ nowMinutes: 9 * 60, firstStartMinutes: 9 * 60 }), true);
+  // A late first block does not keep the brief past noon.
+  assert.equal(briefExpired({ nowMinutes: 11 * 60 + 59, firstStartMinutes: 14 * 60 }), false);
+  assert.equal(briefExpired({ nowMinutes: 12 * 60, firstStartMinutes: 14 * 60 }), true);
+  // No blocks: there is no first start, only the noon rule.
+  assert.equal(briefExpired({ nowMinutes: 10 * 60 }), false);
+  assert.equal(briefExpired({ nowMinutes: 17 * 60 + 30 }), true);
+});
+
+test("the brief state drops the sentence after 12:00 even when the first block is still ahead", () => {
+  const state = morningBriefState({
+    blocks: [{ start: "2026-10-22T15:00:00Z", end: "2026-10-22T16:00:00Z" }],
+    timeZone: "UTC",
+    workWindow: { startMinutes: 480, endMinutes: 1080 },
+    now: new Date("2026-10-22T12:00:00Z"),
+  });
+  assert.equal(state.text, null);
+  assert.equal(state.blockCount, 1);
+});
+
+test("free time ahead is any stretch of the work window of 15 minutes or more after now", () => {
+  const window = { startMinutes: 8 * 60, endMinutes: 17 * 60 };
+  // Empty day at 17:30, window closed at 17:00: nothing left to plan into.
+  assert.equal(hasFreeTimeAhead([], window, 17 * 60 + 30), false);
+  // Mid-afternoon on an empty day: plenty.
+  assert.equal(hasFreeTimeAhead([], window, 14 * 60), true);
+  // Planning starts at the next quarter hour; less than 15 minutes of window left is no room.
+  assert.equal(hasFreeTimeAhead([], window, 16 * 60 + 50), false);
+  // A block to the window's end leaves nothing after it.
+  assert.equal(hasFreeTimeAhead([{ startMinutes: 13 * 60, endMinutes: 17 * 60 }], window, 13 * 60 + 30), false);
+  // A gap before a later block counts.
+  assert.equal(hasFreeTimeAhead([{ startMinutes: 15 * 60, endMinutes: 17 * 60 }], window, 13 * 60 + 30), true);
 });
