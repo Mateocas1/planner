@@ -3,7 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
 import { useProfileTimeZone } from "./data/profile.ts";
-import { useLocale, useSyncedLanguage } from "./i18n/index.ts";
+import { t, useLocale, useSyncedLanguage } from "./i18n/index.ts";
 import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
@@ -13,10 +13,12 @@ import { isTauri } from "./desktop.ts";
 import { useDesktopNotifications } from "./ui/useDesktopNotifications.ts";
 import { useDesktopTray } from "./desktop-tray.ts";
 import { useSignInReveal } from "./desktop-autostart.ts";
-import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "./domain/model.ts";
+import { estimateNote } from "./domain/model.ts";
 import type { ShutdownState } from "./planning/shutdown.ts";
 import { AuthForm } from "./ui/AuthForm.tsx";
 import { BiasHint, completedSamples, type TrackedTask } from "./ui/BiasHint.tsx";
+import { EstimateControl } from "./ui/EstimateControl.tsx";
+import { estimateControlLabels } from "./ui/estimateLabels.ts";
 import { Calendar } from "./ui/Calendar.tsx";
 import { ChatSurface } from "./chat/ChatSurface.tsx";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
@@ -821,6 +823,12 @@ function NewTaskSheet({
   // and is not consumed again, so one undo does not cancel every later parse.
   const [undone, setUndone] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // The title is the one required field: it is checked before anything is sent,
+  // and the message sits under it until the next keystroke.
+  const [titleMissing, setTitleMissing] = useState(false);
+  const titleInput = useRef<HTMLInputElement>(null);
+  // The pace hint stays out of the way unless the field is being used or empty.
+  const [estimateFocused, setEstimateFocused] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // The clock is read inside the parse, so every keystroke resolves "tomorrow"
@@ -845,6 +853,11 @@ function NewTaskSheet({
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (parsed.title.trim() === "") {
+      setTitleMissing(true);
+      titleInput.current?.focus();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -873,14 +886,21 @@ function NewTaskSheet({
         <label className="sr-only" htmlFor="task-title">Task title</label>
         <input
           id="task-title"
+          ref={titleInput}
           className="sheet-title"
           type="text"
           placeholder="What needs doing?"
           autoFocus
           autoComplete="off"
           value={title}
-          onChange={event => setTitle(event.target.value)}
+          aria-invalid={titleMissing || undefined}
+          aria-describedby={titleMissing ? "task-title-error" : undefined}
+          onChange={event => {
+            setTitle(event.target.value);
+            setTitleMissing(false);
+          }}
         />
+        {titleMissing && <p id="task-title-error" className="sheet-title-error" role="alert">{t("forms.title.required")}</p>}
         <QuickAddChips parts={chips} today={parsed.today} onUndo={part => setUndone(list => [...list, part.text])} />
         <div className="form-group">
           <div className="form-row">
@@ -893,20 +913,25 @@ function NewTaskSheet({
               onChange={setDeadlineEdit}
             />
           </div>
-          <div className="form-row stacked">
-            <label htmlFor="task-estimate">Estimate</label>
-            <input
+          <div
+            className="form-row stacked"
+            onFocus={() => setEstimateFocused(true)}
+            onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setEstimateFocused(false);
+            }}
+          >
+            <label htmlFor="task-estimate">{t("forms.estimate.label")}</label>
+            {/* The draft is the value: nothing is stored until the task is
+                created, so committing has nothing to do and Escape is left to
+                the sheet (the draft is its own revert target). */}
+            <EstimateControl
               id="task-estimate"
-              className="form-control"
-              type="number"
-              inputMode="numeric"
-              min={MIN_ESTIMATE_MINUTES}
-              max={MAX_ESTIMATE_MINUTES}
-              step={5}
-              placeholder="Minutes"
-              value={estimateEdit}
-              aria-describedby="task-estimate-note"
-              onChange={event => setEstimateEdit(event.target.value)}
+              draft={estimateEdit}
+              revertTo={estimateEdit}
+              onDraftChange={setEstimateEdit}
+              onCommit={() => undefined}
+              describedBy="task-estimate-note"
+              {...estimateControlLabels()}
             />
             {/* An empty field is the assumption, stated rather than implied:
                 the created task stores no estimate and planning uses 60 min. */}
@@ -920,7 +945,7 @@ function NewTaskSheet({
               samples={biasSamples}
               title={parsed.title}
               estimate={estimate}
-              showEmptyHint
+              showEmptyHint={estimateFocused || estimate === undefined}
               onAccept={minutes => setEstimateEdit(String(minutes))}
             />
           </div>

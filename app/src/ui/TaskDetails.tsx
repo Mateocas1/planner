@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "../domain/model.ts";
+import { estimateNote } from "../domain/model.ts";
+import { t } from "../i18n/index.ts";
 import type { SeriesView, TaskView } from "../data/store.ts";
 import type { BiasSample } from "../planning/bias.ts";
 import { ActualSummary, BiasHint } from "./BiasHint.tsx";
 import { DateField } from "./DateField.tsx";
 import { dateFieldLabels } from "./DateField.labels.ts";
 import { formatDateKey } from "./format.ts";
+import { EstimateControl } from "./EstimateControl.tsx";
+import { estimateControlLabels } from "./estimateLabels.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Select } from "./Select.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -17,11 +20,16 @@ import "./EstimateField.css";
  * It is the one control here that saves on commit instead of on every
  * keystroke: half-typed minute counts are valid-looking numbers ("4" on the
  * way to "45"), and writing each one would send an update per key and flash
- * the note through values nobody meant. Enter or blur commits, Escape restores
- * the stored value, and a value the domain rejects comes back as the parent's
- * error with the draft still in place. The note under the field says which
- * number planning will use: the stored estimate, or the 60-minute assumption
- * when the task has none.
+ * the note through values nobody meant. A preset chip commits at once, the
+ * stepper and arrow keys commit after a quiet moment, Enter or blur commit
+ * what is typed, Escape restores the stored value, and a value the domain
+ * rejects comes back as the parent's error with the draft still in place. The
+ * note under the field says which number planning will use: the stored
+ * estimate, or the 60-minute assumption when the task has none.
+ *
+ * The draft follows the stored value whenever focus is outside the row: a
+ * committed write arrives back through the store without remounting the
+ * control, so stepping never loses focus mid-way.
  *
  * The note cross-fades when its text changes after the sheet has been read
  * once (150 ms, opacity plus a 2 px rise; reduced motion keeps the fade and
@@ -41,6 +49,10 @@ function EstimateField({
 }) {
   const stored = estimate === undefined ? "" : String(estimate);
   const [draft, setDraft] = useState(stored);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(stored);
+  }, [stored]);
   const note = estimateNote(estimate);
   // The note animates only once its text has actually changed under the user.
   const [animated, setAnimated] = useState(false);
@@ -51,43 +63,31 @@ function EstimateField({
     setAnimated(true);
   }, [note]);
 
-  const commit = () => {
-    if (draft === stored) return;
+  const commit = (next: string) => {
+    if (next === stored) return;
     // An emptied field is the assumption again: the document loses the field
     // rather than gaining a zero that planning would read as a real estimate.
-    if (draft === "") {
-      onChange(undefined);
-      return;
-    }
-    onChange(Number(draft));
+    onChange(next === "" ? undefined : Number(next));
   };
 
   return (
-    <div className="form-row stacked">
-      <label htmlFor={id}>Estimate</label>
-      <input
+    <div
+      className="form-row stacked"
+      onFocus={() => { focused.current = true; }}
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) focused.current = false;
+      }}
+    >
+      <label htmlFor={id}>{t("forms.estimate.label")}</label>
+      <EstimateControl
         id={id}
-        className="form-control"
-        type="number"
-        inputMode="numeric"
-        min={MIN_ESTIMATE_MINUTES}
-        max={MAX_ESTIMATE_MINUTES}
-        step={5}
-        placeholder="Minutes"
-        value={draft}
+        draft={draft}
+        revertTo={stored}
+        onDraftChange={setDraft}
+        onCommit={commit}
         disabled={disabled}
-        aria-describedby={`${id}-note`}
-        onChange={event => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={event => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commit();
-          } else if (event.key === "Escape" && draft !== stored) {
-            event.stopPropagation();
-            setDraft(stored);
-          }
-        }}
+        describedBy={`${id}-note`}
+        {...estimateControlLabels()}
       />
       <p key={note} id={`${id}-note`} className={`sheet-note estimate-note${animated ? " estimate-note-changed" : ""}`}>
         {note}
@@ -105,9 +105,8 @@ function EstimateField({
  *
  * An estimate is an optional field: the sheet shows the stored value when set,
  * or the 60-minute assumption text that planning falls back to when it is
- * absent. The field is keyed by the stored estimate, so a committed write
- * (which arrives back through the store) remounts it on the new value while a
- * rejected one leaves the user's draft in place.
+ * absent. A committed write arrives back through the store and the field
+ * follows it while unfocused; a rejected one leaves the user's draft in place.
  */
 const frequencyOptions = [
   { value: "daily", label: "Daily" },
@@ -206,7 +205,6 @@ export function TaskDetails({
           />
         </div>
         <EstimateField
-          key={task.estimate ?? "none"}
           id="task-details-estimate"
           estimate={task.estimate}
           disabled={busy}
@@ -342,7 +340,6 @@ export function SeriesDetails({
           />
         </div>
         <EstimateField
-          key={series.estimate ?? "none"}
           id="series-details-estimate"
           estimate={series.estimate}
           disabled={busy}

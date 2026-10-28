@@ -495,7 +495,7 @@ test("an empty title is refused with a visible error and writes nothing", async 
 
   await revealTaskForm(page);
   await page.getByRole("button", { name: "Add task" }).click();
-  await expect(page.getByRole("alert")).toContainText("task title is required");
+  await expect(page.getByRole("alert")).toContainText("Add a title to create the task");
   await expectRemoteTasks(email, []);
 });
 

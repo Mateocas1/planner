@@ -42,7 +42,7 @@
 }
 
 @media (hover: hover) {
-  .est-chip:hover:not([aria-pressed="true"]):not(:disabled) {
+  .est-chip:hover:not([aria-pressed="true"]):not([aria-disabled="true"]) {
     background: var(--fill-hover);
   }
 }
@@ -52,7 +52,7 @@
   outline-offset: 2px;
 }
 
-.est-chip:disabled {
+.est-chip[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
 }
