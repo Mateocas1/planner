@@ -87,6 +87,16 @@ async function openNow(page: Page) {
   return overlay;
 }
 
+/** Opens the overlay with its shortcut: with no block running Today offers no
+ *  Full screen link (W8), but the glance's Free now state is still reachable. */
+async function openNowByKey(page: Page) {
+  await expect(fullScreen(page)).toHaveCount(0);
+  await page.keyboard.press("n");
+  const overlay = nowMode(page);
+  await expect(overlay).toBeVisible();
+  return overlay;
+}
+
 /** A real 14:00–15:00 block with its task, and the 15:00 block that follows. */
 function afternoonFixture(base: Date) {
   return {
@@ -140,7 +150,7 @@ test("with no block running it says Free now and names the next one", async ({ p
   });
   await page.clock.pauseAt(new Date(base.getTime() + 40 * 60_000));
 
-  const overlay = await openNow(page);
+  const overlay = await openNowByKey(page);
   await expect(overlay.getByText("Free now")).toBeVisible();
   await expect(overlay.getByRole("heading", { name: "Next: 15:00 Review in 20 min" })).toBeVisible();
   /* Nothing to progress: no ring, and no invented percentage. */
@@ -156,7 +166,7 @@ test("with no blocks left today it says so instead of counting down", async ({ p
   });
   await page.clock.pauseAt(new Date(base.getTime() + 90 * 60_000));
 
-  const overlay = await openNow(page);
+  const overlay = await openNowByKey(page);
   await expect(overlay.getByText("Free now")).toBeVisible();
   await expect(overlay.getByRole("heading", { name: "Nothing else today." })).toBeVisible();
   await expect(progressRing(page)).toHaveCount(0);
