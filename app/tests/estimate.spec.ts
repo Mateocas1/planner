@@ -66,7 +66,7 @@ test("an estimate set in the New task sheet is stored and shown in Task details"
   // leaving the user to guess what planning will use.
   await expect(createSheet.getByText("Assumed 1h")).toBeVisible();
   await createSheet.getByLabel("Estimate", { exact: true }).fill("45");
-  await expect(createSheet.getByText("45 min")).toBeVisible();
+  await expect(createSheet.locator(".estimate-note").filter({ hasText: "45 min" })).toBeVisible();
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Write the proposal" })).toBeVisible();
   await settleSheet(page, "New task");
@@ -77,7 +77,7 @@ test("an estimate set in the New task sheet is stored and shown in Task details"
   await page.getByRole("button", { name: "Write the proposal" }).click();
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Estimate", { exact: true })).toHaveValue("45");
-  await expect(panel.getByText("45 min")).toBeVisible();
+  await expect(panel.locator(".estimate-note").filter({ hasText: "45 min" })).toBeVisible();
 
   // Clearing it removes the field from the document and returns the sheet to
   // the assumption, instead of storing a zero that planning would read as real.
@@ -191,7 +191,7 @@ test("a repeating task keeps its estimate through the series sheet and undo", as
   await page.getByRole("button", { name: "Stretch" }).click();
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Estimate", { exact: true })).toHaveValue("30");
-  await expect(panel.getByText("30 min")).toBeVisible();
+  await expect(panel.locator(".estimate-note").filter({ hasText: "30 min" })).toBeVisible();
 
   // the closed series schema, through delete and undo: the definition comes back
   // with its estimate rather than as a copy without one
@@ -202,4 +202,137 @@ test("a repeating task keeps its estimate through the series sheet and undo", as
   await page.getByRole("status").filter({ hasText: "Series deleted" }).getByRole("button", { name: "Undo" }).click();
   await expect.poll(async () => (await stored())?.estimate, poll).toEqual(30);
   expect(await stored()).toEqual(before);
+});
+
+test("preset chips set and clear the estimate in the New task sheet", async ({ page }) => {
+  const email = newEmail("estimate-chips");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Book the venue");
+  const sheet = page.getByRole("complementary", { name: "New task" });
+  const field = sheet.getByLabel("Estimate", { exact: true });
+  const chip = sheet.getByRole("button", { name: "45 minutes", exact: true });
+
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  await chip.click();
+  await expect(field).toHaveValue("45");
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await expect(sheet.getByRole("button", { name: "2 hours", exact: true })).toHaveAttribute("aria-pressed", "false");
+
+  // pressing the pressed chip returns to the assumption
+  await chip.click();
+  await expect(field).toHaveValue("");
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  await expect(sheet.getByText("Assumed 1h")).toBeVisible();
+
+  await sheet.getByRole("button", { name: "2 hours", exact: true }).click();
+  await page.getByRole("button", { name: "Add task" }).click();
+  await settleSheet(page, "New task");
+  await expectRemoteTasks(email, [{ title: "Book the venue", completed: false, estimate: 120 }]);
+});
+
+test("the stepper is a ghost: no solid background at rest", async ({ page }) => {
+  const email = newEmail("estimate-ghost");
+  await signUp(page, email);
+  await openTasks(page);
+  await revealTaskForm(page);
+
+  const sheet = page.getByRole("complementary", { name: "New task" });
+  for (const name of ["Decrease by 5 minutes", "Increase by 5 minutes"]) {
+    const button = sheet.getByRole("button", { name });
+    await expect(button).toBeVisible();
+    await expect.poll(() => button.evaluate(node => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+  }
+});
+
+test("arrow keys step the estimate by 5, and Shift by 30", async ({ page }) => {
+  const email = newEmail("estimate-keys");
+  await signUp(page, email);
+  await openTasks(page);
+  await revealTaskForm(page);
+
+  const sheet = page.getByRole("complementary", { name: "New task" });
+  const field = sheet.getByLabel("Estimate", { exact: true });
+  await field.fill("50");
+  await field.press("ArrowUp");
+  await expect(field).toHaveValue("55");
+  await field.press("ArrowDown");
+  await field.press("ArrowDown");
+  await expect(field).toHaveValue("45");
+  await field.press("Shift+ArrowUp");
+  await expect(field).toHaveValue("75");
+  await field.press("Shift+ArrowDown");
+  await expect(field).toHaveValue("45");
+  await expect(field).toHaveAttribute("aria-valuenow", "45");
+
+  // the buttons step too, and keep the caret in the field
+  await sheet.getByRole("button", { name: "Increase by 5 minutes" }).click();
+  await expect(field).toHaveValue("50");
+  await expect(field).toBeFocused();
+});
+
+test("in Task details, stepping commits after a pause and Escape reverts the draft", async ({ page }) => {
+  const email = newEmail("estimate-details");
+  await signUp(page, email);
+  await openTasks(page);
+
+  await revealTaskForm(page);
+  await page.getByLabel("Task title").fill("Plan the offsite");
+  await page.getByRole("complementary", { name: "New task" }).getByRole("button", { name: "45 minutes", exact: true }).click();
+  await page.getByRole("button", { name: "Add task" }).click();
+  await settleSheet(page, "New task");
+  await expectRemoteTasks(email, [{ title: "Plan the offsite", completed: false, estimate: 45 }]);
+
+  const panel = page.getByRole("complementary", { name: "Task details" });
+  await page.getByRole("button", { name: "Plan the offsite" }).click();
+  await expect(panel).toBeVisible();
+  const field = panel.getByLabel("Estimate", { exact: true });
+  await expect(field).toHaveValue("45");
+
+  await field.focus();
+  await field.press("ArrowUp");
+  await expect(field).toHaveValue("50");
+  await field.press("Escape");
+  await expect(field).toHaveValue("45");
+  // the reverted draft never reached the document
+  await page.waitForTimeout(700);
+  await expectRemoteTasks(email, [{ title: "Plan the offsite", completed: false, estimate: 45 }]);
+  await expect(panel).toBeVisible();
+
+  // a kept step commits once the keys go quiet, without remounting the field
+  await field.press("ArrowUp");
+  await expectRemoteTasks(email, [{ title: "Plan the offsite", completed: false, estimate: 50 }]);
+  await expect(field).toHaveValue("50");
+  await expect(field).toBeFocused();
+
+  // pressing the pressed chip clears the estimate
+  await panel.getByRole("button", { name: "30 minutes", exact: true }).click();
+  await expectRemoteTasks(email, [{ title: "Plan the offsite", completed: false, estimate: 30 }]);
+  await panel.getByRole("button", { name: "30 minutes", exact: true }).click();
+  await expectRemoteTasks(email, [{ title: "Plan the offsite", completed: false }]);
+  await expect(field).toHaveValue("");
+});
+
+test("a missing title is reported at the field, announced, and cleared by typing", async ({ page }) => {
+  const email = newEmail("estimate-title-error");
+  await signUp(page, email);
+  await openTasks(page);
+  await revealTaskForm(page);
+
+  const sheet = page.getByRole("complementary", { name: "New task" });
+  const title = sheet.getByLabel("Task title");
+  await page.getByRole("button", { name: "Add task" }).click();
+
+  const message = "Add a title to create the task.";
+  await expect(sheet.getByText(message)).toBeVisible();
+  await expect(title).toHaveAttribute("aria-invalid", "true");
+  await expect(title).toHaveAccessibleDescription(message);
+  await expect(title).toBeFocused();
+  await expectRemoteTasks(email, []);
+
+  await title.pressSequentially("W");
+  await expect(sheet.getByText(message)).toHaveCount(0);
+  await expect(title).not.toHaveAttribute("aria-invalid", "true");
 });

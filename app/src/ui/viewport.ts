@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * The on-screen keyboard's covered band, published to CSS as `--kb-inset`.
@@ -128,4 +128,29 @@ export function keepFocusedFieldVisible(container: HTMLElement): () => void {
     container.removeEventListener("focusin", reveal);
     observer?.disconnect();
   };
+}
+
+/**
+ * True while an on-screen keyboard covers a real part of the page.
+ *
+ * Read from the same measurement the sheets size themselves against
+ * (this file), so "the keyboard is up" means here exactly what it means
+ * to the panel this line sits in. The listener is coalesced by the browser's
+ * own viewport events; the value only flips when a keyboard opens or closes.
+ */
+export function useKeyboardUp(): boolean {
+  const [up, setUp] = useState(() => keyboardInset() > 0);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => setUp(keyboardInset() > 0);
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
+  }, []);
+  return up;
 }

@@ -228,7 +228,7 @@ test("three tracked invoices are enough to offer 45 minutes, and the estimate ch
 
   await sheet.getByRole("button", { name: "Use 45" }).click();
   await expect(sheet.getByLabel("Estimate", { exact: true })).toHaveValue("45");
-  await expect(sheet.getByText("45 min")).toBeVisible();
+  await expect(sheet.locator(".estimate-note").filter({ hasText: "45 min" })).toBeVisible();
   // The offer applies once: it does not chase its own answer up the scale.
   await expect(sheet.getByRole("button", { name: /^Use / })).toHaveCount(0);
 
