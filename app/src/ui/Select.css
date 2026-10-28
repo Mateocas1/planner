@@ -1,0 +1,101 @@
+/* Select (Select.tsx): the pop-up button and its listbox. The surface, its
+   entrance and its exit are Popover.css; this file is only the trigger and the
+   rows. Hover is gated to a fine pointer, press is the shared press language. */
+
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--label-3);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.select-trigger[aria-expanded="true"] { background: var(--accent-soft); }
+
+@media (hover: hover) and (pointer: fine) {
+  .select-trigger:not(:disabled):not([aria-expanded="true"]):hover {
+    background-image: linear-gradient(var(--fill-hover), var(--fill-hover));
+  }
+}
+
+.select-trigger:disabled { opacity: 0.55; cursor: default; }
+
+/* The list: wide enough for the trigger and a short label, never wider than
+   the viewport. A Select is used more often than a date popup, so it gets the
+   short end of the entrance (--pop-enter). The body, not the surface, carries
+   the height cap, because usePopover measures the surface with its own cap
+   lifted. */
+.select-pop {
+  --pop-enter: 160ms;
+  min-width: max(var(--pop-min-w, 0px), 168px);
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.select-pop .pop-body { max-height: 320px; }
+
+.select-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px 0 28px;
+  border-radius: 10px;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--label);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.select-option[data-active="true"] { background: var(--fill-press); }
+
+.select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-check {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+
+.select-option[aria-selected="true"] .select-check { visibility: visible; }
+
+@media (pointer: coarse) {
+  .select-option { min-height: 44px; }
+}
+
+@media (forced-colors: active) {
+  .select-option[data-active="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}

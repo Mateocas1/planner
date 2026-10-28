@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { submitAuthForm } from "./browser-helpers.ts";
+import { submitAuthForm, chooseOption } from "./browser-helpers.ts";
 
 /**
  * W3 of the motion review (odd/research/motion-review.md): the calendar body and
@@ -71,7 +71,7 @@ async function fillBlockForm(page: Page, start: string, end: string, task?: stri
   }
   await page.getByLabel("Start", { exact: true }).fill(start);
   await page.getByLabel("End", { exact: true }).fill(end);
-  if (task) await page.getByLabel("Task", { exact: true }).selectOption({ label: task });
+  if (task) await chooseOption(page, "Task", task);
 }
 
 async function submitBlock(page: Page, start: string, end: string, task?: string) {

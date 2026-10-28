@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData, chooseOption } from "./browser-helpers.ts";
 
 /**
  * Undo for delete (F1 / spec S6).
@@ -195,7 +195,7 @@ test("deleting a task deletes its work blocks, and undo restores both (S8)", asy
   const blockDay = dayKey(0);
   await blockForm.getByLabel("Start").fill(`${blockDay}T14:00`);
   await blockForm.getByLabel("End").fill(`${blockDay}T15:30`);
-  await blockForm.getByLabel("Task").selectOption({ label: "Paint fence" });
+  await chooseOption(blockForm, "Task", "Paint fence");
   await page.getByRole("button", { name: "Add block" }).click();
   await settleSheet(page, "New block");
   const slot = page.locator(`[data-date="${blockDay}"] .calendar-block`).filter({ hasText: "Paint fence" });
@@ -244,7 +244,7 @@ test("deleting a series offers undo, and undo restores the same id, schedule and
   // that kept its document id
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Stretch");
-  await page.getByLabel("Repeat").selectOption({ label: "Daily" });
+  await chooseOption(page, "Repeat", "Daily");
   await page.getByLabel("Start date").fill(dayKey(0));
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: "Stretch" })).toBeVisible();
@@ -296,7 +296,7 @@ test("deleting a block offers undo, and undo restores it at the same instants an
   await revealBlockForm(page);
   await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
   await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
-  await page.getByLabel("Task", { exact: true }).selectOption({ label: "Deep work" });
+  await chooseOption(page, "Task", "Deep work");
   await page.getByRole("button", { name: "Add block" }).click();
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);
