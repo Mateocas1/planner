@@ -22,7 +22,7 @@ export const settingsTabs: readonly SettingsTabDef[] = [
   {
     id: "general",
     label: "General",
-    description: "When your day starts, ends and shuts down.",
+    description: "Your day and the app's language.",
     desktopOnly: false,
   },
   {

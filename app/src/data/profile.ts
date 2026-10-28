@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, setDoc, type Firestore } from "firebase/firestore";
 import { db } from "./client.ts";
+import { parseLocale, type Locale } from "../i18n/index.ts";
 import { isDayKey } from "../planning/shutdown.ts";
 import {
   defaultWeeklyReviewSettings,
@@ -37,6 +38,8 @@ export type ProfileState = {
   shortcutsEnabled: boolean;
   /** The weekly review's Rituals settings (S3); defaults on absent or bad data. */
   weeklyReview: WeeklyReviewSettings;
+  /** The account's synced language (Ronda 5, S8); null when the profile holds none. */
+  language: Locale | null;
   /** The profile zone's day the shutdown ritual was last closed (F3c), read
    *  through `parseLastShutdown`: absent means today is still open. */
   lastShutdown?: string;
@@ -170,6 +173,21 @@ export function parseShortcutsEnabled(data: Record<string, unknown> | undefined)
   return typeof data?.shortcutsEnabled === "boolean" ? data.shortcutsEnabled : defaultShortcutsEnabled;
 }
 
+/** The synced language, an optional field: absent or unknown values read as no choice. */
+export function parseLanguage(data: Record<string, unknown> | undefined): Locale | null {
+  return parseLocale(data?.language);
+}
+
+/**
+ * Persists the account's language choice (S8) as one additive profile field in a
+ * merged set, like the other fields: no migration, and readers default when it
+ * is absent.
+ */
+export async function setProfileLanguage(uid: string, language: Locale, database: Firestore = db): Promise<void> {
+  if (parseLocale(language) === null) throw new Error(`not a supported language: ${String(language)}`);
+  await setDoc(profileDocument(uid, database), { language }, { merge: true });
+}
+
 /**
  * Persists the weekly review's Rituals settings (S3) as one additive profile
  * field, the same way the day settings are written: validated first (the pure
@@ -238,6 +256,7 @@ const unloadedProfile: Omit<ProfileState, "loading"> = {
   shutdownTime: defaultShutdownTime,
   shortcutsEnabled: defaultShortcutsEnabled,
   weeklyReview: defaultWeeklyReviewSettings,
+  language: null,
   error: null,
 };
 
@@ -275,6 +294,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
             weeklyReview: parseWeeklyReviewSettings(data),
+            language: parseLanguage(data),
             lastShutdown: parseLastShutdown(data),
             storedLastShutdown: storedLastShutdown(data),
           }),
@@ -301,6 +321,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             shutdownTime: parseShutdownTime(data),
             shortcutsEnabled: parseShortcutsEnabled(data),
             weeklyReview: parseWeeklyReviewSettings(data),
+            language: parseLanguage(data),
             lastShutdown: parseLastShutdown(data),
             storedLastShutdown: storedLastShutdown(data),
           });

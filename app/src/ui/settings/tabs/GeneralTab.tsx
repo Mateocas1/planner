@@ -4,6 +4,7 @@ import { minutesPerDay, type WorkWindow } from "../../../planning/window.ts";
 import { formatClock, parseClock, TimeField } from "../../Settings.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
+import { LanguageSection } from "./LanguageSection.tsx";
 import { settle } from "../../write.ts";
 
 /**
@@ -120,6 +121,7 @@ export function GeneralTab({
           {labelId => <SettingsSwitch labelledBy={labelId} checked={enabled} onChange={toggleShortcuts} />}
         </SettingRow>
       </Section>
+      <LanguageSection uid={uid} />
     </>
   );
 }
