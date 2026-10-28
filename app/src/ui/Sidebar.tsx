@@ -7,6 +7,7 @@ import { formatDateKey, isPastDateKey } from "./format.ts";
 import { currentAndNext } from "../domain/upNext.ts";
 import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
 import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
+import { shiftDay, shiftMonth, weekEdges } from "./monthGrid.ts";
 import { spring, useNow } from "./motion.ts";
 import { SettingsIcon } from "./Settings.tsx";
 import { SyncStatus } from "./SyncStatus.tsx";
@@ -129,11 +130,16 @@ export function Sidebar({
         <WeeklyIcon className="nav-icon" />
         <span className="nav-label">Weekly review</span>
       </button>
-      {timeZone && (
-        <>
+      {/* The one region that gives way when the window is short (R5-10): the
+          month, the navigation and the footer keep their size, so a long Due
+          soon list scrolls here instead of squeezing the nav items. */}
+      {timeZone ? (
+        <div className="side-scroll">
           <UpNext blocks={blocks} tasks={tasks} timeZone={timeZone} focus={focus} />
           <DueSoon uid={uid} tasks={tasks} timeZone={timeZone} onOpenTask={onOpenTask} />
-        </>
+        </div>
+      ) : (
+        <div className="side-scroll" />
       )}
       <div className="side-foot">
         <SyncStatus pending={pending} />
@@ -157,22 +163,21 @@ export function Sidebar({
           </button>
           <ThemeSwitch />
         </div>
-        {/* Two links on one row: the import entry is a footer action like Sign
-            out, and it costs no height there, which is what keeps the chrome
-            inside a short window. The label is the short one the column can
-            hold; the full name stays the accessible name and the tooltip, so
-            the command is still called "Import from Google Calendar". */}
-        <div className="side-foot-links">
+        {/* Two footer actions as small button rows (R5-22). The import label is
+            the short one the column can hold; the full name stays the
+            accessible name and the tooltip, so the command is still called
+            "Import from Google Calendar". Sign out is last and neutral. */}
+        <div className="side-foot-actions">
           <button
             type="button"
-            className="link-button side-signout"
+            className="button small"
             aria-label="Import from Google Calendar"
             title="Import from Google Calendar"
             onClick={event => onImport(event.currentTarget)}
           >
             Import from Google
           </button>
-          <button type="button" className="link-button side-signout" onClick={onSignOut}>Sign out</button>
+          <button type="button" className="button small" onClick={onSignOut}>Sign out</button>
         </div>
       </div>
     </aside>
@@ -336,12 +341,55 @@ function MiniMonth({
   const todayKey = dateKey(new Date(), timeZone);
   const selected = selectedDay ?? todayKey;
   const [month, setMonth] = useState(() => selected.slice(0, 7));
+  const [focusKey, setFocusKey] = useState(selected);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef(false);
 
   // follow the calendar when it moves to another month
-  useEffect(() => setMonth(selected.slice(0, 7)), [selected]);
+  useEffect(() => {
+    setMonth(selected.slice(0, 7));
+    setFocusKey(selected);
+  }, [selected]);
 
   const first = keyToWallUtc(`${month}-01`);
   const start = mondayOf(first);
+  const days = Array.from({ length: 42 }, (_, index) => wallDayKey(start + index * dayMs));
+  // One tab stop for the whole grid (roving tabindex): the day last moved to,
+  // else the selected day, else today, else the first of the month.
+  const visible = (key: string) => days.includes(key);
+  const activeKey = visible(focusKey) ? focusKey : visible(selected) ? selected : visible(todayKey) ? todayKey : `${month}-01`;
+
+  useEffect(() => {
+    if (!pendingFocus.current) return;
+    pendingFocus.current = false;
+    gridRef.current?.querySelector<HTMLElement>(`[data-date="${activeKey}"]`)?.focus();
+  });
+
+  const moveTo = (key: string) => {
+    pendingFocus.current = true;
+    setFocusKey(key);
+    if (key.slice(0, 7) !== month) setMonth(key.slice(0, 7));
+  };
+
+  const onGridKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = (event.target as HTMLElement).closest<HTMLElement>("[data-date]")?.dataset.date;
+    if (!key) return;
+    let next: string | null = null;
+    switch (event.key) {
+      case "ArrowLeft": next = shiftDay(key, -1); break;
+      case "ArrowRight": next = shiftDay(key, 1); break;
+      case "ArrowUp": next = shiftDay(key, -7); break;
+      case "ArrowDown": next = shiftDay(key, 7); break;
+      case "Home": next = weekEdges(key, 1).first; break;
+      case "End": next = weekEdges(key, 1).last; break;
+      case "PageUp": next = shiftMonth(key, -1); break;
+      case "PageDown": next = shiftMonth(key, 1); break;
+      default: return; // Enter and Space are the button's own click
+    }
+    event.preventDefault();
+    moveTo(next);
+  };
   const blockDays = new Set(blocks.map(block => dateKey(new Date(block.start), timeZone)));
   const shift = (delta: number) => {
     const date = new Date(first);
@@ -360,13 +408,12 @@ function MiniMonth({
           <button type="button" aria-label="Next month" onClick={() => shift(1)}><ChevronRight /></button>
         </div>
       </div>
-      <div className="mini-grid">
+      <div ref={gridRef} className="mini-grid" onKeyDown={onGridKeyDown}>
         {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
           <span key={index} className="mini-dow" aria-hidden="true">{letter}</span>
         ))}
-        {Array.from({ length: 42 }, (_, index) => {
-          const utc = start + index * dayMs;
-          const key = wallDayKey(utc);
+        {days.map(key => {
+          const utc = keyToWallUtc(key);
           const classes = [
             "mini-day",
             key.slice(0, 7) !== month && "is-out",
@@ -381,6 +428,8 @@ function MiniMonth({
               className={classes}
               aria-label={formatWall(utc, { weekday: "long", month: "long", day: "numeric" })}
               aria-pressed={key === selected}
+              data-date={key}
+              tabIndex={key === activeKey ? 0 : -1}
               onClick={() => onPickDay(key)}
             >
               {formatWall(utc, { day: "numeric" })}

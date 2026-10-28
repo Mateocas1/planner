@@ -478,3 +478,101 @@ test("a waiting service worker offers Reload, and Reload activates it", async ({
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
+
+/**
+ * The mini-month is one composite (R5-04a): a single tab stop, arrows move by
+ * a day or a week, Home/End by the row, PageUp/PageDown by a month, and Enter
+ * opens the day. The stop is the selected day, so Tab from the page start
+ * reaches the Today entry in a handful of presses instead of ~25.
+ */
+test("the mini-month is one tab stop with arrow-key navigation", async ({ page }) => {
+  await enter(page, "side-mini-keys", { tasks: [{ title: "Anything" }] });
+  const month = page.locator(".mini-month");
+  const stops = month.locator(".mini-day[tabindex='0']");
+  await expect(stops).toHaveCount(1);
+  await expect(month.locator(".mini-day:not([tabindex='0'])")).toHaveCount(41);
+  /* The stop is the selected day (today on a fresh load). */
+  await expect(stops).toHaveClass(/is-selected/);
+
+  /* Tab from the page start reaches Today in a few presses. */
+  await page.locator("body").click({ position: { x: 2, y: 2 } });
+  let presses = 0;
+  for (; presses < 8; presses += 1) {
+    await page.keyboard.press("Tab");
+    const onToday = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return el?.matches(".nav-item") === true && el.textContent?.trim() === "Today";
+    });
+    if (onToday) break;
+  }
+  expect(presses + 1, "Tab stops from the page start to Today").toBeLessThanOrEqual(5);
+
+  /* Arrows move focus and the stop with it. */
+  await stops.focus();
+  const start = await stops.getAttribute("data-date");
+  await page.keyboard.press("ArrowRight");
+  const next = month.locator(".mini-day:focus");
+  const shifted = (key: string, days: number) => {
+    const date = new Date(`${key}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  await expect(next).toHaveAttribute("data-date", shifted(start!, 1));
+  await expect(next).toHaveAttribute("tabindex", "0");
+  await expect(month.locator(".mini-day[tabindex='0']")).toHaveCount(1);
+  await page.keyboard.press("ArrowDown");
+  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-date", shifted(start!, 8));
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-date", shifted(start!, 0));
+
+  /* Home and End are the row's edges (Monday to Sunday). */
+  await page.keyboard.press("Home");
+  const monday = await month.locator(".mini-day:focus").getAttribute("data-date");
+  expect(new Date(`${monday}T00:00:00Z`).getUTCDay()).toBe(1);
+  await page.keyboard.press("End");
+  const sunday = await month.locator(".mini-day:focus").getAttribute("data-date");
+  expect(new Date(`${sunday}T00:00:00Z`).getUTCDay()).toBe(0);
+
+  /* PageDown pages the month. */
+  const title = await month.locator(".mini-title").innerText();
+  await page.keyboard.press("PageDown");
+  await expect(month.locator(".mini-title")).not.toHaveText(title);
+  await expect(month.locator(".mini-day:focus")).toHaveCount(1);
+
+  /* Enter opens the focused day in the calendar. */
+  const focused = month.locator(".mini-day:focus");
+  const label = await focused.getAttribute("aria-label");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" })).toHaveAttribute("aria-current", "page");
+  await expect(month.getByRole("button", { name: label!, exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+/**
+ * R5-10: five due tasks at 1440x900 used to overflow the sidebar and squeeze
+ * the last nav item to 21 px, with the footer below the fold.
+ */
+test("five due tasks at 1440x900 keep the nav at 34 px and the footer visible", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await enter(page, "side-five", {
+    tasks: [0, 1, 2, 3, 4].map(index => ({ title: `Due task ${index + 1}`, deadline: dayKey(index) })),
+    blocks: [block(new Date(Date.now() + 3600_000), 30, 90)],
+  });
+  await expect(dueSoon(page).getByRole("checkbox")).toHaveCount(5);
+
+  const items = page.locator(".sidebar .nav-item");
+  await expect(items).toHaveCount(4);
+  for (let index = 0; index < 4; index += 1) {
+    expect((await items.nth(index).boundingBox())!.height, `nav item ${index}`).toBeCloseTo(34, 0);
+  }
+  const signOut = page.getByRole("button", { name: "Sign out" });
+  await expect(signOut).toBeVisible();
+  const sidebar = (await page.locator(".sidebar").boundingBox())!;
+  const out = (await signOut.boundingBox())!;
+  expect(out.y + out.height, "Sign out is inside the sidebar").toBeLessThanOrEqual(sidebar.y + sidebar.height);
+  expect(out.height, "footer action is a small button row").toBeCloseTo(28, 0);
+  /* The email has a line of its own. */
+  const who = (await page.locator(".side-foot .who").boundingBox())!;
+  const gear = (await page.getByRole("button", { name: "Settings" }).boundingBox())!;
+  expect(gear.y, "the gear is below the address line").toBeGreaterThanOrEqual(who.y + who.height - 0.5);
+});
