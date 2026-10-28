@@ -16,7 +16,9 @@
   color: var(--label-3);
   cursor: grab;
   touch-action: none;
-  opacity: 0.45;
+  /* .7 keeps the grip above 3:1 on every surface it sits on (WCAG 1.4.11);
+     it was .45, 2.1:1 */
+  opacity: 0.7;
   transition: opacity var(--dur-hover) ease, background-color var(--dur-hover) ease;
 }
 
@@ -24,13 +26,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .row:hover .drag-grip,
-  .tray-item:hover .drag-grip { opacity: 0.85; }
+  .tray-item:hover .drag-grip { opacity: 0.9; }
   .drag-grip:hover { background: var(--fill-hover); opacity: 1; }
-}
-
-/* On touch there is no hover to reveal the grip. */
-@media (pointer: coarse) {
-  .drag-grip { opacity: 0.7; }
 }
 
 /* The carried card. It is positioned by direct transform writes from the

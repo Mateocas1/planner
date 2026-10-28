@@ -26,6 +26,29 @@ const AA = 4.5;
 /* ---------- token extraction ---------- */
 
 /**
+ * Removes the `@media (prefers-contrast: ...)` and `(forced-colors: ...)` blocks
+ * from a stylesheet, by brace matching. Their token overrides only apply under
+ * a user preference, so they must not leak into the default light/dark maps;
+ * `readContrastMore` reads the `prefers-contrast: more` one on purpose.
+ */
+function stripPreferenceBlocks(css) {
+  let out = css;
+  for (const match of [...css.matchAll(/@media\s*\((?:prefers-contrast|forced-colors)[^{]*\{/g)].reverse()) {
+    let depth = 0;
+    let end = out.length;
+    for (let i = match.index + match[0].length - 1; i < out.length; i += 1) {
+      if (out[i] === "{") depth += 1;
+      else if (out[i] === "}" && --depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+    out = out.slice(0, match.index) + out.slice(end);
+  }
+  return out;
+}
+
+/**
  * Splits app.css into light and dark mode token maps. The resolved scheme is an
  * attribute (`<html data-theme="dark">`, set by the inline script in
  * index.html), so the dark tokens are the ones declared in the
@@ -33,7 +56,7 @@ const AA = 4.5;
  * instead of guessing which value belongs where.
  */
 function readSchemeTokens(file) {
-  const css = readFileSync(join(appDir, file), "utf8");
+  const css = stripPreferenceBlocks(readFileSync(join(appDir, file), "utf8"));
   const marker = ':root[data-theme="dark"]';
   const darkStart = css.indexOf(marker);
   if (darkStart < 0) throw new Error(`${file}: no dark-mode block found`);
@@ -505,6 +528,113 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
+/* ---------- control boundaries, the drag grip, increased contrast (R5-05..07) ----------
+ *
+ * WCAG 1.4.11: the ring that identifies the round check and the grip that
+ * identifies a draggable row are graphic objects, so they owe 3:1 against the
+ * surface they sit on. Both are alpha colours, so they are composited first.
+ * The `prefers-contrast: more` block is read from app.css and applied on top of
+ * each scheme, so the strengthened tokens are proven too instead of assumed.
+ */
+
+/** Opacity one rule declares, read from the sheet so the proof follows the CSS. */
+function readOpacity(file, selector) {
+  const css = readFileSync(join(appDir, file), "utf8");
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) throw new Error(`${file}: no ${selector} rule`);
+  const match = css.slice(start, css.indexOf("}", start)).match(/(?:^|[\s;])opacity\s*:\s*([\d.]+)\s*;/);
+  if (!match) throw new Error(`${file}: ${selector} declares no opacity`);
+  return Number(match[1]);
+}
+
+/** Custom properties the `prefers-contrast: more` block of app.css overrides, per scheme. */
+function readContrastMore() {
+  const css = readFileSync(join(appDir, "src/app.css"), "utf8");
+  const start = css.search(/@media\s*\(prefers-contrast:\s*more\)\s*\{\s*:root\s*\{/);
+  if (start < 0) throw new Error("app.css: no prefers-contrast: more token block");
+  const block = css.slice(start, css.indexOf("\n}\n", start));
+  const out = { light: new Map(), dark: new Map() };
+  for (const [scheme, selector] of [
+    ["light", ":root {"],
+    ["dark", ':root[data-theme="dark"] {'],
+  ]) {
+    const at = block.indexOf(selector);
+    if (at < 0) throw new Error(`app.css: prefers-contrast: more has no ${selector} block`);
+    for (const m of block.slice(at, block.indexOf("}", at)).matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+);/gi))
+      out[scheme].set(m[1], m[2].trim());
+  }
+  return out;
+}
+
+const GRIP_OPACITY = readOpacity("src/ui/drag.css", ".drag-grip");
+const contrastMore = readContrastMore();
+
+for (const mode of ["default", "more"]) {
+  for (const scheme of ["light", "dark"]) {
+    const tokens = new Map([...tokensFor(scheme), ...(mode === "more" ? contrastMore[scheme] : [])]);
+    const get = (name) => parseColor(tokens.get(name), tokens);
+    const pairs = [];
+    for (const base of ["--surface", "--surface-2", "--bg"]) {
+      pairs.push({ name: `check-ring${mode === "more" ? "+more" : ""}`, backdrop: base, label: "--check-ring", fg: get("--check-ring"), bg: get(base), floor: NON_TEXT });
+      if (mode === "default") {
+        const grip = get("--label-3");
+        pairs.push({ name: "drag-grip", backdrop: base, label: "--label-3", fg: [grip[0], grip[1], grip[2], GRIP_OPACITY], bg: get(base), floor: NON_TEXT });
+      }
+      if (mode === "more") {
+        for (const label of LABELS) pairs.push({ name: "more", backdrop: base, label, fg: get(label), bg: get(base), floor: AA });
+      }
+    }
+    for (const p of pairs) {
+      const surface = p.bg;
+      const value = ratio(over(p.fg, surface), surface);
+      const pass = value >= p.floor;
+      if (!pass) failures += 1;
+      rows.push({ scheme, material: p.name, backdrop: p.backdrop, label: p.label, surface: toHex(surface), value, floor: p.floor, enforced: true, pass });
+    }
+  }
+}
+
+/* ---------- APCA guard (canon F7, user decision L4: dark lifts) ----------
+ *
+ * WCAG's ratio overstates contrast for dark colours, so a pair can pass 4.5:1
+ * and still be hard to read on a dark ground. APCA (SAPC 0.0.98G-4g) models that.
+ * It is a guard only: it can raise a floor, never replace the WCAG gate above.
+ * Floors are |Lc|, from design-fundamentals.md §5: non-body text >= 60. Dark
+ * accent-as-text sits just under it (58, brand-450 is the lightest rung that
+ * keeps the accent a colour), so it is held at 55.
+ */
+function apca(text, background) {
+  const y = ([r, g, b]) => 0.2126729 * (r / 255) ** 2.4 + 0.7151522 * (g / 255) ** 2.4 + 0.072175 * (b / 255) ** 2.4;
+  const soft = (v) => (v > 0.022 ? v : v + (0.022 - v) ** 1.414);
+  const [yt, yb] = [soft(y(text)), soft(y(background))];
+  if (Math.abs(yb - yt) < 0.0005) return 0;
+  if (yb > yt) {
+    const c = (yb ** 0.56 - yt ** 0.57) * 1.14;
+    return c < 0.1 ? 0 : (c - 0.027) * 100;
+  }
+  const c = (yb ** 0.65 - yt ** 0.62) * 1.14;
+  return c > -0.1 ? 0 : (c + 0.027) * 100;
+}
+
+const apcaRows = [];
+for (const scheme of ["light", "dark"]) {
+  const tokens = tokensFor(scheme);
+  const get = (name) => parseColor(tokens.get(name), tokens);
+  const dark = scheme === "dark";
+  const pairs = [
+    ["--label-3", "--surface", 60],
+    ["--label-3", "--surface-2", 55],
+    ["--accent", "--surface", dark ? 55 : 60],
+    ["--on-accent", "--accent", 60],
+  ];
+  for (const [fg, bg, floor] of pairs) {
+    const lc = Math.abs(apca(get(fg), get(bg)));
+    const pass = lc >= floor;
+    if (!pass) failures += 1;
+    apcaRows.push({ scheme, fg, bg, lc, floor, pass });
+  }
+}
+
 /* The strongest claim the suite can make: every enforced cell clears the WCAG
    floor that applies to it — AA for text, 1.4.11 for a graphic object. */
 const floorOf = (row) => row.floor ?? AA;
@@ -531,10 +661,13 @@ if (verbose || failures > 0) {
     );
   }
   console.log("");
+  for (const r of apcaRows)
+    console.log(`${r.scheme.padEnd(7)} apca ${r.fg} on ${r.bg}: |Lc| ${r.lc.toFixed(1)} (floor ${r.floor}) ${r.pass ? "ok" : "FAIL"}`);
+  console.log("");
 }
 
 if (failures > 0) {
-  console.error(`${failures} enforced pair(s) below AA ${AA}:1`);
+  console.error(`${failures} enforced pair(s) below their floor (AA ${AA}:1 text, ${NON_TEXT}:1 graphics, APCA guards)`);
   process.exit(1);
 }
 
@@ -542,5 +675,6 @@ const describe = (row) =>
   `${row.value.toFixed(2)}:1, ${row.scheme} ${row.material} ${row.backdrop} ${row.label}`;
 console.log(
   `glass contrast: ${text.length} text pairs >= ${AA}:1 (worst ${describe(worstOf(text))}); ` +
-    `${graphics.length} graphic pairs >= ${NON_TEXT}:1 (worst ${describe(worstOf(graphics))})`,
+    `${graphics.length} graphic pairs >= ${NON_TEXT}:1 (worst ${describe(worstOf(graphics))}); ` +
+    `${apcaRows.length} APCA guards (lowest |Lc| ${Math.min(...apcaRows.map((r) => r.lc)).toFixed(1)})`,
 );
