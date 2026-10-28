@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import { isReadTool } from "../chat/tools.ts";
 import type { ToolCallCard } from "../chat/conversation.ts";
 import "./ChatActionCard.css";
@@ -36,12 +37,12 @@ export function ChatActionCard({
   const outcome =
     card.outcome ??
     (card.status === "confirmed"
-      ? "Done."
+      ? t("chat.card.done")
       : card.status === "read"
-        ? "Done."
+        ? t("chat.card.done")
         : card.status === "discarded"
-          ? "Discarded — nothing changed."
-          : "Failed.");
+          ? t("chat.card.discarded")
+          : t("chat.card.failed"));
   return (
     <div className="chat-card" data-status={card.status} data-read={read ? "true" : undefined}>
       <p className="chat-card-action">{description}</p>
@@ -51,15 +52,15 @@ export function ChatActionCard({
         </p>
       ) : read ? (
         <p className="chat-card-outcome" role="status">
-          Reading…
+          {t("chat.card.reading")}
         </p>
       ) : (
         <div className="chat-card-actions">
           <button type="button" className="chat-card-confirm" onClick={onConfirm} disabled={disabled || busy}>
-            {busy ? "Working…" : "Confirm"}
+            {busy ? t("chat.card.working") : t("chat.card.confirm")}
           </button>
           <button type="button" className="chat-card-discard" onClick={onDiscard} disabled={disabled || busy}>
-            Discard
+            {t("chat.card.discard")}
           </button>
         </div>
       )}
@@ -71,7 +72,7 @@ export function ChatActionCard({
 export function CallsDroppedNote({ dropped }: { dropped: number }) {
   return (
     <p className="chat-calls-note">
-      Only the first 5 proposed actions in one answer can be confirmed; {dropped} {dropped === 1 ? "was" : "were"} dropped.
+      {t("chat.card.dropped", { count: dropped })}
     </p>
   );
 }

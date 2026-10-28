@@ -26,6 +26,7 @@ import { setTaskCompleted, deleteTask } from "../data/tasks.ts";
 import { linkedBlocks } from "../data/blocks.ts";
 import { db } from "../data/client.ts";
 import { isTauri } from "../desktop.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey } from "../ui/format.ts";
 import { dateKey, localValue, toZonedInstant } from "../ui/time.ts";
 import { getChatModel, mockMode } from "./config.ts";
@@ -171,12 +172,12 @@ export function ChatSurface({
   const confirmGuard = useMemo(() => createConfirmGuard(), []);
   const executeToolCall = useCallback(
     async (call: ChatToolCall): Promise<ToolOutcome> => {
-      if (uid === null) return { status: "failed", message: "Sign in to let the assistant change your planner." };
+      if (uid === null) return { status: "failed", message: t("chat.outcome.signIn") };
       // One Confirm, one write (review finding 7): the per-callId guard
       // claims the id before any await, so a repeated confirm can never run
       // a second write even if the panel's own busy guard is bypassed.
       if (!confirmGuard.claim(call.id)) {
-        return { status: "failed", message: "This action was already confirmed once." };
+        return { status: "failed", message: t("chat.outcome.alreadyConfirmed") };
       }
       const toolContext = buildToolContext();
       const check = validateToolCall(call, toolContext);
@@ -203,10 +204,10 @@ export function ChatSurface({
           // this task in a follow-up (S4 diagnosis D2.1).
           const when = value.day === undefined ? "" : ` · ${formatDateKey(value.day, toolContext.todayKey)}`;
           const at = value.startMinutes === undefined ? "" : ` ${timeLabel(value.startMinutes)}`;
-          const duration = value.estimateMinutes === undefined ? "" : ` · ${value.estimateMinutes} min`;
+          const duration = value.estimateMinutes === undefined ? "" : ` · ${t("chat.minutes", { count: value.estimateMinutes })}`;
           return {
             status: "confirmed",
-            message: `Created task id=${taskId} — "${value.title}"${when}${at}${duration}`,
+            message: t("chat.outcome.created", { id: taskId, title: value.title, details: `${when}${at}${duration}` }),
           };
         }
         if (call.name === "move_task") {
@@ -232,15 +233,15 @@ export function ChatSurface({
             ...(removals.length > 0 ? { removeBlockIds: removals.map(entry => entry.id) } : {}),
           }, db);
           const title = task?.title ?? value.title;
-          const target = value.day === null ? "no date" : value.day === undefined ? undefined : formatDateKey(value.day, toolContext.todayKey);
-          const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
-          const replaced = removals.length > 0 ? `, replaced ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
+          const target = value.day === null ? t("chat.outcome.noDate") : value.day === undefined ? undefined : formatDateKey(value.day, toolContext.todayKey);
+          const at = value.startMinutes === undefined ? "" : t("chat.outcome.at", { time: timeLabel(value.startMinutes) });
+          const replaced = removals.length > 0 ? t("chat.outcome.movedReplaced", { count: removals.length }) : "";
           return {
             status: "confirmed",
             message:
               value.day === null
-                ? `Unscheduled task id=${value.taskId} — "${title}" (due date cleared; its placed blocks stay)`
-                : `Moved task id=${value.taskId} — "${title}" to ${target}${at}${replaced}`,
+                ? t("chat.outcome.unscheduled", { id: value.taskId, title })
+                : t("chat.outcome.moved", { id: value.taskId, title, target: target ?? "", at, replaced }),
           };
         }
         if (call.name === "update_task") {
@@ -276,13 +277,13 @@ export function ChatSurface({
             ...(removals.length > 0 ? { removeBlockIds: removals.map(entry => entry.id) } : {}),
           }, db);
           const title = value.newTitle ?? task?.title ?? value.title;
-          const target = value.clearDay === true ? "no date" : value.day !== undefined ? formatDateKey(value.day, toolContext.todayKey) : undefined;
-          const at = value.startMinutes === undefined ? "" : ` at ${timeLabel(value.startMinutes)}`;
-          const removed = removals.length > 0 ? `, removed ${removals.length} ${removals.length === 1 ? "block" : "blocks"}` : "";
-          const estimateWord = value.estimateMinutes !== undefined || value.clearEstimate === true ? ", estimate updated" : "";
+          const target = value.clearDay === true ? t("chat.outcome.noDate") : value.day !== undefined ? formatDateKey(value.day, toolContext.todayKey) : undefined;
+          const at = value.startMinutes === undefined ? "" : t("chat.outcome.at", { time: timeLabel(value.startMinutes) });
+          const removed = removals.length > 0 ? t("chat.outcome.updatedRemoved", { count: removals.length }) : "";
+          const estimateWord = value.estimateMinutes !== undefined || value.clearEstimate === true ? t("chat.outcome.estimateUpdated") : "";
           return {
             status: "confirmed",
-            message: `Updated task id=${value.taskId} — "${title}"${target === undefined ? "" : ` · ${target}`}${at}${estimateWord}${removed}`,
+            message: t("chat.outcome.updated", { id: value.taskId, title, details: `${target === undefined ? "" : ` · ${target}`}${at}${estimateWord}${removed}` }),
           };
         }
         if (call.name === "complete_task") {
@@ -291,8 +292,8 @@ export function ChatSurface({
           return {
             status: "confirmed",
             message: value.completed
-              ? `Completed task id=${value.taskId} — "${value.title}"`
-              : `Reopened task id=${value.taskId} — "${value.title}"`,
+              ? t("chat.outcome.completed", { id: value.taskId, title: value.title })
+              : t("chat.outcome.reopened", { id: value.taskId, title: value.title }),
           };
         }
         if (call.name === "delete_task") {
@@ -307,12 +308,12 @@ export function ChatSurface({
           const keptNote = deleteTaskKeptNote(value.blocks, await linkedBlocks(uid, value.taskId));
           return {
             status: "confirmed",
-            message:
-              `Deleted task id=${value.taskId} — "${value.title}"` +
-              (removed.length > 0
-                ? ` and its ${removed.length} ${removed.length === 1 ? "work block" : "work blocks"}`
-                : "") +
-              keptNote,
+            message: t("chat.outcome.deleted", {
+              id: value.taskId,
+              title: value.title,
+              blocks: removed.length > 0 ? t("chat.outcome.deletedBlocks", { count: removed.length }) : "",
+              kept: keptNote,
+            }),
           };
         }
         if (call.name === "hide_holiday") {
@@ -321,8 +322,8 @@ export function ChatSurface({
           return {
             status: "confirmed",
             message: value.show
-              ? `Holiday "${value.title}" is visible again.`
-              : `Holiday "${value.title}" hidden — the calendar shows it no more (the Holidays sheet can bring it back).`,
+              ? t("chat.outcome.holidayShown", { title: value.title })
+              : t("chat.outcome.holidayHidden", { title: value.title }),
           };
         }
         if (call.name === "remember") {
@@ -338,8 +339,8 @@ export function ChatSurface({
             status: "confirmed",
             message:
               existing === undefined
-                ? `Remembered "${value.title}" (topic ${topicKey}) — it rides along in every chat from now on.`
-                : `Replaced the note "${existing.title}" (topic ${topicKey}) — it rides along in every chat from now on.`,
+                ? t("chat.outcome.remembered", { title: value.title, topic: topicKey })
+                : t("chat.outcome.replacedNote", { title: existing.title, topic: topicKey }),
           };
         }
         if (call.name === "forget") {
@@ -348,12 +349,12 @@ export function ChatSurface({
           // proposed from a stale notes block must fail, never no-op.
           const current = await backend.list();
           const note = current.find(memory => memory.topicKey === value.topicKey);
-          if (note === undefined) return { status: "failed", message: `That topic (${value.topicKey}) is not in your notes.` };
+          if (note === undefined) return { status: "failed", message: t("chat.outcome.noteMissing", { topic: value.topicKey }) };
           setLatestMemories(await backend.apply([{ op: "delete", topicKey: value.topicKey }]));
           notifyMemoriesChanged();
-          return { status: "confirmed", message: `Removed the note "${note.title}".` };
+          return { status: "confirmed", message: t("chat.outcome.forgotten", { title: note.title }) };
         }
-        return { status: "failed", message: `Unknown action "${call.name}".` };
+        return { status: "failed", message: t("chat.outcome.unknown", { name: call.name }) };
       } catch (error) {
         return { status: "failed", message: error instanceof Error ? error.message : String(error) };
       }

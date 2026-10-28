@@ -14,6 +14,7 @@
  */
 
 import { ASSUMED_ESTIMATE_MINUTES } from "../domain/model.ts";
+import { t } from "../i18n/index.ts";
 import { formatDateKey } from "../ui/format.ts";
 import { dateKey, timeLabel } from "../ui/time.ts";
 import type { Memory } from "./memoryStore.ts";
@@ -420,10 +421,10 @@ export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<Normalize
 const TITLE_TOO_LONG = `The title is too long (at most ${MAX_TOOL_TITLE_CHARS} characters).`;
 
 function describeCreateTask(value: NormalizedCreateTask, todayKey: string): string {
-  const parts = [`Create task "${value.title}"`];
+  const parts = [t("chat.desc.create", { title: value.title })];
   if (value.day !== undefined) parts.push(formatDateKey(value.day, todayKey));
   if (value.startMinutes !== undefined) parts.push(hhmm(value.startMinutes));
-  if (value.estimateMinutes !== undefined) parts.push(`${value.estimateMinutes} min`);
+  if (value.estimateMinutes !== undefined) parts.push(t("chat.minutes", { count: value.estimateMinutes }));
   return parts.join(" · ");
 }
 
@@ -440,14 +441,14 @@ export function moveTaskRemovals(value: NormalizedMoveTask, context: ChatToolCon
 
 function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["tasks"][number], context: ChatToolContext): string {
   const label = (day: string | undefined | null) =>
-    day === undefined || day === null ? "No date" : formatDateKey(day, context.todayKey);
-  const parts = [`Move "${task.title}"`, `${label(task.deadline)} → ${value.day === null ? "No date" : label(value.day)}`];
+    day === undefined || day === null ? t("chat.noDate") : formatDateKey(day, context.todayKey);
+  const parts = [t("chat.desc.move", { title: task.title }), `${label(task.deadline)} → ${value.day === null ? t("chat.noDate") : label(value.day)}`];
   if (value.startMinutes !== undefined) {
     parts.push(hhmm(value.startMinutes));
     // Same wording as describeUpdateTask: the card names the placements a
     // start-time move replaces, so the user sees the whole change.
     const replaced = moveTaskRemovals(value, context);
-    if (replaced.length > 0) parts.push(`replaces ${replaced.length} ${replaced.length === 1 ? "block" : "blocks"}: ${replaced.map(entry => entry.label).join(", ")}`);
+    if (replaced.length > 0) parts.push(t("chat.desc.replaces", { count: replaced.length, labels: replaced.map(entry => entry.label).join(", ") }));
   }
   return parts.join(" · ");
 }
@@ -548,14 +549,14 @@ export function checkListTasks(raw: string, context: ChatToolContext): ToolCheck
 }
 
 function describeListTasks(value: NormalizedListTasks, context: ChatToolContext): string {
-  const parts = ["Look up tasks"];
+  const parts = [t("chat.desc.lookUpTasks")];
   if (value.fromDay !== undefined || value.toDay !== undefined) {
-    const from = value.fromDay === undefined ? "the beginning" : formatDateKey(value.fromDay, context.todayKey);
-    const to = value.toDay === undefined ? "onwards" : formatDateKey(value.toDay, context.todayKey);
-    parts.push(`due ${from} – ${to}`);
+    const from = value.fromDay === undefined ? t("chat.desc.rangeStart") : formatDateKey(value.fromDay, context.todayKey);
+    const to = value.toDay === undefined ? t("chat.desc.rangeEnd") : formatDateKey(value.toDay, context.todayKey);
+    parts.push(t("chat.desc.range", { from, to }));
   }
-  if (value.query !== undefined) parts.push(`matching "${value.query}"`);
-  if (value.includeCompleted) parts.push("including completed");
+  if (value.query !== undefined) parts.push(t("chat.desc.matching", { query: value.query }));
+  if (value.includeCompleted) parts.push(t("chat.desc.includingCompleted"));
   return parts.join(" · ");
 }
 
@@ -568,7 +569,7 @@ export function checkGetTask(raw: string, context: ChatToolContext): ToolCheck<N
   if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
   const task = context.tasks.find(entry => entry.id === taskId);
   if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
-  return { ok: true, value: { taskId }, description: `Look up task "${task.title}"` };
+  return { ok: true, value: { taskId }, description: t("chat.desc.lookUpTask", { title: task.title }) };
 }
 
 /** Validates the no-argument reads (`list_holidays`, `list_memories`): extra
@@ -582,7 +583,7 @@ export function checkNoArgs(raw: string, description: string): ToolCheck<Normali
 /** The read results are plain lines the model quotes back. */
 export type ReadResult = { summary: string; result: string };
 
-const emptyResult = (noun: string): ReadResult => ({ summary: `No ${noun} found.`, result: `No ${noun} found.` });
+const emptyResult = (noun: string, summary: string): ReadResult => ({ summary, result: `No ${noun} found.` });
 
 /** The read lines' caps (review finding 4): at most this many block stamps
  * per task, and titles longer than this are truncated. Everything here is
@@ -635,7 +636,7 @@ export function buildListTasksResult(value: NormalizedListTasks, context: ChatTo
       return (value.fromDay === undefined || blockDay >= value.fromDay) && (value.toDay === undefined || blockDay <= value.toDay);
     });
   });
-  if (matches.length === 0) return emptyResult("matching tasks");
+  if (matches.length === 0) return emptyResult("matching tasks", t("chat.summary.noTasks"));
   const ordered = [...matches].sort((left, right) => {
     if (left.deadline !== right.deadline) return (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999");
     return left.title.localeCompare(right.title);
@@ -643,7 +644,7 @@ export function buildListTasksResult(value: NormalizedListTasks, context: ChatTo
   const shown = ordered.slice(0, LIST_RESULTS_CAP);
   const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
   return {
-    summary: `${ordered.length} ${ordered.length === 1 ? "task" : "tasks"} found.`,
+    summary: t("chat.summary.tasks", { count: ordered.length }),
     result: `${shown.map(task => taskLine(task, blocks, context)).join("\n")}${more}`,
   };
 }
@@ -652,7 +653,7 @@ export function buildListTasksResult(value: NormalizedListTasks, context: ChatTo
  * for it (past placements included — the full truth about one task). */
 export function buildGetTaskResult(taskId: string, context: ChatToolContext): ReadResult {
   const task = context.tasks.find(entry => entry.id === taskId);
-  if (task === undefined) return { summary: "Task not found.", result: `Task id=${taskId} is not in the planner.` };
+  if (task === undefined) return { summary: t("chat.summary.taskMissing"), result: `Task id=${taskId} is not in the planner.` };
   const blocks = (context.blocks ?? []).filter(block => block.taskId === taskId);
   const line = taskLine(task, blocks, context);
   const extras = blocks.length > 0 ? "" : " · not placed on the schedule";
@@ -663,12 +664,12 @@ export function buildGetTaskResult(taskId: string, context: ChatToolContext): Re
  * the model needs their ids to show them again). */
 export function buildListHolidaysResult(context: ChatToolContext): ReadResult {
   const holidays = context.holidays ?? [];
-  if (holidays.length === 0) return emptyResult("holidays");
+  if (holidays.length === 0) return emptyResult("holidays", t("chat.summary.noHolidays"));
   const ordered = [...holidays].sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title));
   const shown = ordered.slice(0, HOLIDAY_RESULTS_CAP);
   const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
   return {
-    summary: `${ordered.length} ${ordered.length === 1 ? "holiday" : "holidays"} found.`,
+    summary: t("chat.summary.holidays", { count: ordered.length }),
     result: `${shown
       .map(holiday => `- [${holiday.id}] ${formatDateKey(holiday.date, context.todayKey)} · "${holiday.title}" · ${holiday.kind}${holiday.hidden === true ? " · hidden" : ""}`)
       .join("\n")}${more}`,
@@ -678,12 +679,12 @@ export function buildListHolidaysResult(context: ChatToolContext): ReadResult {
 /** Builds the `list_memories` result from the live notes store (pure; the
  * topicKeys are what `forget` removes by). */
 export function buildListMemoriesResult(memories: ReadonlyArray<Memory>): ReadResult {
-  if (memories.length === 0) return emptyResult("notes");
+  if (memories.length === 0) return emptyResult("notes", t("chat.summary.noNotes"));
   const ordered = [...memories].sort((left, right) => right.updatedAt - left.updatedAt);
   const shown = ordered.slice(0, NOTES_RESULTS_CAP);
   const more = ordered.length > shown.length ? `\n(+${ordered.length - shown.length} more)` : "";
   return {
-    summary: `${ordered.length} ${ordered.length === 1 ? "note" : "notes"} found.`,
+    summary: t("chat.summary.notes", { count: ordered.length }),
     result: `${shown.map(memory => `- [${memory.topicKey}] ${memory.title} — ${memory.content}`).join("\n")}${more}`,
   };
 }
@@ -802,20 +803,25 @@ function blockLabel(block: { start: string; end: string }, context: ChatToolCont
 }
 
 function describeUpdateTask(value: NormalizedUpdateTask, context: ChatToolContext): string {
-  const parts = [`Update "${value.title}"`];
-  if (value.newTitle !== undefined) parts.push(`rename to "${value.newTitle}"`);
-  if (value.clearDay === true) parts.push("clear the due day");
-  else if (value.day !== undefined) parts.push(`due ${formatDateKey(value.day, context.todayKey)}`);
-  if (value.clearEstimate === true) parts.push("clear the estimate");
-  else if (value.estimateMinutes !== undefined) parts.push(`${value.estimateMinutes} min`);
+  const parts = [t("chat.desc.update", { title: value.title })];
+  if (value.newTitle !== undefined) parts.push(t("chat.desc.rename", { title: value.newTitle }));
+  if (value.clearDay === true) parts.push(t("chat.desc.clearDay"));
+  else if (value.day !== undefined) parts.push(t("chat.desc.due", { day: formatDateKey(value.day, context.todayKey) }));
+  if (value.clearEstimate === true) parts.push(t("chat.desc.clearEstimate"));
+  else if (value.estimateMinutes !== undefined) parts.push(t("chat.minutes", { count: value.estimateMinutes }));
   if (value.startMinutes !== undefined && value.startDay !== undefined) {
     const replaced = affectedBlockIds(value.taskId, { startDay: value.startDay }, context);
     const estimateForRoom = value.estimateMinutes ?? ASSUMED_ESTIMATE_MINUTES;
-    parts.push(`place ${formatDateKey(value.startDay, context.todayKey)} ${hhmm(value.startMinutes)}–${hhmm(value.startMinutes + estimateForRoom)}${replaced.length > 0 ? ` (replaces ${replaced.map(entry => entry.label).join(", ")})` : ""}`);
+    const place = { day: formatDateKey(value.startDay, context.todayKey), from: hhmm(value.startMinutes), to: hhmm(value.startMinutes + estimateForRoom) };
+    parts.push(
+      replaced.length > 0
+        ? t("chat.desc.placeReplacing", { ...place, labels: replaced.map(entry => entry.label).join(", ") })
+        : t("chat.desc.place", place),
+    );
   }
   if (value.clearDay === true) {
     const removed = affectedBlockIds(value.taskId, { clearDay: true }, context);
-    if (removed.length > 0) parts.push(`removes its upcoming blocks: ${removed.map(entry => entry.label).join(", ")}`);
+    if (removed.length > 0) parts.push(t("chat.desc.removesBlocks", { labels: removed.map(entry => entry.label).join(", ") }));
   }
   return parts.join(" · ");
 }
@@ -845,7 +851,7 @@ export function checkCompleteTask(raw: string, context: ChatToolContext): ToolCh
   return {
     ok: true,
     value: { taskId, title: task.title, completed },
-    description: completed ? `Complete "${task.title}"` : `Reopen "${task.title}"`,
+    description: t(completed ? "chat.desc.complete" : "chat.desc.reopen", { title: task.title }),
   };
 }
 
@@ -872,9 +878,7 @@ export function deleteTaskKeptNote(
 ): string {
   const named = new Set(cardBlocks.map(block => block.id));
   const kept = remaining.filter(block => !named.has(block.id));
-  if (kept.length === 1) return ". 1 more block linked to this task was created after the card and was kept";
-  if (kept.length > 1) return `. ${kept.length} more blocks linked to this task were created after the card and were kept`;
-  return "";
+  return kept.length === 0 ? "" : t("chat.outcome.deletedKept", { count: kept.length });
 }
 
 /** Validates `delete_task`: the task must exist, and the card names exactly
@@ -887,17 +891,14 @@ export function checkDeleteTask(raw: string, context: ChatToolContext): ToolChec
   if (taskId === undefined) return { ok: false, error: "The proposal needs a task id." };
   const task = context.tasks.find(entry => entry.id === taskId);
   if (task === undefined) return { ok: false, error: "That task id is not in your planner." };
-  const parts = [`Delete task "${task.title}"`];
-  if (task.deadline !== undefined) parts.push(`due ${formatDateKey(task.deadline, context.todayKey)}`);
-  if (task.estimateMinutes !== undefined) parts.push(`${task.estimateMinutes} min`);
+  const parts = [t("chat.desc.delete", { title: task.title })];
+  if (task.deadline !== undefined) parts.push(t("chat.desc.due", { day: formatDateKey(task.deadline, context.todayKey) }));
+  if (task.estimateMinutes !== undefined) parts.push(t("chat.minutes", { count: task.estimateMinutes }));
   const blocks = (context.blocks ?? [])
     .filter(block => block.taskId === taskId)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
   if (blocks.length > 0) {
-    parts.push(
-      `and its ${blocks.length} ${blocks.length === 1 ? "work block" : "work blocks"}: ` +
-        blocks.map(block => blockLabel(block, context)).join(", "),
-    );
+    parts.push(t("chat.desc.deleteBlocks", { count: blocks.length, labels: blocks.map(block => blockLabel(block, context)).join(", ") }));
   }
   return { ok: true, value: { taskId, title: task.title, blocks }, description: parts.join(" · ") };
 }
@@ -956,7 +957,8 @@ export function checkRemember(raw: string, context?: ChatToolContext): ToolCheck
   }
   const effectiveKey = topicKey ?? deriveTopicKey(title);
   const known = (context?.memoryTopics ?? []).find(entry => entry.topicKey === effectiveKey);
-  const description = known === undefined ? `Remember "${title}" — ${content}` : `Replace note "${known.title}" — ${content}`;
+  const description =
+    known === undefined ? t("chat.desc.remember", { title, content }) : t("chat.desc.replaceNote", { title: known.title, content });
   return {
     ok: true,
     value: topicKey === undefined ? { title, content } : { title, content, topicKey },
@@ -976,7 +978,7 @@ export function checkForget(raw: string, context: ChatToolContext): ToolCheck<No
   }
   const known = (context.memoryTopics ?? []).find(entry => entry.topicKey === topicKey);
   const title = known?.title ?? topicKey;
-  return { ok: true, value: { topicKey }, description: `Forget the note "${title}"` };
+  return { ok: true, value: { topicKey }, description: t("chat.desc.forget", { title }) };
 }
 
 /** Validates `hide_holiday`: the holiday must be one the context knows, and
@@ -1002,7 +1004,7 @@ export function checkHideHoliday(raw: string, context: ChatToolContext): ToolChe
   return {
     ok: true,
     value: { holidayId, title: holiday.title, show },
-    description: show ? `Show holiday "${holiday.title}" · ${when} again` : `Hide holiday "${holiday.title}" · ${when}`,
+    description: t(show ? "chat.desc.showHoliday" : "chat.desc.hideHoliday", { title: holiday.title, when }),
   };
 }
 
@@ -1047,9 +1049,9 @@ export function validateToolCall(
     case "get_task":
       return checkGetTask(call.arguments, context);
     case "list_holidays":
-      return checkNoArgs(call.arguments, "Look up holidays");
+      return checkNoArgs(call.arguments, t("chat.desc.lookUpHolidays"));
     case "list_memories":
-      return checkNoArgs(call.arguments, "Look up the saved notes");
+      return checkNoArgs(call.arguments, t("chat.desc.lookUpNotes"));
     default:
       return { ok: false, error: `Unknown action "${call.name}".` };
   }
@@ -1090,8 +1092,8 @@ export function describeToolCall(
   // changed or removed the data it described (a deleted task, a hidden
   // holiday) — keeps a neutral line instead of claiming the proposal was
   // invalid: the outcome line carries what actually happened.
-  if (resolved) return "This action was already resolved.";
-  return "The assistant proposed an action, but its details are not valid.";
+  if (resolved) return t("chat.desc.resolved");
+  return t("chat.desc.invalid");
 }
 
 /** The `tool` message content each card state sends back to the model, so the
