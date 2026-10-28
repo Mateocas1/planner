@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData, chooseOption, expectChoice, pickDate, expectDate, fillDateTime, expectDateTime } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData, chooseOption, expectChoice, pickDate, expectDate, fillDateTime, expectDateTime, pickDateOn } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -1135,6 +1135,34 @@ test("an end at or before the start is refused with a visible error and writes n
   await expect(page.getByRole("alert")).toContainText("duration must be positive");
 
   await expectRemoteBlocks(email, []);
+});
+
+test("the block form shows a 24-hour time beside the day in words, and a bad time reverts", async ({ page }) => {
+  await signUp(page, newEmail("block-time"));
+  await openCalendar(page);
+  await revealBlockForm(page);
+
+  const start = page.getByLabel("Start", { exact: true });
+  const clock = page.getByLabel("Start time", { exact: true });
+  await expect(page.locator('input[type="datetime-local"], input[type="date"]')).toHaveCount(0);
+  await expect(start).not.toContainText("/");
+  await fillDateTime(page, "Start", "2026-03-04T14:05");
+  await expect(start).toHaveAttribute("data-value", "2026-03-04");
+  await expect(clock).toHaveValue("14:05");
+
+  // Not a time of the day: the clock goes back to the last good value.
+  await clock.fill("25:99");
+  await clock.press("Tab");
+  await expect(clock).toHaveValue("14:05");
+
+  // Typed shorthand reads as a time, and Enter commits it like leaving the field.
+  await clock.fill("930");
+  await clock.press("Enter");
+  await expect(clock).toHaveValue("09:30");
+
+  // Picking another day keeps the clock.
+  await pickDateOn(page, start, "2026-03-06");
+  await expectDateTime(page, "Start", "2026-03-06T09:30");
 });
 
 test("deleting a block removes it from the grid and from the server", async ({ page }) => {

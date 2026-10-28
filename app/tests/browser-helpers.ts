@@ -59,7 +59,7 @@ export async function pickDate(scope: Page | Locator, label: string, iso: string
   await pickDateOn(scope, scope.getByLabel(label), iso);
 }
 
-async function pickDateOn(scope: Page | Locator, trigger: Locator, iso: string): Promise<void> {
+export async function pickDateOn(scope: Page | Locator, trigger: Locator, iso: string): Promise<void> {
   if (iso === "" && (await trigger.getAttribute("data-value")) === "") return; // nothing to clear
   await trigger.click();
   const dialog = scope.getByRole("dialog", { name: "Choose date" });
