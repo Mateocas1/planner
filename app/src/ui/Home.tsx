@@ -17,6 +17,8 @@ import { MorningBrief } from "./MorningBrief.tsx";
 import { PlanMyDay } from "./PlanMyDay.tsx";
 import { WeeklyBanner } from "./weekly/WeeklyBanner.tsx";
 import { blockTomorrow, rovingTabIndex, tomorrowKey } from "./shortcuts.ts";
+import { t } from "../i18n/index.ts";
+import { PlusIcon } from "./icons.tsx";
 import { bannerVisible } from "./shutdownRitual.ts";
 import type { DueMoment } from "../planning/weekly.ts";
 import { dateKey, dayMs, formatDuration, formatWall, keyToWallUtc, timeLabel, wallMinutes } from "./time.ts";
@@ -96,6 +98,8 @@ type HomeProps = {
   onTurnDay?: () => boolean | void | Promise<boolean | void>;
   /** The shell's undo offer, for the moves the keyboard makes here (F6c). */
   onOfferUndo?: (item: UndoableDelete) => void;
+  /** Opens the create sheet, the path the header's New task takes (R5-17). */
+  onNewTask: (origin: HTMLElement | null) => void;
 };
 
 function TodayPage({
@@ -118,6 +122,7 @@ function TodayPage({
   onOpenSettings,
   onTurnDay,
   onOfferUndo,
+  onNewTask,
 }: HomeProps & { timeZone: string }) {
   const now = useNow();
   const phone = useMediaQuery(phoneQuery);
@@ -271,6 +276,9 @@ function TodayPage({
         <div className="empty-state" role="status">
           <p className="empty-title">No tasks and no work blocks yet. Your planner is empty.</p>
           <p>Add a task with New task, then set time aside for it in the calendar.</p>
+          <button type="button" className="button button-accent empty-action" onClick={event => onNewTask(event.currentTarget)}>
+            <PlusIcon />{t("today.addFirstTask")}
+          </button>
         </div>
       ) : (
         <div className="today-grid">
@@ -516,6 +524,8 @@ function NowCard({
       </article>
     );
   }
+  // Full screen is the glance on the running block (F5): with nothing running
+  // it has nothing to show, so the two cards below carry no such link (R5-18).
   if (next) {
     const minutes = (Date.parse(next.start) - now.getTime()) / 60_000;
     return (
@@ -523,7 +533,6 @@ function NowCard({
         <p className="now-label is-free">Free now</p>
         <h3 id="now-title" className="now-title">{name(next)}</h3>
         <p className="now-when">Starts at {timeLabel(new Date(next.start), timeZone)}, in {formatDuration(minutes)}</p>
-        <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
       </article>
     );
   }
@@ -532,7 +541,6 @@ function NowCard({
       <p className="now-label is-free">Nothing scheduled</p>
       <h3 id="now-title" className="now-title">The rest of today is open</h3>
       <p className="now-when">Plan a work block from the calendar when you are ready.</p>
-      <button type="button" className="link-button" onClick={onOpenNow}>Full screen</button>
     </article>
   );
 }

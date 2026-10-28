@@ -460,11 +460,13 @@ test.describe("on a desktop", () => {
   });
 
   test("the morning brief states the day once, and is dismissed for that day", async ({ page }) => {
-    const base = at(10, 0);
+    /* The brief is the morning's: it ends when the first block starts (W8), so
+       the fixture reads it at 07:30, before the 08:00 block. */
+    const base = at(7, 30);
     await open(page, base, "ritual-brief", {
       tasks: [{ title: "Review the draft", deadline: dayKey(base) }],
       blocks: [
-        blockOn(base, "09:00", "10:30"),
+        blockOn(base, "08:00", "10:30"),
         blockOn(base, "12:00", "13:00"),
         blockOn(base, "14:00", "15:00"),
         blockOn(base, "16:00", "17:00"),
@@ -472,7 +474,7 @@ test.describe("on a desktop", () => {
     });
 
     /* Criterion 7, verbatim. */
-    await expect(page.getByText("Today: 4 blocks, first at 09:00. First free slot 10:30.")).toBeVisible();
+    await expect(page.getByText("Today: 4 blocks, first at 08:00. First free slot 10:30.")).toBeVisible();
 
     await page.getByRole("button", { name: "Dismiss morning brief" }).click();
     await expect(page.locator(".brief")).toHaveCount(0);
