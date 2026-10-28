@@ -1,0 +1,7 @@
+/* NumberStepper reuses the estimate field's look (EstimateControl.css); inside
+ * a settings row the control column is auto-sized, so the field gets a width of
+ * its own: three digits, the unit and the two buttons. */
+.est-field.num-stepper {
+  flex: none;
+  width: 9.5em;
+}

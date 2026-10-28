@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData, chooseOption, pickDate } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData, chooseOption, pickDate, fillDateTime } from "./browser-helpers.ts";
 
 /**
  * Undo for delete (F1 / spec S6).
@@ -193,8 +193,8 @@ test("deleting a task deletes its work blocks, and undo restores both (S8)", asy
   // Scope to the sheet: other surfaces (focus, settings) carry Start/End labels too.
   const blockForm = page.getByRole("complementary", { name: "New block" });
   const blockDay = dayKey(0);
-  await blockForm.getByLabel("Start").fill(`${blockDay}T14:00`);
-  await blockForm.getByLabel("End").fill(`${blockDay}T15:30`);
+  await fillDateTime(blockForm, "Start", `${blockDay}T14:00`);
+  await fillDateTime(blockForm, "End", `${blockDay}T15:30`);
   await chooseOption(blockForm, "Task", "Paint fence");
   await page.getByRole("button", { name: "Add block" }).click();
   await settleSheet(page, "New block");
@@ -294,8 +294,8 @@ test("deleting a block offers undo, and undo restores it at the same instants an
 
   const day = localDateKey(new Date());
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
+  await fillDateTime(page, "Start", `${day}T11:00`);
+  await fillDateTime(page, "End", `${day}T12:00`);
   await chooseOption(page, "Task", "Deep work");
   await page.getByRole("button", { name: "Add block" }).click();
 

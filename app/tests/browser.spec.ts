@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData, chooseOption, expectChoice, pickDate, expectDate } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData, chooseOption, expectChoice, pickDate, expectDate, fillDateTime, expectDateTime, pickDateOn } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -119,8 +119,8 @@ test("Today shows what is due, what is coming up and today's schedule from the p
 
   await openCalendar(page);
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
+  await fillDateTime(page, "Start", `${today}T09:00`);
+  await fillDateTime(page, "End", `${today}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
   await expect(page.locator(`[data-date="${today}"] .calendar-block`)).toHaveCount(1);
 
@@ -642,8 +642,8 @@ test("a block enters in 160 ms without a blur, and the now-bar settles in 350 ms
 
   await recordAnimations(page);
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(wallClock(start));
-  await page.getByLabel("End", { exact: true }).fill(wallClock(new Date(now.getTime() + 30 * 60_000)));
+  await fillDateTime(page, "Start", wallClock(start));
+  await fillDateTime(page, "End", wallClock(new Date(now.getTime() + 30 * 60_000)));
   await page.getByRole("button", { name: "Add block" }).click();
 
   const day = localDateKey(now);
@@ -1055,8 +1055,8 @@ test("creating a block through the form persists the exact entered instant and r
 
   const day = localDateKey(new Date());
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
+  await fillDateTime(page, "Start", `${day}T09:30`);
+  await fillDateTime(page, "End", `${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();
 
   // The grid renders in the browser's local timezone, so the same wall-clock
@@ -1090,7 +1090,7 @@ test("clicking an empty calendar cell prefills that slot's start and reveals the
   });
   await page.locator(`[data-date="${day}"] .calendar-day-body`).click({ position: { x: 24, y: 468 } });
 
-  await expect(page.getByLabel("Start", { exact: true })).toHaveValue(`${day}T09:00`);
+  await expectDateTime(page, "Start", `${day}T09:00`);
 });
 
 test("a block linked to a task shows that task's title", async ({ page }) => {
@@ -1105,8 +1105,8 @@ test("a block linked to a task shows that task's title", async ({ page }) => {
   await openCalendar(page);
   await revealBlockForm(page);
   const day = localDateKey(new Date());
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T14:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T15:00`);
+  await fillDateTime(page, "Start", `${day}T14:00`);
+  await fillDateTime(page, "End", `${day}T15:00`);
   await chooseOption(page, "Task", "Deep work");
   await page.getByRole("button", { name: "Add block" }).click();
 
@@ -1125,16 +1125,44 @@ test("an end at or before the start is refused with a visible error and writes n
   await openCalendar(page);
 
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill("2026-03-04T10:00");
-  await page.getByLabel("End", { exact: true }).fill("2026-03-04T09:00");
+  await fillDateTime(page, "Start", "2026-03-04T10:00");
+  await fillDateTime(page, "End", "2026-03-04T09:00");
   await page.getByRole("button", { name: "Add block" }).click();
   await expect(page.getByRole("alert")).toContainText("duration must be positive");
 
-  await page.getByLabel("End", { exact: true }).fill("2026-03-04T10:00");
+  await fillDateTime(page, "End", "2026-03-04T10:00");
   await page.getByRole("button", { name: "Add block" }).click();
   await expect(page.getByRole("alert")).toContainText("duration must be positive");
 
   await expectRemoteBlocks(email, []);
+});
+
+test("the block form shows a 24-hour time beside the day in words, and a bad time reverts", async ({ page }) => {
+  await signUp(page, newEmail("block-time"));
+  await openCalendar(page);
+  await revealBlockForm(page);
+
+  const start = page.getByLabel("Start", { exact: true });
+  const clock = page.getByLabel("Start time", { exact: true });
+  await expect(page.locator('input[type="datetime-local"], input[type="date"]')).toHaveCount(0);
+  await expect(start).not.toContainText("/");
+  await fillDateTime(page, "Start", "2026-03-04T14:05");
+  await expect(start).toHaveAttribute("data-value", "2026-03-04");
+  await expect(clock).toHaveValue("14:05");
+
+  // Not a time of the day: the clock goes back to the last good value.
+  await clock.fill("25:99");
+  await clock.press("Tab");
+  await expect(clock).toHaveValue("14:05");
+
+  // Typed shorthand reads as a time, and Enter commits it like leaving the field.
+  await clock.fill("930");
+  await clock.press("Enter");
+  await expect(clock).toHaveValue("09:30");
+
+  // Picking another day keeps the clock.
+  await pickDateOn(page, start, "2026-03-06");
+  await expectDateTime(page, "Start", "2026-03-06T09:30");
 });
 
 test("deleting a block removes it from the grid and from the server", async ({ page }) => {
@@ -1144,8 +1172,8 @@ test("deleting a block removes it from the grid and from the server", async ({ p
 
   const day = localDateKey(new Date());
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T11:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T12:00`);
+  await fillDateTime(page, "Start", `${day}T11:00`);
+  await fillDateTime(page, "End", `${day}T12:00`);
   await page.getByRole("button", { name: "Add block" }).click();
   await expectSingleRemoteBlock(email);
 
@@ -1168,8 +1196,8 @@ test("week navigation changes the visible week", async ({ page }) => {
   nextWeek.setDate(nextWeek.getDate() + 7);
   const key = localDateKey(nextWeek);
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${key}T08:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${key}T09:00`);
+  await fillDateTime(page, "Start", `${key}T08:00`);
+  await fillDateTime(page, "End", `${key}T09:00`);
   await page.getByRole("button", { name: "Add block" }).click();
   await expectSingleRemoteBlock(email);
 
@@ -1195,8 +1223,8 @@ test("at a phone viewport the calendar shows one day and steps to the next day's
   const tomorrow = dayKey(1);
 
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${today}T09:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${today}T10:00`);
+  await fillDateTime(page, "Start", `${today}T09:00`);
+  await fillDateTime(page, "End", `${today}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
 
   // One day column is rendered, and it is today's.
@@ -1225,8 +1253,8 @@ test("a block with an unacknowledged write is marked pending until it is acknowl
 
   const day = localDateKey(new Date());
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T09:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T10:00`);
+  await fillDateTime(page, "Start", `${day}T09:00`);
+  await fillDateTime(page, "End", `${day}T10:00`);
   await page.getByRole("button", { name: "Add block" }).click();
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);
@@ -1386,8 +1414,8 @@ test("a clean account creates the profile on first use and renders the planner i
   // A form-created block renders in the profile (= browser) zone.
   const day = wallClockIn(new Date(), zone).date;
   await revealBlockForm(page);
-  await page.getByLabel("Start", { exact: true }).fill(`${day}T09:30`);
-  await page.getByLabel("End", { exact: true }).fill(`${day}T10:15`);
+  await fillDateTime(page, "Start", `${day}T09:30`);
+  await fillDateTime(page, "End", `${day}T10:15`);
   await page.getByRole("button", { name: "Add block" }).click();
 
   const block = page.locator(`[data-date="${day}"] .calendar-block`);

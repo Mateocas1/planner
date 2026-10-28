@@ -35,6 +35,8 @@ export interface DateFieldProps {
   /** First day of the week, 0 = Sunday. The app default is Monday. */
   weekStart?: number;
   disabled?: boolean;
+  /** Offer the "No date" row. Off where an empty value is not a valid state (a block's start). Default on. */
+  clearable?: boolean;
 }
 
 const utc = { timeZone: "UTC" } as const;
@@ -55,7 +57,7 @@ function capitalize(text: string): string {
  * quick row or "No date" calls `onChange`, closes it and returns focus to the
  * trigger.
  */
-export function DateField({ id, value, onChange, today, labels, locale = "en-US", weekStart = 1, disabled = false }: DateFieldProps) {
+export function DateField({ id, value, onChange, today, labels, locale = "en-US", weekStart = 1, disabled = false, clearable = true }: DateFieldProps) {
   const [month, setMonth] = useState((value || today).slice(0, 7));
   // Remounts the grid on every open, so it takes focus again after a reopen.
   const [opened, setOpened] = useState(0);
@@ -125,7 +127,7 @@ export function DateField({ id, value, onChange, today, labels, locale = "en-US"
                 <span className="date-row-hint">{weekday.format(keyToWallUtc(row.key))}</span>
               </button>
             ))}
-            {value !== "" && (
+            {clearable && value !== "" && (
               <button type="button" className="date-row" onClick={() => choose("")}>
                 <span>{labels.noDate}</span>
               </button>

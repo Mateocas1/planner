@@ -1,0 +1,26 @@
+/*
+ * DateTimeField: the date trigger and the 24-hour time input side by side in
+ * one form row. The trigger takes the room, the time keeps the width of its
+ * five digits (ch and em, so it grows with the font like the settings time).
+ */
+
+.datetime-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 80%;
+}
+
+.datetime-pair .date-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.form-control.block-time {
+  flex: none;
+  width: calc(5.5ch + 1em);
+  max-width: none;
+  padding-inline: 0.5em;
+  white-space: nowrap;
+}
