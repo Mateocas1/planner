@@ -32,6 +32,7 @@ import {
 } from "./time.ts";
 import { blockTomorrow, rovingTabIndex } from "./shortcuts.ts";
 import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
+import { Select } from "./Select.tsx";
 import { settle } from "./write.ts";
 
 /**
@@ -840,6 +841,10 @@ function BlockForm({
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
   const [taskId, setTaskId] = useState("");
+  const taskOptions = useMemo(
+    () => [{ value: "", label: "No task" }, ...tasks.filter(task => !task.completed).map(task => ({ value: task.id, label: task.title }))],
+    [tasks],
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -882,12 +887,7 @@ function BlockForm({
           </div>
           <div className="form-row">
             <label htmlFor="block-task">Task</label>
-            <select id="block-task" className="form-control" value={taskId} onChange={event => setTaskId(event.target.value)}>
-              <option value="">No task</option>
-              {tasks.filter(task => !task.completed).map(task => (
-                <option key={task.id} value={task.id}>{task.title}</option>
-              ))}
-            </select>
+            <Select id="block-task" label="Task" value={taskId} options={taskOptions} onChange={setTaskId} />
           </div>
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}

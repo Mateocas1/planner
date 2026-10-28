@@ -6,6 +6,7 @@ import {
   type WeeklyReviewSettings,
   type WeeklyReviewStep,
 } from "../../../planning/weekly.ts";
+import { Select } from "../../Select.tsx";
 import { formatClock, parseClock, TimeField } from "../../Settings.tsx";
 import { settle } from "../../write.ts";
 import { Section, SettingRow } from "../SettingRow.tsx";
@@ -147,20 +148,18 @@ export function RitualsTab({
         <p className="settings-section-desc">When each moment opens, and the steps it runs.</p>
         <div className="settings-card rituals-moments">
           {settings.moments.map((moment, index) => (
-            <div key={`${index}-${moment.day}-${moment.time}`} className="rituals-moment">
+            <div key={index} className="rituals-moment">
               <div className="rituals-moment-row">
                 <label className="rituals-moment-label" htmlFor={`rituals-day-${index}`}>Moment {index + 1}</label>
                 <div className="rituals-moment-controls">
-                  <select
+                  <Select
                     id={`rituals-day-${index}`}
-                    className="form-control rituals-day"
-                    value={moment.day}
-                    onChange={event => editMoment(index, { day: Number(event.target.value) })}
-                  >
-                    {weekdayNames.map((name, day) => (
-                      <option key={day} value={day}>{name}</option>
-                    ))}
-                  </select>
+                    label={`Moment ${index + 1}`}
+                    className="rituals-day"
+                    value={String(moment.day)}
+                    options={dayOptions}
+                    onChange={value => editMoment(index, { day: Number(value) })}
+                  />
                   <TimeField
                     id={`rituals-time-${index}`}
                     value={timeDrafts[index] ?? formatClock(moment.time)}
@@ -208,6 +207,7 @@ export function RitualsTab({
 
 /** The weekday select's options, in stored order (0 = Sunday, as weekly.ts documents). */
 const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const dayOptions = weekdayNames.map((label, day) => ({ value: String(day), label }));
 
 /** The four steps, in flow order, as the chips' labels. */
 const stepNames: ReadonlyArray<[WeeklyReviewStep, string]> = weeklyReviewSteps.map(step => [

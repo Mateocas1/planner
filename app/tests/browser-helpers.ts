@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * Browser-test helpers that touch the Auth and Firestore emulators.
@@ -638,6 +638,28 @@ export async function hitArea(page: Page, selector: string, min = 44) {
     },
     { selector, min },
   );
+}
+
+/* ---------- Select (src/ui/Select.tsx) ---------- */
+
+/**
+ * Picks `optionName` in the Select the form-row label `label` names. The
+ * trigger is a `combobox` named by its `<label htmlFor>`; its listbox is named
+ * by the same text only while it is open, so the open list is found by role
+ * and waited out (display:none after the exit) before the helper returns.
+ */
+export async function chooseOption(scope: Page | Locator, label: string, optionName: string): Promise<void> {
+  const trigger = scope.getByRole("combobox", { name: label, exact: true });
+  await trigger.click();
+  const popId = await trigger.getAttribute("aria-controls");
+  await scope.getByRole("listbox", { name: label, exact: true }).getByRole("option", { name: optionName, exact: true }).click();
+  await expect(scope.locator(`[id="${popId}"]`)).toBeHidden();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+}
+
+/** The Select named `label` shows `text` as its value. */
+export async function expectChoice(scope: Page | Locator, label: string, text: string): Promise<void> {
+  await expect(scope.getByRole("combobox", { name: label, exact: true })).toHaveText(text);
 }
 
 /* ---------- Responsive fixture (tests/responsive.spec.ts) ---------- */
