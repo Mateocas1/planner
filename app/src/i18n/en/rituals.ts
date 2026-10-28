@@ -78,7 +78,7 @@ export const rituals = {
     other: "{count} tasks completed",
   },
   "weekly.review.doneOfPlanned": {
-    one: "{done} of {count} planned task completed",
+    one: "{done} of {count} planned tasks completed",
     other: "{done} of {count} planned tasks completed",
   },
   "weekly.bias.slow": "Tasks took about {ratio}× their estimates.",

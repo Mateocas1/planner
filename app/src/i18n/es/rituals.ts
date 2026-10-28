@@ -7,7 +7,7 @@ export const rituals = {
   "shutdown.undoFailed": "No se pudo guardar la acción de deshacer.",
   "shutdown.laterClose": "El día se cerró de nuevo, así que no se deshizo nada.",
   "shutdown.summary.none": "No queda nada pendiente. Cerrar el día.",
-  "shutdown.summary.counts": "{done} hechas · {leftOver} pendientes",
+  "shutdown.summary.counts": "Hechas: {done} · Pendientes: {leftOver}",
   "shutdown.announce.none": "Día cerrado. No se movió nada.",
   "shutdown.announce.moved": {
     one: "Día cerrado. {count} tarea movida a {weekday}.",

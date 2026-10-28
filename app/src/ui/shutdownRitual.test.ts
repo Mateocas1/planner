@@ -283,7 +283,7 @@ test("the ritual's sentences follow the language", () => {
   setDeviceLanguage("es");
   try {
     assert.equal(closeFailedMessage(), "No se pudo cerrar el día. No ha cambiado nada.");
-    assert.equal(leftoverSummary({ done: 3, leftOver: 2 }), "3 hechas · 2 pendientes");
+    assert.equal(leftoverSummary({ done: 3, leftOver: 2 }), "Hechas: 3 · Pendientes: 2");
     assert.equal(morningBriefText({ blockCount: 1, firstStartMinutes: 540, firstFreeSlotMinutes: 630 }), "Hoy: 1 bloque, el primero a las 09:00. Primer hueco libre 10:30.");
     assert.equal(morningBriefText({ blockCount: 4, firstStartMinutes: 540 }), "Hoy: 4 bloques, el primero a las 09:00.");
     assert.match(closeAnnouncement({ moved: 2, tomorrowKey: "2026-10-29" }), /^Día cerrado\. 2 tareas movidas a jueves\.$/);
