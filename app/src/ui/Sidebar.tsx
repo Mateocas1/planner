@@ -6,7 +6,7 @@ import { setTaskCompleted } from "../data/tasks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { currentAndNext } from "../domain/upNext.ts";
 import { FocusStartButton, FocusWidget } from "./FocusWidget.tsx";
-import { CalendarIcon, ChevronLeft, ChevronRight, TasksIcon, TodayIcon } from "./icons.tsx";
+import { CalendarIcon, ChevronLeft, ChevronRight, ICON_STROKE, TasksIcon, TodayIcon } from "./icons.tsx";
 import { shiftDay, shiftMonth, weekEdges } from "./monthGrid.ts";
 import { spring, useNow } from "./motion.ts";
 import { SettingsIcon } from "./Settings.tsx";
@@ -30,7 +30,7 @@ export const views: { id: View; label: string; Icon: typeof TodayIcon }[] = [
  *  view icons). */
 export function WeeklyIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
       <path d="M20 12a8 8 0 1 1-2.3-5.6" />
       <path d="M20 4v3h-3" />
       <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
@@ -472,7 +472,7 @@ const themeIconBase = {
 
 function MonitorIcon({ className }: ThemeIconProps) {
   return (
-    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+    <svg {...themeIconBase} strokeWidth={ICON_STROKE} className={className}>
       <rect x="3" y="4.5" width="18" height="12.5" rx="2.5" />
       <path d="M9 21h6M12 17v4" />
     </svg>
@@ -481,7 +481,7 @@ function MonitorIcon({ className }: ThemeIconProps) {
 
 function SunIcon({ className }: ThemeIconProps) {
   return (
-    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+    <svg {...themeIconBase} strokeWidth={ICON_STROKE} className={className}>
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
     </svg>
@@ -490,7 +490,7 @@ function SunIcon({ className }: ThemeIconProps) {
 
 function MoonIcon({ className }: ThemeIconProps) {
   return (
-    <svg {...themeIconBase} strokeWidth={1.7} className={className}>
+    <svg {...themeIconBase} strokeWidth={ICON_STROKE} className={className}>
       <path d="M20.5 14.8A8.6 8.6 0 0 1 9.2 3.5a8.6 8.6 0 1 0 11.3 11.3Z" />
     </svg>
   );

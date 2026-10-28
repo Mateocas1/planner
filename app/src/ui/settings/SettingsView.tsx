@@ -10,6 +10,7 @@ import { DesktopTab } from "./tabs/DesktopTab.tsx";
 import { GeneralTab } from "./tabs/GeneralTab.tsx";
 import { RitualsTab } from "./tabs/RitualsTab.tsx";
 import { ShortcutsTab } from "./tabs/ShortcutsTab.tsx";
+import { ICON_STROKE } from "../icons.tsx";
 import "./SettingsView.css";
 
 /**
@@ -132,7 +133,7 @@ function TabIcon({ id }: { id: SettingsTab }) {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 1.7,
+    strokeWidth: ICON_STROKE,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
@@ -181,7 +182,7 @@ function TabIcon({ id }: { id: SettingsTab }) {
 
 function ChevronLeftIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="settings-back-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="settings-back-icon">
       <path d="m14.5 6-6 6 6 6" />
     </svg>
   );

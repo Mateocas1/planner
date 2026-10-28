@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES } from "../domain/model.ts";
 import { ESTIMATE_COARSE_STEP, ESTIMATE_GRID_MINUTES, digitsOnly, parseDraft, stepEstimate } from "./estimateStep.ts";
+import { ICON_STROKE } from "./icons.tsx";
 import "./EstimateControl.css";
 
 /** Quiet time after the last stepper click or arrow key before the draft is committed. */
@@ -70,7 +71,7 @@ function useDebouncedCommit(commit: () => void, delayMs: number) {
 function Glyph({ plus }: { plus: boolean }) {
   return (
     <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true" focusable="false">
-      <path d={plus ? "M7 2.5v9M2.5 7h9" : "M2.5 7h9"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d={plus ? "M7 2.5v9M2.5 7h9" : "M2.5 7h9"} fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" />
     </svg>
   );
 }

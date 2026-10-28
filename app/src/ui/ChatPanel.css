@@ -332,6 +332,13 @@
   }
 }
 
+.chat-answer em {
+  /* Onest has no italic axis: emphasis is weight and colour, never a synthesized slant. */
+  font-style: normal;
+  font-weight: 600;
+  color: var(--label);
+}
+
 .chat-answer {
   position: relative;
   align-self: flex-start;

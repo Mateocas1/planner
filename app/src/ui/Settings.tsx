@@ -8,6 +8,8 @@
  * ui/settings/.
  */
 
+import { ICON_STROKE } from "./icons.tsx";
+
 /**
  * "HH:MM" for minutes after midnight. The end of the day reads as 24:00.
  */
@@ -43,7 +45,7 @@ export function SettingsIcon({ className }: { className?: string }) {
       stroke="currentColor"
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth={1.7}
+      strokeWidth={ICON_STROKE}
       aria-hidden="true"
       className={className}
     >

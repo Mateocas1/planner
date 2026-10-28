@@ -22,6 +22,7 @@ import {
 } from "./focusPillState.ts";
 import { useLocale } from "../i18n/index.ts";
 // The pill's own paint ships beside it (AGENTS.md: co-located styles).
+import { ICON_STROKE } from "./icons.tsx";
 import "./FocusPill.css";
 
 /**
@@ -60,7 +61,7 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 11;
 function PauseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8.2 5.5v13M15.8 5.5v13" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" fill="none" />
+      <path d="M8.2 5.5v13M15.8 5.5v13" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" fill="none" />
     </svg>
   );
 }
@@ -76,7 +77,7 @@ function PlayIcon() {
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" fill="none" />
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" fill="none" />
     </svg>
   );
 }
