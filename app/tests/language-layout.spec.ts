@@ -269,6 +269,7 @@ for (const theme of ["light", "dark"] as const) {
           await shot(page, tag, "10b-create-repeating");
           await sheet.getByRole("button", { name: "Añadir tarea" }).click();
           await expect(page.locator(".new-task-sheet")).toBeHidden();
+          await shot(page, tag, "10c-tasks-with-series");
         });
         await step("series", async () => {
           await page.locator("main#content").getByRole("button", { name: /^Tarea con una fecha límite/ }).first().click();

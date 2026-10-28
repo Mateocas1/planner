@@ -1079,6 +1079,14 @@ time,
    shows when the cap does bite. */
 @media (max-width: 520px) {
   .row-meta { max-width: 42%; }
+  /* The repeating row's meta is two facts, frequency and next date. Side by
+     side they shared the 42% and both lost their tail ("Cada …", "próxi…" in
+     Spanish); stacked, each keeps its whole word. */
+  .row-meta.has-icon:has(.task-deadline) {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+  }
 }
 
 .meta-icon { width: 13px; height: 13px; flex: none; }
