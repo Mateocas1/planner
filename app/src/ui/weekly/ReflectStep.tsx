@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.ts";
 import { MAX_NOTE_CHARS } from "../../planning/weekly.ts";
 
 /**
@@ -24,17 +25,17 @@ export function ReflectStep({
   const remaining = MAX_NOTE_CHARS - value.length;
   return (
     <div className="weekly-pane-body">
-      <label htmlFor="weekly-reflect" className="weekly-lede">What worked, what did not, and one intention for next week.</label>
+      <label htmlFor="weekly-reflect" className="weekly-lede">{t("weekly.reflect.prompt")}</label>
       <textarea
         id="weekly-reflect"
         className="weekly-reflect"
         value={value}
         onChange={event => onChange(event.target.value)}
         rows={7}
-        placeholder="This week…"
+        placeholder={t("weekly.reflect.placeholder")}
       />
       <p className={`weekly-count${remaining < 0 ? " is-over" : ""}`} aria-live="polite">
-        {remaining < 0 ? `${-remaining} too many` : `${remaining} characters left`}
+        {remaining < 0 ? t("weekly.reflect.over", { count: -remaining }) : t("weekly.reflect.left", { count: remaining })}
       </p>
     </div>
   );

@@ -11,35 +11,18 @@
  */
 
 import type { DueMoment, WeeklyMoment, WeeklyNumbers, WeeklyReviewStep } from "../../planning/weekly.ts";
+import { t, type MessageKey } from "../../i18n/index.ts";
 import { formatDuration, formatWall, keyToWallUtc } from "../time.ts";
 
-/** The four steps in flow order, with the copy each pane shows. */
-export type StepMeta = {
-  id: WeeklyReviewStep;
-  label: string;
-  /** The pane's one-line lede. */
-  lede: string;
-};
-
-export const weeklyStepMeta: readonly StepMeta[] = [
-  { id: "review", label: "Review", lede: "How the week actually went." },
-  { id: "cleanup", label: "Clean up", lede: "Decide what to do with what is left over." },
-  { id: "plan", label: "Plan", lede: "Set next week's priorities and time." },
-  { id: "reflect", label: "Reflect", lede: "A short note for yourself." },
-];
-
-function metaOf(step: WeeklyReviewStep): StepMeta {
-  const found = weeklyStepMeta.find(entry => entry.id === step);
-  if (found === undefined) throw new Error(`unknown weekly review step: ${step}`);
-  return found;
-}
+/** The four steps in flow order; each has a label and a one-line lede in the dictionary. */
+export const weeklyStepIds: readonly WeeklyReviewStep[] = ["review", "cleanup", "plan", "reflect"];
 
 export function stepLabel(step: WeeklyReviewStep): string {
-  return metaOf(step).label;
+  return t(`weekly.step.${step}`);
 }
 
 export function stepLede(step: WeeklyReviewStep): string {
-  return metaOf(step).lede;
+  return t(`weekly.lede.${step}`);
 }
 
 /**
@@ -62,7 +45,7 @@ export function weekRangeLabel(monday: string, sunday: string): string {
 /** "Week 43": the week key's own number, for headings and announcements. */
 export function weekNumberLabel(week: string): string {
   const match = /^(\d{4})-W(\d{2})$/.exec(week);
-  return match === null ? week : `Week ${Number(match[2])}`;
+  return match === null ? week : t("weekly.weekNumber", { number: Number(match[2]) });
 }
 
 /** The banner's sentence: when the moment opens, in the zone's weekday words. */
@@ -70,20 +53,19 @@ export function momentLabel(moment: WeeklyMoment): string {
   const day = weekdayName(moment.day);
   const hours = Math.floor(moment.time / 60);
   const minutes = moment.time % 60;
-  return `${day} at ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return t("weekly.moment", { day, time: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}` });
 }
 
 /** The JavaScript weekday number (0 = Sunday) as the UI's word. */
 export function weekdayName(day: number): string {
-  const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  return names[((day % 7) + 7) % 7];
+  return t(`weekly.day.${((day % 7) + 7) % 7}` as MessageKey & `weekly.day.${number}`);
 }
 
 /** The steps a moment runs, as the Rituals row reads them, in flow order. */
 export function momentStepsLabel(steps: readonly WeeklyReviewStep[]): string {
-  return weeklyStepMeta
-    .filter(meta => steps.includes(meta.id))
-    .map(meta => meta.label)
+  return weeklyStepIds
+    .filter(id => steps.includes(id))
+    .map(stepLabel)
     .join(", ");
 }
 
@@ -102,21 +84,21 @@ export function reviewSentences(
   const planned = formatDuration(numbers.plannedMinutes);
   const actual = formatDuration(numbers.actualMinutes);
   lines.push({
-    label: "Planned vs actual",
+    label: t("weekly.review.plannedVsActual"),
     value: numbers.actualMinutes > 0
-      ? `${planned} planned · ${actual} tracked${actualIsPartial ? " (approximate)" : ""}`
-      : `${planned} planned · nothing tracked yet`,
+      ? t(actualIsPartial ? "weekly.review.trackedApprox" : "weekly.review.tracked", { planned, actual })
+      : t("weekly.review.nothingTracked", { planned }),
   });
 
   if (numbers.biasRatio !== null) {
-    lines.push({ label: "Estimation", value: biasSentence(numbers.biasRatio) });
+    lines.push({ label: t("weekly.review.estimation"), value: biasSentence(numbers.biasRatio) });
   }
 
   lines.push({
-    label: "Done",
+    label: t("weekly.review.done"),
     value: numbers.plannedCount === 0
-      ? `${numbers.doneCount} ${numbers.doneCount === 1 ? "task" : "tasks"} completed`
-      : `${numbers.doneCount} of ${numbers.plannedCount} planned ${numbers.plannedCount === 1 ? "tasks" : "tasks"} completed`,
+      ? t("weekly.review.doneOnly", { count: numbers.doneCount })
+      : t("weekly.review.doneOfPlanned", { count: numbers.plannedCount, done: numbers.doneCount }),
   });
 
   return lines;
@@ -128,9 +110,9 @@ export function reviewSentences(
  * reads as "close to your estimates"; outside it the ratio is said plainly.
  */
 export function biasSentence(ratio: number): string {
-  if (ratio >= 1.1) return `Tasks took about ${ratio.toFixed(1)}× their estimates.`;
-  if (ratio <= 0.9) return `Tasks took about ${ratio.toFixed(1)}× their estimates — faster than planned.`;
-  return "Time landed close to your estimates.";
+  if (ratio >= 1.1) return t("weekly.bias.slow", { ratio: ratio.toFixed(1) });
+  if (ratio <= 0.9) return t("weekly.bias.fast", { ratio: ratio.toFixed(1) });
+  return t("weekly.bias.close");
 }
 
 /** "Where the time went", as the top three's own lines; empty when nothing was tracked. */
@@ -139,17 +121,14 @@ export function topTaskLines(top: readonly { title: string; minutes: number }[])
 }
 
 /**
- * The Clean-up action's labels and toasts, in the row's order. The words are
- * data so the buttons and the unit tests share one table.
+ * The Clean-up action's labels, in the row's order.
  */
-export const cleanupActionLabels: Record<"this-week" | "someday" | "delete", string> = {
-  "this-week": "This week",
-  someday: "Someday",
-  delete: "Delete",
-};
+export function cleanupActionLabel(action: "this-week" | "someday" | "delete"): string {
+  return t(`weekly.action.${action}`);
+}
 
 /** The reason a candidate shows. `today` is accepted for symmetry with the
  *  row that renders it; the label does not depend on the date. */
 export function cleanupReasonLabel(reason: "overdue" | "scheduled-not-done", _today: string): string {
-  return reason === "overdue" ? "Overdue" : "Was scheduled this week";
+  return t(`weekly.reason.${reason}`);
 }

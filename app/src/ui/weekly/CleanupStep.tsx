@@ -4,7 +4,8 @@ import { deleteTask, restoreTaskWithBlocks, setTaskDeadline } from "../../data/t
 import { linkedBlocks } from "../../data/blocks.ts";
 import { setTaskSomeday } from "../../data/weeklyReview.ts";
 import { cleanupCandidates, type CleanupAction } from "../../planning/weekly.ts";
-import { cleanupActionLabels, cleanupReasonLabel } from "./weeklyFlow.ts";
+import { t } from "../../i18n/index.ts";
+import { cleanupActionLabel, cleanupReasonLabel } from "./weeklyFlow.ts";
 import { dateKey } from "../time.ts";
 import type { UndoableDelete } from "../UndoToast.tsx";
 import { settle } from "../write.ts";
@@ -79,7 +80,7 @@ export function CleanupStep({
       .then(deletedBlocks =>
         settle(deleteTask(uid, taskId, deletedBlocks)).then(() => {
           if (deleted !== undefined) {
-            onOfferUndo({ message: "Task deleted", restore: () => settle(restoreTaskWithBlocks(uid, deleted, deletedBlocks)) });
+            onOfferUndo({ message: t("weekly.cleanup.deleted"), restore: () => settle(restoreTaskWithBlocks(uid, deleted, deletedBlocks)) });
           }
         }),
       )
@@ -90,7 +91,7 @@ export function CleanupStep({
     <div className="weekly-pane-body">
       {live.length === 0 ? (
         <p className="weekly-empty" role="status">
-          {candidates.length === 0 ? "Nothing to clean up — nothing is overdue or left on the calendar." : "All caught up."}
+          {candidates.length === 0 ? t("weekly.cleanup.empty") : t("weekly.cleanup.caughtUp")}
         </p>
       ) : (
         <ul className="weekly-cleanup">
@@ -102,7 +103,7 @@ export function CleanupStep({
                   {candidate.reasons.map(reason => cleanupReasonLabel(reason, today)).join(" · ")}
                 </span>
               </div>
-              <div className="weekly-cleanup-actions" role="group" aria-label={`Decide: ${candidate.task.title}`}>
+              <div className="weekly-cleanup-actions" role="group" aria-label={t("weekly.cleanup.decide", { title: candidate.task.title })}>
                 {candidate.actions.map(action => (
                   <button
                     key={action}
@@ -110,7 +111,7 @@ export function CleanupStep({
                     className={`button small${action === "delete" ? " is-danger" : ""}`}
                     onClick={() => run(action, candidate.task.id)}
                   >
-                    {cleanupActionLabels[action]}
+                    {cleanupActionLabel(action)}
                   </button>
                 ))}
               </div>
