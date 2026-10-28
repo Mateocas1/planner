@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import { classifyHoliday, isHolidayCalendar, type Holiday } from "./holidays.ts";
 import { toZonedInstant } from "./instant.ts";
 import { createTask, createWorkBlock, type BlockSource, type Task, type WorkBlock } from "./model.ts";
@@ -409,8 +410,7 @@ export function splitCleanupByCalendars<T extends { calendarId: string }>(
 
 /** The sentence after a cleanup, true to how many tasks were really deleted. */
 export function cleanupOutcomeMessage(deleted: number, total: number): { ok: boolean; text: string } {
-  const noun = (count: number) => `${count} holiday ${count === 1 ? "task" : "tasks"}`;
-  if (deleted >= total) return { ok: true, text: `Replaced ${noun(deleted)} with holiday labels.` };
-  if (deleted === 0) return { ok: false, text: "Nothing was deleted. Try again." };
-  return { ok: false, text: `Deleted ${deleted} of ${total}; the rest are still there \u2014 try again.` };
+  if (deleted >= total) return { ok: true, text: t("gcal.cleanupDone", { items: t("gcal.count.holidayTask", { count: deleted }) }) };
+  if (deleted === 0) return { ok: false, text: t("gcal.cleanupFailed") };
+  return { ok: false, text: t("gcal.cleanupPartial", { deleted, total }) };
 }

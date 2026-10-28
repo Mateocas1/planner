@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import { toZonedInstant } from "../domain/instant.ts";
 import type { GcalEvent } from "../domain/gcalImport.ts";
 import { isTauri } from "../desktop.ts";
@@ -53,16 +54,34 @@ export const GIS_LOAD_TIMEOUT_MS = 10_000;
  * complete, and an undone import is the compensating action.
  */
 export const googleMessages = {
-  closed: "Google sign-in was closed before it finished. Nothing was changed.",
-  blocked: "Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.",
-  denied: "Google did not authorize the import. Nothing was changed.",
-  unavailable: "Google sign-in could not load. Check your connection and try again.",
-  expired: "The Google session expired. Connect again.",
-  failed: "Google Calendar could not be read. Try again.",
-  notConfigured: "Google import is not configured in this build.",
-  timedOut: "Google sign-in took too long. Nothing was changed. Try again.",
-  signInFailed: "Google sign-in could not be completed. Nothing was changed. Try again.",
-} as const;
+  get closed() {
+    return t("google.closed");
+  },
+  get blocked() {
+    return t("google.blocked");
+  },
+  get denied() {
+    return t("google.denied");
+  },
+  get unavailable() {
+    return t("google.unavailable");
+  },
+  get expired() {
+    return t("google.expired");
+  },
+  get failed() {
+    return t("google.failed");
+  },
+  get notConfigured() {
+    return t("google.notConfigured");
+  },
+  get timedOut() {
+    return t("google.timedOut");
+  },
+  get signInFailed() {
+    return t("google.signInFailed");
+  },
+};
 
 /**
  * The sentence for a sign-in failure. GIS reports a closed popup and a blocked
@@ -168,7 +187,7 @@ export type EventList = { events: GcalEvent[]; truncated: boolean };
  * count look complete.
  */
 export function truncatedNote(count: number): string {
-  return `Only the first ${count} events were loaded; narrow the range.`;
+  return t("gcal.truncated", { count });
 }
 
 /**
