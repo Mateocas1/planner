@@ -204,6 +204,8 @@ test.describe("Select on a desktop viewport", () => {
     await expect(listbox(page)).toBeVisible();
     await page.keyboard.press("d");
     expect(await active()).toBe("Daily");
+    // A pause longer than the 500 ms buffer starts a new prefix.
+    await page.waitForTimeout(600);
     await page.keyboard.press("w");
     expect(await active()).toBe("Weekly");
     await page.keyboard.press("Escape");
@@ -254,7 +256,10 @@ test.describe("Select on a desktop viewport", () => {
     await expect(sheet.locator("select")).toHaveCount(0);
     await sheet.getByLabel("Task title").fill("Water the plants");
     await chooseOption(sheet, "Repeat", "Daily");
+    await sheet.getByLabel("Start date").fill("2026-11-02");
     await sheet.getByRole("button", { name: "Add task" }).click();
+    await expect(page.getByRole("complementary", { name: "New task" })).toHaveCount(0);
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
     await expect(page.locator(".series-row", { hasText: "Water the plants" })).toBeVisible();
   });
 });

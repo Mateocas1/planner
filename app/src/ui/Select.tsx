@@ -59,6 +59,11 @@ export function Select({
     if (option.value !== value) onChange(option.value);
   };
 
+  // A closed list forgets the prefix, so the next open starts a fresh one.
+  useEffect(() => {
+    if (!pop.open) typed.current = { buffer: "", at: 0 };
+  }, [pop.open]);
+
   // The highlighted option stays in view when the keyboard moves it.
   useEffect(() => {
     if (!pop.open) return;
