@@ -1,0 +1,17 @@
+/** Sign-in copy. English is the source of truth: `es/auth.ts` must carry the same keys and placeholders. */
+export const auth = {
+  "auth.error.credentials": "That email and password do not match an account.",
+  "auth.error.emailInUse": "An account with this email already exists. Sign in instead.",
+  "auth.error.weakPassword": "Use at least 6 characters.",
+  "auth.error.invalidEmail": "Enter a valid email address.",
+  "auth.error.tooManyRequests": "Too many attempts. Wait a minute and try again.",
+  "auth.error.network": "No connection. Check your network and try again.",
+  "auth.error.sessionExpired": "Your session expired. Try again.",
+  "auth.error.default": "Could not sign in. Try again.",
+  "auth.title": "Personal Planner",
+  "auth.tagline": "Tasks, deadlines and the time you set aside for them. Works offline.",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.signIn": "Sign in",
+  "auth.createAccount": "Create account",
+} as const;

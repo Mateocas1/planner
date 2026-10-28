@@ -613,7 +613,7 @@ export async function submitAuthForm(
   });
   await submit.click();
   const shell = signedInShell(page, email);
-  const clockArtifact = page.getByRole("alert").filter({ hasText: "auth/user-token-expired" });
+  const clockArtifact = page.getByRole("alert").filter({ hasText: "Your session expired. Try again." });
   await expect(shell.or(clockArtifact)).toBeVisible({ timeout: SERVER_WAIT });
   if (await clockArtifact.isVisible()) {
     // The backwards step that caused the artifact is still in effect for as long

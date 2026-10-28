@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from "react";
+import { authErrorKey } from "../data/authErrors.ts";
 import { createAccount, signIn } from "../data/session.ts";
+import { t, useLocale, type MessageKey } from "../i18n/index.ts";
 
 export function AuthForm() {
+  useLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(action: () => Promise<unknown>) {
@@ -13,7 +16,7 @@ export function AuthForm() {
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign-in failed. Try again.");
+      setError(authErrorKey(cause));
     } finally {
       setBusy(false);
     }
@@ -27,21 +30,23 @@ export function AuthForm() {
   return (
     <main className="gate">
       <div className="gate-card card">
-        <h1 className="gate-title">Personal Planner</h1>
-        <p className="subtitle">Tasks, deadlines and the time you set aside for them. Works offline.</p>
+        <h1 className="gate-title">{t("auth.title")}</h1>
+        <p className="subtitle">{t("auth.tagline")}</p>
         <form onSubmit={onSubmit} className="gate-form">
           <div className="form-group">
             <div className="form-row stacked">
-              <label htmlFor="email">Email</label>
-              <input id="email" className="form-control" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required />
+              <label htmlFor="email">{t("auth.email")}</label>
+              <input id="email" className="form-control" type="email" autoComplete="email" aria-invalid={error ? true : undefined} aria-describedby={error ? "auth-error" : undefined} value={email} onChange={event => setEmail(event.target.value)} required />
             </div>
             <div className="form-row stacked">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">{t("auth.password")}</label>
               <input
                 id="password"
                 className="form-control"
                 type="password"
                 autoComplete="current-password"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "auth-error" : undefined}
                 value={password}
                 onChange={event => setPassword(event.target.value)}
                 required
@@ -49,13 +54,13 @@ export function AuthForm() {
               />
             </div>
           </div>
-          {error && <p className="inline-error" role="alert">{error}</p>}
+          {error && <p id="auth-error" className="inline-error" role="alert">{t(error)}</p>}
           <div className="gate-actions">
             <button type="submit" className="button-primary" disabled={busy}>
-              Sign in
+              {t("auth.signIn")}
             </button>
             <button type="button" className="button" disabled={busy} onClick={() => void submit(() => createAccount(email, password))}>
-              Create account
+              {t("auth.createAccount")}
             </button>
           </div>
         </form>

@@ -1,0 +1,16 @@
+export const auth = {
+  "auth.error.credentials": "Ese correo y esa contraseña no corresponden a ninguna cuenta.",
+  "auth.error.emailInUse": "Ya existe una cuenta con este correo. Inicia sesión.",
+  "auth.error.weakPassword": "Usa al menos 6 caracteres.",
+  "auth.error.invalidEmail": "Introduce un correo electrónico válido.",
+  "auth.error.tooManyRequests": "Demasiados intentos. Espera un minuto e inténtalo de nuevo.",
+  "auth.error.network": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
+  "auth.error.sessionExpired": "Tu sesión expiró. Inténtalo de nuevo.",
+  "auth.error.default": "No se pudo iniciar sesión. Inténtalo de nuevo.",
+  "auth.title": "Personal Planner",
+  "auth.tagline": "Tareas, fechas límite y el tiempo que reservas para ellas. Funciona sin conexión.",
+  "auth.email": "Correo electrónico",
+  "auth.password": "Contraseña",
+  "auth.signIn": "Iniciar sesión",
+  "auth.createAccount": "Crear cuenta",
+} as const;
