@@ -24,3 +24,17 @@ test("no wording claims data is saved or safe, which the product cannot promise"
     }
   }
 });
+
+test("the sync line reads in Spanish with its own plural rule", async () => {
+  const { setDeviceLanguage } = await import("../i18n/index.ts");
+  setDeviceLanguage("es");
+  try {
+    assert.deepEqual(syncLine(true, 0), { tone: "synced", text: "Sincronizado" });
+    assert.equal(syncLine(true, 1).text, "1 cambio pendiente de sincronizar");
+    assert.equal(syncLine(true, 3).text, "3 cambios pendientes de sincronizar");
+    assert.equal(syncLine(false, 0).text, "Sin conexión · nada pendiente");
+    assert.equal(syncLine(false, 2).text, "Sin conexión · 2 cambios pendientes");
+  } finally {
+    setDeviceLanguage(null);
+  }
+});

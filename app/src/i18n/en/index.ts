@@ -1,3 +1,4 @@
+import { app } from "./app.ts";
 import { auth } from "./auth.ts";
 import { calendar } from "./calendar.ts";
 import { chat } from "./chat.ts";
@@ -11,6 +12,7 @@ import { today } from "./today.ts";
 
 /** Every English message, composed from one file per area. */
 export const en = {
+  ...app,
   ...auth,
   ...calendar,
   ...chat,

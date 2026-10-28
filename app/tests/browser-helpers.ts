@@ -553,8 +553,8 @@ export async function readRemoteCompletions(email: string): Promise<Array<{ occu
 
 /* ---------- Signing in through the real form ---------- */
 
-/** The signed-in shell: the app's own signal that a session is established. */
-const signedInShell = (page: Page, email: string) => page.getByText(`Signed in as ${email}`);
+/** The signed-in shell: the app's own signal that a session is established (in either language). */
+const signedInShell = (page: Page, email: string) => page.getByText(new RegExp(`^(Signed in as|Sesión iniciada como) ${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
 
 /**
  * Waits for the signed-in shell with the emulator's budget, for the paths that

@@ -60,11 +60,11 @@ import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
 
-const repeatOptions = [
-  { value: "off", label: "Never" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
+const repeatOptions = () => [
+  { value: "off", label: t("app.repeat.off") },
+  { value: "daily", label: t("app.repeat.daily") },
+  { value: "weekly", label: t("app.repeat.weekly") },
+  { value: "monthly", label: t("app.repeat.monthly") },
 ];
 
 export type View = "home" | "tasks" | "calendar" | "settings" | "weekly";
@@ -111,7 +111,7 @@ export default function App() {
       <DesktopShell />
       {loading ? (
         <main className="gate" role="status">
-          <p>Checking your session…</p>
+          <p>{t("app.checkingSession")}</p>
         </main>
       ) : !user ? (
         <AuthForm />
@@ -143,7 +143,6 @@ export default function App() {
   );
 }
 
-const titles: Record<View, string> = { home: "Today", tasks: "Tasks", calendar: "Calendar", settings: "Settings", weekly: "Weekly review" };
 function Shell({
   user,
   view,
@@ -476,12 +475,12 @@ function Shell({
           data-tauri-drag-region
           className={`topbar${scrolled ? " is-scrolled" : ""}${titleHidden ? " is-titled" : ""}`}
         >
-          <span className="topbar-title" data-tauri-drag-region aria-hidden="true">{titles[view]}</span>
+          <span className="topbar-title" data-tauri-drag-region aria-hidden="true">{t(`shell.title.${view}`)}</span>
           <div className="topbar-actions">
             <button
               type="button"
               className="icon-button large"
-              aria-label="Command palette"
+              aria-label={t("app.commandPalette")}
               aria-keyshortcuts="Control+K Meta+K"
               onClick={() => setPaletteOpen(true)}
             >
@@ -497,7 +496,7 @@ function Shell({
               />
             ) : (
               <button ref={newTaskRef} type="button" className="button button-accent" onClick={newTask}>
-                <PlusIcon />New task
+                <PlusIcon />{t("app.newTask")}
               </button>
             )}
           </div>
@@ -505,7 +504,7 @@ function Shell({
         {lateError && (
           <div className="toast" role="alert">
             <span>{lateError}</span>
-            <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => setLateError(null)}><CloseIcon /></button>
+            <button type="button" className="icon-button" aria-label={t("app.dismiss")} onClick={() => setLateError(null)}><CloseIcon /></button>
           </div>
         )}
         <main id="content" tabIndex={-1} className="content">
@@ -613,7 +612,7 @@ function Shell({
       {phone && (
         <>
           <TabBar view={view} onNavigate={onNavigate} />
-          <button ref={newTaskFabRef} type="button" className="fab glass glass-float glass-lens" aria-label="New task" onClick={newTask}>
+          <button ref={newTaskFabRef} type="button" className="fab glass glass-float glass-lens" aria-label={t("app.newTask")} onClick={newTask}>
             <PlusIcon />
           </button>
         </>
@@ -716,7 +715,7 @@ function Shell({
  * springs on a 22 px glyph read as a wobble, so the pill now only travels. */
 function TabBar({ view, onNavigate }: { view: View; onNavigate: (view: View) => void }) {
   return (
-    <nav aria-label="Main" className="tabbar glass glass-float">
+    <nav aria-label={t("app.mainNav")} className="tabbar glass glass-float">
       {views.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -761,9 +760,9 @@ function AccountMenu({
   const [open, setOpen] = useState(false);
   return (
     <div className="account-menu">
-      <button type="button" className="icon-button large" aria-expanded={open} aria-label="Account" onClick={() => setOpen(value => !value)}>
+      <button type="button" className="icon-button large" aria-expanded={open} aria-label={t("app.account")} onClick={() => setOpen(value => !value)}>
         <PersonIcon />
-        <span className="sr-only">Signed in as {email}</span>
+        <span className="sr-only">{t("app.signedInAs", { email })}</span>
       </button>
       <AnimatePresence>
         {open && (
@@ -789,7 +788,7 @@ function AccountMenu({
               }}
             >
               <SettingsIcon />
-              Settings
+              {t("app.settings")}
             </button>
             <button
               type="button"
@@ -800,9 +799,9 @@ function AccountMenu({
               }}
             >
               <CalendarIcon />
-              Import from Google Calendar
+              {t("app.importGoogle")}
             </button>
-            <button type="button" className="button small" onClick={onSignOut}>Sign out</button>
+            <button type="button" className="button small" onClick={onSignOut}>{t("app.signOut")}</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -892,28 +891,28 @@ function NewTaskSheet({
       );
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
+      setError(cause instanceof Error ? cause.message : t("app.sheet.error"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet label="New task" className="new-task-sheet" origin={origin} onClose={onClose}>
+    <Sheet label={t("app.newTask")} className="new-task-sheet" origin={origin} onClose={onClose}>
       <form className="sheet-form" onSubmit={event => void onSubmit(event)}>
         <header className="sheet-head">
-          <span className="sheet-kind">New task</span>
-          <button type="button" className="icon-button" aria-label="Cancel" onClick={onClose}>
+          <span className="sheet-kind">{t("app.newTask")}</span>
+          <button type="button" className="icon-button" aria-label={t("app.sheet.cancel")} onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
-        <label className="sr-only" htmlFor="task-title">Task title</label>
+        <label className="sr-only" htmlFor="task-title">{t("app.sheet.titleLabel")}</label>
         <input
           id="task-title"
           ref={titleInput}
           className="sheet-title"
           type="text"
-          placeholder="What needs doing?"
+          placeholder={t("app.sheet.titlePlaceholder")}
           autoFocus
           autoComplete="off"
           value={title}
@@ -928,7 +927,7 @@ function NewTaskSheet({
         <QuickAddChips parts={chips} today={parsed.today} onUndo={part => setUndone(list => [...list, part.text])} />
         <div className="form-group">
           <div className="form-row">
-            <label htmlFor="task-deadline">Deadline</label>
+            <label htmlFor="task-deadline">{t("app.sheet.deadline")}</label>
             <DateField
               id="task-deadline"
               value={deadline}
@@ -974,18 +973,18 @@ function NewTaskSheet({
             />
           </div>
           <div className="form-row">
-            <label htmlFor="task-repeat">Repeat</label>
+            <label htmlFor="task-repeat">{t("app.sheet.repeat")}</label>
             <Select
               id="task-repeat"
-              label="Repeat"
+              label={t("app.sheet.repeat")}
               value={repeat}
-              options={repeatOptions}
+              options={repeatOptions()}
               onChange={value => setRepeatEdit(value as Frequency | "off")}
             />
           </div>
           {repeat !== "off" && (
             <div className="form-row">
-              <label htmlFor="task-start">Start date</label>
+              <label htmlFor="task-start">{t("app.sheet.startDate")}</label>
               <DateField
                 id="task-start"
                 value={start}
@@ -997,7 +996,7 @@ function NewTaskSheet({
           )}
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
-        <button type="submit" className="button-primary" disabled={busy}>Add task</button>
+        <button type="submit" className="button-primary" disabled={busy}>{t("app.sheet.submit")}</button>
       </form>
     </Sheet>
   );

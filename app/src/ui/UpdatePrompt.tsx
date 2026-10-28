@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import { activateUpdate, useUpdateReady } from "../pwa-update.ts";
 import "./UpdatePrompt.css";
 
@@ -17,10 +18,10 @@ export function UpdatePrompt() {
   return (
     <div className="update-prompt glass glass-float" role="status">
       <div className="update-prompt-text">
-        <p className="update-prompt-title">Update available</p>
-        <p className="update-prompt-body">Reload to use the new version.</p>
+        <p className="update-prompt-title">{t("update.title")}</p>
+        <p className="update-prompt-body">{t("update.body")}</p>
       </div>
-      <button type="button" className="button button-accent" onClick={activateUpdate}>Reload</button>
+      <button type="button" className="button button-accent" onClick={activateUpdate}>{t("update.reload")}</button>
     </div>
   );
 }

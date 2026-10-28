@@ -1,4 +1,5 @@
 import type { Dictionary } from "../types.ts";
+import { app } from "./app.ts";
 import { auth } from "./auth.ts";
 import { calendar } from "./calendar.ts";
 import { chat } from "./chat.ts";
@@ -12,6 +13,7 @@ import { today } from "./today.ts";
 
 /** A key missing here (or an extra one) is a type error: `Dictionary` mirrors `en`. */
 export const es: Dictionary = {
+  ...app,
   ...auth,
   ...calendar,
   ...chat,
