@@ -4,7 +4,10 @@ import type { MessageKey } from "../i18n/index.ts";
  * Firebase auth error code -> the dictionary key of a sentence a person can act
  * on. The SDK message ("Firebase: Error (auth/...)") is never shown.
  */
-const byCode: Record<string, MessageKey> = {
+/** Only `auth.error.*` keys: none of them takes parameters, so `t(key)` needs none. */
+export type AuthErrorKey = Extract<MessageKey, `auth.error.${string}`>;
+
+const byCode: Record<string, AuthErrorKey> = {
   "auth/user-not-found": "auth.error.credentials",
   "auth/wrong-password": "auth.error.credentials",
   "auth/invalid-credential": "auth.error.credentials",
@@ -16,7 +19,7 @@ const byCode: Record<string, MessageKey> = {
   "auth/user-token-expired": "auth.error.sessionExpired",
 };
 
-export function authErrorKey(cause: unknown): MessageKey {
+export function authErrorKey(cause: unknown): AuthErrorKey {
   const code = typeof cause === "object" && cause !== null ? (cause as { code?: unknown }).code : undefined;
   return (typeof code === "string" && byCode[code]) || "auth.error.default";
 }

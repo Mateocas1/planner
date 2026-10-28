@@ -12,6 +12,8 @@ import {
   writeIdleThreshold,
 } from "../../../domain/idle.ts";
 import { readPillEnabled, writePillEnabled } from "../../focusPillState.ts";
+import { t, useLocale } from "../../../i18n/index.ts";
+import { NumberStepper } from "../../NumberStepper.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
 
@@ -91,6 +93,7 @@ function SignInStartupRow() {
 }
 
 export function DesktopTab() {
+  useLocale();
   // The away threshold lives in localStorage, not the profile (S8.5): it is a
   // preference of this machine's input habits, not a fact about the plan.
   const [idleDraft, setIdleDraft] = useState<string | null>(null);
@@ -103,9 +106,9 @@ export function DesktopTab() {
 
   /** Persists the away threshold locally. Out-of-range values say so and keep
    * what was typed, like every other field in this view. */
-  const commitIdle = () => {
-    const minutes = Number(idleText);
-    if (!Number.isInteger(minutes) || minutes < MIN_IDLE_THRESHOLD_MINUTES || minutes > MAX_IDLE_THRESHOLD_MINUTES) {
+  const commitIdle = (text: string) => {
+    const minutes = Number(text);
+    if (text === "" || !Number.isInteger(minutes) || minutes < MIN_IDLE_THRESHOLD_MINUTES || minutes > MAX_IDLE_THRESHOLD_MINUTES) {
       return setIdleError(outsideThreshold);
     }
     setIdleError(null);
@@ -139,24 +142,18 @@ export function DesktopTab() {
           error={idleError}
         >
           {() => (
-            <input
+            <NumberStepper
               id="day-idle-threshold"
-              className="form-control day-time"
-              type="number"
-              inputMode="numeric"
-              autoComplete="off"
+              draft={idleText}
+              stored={readIdleThreshold(window.localStorage)}
               min={MIN_IDLE_THRESHOLD_MINUTES}
               max={MAX_IDLE_THRESHOLD_MINUTES}
-              step={1}
-              value={idleText}
-              onChange={event => setIdleDraft(event.target.value)}
-              onBlur={commitIdle}
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-              }}
+              invalid={idleError !== null}
+              unit={t("stepper.minutesUnit")}
+              decreaseLabel={t("stepper.decreaseAway")}
+              increaseLabel={t("stepper.increaseAway")}
+              onDraftChange={setIdleDraft}
+              onCommit={commitIdle}
             />
           )}
         </SettingRow>
