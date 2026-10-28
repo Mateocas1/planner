@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import type { View } from "../App.tsx";
 import type { FocusStatus } from "../domain/focus.ts";
 import { availableSettingsTabs, type SettingsTab } from "./settings/tabs.ts";
@@ -86,15 +87,20 @@ export type PaletteFocusCommand = { kind: "focus"; id: string; verb: "start" | "
  */
 export type PaletteSettingsCommand = { kind: "settings"; id: string; tab?: SettingsTab; label: string; keywords: string[] };
 
+/** Splits a dictionary entry of comma-separated search words. */
+function keywords(list: string): string[] {
+  return list.split(",");
+}
+
 export function settingsCommands(desktop: boolean): PaletteSettingsCommand[] {
   const tabs = availableSettingsTabs(desktop);
   return [
-    { kind: "settings", id: "settings", label: "Settings", keywords: ["settings", "preferences", "options"] },
+    { kind: "settings", id: "settings", label: t("palette.settings"), keywords: keywords(t("palette.settings.keywords")) },
     ...tabs.map(tab => ({
       kind: "settings" as const,
       id: `settings-${tab.id}`,
       tab: tab.id,
-      label: `Settings: ${tab.label}`,
+      label: t("palette.settingsTab", { tab: tab.label }),
       keywords: ["settings", tab.label.toLowerCase(), tab.id],
     })),
   ];
@@ -111,13 +117,13 @@ export type FocusCommandState = { canStart: boolean; status: FocusStatus | null 
  */
 export function focusCommands({ canStart, status }: FocusCommandState): PaletteFocusCommand[] {
   if (status === null) {
-    return canStart ? [{ kind: "focus", id: "focus-start", verb: "start", label: "Start focus on next block" }] : [];
+    return canStart ? [{ kind: "focus", id: "focus-start", verb: "start", label: t("palette.focus.start") }] : [];
   }
   const rows: PaletteFocusCommand[] = [];
-  if (canStart) rows.push({ kind: "focus", id: "focus-start", verb: "start", label: "Start focus on next block" });
-  if (status === "paused") rows.push({ kind: "focus", id: "focus-resume", verb: "resume", label: "Resume focus" });
-  if (status === "running") rows.push({ kind: "focus", id: "focus-pause", verb: "pause", label: "Pause focus" });
-  rows.push({ kind: "focus", id: "focus-stop", verb: "stop", label: "Stop focus" });
+  if (canStart) rows.push({ kind: "focus", id: "focus-start", verb: "start", label: t("palette.focus.start") });
+  if (status === "paused") rows.push({ kind: "focus", id: "focus-resume", verb: "resume", label: t("palette.focus.resume") });
+  if (status === "running") rows.push({ kind: "focus", id: "focus-pause", verb: "pause", label: t("palette.focus.pause") });
+  rows.push({ kind: "focus", id: "focus-stop", verb: "stop", label: t("palette.focus.stop") });
   return rows;
 }
 
@@ -127,9 +133,9 @@ export function focusCommands({ canStart, status }: FocusCommandState): PaletteF
  * to go.
  */
 export const themeCommands: PaletteThemeCommand[] = [
-  { kind: "theme", id: "theme-system", pref: "system", label: "Theme: System" },
-  { kind: "theme", id: "theme-light", pref: "light", label: "Theme: Light" },
-  { kind: "theme", id: "theme-dark", pref: "dark", label: "Theme: Dark" },
+  { kind: "theme", id: "theme-system", pref: "system", get label() { return t("palette.theme.system"); } },
+  { kind: "theme", id: "theme-light", pref: "light", get label() { return t("palette.theme.light"); } },
+  { kind: "theme", id: "theme-dark", pref: "dark", get label() { return t("palette.theme.dark"); } },
 ];
 
 /**
@@ -143,15 +149,23 @@ export const actionCommands: PaletteActionCommand[] = [
     kind: "action",
     id: "action-gcal-import",
     action: "gcal-import",
-    label: "Import from Google Calendar",
-    keywords: ["import", "google"],
+    get label() {
+      return t("palette.action.import");
+    },
+    get keywords() {
+      return keywords(t("palette.action.import.keywords"));
+    },
   },
   {
     kind: "action",
     id: "action-now-mode",
     action: "now-mode",
-    label: "Open Now mode",
-    keywords: ["now", "glance", "full screen"],
+    get label() {
+      return t("palette.action.now");
+    },
+    get keywords() {
+      return keywords(t("palette.action.now.keywords"));
+    },
   },
   /* F3's second entry point (the banner is the first). It opens the ritual, it
      does not close the day: the roll is the sheet's commit, so the summary is
@@ -160,8 +174,12 @@ export const actionCommands: PaletteActionCommand[] = [
     kind: "action",
     id: "action-close-day",
     action: "close-day",
-    label: "Close the day",
-    keywords: ["close", "shutdown", "day", "ritual"],
+    get label() {
+      return t("palette.action.closeDay");
+    },
+    get keywords() {
+      return keywords(t("palette.action.closeDay.keywords"));
+    },
   },
   /* The weekly review's manual entry (S3): the review proposes itself, but it
      is reachable any day, from here too. */
@@ -169,8 +187,12 @@ export const actionCommands: PaletteActionCommand[] = [
     kind: "action",
     id: "action-weekly-review",
     action: "weekly-review",
-    label: "Weekly review",
-    keywords: ["weekly", "review", "retro", "week"],
+    get label() {
+      return t("palette.action.weekly");
+    },
+    get keywords() {
+      return keywords(t("palette.action.weekly.keywords"));
+    },
   },
 ];
 
@@ -184,15 +206,23 @@ export const taskActionCommands: PaletteActionCommand[] = [
     kind: "action",
     id: "action-complete-task",
     action: "complete-task",
-    label: "Complete task",
-    keywords: ["complete", "check", "done", "finish"],
+    get label() {
+      return t("palette.action.complete");
+    },
+    get keywords() {
+      return keywords(t("palette.action.complete.keywords"));
+    },
   },
   {
     kind: "action",
     id: "action-move-tomorrow",
     action: "move-tomorrow",
-    label: "Move to tomorrow",
-    keywords: ["tomorrow", "move", "defer", "postpone"],
+    get label() {
+      return t("palette.action.tomorrow");
+    },
+    get keywords() {
+      return keywords(t("palette.action.tomorrow.keywords"));
+    },
   },
 ];
 
