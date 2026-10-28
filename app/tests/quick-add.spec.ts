@@ -105,6 +105,9 @@ async function submitFromTitle(page: Page) {
 
 /** Lands on Tasks with the keyboard, where a created row is listed. */
 async function openTasksByKeyboard(page: Page) {
+  // The creation sheet is modal until its submit settles: the page behind it is
+  // inert, so the nav cannot take the caret before the sheet has been dismissed.
+  await expect(page.locator(".sheet")).toHaveCount(0);
   const tab = page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /^Tasks/ });
   await tab.focus();
   await expect(tab).toBeFocused();
