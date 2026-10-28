@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { submitAuthForm } from "./browser-helpers.ts";
+import { submitAuthForm, fillDateTime } from "./browser-helpers.ts";
 
 /**
  * CP1 (odd/tasks/centered-panels.md, S2/S3): every detail and creation panel
@@ -362,8 +362,8 @@ test.describe("flight from the trigger (fine pointer)", () => {
       return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     });
     await page.getByRole("button", { name: "New block" }).click();
-    await page.getByLabel("Start", { exact: true }).fill(`${day}T10:00`);
-    await page.getByLabel("End", { exact: true }).fill(`${day}T11:00`);
+    await fillDateTime(page, "Start", `${day}T10:00`);
+    await fillDateTime(page, "End", `${day}T11:00`);
     await page.getByRole("button", { name: "Add block" }).click();
     // The creation sheet is still leaving; its panel is a `.sheet` too, and a
     // read taken now would describe that dismissal instead of this entry.

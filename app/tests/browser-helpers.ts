@@ -56,7 +56,10 @@ const monthIndex = (key: string) => Number(key.slice(0, 4)) * 12 + Number(key.sl
  * uses the same button names.
  */
 export async function pickDate(scope: Page | Locator, label: string, iso: string): Promise<void> {
-  const trigger = scope.getByLabel(label);
+  await pickDateOn(scope, scope.getByLabel(label), iso);
+}
+
+async function pickDateOn(scope: Page | Locator, trigger: Locator, iso: string): Promise<void> {
   if (iso === "" && (await trigger.getAttribute("data-value")) === "") return; // nothing to clear
   await trigger.click();
   const dialog = scope.getByRole("dialog", { name: "Choose date" });
@@ -81,6 +84,28 @@ export async function pickDate(scope: Page | Locator, label: string, iso: string
 /** The stored value of a DateField (`YYYY-MM-DD` or ""), whatever words it shows. */
 export async function expectDate(scope: Page | Locator, label: string, iso: string): Promise<void> {
   await expect(scope.getByLabel(label)).toHaveAttribute("data-value", iso);
+}
+
+/**
+ * Sets a date-and-time pair (the block form's Start and End) from
+ * `YYYY-MM-DDTHH:mm`: the day through the DateField popover, the clock typed
+ * into the time field and committed with Tab. `label` is the row label, exactly.
+ */
+export async function fillDateTime(scope: Page | Locator, label: string, value: string): Promise<void> {
+  const [date, time] = value.split("T");
+  const trigger = scope.getByLabel(label, { exact: true });
+  if ((await trigger.getAttribute("data-value")) !== date) await pickDateOn(scope, trigger, date);
+  const clock = scope.getByLabel(`${label} time`, { exact: true });
+  await clock.fill(time);
+  await clock.press("Tab");
+  await expect(clock).toHaveValue(time);
+}
+
+/** The stored `YYYY-MM-DDTHH:mm` of a date-and-time pair. */
+export async function expectDateTime(scope: Page | Locator, label: string, value: string): Promise<void> {
+  const [date, time] = value.split("T");
+  await expect(scope.getByLabel(label, { exact: true })).toHaveAttribute("data-value", date);
+  await expect(scope.getByLabel(`${label} time`, { exact: true })).toHaveValue(time);
 }
 
 /* ---------- Auth emulator REST (no sign-in) ---------- */

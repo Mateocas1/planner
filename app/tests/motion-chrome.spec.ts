@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { submitAuthForm, chooseOption } from "./browser-helpers.ts";
+import { submitAuthForm, chooseOption, fillDateTime } from "./browser-helpers.ts";
 
 /**
  * W3 of the motion review (odd/research/motion-review.md): the calendar body and
@@ -69,8 +69,8 @@ async function fillBlockForm(page: Page, start: string, end: string, task?: stri
     await page.getByRole("button", { name: "New block" }).click();
     await expect(add).toBeVisible();
   }
-  await page.getByLabel("Start", { exact: true }).fill(start);
-  await page.getByLabel("End", { exact: true }).fill(end);
+  await fillDateTime(page, "Start", start);
+  await fillDateTime(page, "End", end);
   if (task) await chooseOption(page, "Task", task);
 }
 

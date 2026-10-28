@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { readRemoteBlocks, seedRadarFixture, submitAuthForm } from "./browser-helpers.ts";
+import { readRemoteBlocks, seedRadarFixture, submitAuthForm, fillDateTime } from "./browser-helpers.ts";
 
 /**
  * Plan my day as the two surfaces run it (distinctive roadmap F4, criteria 2
@@ -398,8 +398,8 @@ test("Apply re-checks the proposal: a block added under an open plan is never ov
 
   await page.getByRole("button", { name: "New block" }).click();
   await expect(page.getByRole("button", { name: "Add block" })).toBeVisible();
-  await page.getByLabel("Start", { exact: true }).fill(`${dayKey(base)}T08:00`);
-  await page.getByLabel("End", { exact: true }).fill(`${dayKey(base)}T08:30`);
+  await fillDateTime(page, "Start", `${dayKey(base)}T08:00`);
+  await fillDateTime(page, "End", `${dayKey(base)}T08:30`);
   await page.getByRole("button", { name: "Add block" }).click();
   await expect(page.locator(".calendar-block")).toHaveCount(1);
   await expect.poll(() => readRemoteBlocks(email).then(blocks => blocks.length), { timeout: 15_000 }).toBe(1);

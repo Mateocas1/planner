@@ -33,6 +33,9 @@ import {
 import { blockTomorrow, rovingTabIndex } from "./shortcuts.ts";
 import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import { Select } from "./Select.tsx";
+import { DateTimeField } from "./DateTimeField.tsx";
+import { dateFieldLabels } from "./DateField.labels.ts";
+import { t, useLocale } from "../i18n/index.ts";
 import { settle } from "./write.ts";
 
 /**
@@ -728,6 +731,7 @@ function CalendarView({
             uid={uid}
             tasks={tasks}
             timeZone={timeZone}
+            todayKey={todayKey}
             initialStart={creating.start}
             initialEnd={creating.end}
             origin={creating.origin}
@@ -825,6 +829,7 @@ function BlockForm({
   uid,
   tasks,
   timeZone,
+  todayKey,
   initialStart,
   initialEnd,
   origin,
@@ -833,11 +838,13 @@ function BlockForm({
   uid: string;
   tasks: TaskView[];
   timeZone: string;
+  todayKey: string;
   initialStart: string;
   initialEnd: string;
   origin: HTMLElement | null;
   onClose: () => void;
 }) {
+  useLocale();
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
   const [taskId, setTaskId] = useState("");
@@ -879,11 +886,11 @@ function BlockForm({
         <div className="form-group">
           <div className="form-row">
             <label htmlFor="block-start">Start</label>
-            <input id="block-start" className="form-control" type="datetime-local" value={start} onChange={event => setStart(event.target.value)} />
+            <DateTimeField id="block-start" timeId="block-start-time" value={start} onChange={setStart} today={todayKey} dateLabels={dateFieldLabels} timeLabel={t("block.startTime")} />
           </div>
           <div className="form-row">
             <label htmlFor="block-end">End</label>
-            <input id="block-end" className="form-control" type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} />
+            <DateTimeField id="block-end" timeId="block-end-time" value={end} onChange={setEnd} today={todayKey} dateLabels={dateFieldLabels} timeLabel={t("block.endTime")} />
           </div>
           <div className="form-row">
             <label htmlFor="block-task">Task</label>
