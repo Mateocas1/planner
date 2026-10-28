@@ -26,6 +26,7 @@ import type { UndoableDelete } from "./UndoToast.tsx";
 import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import type { WorkWindow } from "../planning/window.ts";
 import { settle, writeErrorEvent } from "./write.ts";
+import { capitalize } from "../i18n/capitalize.ts";
 
 /**
  * Today: the surface that answers "what do I do now, and what comes next?"
@@ -240,7 +241,7 @@ function TodayPage({
         <div>
           <h2 id="home-heading" className="large-title">{t("home.title")}</h2>
           <p className="subtitle">
-            {formatWall(todayUtc, { weekday: "long", month: "long", day: "numeric" })}
+            {capitalize(formatWall(todayUtc, { weekday: "long", month: "long", day: "numeric" }))}
             {!empty && ` · ${blocksLeft === 0 ? t("home.noBlocksLeft") : t("home.blocksLeft", { count: blocksLeft })}`}
           </p>
         </div>

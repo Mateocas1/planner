@@ -283,21 +283,22 @@ test.describe("with reduced motion", () => {
 
   test("the entrance is opacity only", async ({ page }) => {
     const sheet = await openSheet(page);
-    await trigger(sheet).evaluate(async element => {
-      (element as HTMLElement).click();
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-    const properties = await trigger(sheet).evaluate(element => {
+    await trigger(sheet).click();
+    await expect(dialog(sheet)).toBeVisible();
+    // Read what the open popover declares rather than sampling running
+    // animations: a 120 ms fade can finish before a loaded machine samples it.
+    const declared = await trigger(sheet).evaluate(element => {
       const pop = document.getElementById(element.getAttribute("aria-controls") ?? "")!;
-      return pop
-        .getAnimations({ subtree: true })
-        .map(animation => (animation as CSSTransition).transitionProperty)
-        .filter(property => ["opacity", "transform", "scale", "filter"].includes(property));
+      const visual = (node: Element) =>
+        getComputedStyle(node)
+          .transitionProperty.split(",")
+          .map(property => property.trim())
+          .filter(property => ["opacity", "transform", "scale", "filter"].includes(property));
+      return { pop: visual(pop), body: visual(pop.querySelector(".pop-body") ?? pop) };
     });
     // Gentler, not zero: the fade stays, the scale and the blur are gone.
-    expect(properties.length).toBeGreaterThan(0);
-    for (const property of properties) expect(property).toBe("opacity");
-    await expect(dialog(sheet)).toBeVisible();
+    expect(declared.pop).toEqual(["opacity"]);
+    expect(declared.body.every(property => property === "opacity")).toBe(true);
   });
 });
 

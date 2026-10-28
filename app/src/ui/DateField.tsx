@@ -1,4 +1,6 @@
 import { useMemo, useState, type KeyboardEvent, type RefObject } from "react";
+import { getLocale, intlLocale } from "../i18n/index.ts";
+import { capitalize } from "../i18n/capitalize.ts";
 import { formatDateKey } from "./format.ts";
 import { CalendarIcon } from "./icons.tsx";
 import { MonthGrid } from "./MonthGrid.tsx";
@@ -41,11 +43,6 @@ export interface DateFieldProps {
 
 const utc = { timeZone: "UTC" } as const;
 
-/** "tomorrow" reads as a sentence start inside a control. */
-function capitalize(text: string): string {
-  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
-}
-
 /**
  * A date as a button that shows it in words ("Tomorrow", "Fri, Oct 30") and
  * opens a popover with the quick choices and a month grid (form-controls.md
@@ -57,7 +54,7 @@ function capitalize(text: string): string {
  * quick row or "No date" calls `onChange`, closes it and returns focus to the
  * trigger.
  */
-export function DateField({ id, value, onChange, today, labels, locale = "en-US", weekStart = 1, disabled = false, clearable = true }: DateFieldProps) {
+export function DateField({ id, value, onChange, today, labels, locale = intlLocale(getLocale()), weekStart = 1, disabled = false, clearable = true }: DateFieldProps) {
   const [month, setMonth] = useState((value || today).slice(0, 7));
   // Remounts the grid on every open, so it takes focus again after a reopen.
   const [opened, setOpened] = useState(0);
@@ -124,7 +121,7 @@ export function DateField({ id, value, onChange, today, labels, locale = "en-US"
                 onClick={() => choose(row.key)}
               >
                 <span>{row.label}</span>
-                <span className="date-row-hint">{weekday.format(keyToWallUtc(row.key))}</span>
+                <span className="date-row-hint">{capitalize(weekday.format(keyToWallUtc(row.key)), locale)}</span>
               </button>
             ))}
             {clearable && value !== "" && (

@@ -7,6 +7,7 @@ import { t } from "../i18n/index.ts";
 import type { WorkWindow } from "../planning/window.ts";
 import { formatDuration, formatWall, keyToWallUtc } from "./time.ts";
 import "./CapacityBar.css";
+import { capitalize } from "../i18n/capitalize.ts";
 
 /**
  * The overcommit radar (distinctive roadmap F1): how full the week already is,
@@ -36,7 +37,7 @@ type RadarNote = { key: string; text: string; kind: "over" | "hint" };
 
 /** `Tue` -- the short weekday of a profile-zone date key, read from the key. */
 function dayName(date: string): string {
-  return formatWall(keyToWallUtc(date), { weekday: "short" });
+  return capitalize(formatWall(keyToWallUtc(date), { weekday: "short" }));
 }
 
 /** `Tue 27` -- the weekday and the day of the month, as the column header shows

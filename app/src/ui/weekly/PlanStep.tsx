@@ -4,11 +4,11 @@ import { addBlocks, removeBlocks } from "../../data/blocks.ts";
 import type { BlockView, TaskView } from "../../data/store.ts";
 import { unplacedNotice, type PlanBlock, type PlanTask, type Unplaced } from "../../planning/place.ts";
 import type { WorkWindow } from "../../planning/window.ts";
-import { dayMs, keyToWallUtc, localValue, pad, toZonedInstant, wallDayKey } from "../time.ts";
+import { dayMs, formatWall, keyToWallUtc, localValue, pad, toZonedInstant, wallDayKey } from "../time.ts";
 import type { UndoableDelete } from "../UndoToast.tsx";
 import { settle } from "../write.ts";
 import { nextWeekDays, planWeek, type WeekPlacement } from "./planWeek.ts";
-import { weekdayName } from "./weeklyFlow.ts";
+import { capitalize } from "../../i18n/capitalize.ts";
 
 /**
  * The Plan step (S3): pick next week's priorities, place their blocks on next
@@ -174,7 +174,7 @@ export function PlanStep({
 function dayLabel(day: string): string {
   const stamp = new Date(`${day}T00:00:00Z`);
   if (Number.isNaN(stamp.getTime())) return day;
-  return `${weekdayName(stamp.getUTCDay()).slice(0, 3)} ${stamp.getUTCDate()}`;
+  return `${capitalize(formatWall(stamp.getTime(), { weekday: "short" }))} ${stamp.getUTCDate()}`;
 }
 
 function range(startMinutes: number, endMinutes: number): string {
