@@ -134,11 +134,9 @@
 
 .gcal-tag {
   flex: none;
-  font-size: var(--text-tiny);
+  font-size: var(--text-caption);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--label-3);
+  color: var(--label-2);
 }
 
 @media (hover: hover) and (pointer: fine) {

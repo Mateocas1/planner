@@ -27,7 +27,7 @@ import { Home } from "./ui/Home.tsx";
 import { NowMode } from "./ui/NowMode.tsx";
 import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
-import { CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
+import { CalendarIcon, CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { SettingsIcon } from "./ui/Settings.tsx";
 import { SettingsView } from "./ui/settings/SettingsView.tsx";
@@ -754,25 +754,27 @@ function AccountMenu({
                 from the account whose preferences they are. */}
             <button
               type="button"
-              className="link-button"
+              className="button small"
               onClick={() => {
                 setOpen(false);
                 onOpenSettings();
               }}
             >
+              <SettingsIcon />
               Settings
             </button>
             <button
               type="button"
-              className="link-button"
+              className="button small"
               onClick={event => {
                 setOpen(false);
                 onImport(event.currentTarget);
               }}
             >
+              <CalendarIcon />
               Import from Google Calendar
             </button>
-            <button type="button" className="button" onClick={onSignOut}>Sign out</button>
+            <button type="button" className="button small" onClick={onSignOut}>Sign out</button>
           </motion.div>
         )}
       </AnimatePresence>
