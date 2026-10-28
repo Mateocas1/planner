@@ -179,10 +179,9 @@
 .settings-row-desc {
   font-size: var(--text-sub);
   color: var(--label-3);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* Wraps in full: a translated description is longer than its English and is
+     the row's explanation, so it is never cut with an ellipsis. */
+  overflow-wrap: break-word;
 }
 
 .settings-row-text .inline-error {

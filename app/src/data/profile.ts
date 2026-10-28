@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, setDoc, type Firestore } from "firebase/firestore";
 import { db } from "./client.ts";
-import { parseLocale, type Locale } from "../i18n/index.ts";
+import { parseLocale, t, type Locale } from "../i18n/index.ts";
 import { isDayKey } from "../planning/shutdown.ts";
 import {
   defaultWeeklyReviewSettings,
@@ -301,7 +301,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
         )
         .catch((error: unknown) => {
           console.error("profile initialization failed", error);
-          setState({ ...unloadedProfile, loading: false, error: "Could not load your planner timezone." });
+          setState({ ...unloadedProfile, loading: false, error: t("profile.error.zone") });
         })
         .finally(() => {
           attempt = null;
@@ -331,7 +331,7 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
       },
       (error) => {
         console.error("profile snapshot failed", error);
-        setState({ ...unloadedProfile, loading: false, error: "Could not load your planner timezone." });
+        setState({ ...unloadedProfile, loading: false, error: t("profile.error.zone") });
       },
     );
     return unsubscribe;

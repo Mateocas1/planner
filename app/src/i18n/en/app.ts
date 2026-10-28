@@ -49,6 +49,8 @@ export const app = {
   "sync.offlineNothing": "Offline · nothing waiting",
   "sync.offlineWaiting": { one: "Offline · {count} change waiting", other: "Offline · {count} changes waiting" },
 
+  "profile.error.zone": "Could not load your planner timezone.",
+
   "undo.action": "Undo",
   "undo.dismiss": "Dismiss",
   "undo.restoreFailed": "The item could not be restored.",

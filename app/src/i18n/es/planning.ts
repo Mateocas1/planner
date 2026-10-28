@@ -126,6 +126,7 @@ export const planning = {
   "focus.stop": "Detener",
   "focus.hide": "Ocultar durante esta sesión",
   "idle.away": "Ausencia de {minutes} min: ¿restarlos?",
+  "idle.subtractFailed": "No se pudo guardar la resta.",
   "idle.subtract": "Restar",
   "idle.keep": "Mantener",
   "idle.dismiss": "Mantener y cerrar",

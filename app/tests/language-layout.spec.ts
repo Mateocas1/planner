@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
@@ -105,28 +106,37 @@ test.describe("Spanish fits a phone", () => {
 
 const shotDir = process.env.I9_SHOTS;
 const failures: string[] = [];
+const audits = new Map<string, string>();
 
 async function settle(page: Page) {
   await page.waitForFunction(() =>
     (document as Document & { getAnimations(options?: { subtree?: boolean }): Animation[] })
       .getAnimations({ subtree: true }).every(animation => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity),
   );
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(600);
 }
 
-type Clip = { selector: string; text: string; kind: "overflow" | "ellipsis"; by: number };
+type Clip = { selector: string; text: string; kind: "overflow" | "ellipsis" | "english"; by: number };
 
 /** Elements whose content is wider than their box: either clipped (overflow) or cut with an ellipsis. */
 async function audit(page: Page): Promise<Clip[]> {
   return page.evaluate(() => {
-    const found: Array<{ selector: string; text: string; kind: "overflow" | "ellipsis"; by: number }> = [];
+    const found: Array<{ selector: string; text: string; kind: "overflow" | "ellipsis" | "english"; by: number }> = [];
+    const english = /\b(the|and|with|for|your|you|Today|Tomorrow|Tasks?|Add|Delete|Cancel|Settings|Save|Close|Open|Edit|Next|Previous|Undo|Date|Choose|Create|New|Remove|Sign|Done|Search|Weekend|Week|Month|Back|Start|End|Never|Daily|Weekly|Monthly|Repeat|Estimate|Deadline|No date)\b/;
     const label = (element: Element) =>
       `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${typeof element.className === "string" && element.className ? `.${element.className.trim().split(/\s+/).join(".")}` : ""}`;
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      for (const attribute of ["aria-label", "title", "placeholder"]) {
+        const value = element.getAttribute(attribute);
+        if (value !== null && english.test(value)) found.push({ selector: `${label(element)}[${attribute}]`, text: value.slice(0, 60), kind: "english", by: 0 });
+      }
+      if (element.children.length === 0 && english.test(element.textContent ?? "") && !element.closest("[data-user-content]"))
+        found.push({ selector: label(element), text: (element.textContent ?? "").trim().slice(0, 60), kind: "english", by: 0 });
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
       const style = getComputedStyle(element);
       if (style.visibility === "hidden" || style.display === "none") continue;
+      if (element.closest(".sr-only") !== null) continue;
       const by = element.scrollWidth - element.clientWidth;
       if (by <= 1) continue;
       const text = (element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
@@ -142,8 +152,11 @@ async function shot(page: Page, tag: string, name: string) {
   await settle(page);
   mkdirSync(shotDir, { recursive: true });
   await page.screenshot({ path: `${shotDir}/${tag}-${name}.png` });
-  const clips = await audit(page);
-  if (clips.length > 0) writeFileSync(`${shotDir}/audit-${tag}-${name}.json`, JSON.stringify(clips, null, 1));
+  for (const clip of await audit(page)) {
+    const key = `${clip.kind} ${clip.selector} ${clip.text}`;
+    if (!audits.has(`${tag} ${key}`)) audits.set(`${tag} ${key}`, `${name}: ${clip.kind} by ${clip.by}px, ${clip.selector} "${clip.text}"`);
+  }
+  writeFileSync(`${shotDir}/audit-${tag}.txt`, [...audits.entries()].filter(([key]) => key.startsWith(`${tag} `)).map(([, line]) => line).join("\n"));
 }
 
 async function step(name: string, body: () => Promise<void>) {
@@ -162,6 +175,7 @@ for (const theme of ["light", "dark"] as const) {
 
       test(`${device}-${theme}`, async ({ page }) => {
         test.setTimeout(420_000);
+        page.setDefaultTimeout(15_000);
         const tag = `${device}-${theme}`;
         const phone = device === "phone";
         const email = newEmail(`i9-${tag}`);
@@ -181,20 +195,23 @@ for (const theme of ["light", "dark"] as const) {
           ],
         });
 
-        // Sign-in screen, Spanish.
-        await page.addInitScript(t => {
+        // Sign-in screen in Spanish, then back to English for the shared sign-in helper's labels.
+        await page.goto("/");
+        await page.evaluate(t => {
           window.localStorage.setItem("planner-language", "es");
           window.localStorage.setItem("planner-theme", t);
         }, theme);
-        await page.goto("/");
+        await page.reload();
         await expect(page.locator("html")).toHaveAttribute("lang", "es");
         await shot(page, tag, "01-signin");
+        await page.evaluate(() => window.localStorage.setItem("planner-language", "en"));
 
         await signInSpanish(page, email, theme);
         const nav = (name: string) => page.getByRole("navigation", { name: "Principal" }).getByText(name, { exact: true }).first();
         const openSettings = async () => {
           if (phone) {
             await page.getByRole("button", { name: "Cuenta", exact: true }).click();
+            await shot(page, tag, "16a-account-menu");
             await page.getByRole("button", { name: "Ajustes", exact: true }).click();
           } else await page.getByRole("button", { name: "Ajustes", exact: true }).click();
         };
@@ -225,8 +242,8 @@ for (const theme of ["light", "dark"] as const) {
           await shot(page, tag, "06-tasks");
         });
         await step("details", async () => {
-          await page.getByText("Revisar el presupuesto").first().click();
-          await expect(page.getByText("Detalles de la tarea").first()).toBeVisible();
+          await page.locator("main#content").getByRole("button", { name: /^Revisar el presupuesto/ }).first().click();
+          await expect(page.getByRole("complementary", { name: "Detalles de la tarea" })).toBeVisible();
           await shot(page, tag, "07-details");
           await page.keyboard.press("Escape");
         });
@@ -243,24 +260,39 @@ for (const theme of ["light", "dark"] as const) {
           await settle(page);
           await sheet.getByLabel("Repetir").click();
           await shot(page, tag, "10-create-repeat");
-          await page.keyboard.press("Escape");
+          await page.getByRole("option", { name: "Cada semana" }).click();
           await settle(page);
+          // A repeating task needs its start date: the "Hoy" quick row.
+          await sheet.getByLabel("Fecha de inicio").click();
+          await page.getByRole("dialog", { name: "Elegir fecha" }).getByRole("button", { name: /^Hoy/ }).click();
+          await settle(page);
+          await shot(page, tag, "10b-create-repeating");
+          await sheet.getByRole("button", { name: "Añadir tarea" }).click();
+          await expect(page.locator(".new-task-sheet")).toBeHidden();
+        });
+        await step("series", async () => {
+          await page.locator("main#content").getByRole("button", { name: /^Tarea con una fecha límite/ }).first().click();
+          await expect(page.getByRole("complementary", { name: "Detalles de la serie" })).toBeVisible();
+          await shot(page, tag, "11-series-details");
           await page.keyboard.press("Escape");
           await settle(page);
         });
         await step("calendar", async () => {
           await nav("Calendario").click();
           await expect(page.getByRole("button", { name: "Nuevo bloque", exact: true })).toBeVisible();
-          await shot(page, tag, "11-calendar-first");
+          await shot(page, tag, "12-calendar-first");
           const week = page.getByRole("button", { name: "Semana", exact: true });
           const day = page.getByRole("button", { name: "Día", exact: true });
-          await week.click();
-          await shot(page, tag, "12-calendar-week");
-          await day.click();
-          await shot(page, tag, "13-calendar-day");
+          if (!phone) {
+            // The phone shows a week strip over one day, not the Day/Week control.
+            await week.click();
+            await shot(page, tag, "13-calendar-week");
+            await day.click();
+            await shot(page, tag, "14-calendar-day");
+          }
           await page.getByRole("button", { name: "Nuevo bloque", exact: true }).click();
           await expect(page.getByText("Añadir bloque").first()).toBeVisible();
-          await shot(page, tag, "14-block-form");
+          await shot(page, tag, "15-block-form");
           await page.keyboard.press("Escape");
           await settle(page);
         });
@@ -268,24 +300,95 @@ for (const theme of ["light", "dark"] as const) {
           await openSettings();
           const view = page.getByRole("region", { name: "Ajustes" });
           await expect(view).toBeVisible();
-          await shot(page, tag, "15-settings-general");
+          await shot(page, tag, "16-settings-general");
           const rail = view.getByRole("navigation", { name: "Secciones de Ajustes" });
           await rail.getByRole("button", { name: "Rituales" }).click();
-          await shot(page, tag, "16-settings-rituals");
+          await shot(page, tag, "17-settings-rituals");
           await rail.getByRole("button", { name: "Atajos" }).click();
-          await shot(page, tag, "17-settings-shortcuts");
+          await shot(page, tag, "18-settings-shortcuts");
         });
         await step("weekly", async () => {
           await page.keyboard.press("Escape");
           await page.keyboard.press("w");
           await expect(page.getByRole("heading", { name: "Revisión semanal" }).first()).toBeVisible();
-          await shot(page, tag, "18-weekly-review");
+          await shot(page, tag, "19-weekly-review");
           const next = page.getByRole("button", { name: "Siguiente", exact: true });
           await next.click();
-          await shot(page, tag, "19-weekly-cleanup");
+          await shot(page, tag, "20-weekly-cleanup");
         });
         if (failures.length > 0) writeFileSync(`${shotDir}/failures-${tag}.txt`, failures.join("\n"));
       });
     });
   }
 }
+
+for (const theme of ["light", "dark"] as const) {
+  for (const [device, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const) {
+    test.describe(`empty ${device} ${theme}`, () => {
+      test.skip(shotDir === undefined, "set I9_SHOTS to run the screenshot sweep");
+      test.use(device === "phone" ? { viewport, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport });
+
+      test(`empty-${device}-${theme}`, async ({ page }) => {
+        page.setDefaultTimeout(15_000);
+        const email = newEmail(`i9-empty-${device}`);
+        await seedShutdownFixture(email, "UTC", {});
+        await signInSpanish(page, email, theme);
+        await shot(page, `${device}-${theme}`, "02b-today-empty");
+        await page.getByRole("navigation", { name: "Principal" }).getByText("Tareas", { exact: true }).first().click();
+        await shot(page, `${device}-${theme}`, "06b-tasks-empty");
+      });
+    });
+  }
+}
+
+/* The chat panel only mounts in dev with `?chatMock`, like chat-panel.spec.ts: its own Vite server. */
+test.describe("chat sweep", () => {
+  test.skip(shotDir === undefined, "set I9_SHOTS to run the screenshot sweep");
+  const port = Number(process.env.CHAT_I9_PORT ?? 4397);
+  const base = `http://127.0.0.1:${port}`;
+  let server: ChildProcess | null = null;
+
+  test.beforeAll(async () => {
+    server = spawn("npx", ["vite", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+      cwd: new URL("..", import.meta.url).pathname,
+      stdio: "ignore",
+    });
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      try {
+        if ((await fetch(base)).ok) return;
+      } catch {
+        // not up yet
+      }
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    throw new Error("the dev server did not become ready in 60 s");
+  });
+
+  test.afterAll(() => {
+    server?.kill("SIGTERM");
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const [device, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]] as const) {
+      test(`chat-${device}-${theme}`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        await page.addInitScript(t => {
+          window.localStorage.setItem("planner-language", "es");
+          window.localStorage.setItem("planner-theme", t);
+        }, theme);
+        await page.goto(`${base}/?chatMock=tools`);
+        const panel = page.getByRole("dialog", { name: "Chat" });
+        // The shortcut listener mounts with the app: press until the panel opens.
+        await expect(async () => {
+          await page.keyboard.press("Control+j");
+          await expect(panel).toHaveAttribute("data-open", "true", { timeout: 1_000 });
+        }).toPass({ timeout: 20_000 });
+        await panel.getByRole("textbox", { name: "Mensaje" }).fill("hola");
+        await panel.getByRole("button", { name: "Enviar" }).click();
+        await expect(panel.locator(".chat-card").first()).toBeVisible();
+        await shot(page, `${device}-${theme}`, "21-chat");
+      });
+    }
+  }
+});
