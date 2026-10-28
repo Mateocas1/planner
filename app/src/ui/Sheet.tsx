@@ -374,7 +374,15 @@ export function Sheet({
     return () => {
       if (!origin?.isConnected) return;
       const active = document.activeElement;
-      const loose = active === null || active === document.body || active === sheet || sheet?.contains(active) === true;
+      // A container that holds the sheet (the skip-link target, <main>) takes
+      // the caret when a press lands on the panel's own chrome: that is not a
+      // place the user went, so it is as loose as the body.
+      const loose =
+        active === null ||
+        active === document.body ||
+        active === sheet ||
+        sheet?.contains(active) === true ||
+        (sheet !== null && active.contains(sheet));
       if (!loose) return;
       // A row holds a check and its title button; the button is the control that
       // opened the panel, so it is the one that gets the caret back.
