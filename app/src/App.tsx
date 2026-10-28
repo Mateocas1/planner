@@ -52,6 +52,8 @@ import { useIdleAway } from "./ui/useIdleAway.ts";
 import { IdleToast } from "./ui/IdleToast.tsx";
 import type { FocusReport } from "./domain/focus.ts";
 import { useKeyboardInset } from "./ui/viewport.ts";
+import { DateField } from "./ui/DateField.tsx";
+import { dateFieldLabels } from "./ui/DateField.labels.ts";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./ui/UndoToast.tsx";
 import { UpdatePrompt } from "./ui/UpdatePrompt.tsx";
 import { settle, writeErrorEvent } from "./ui/write.ts";
@@ -883,12 +885,12 @@ function NewTaskSheet({
         <div className="form-group">
           <div className="form-row">
             <label htmlFor="task-deadline">Deadline</label>
-            <input
+            <DateField
               id="task-deadline"
-              className="form-control"
-              type="date"
               value={deadline}
-              onChange={event => setDeadlineEdit(event.target.value)}
+              today={parsed.today}
+              labels={dateFieldLabels}
+              onChange={setDeadlineEdit}
             />
           </div>
           <div className="form-row stacked">
@@ -935,12 +937,12 @@ function NewTaskSheet({
           {repeat !== "off" && (
             <div className="form-row">
               <label htmlFor="task-start">Start date</label>
-              <input
+              <DateField
                 id="task-start"
-                className="form-control"
-                type="date"
                 value={start}
-                onChange={event => setStartEdit(event.target.value)}
+                today={parsed.today}
+                labels={dateFieldLabels}
+                onChange={setStartEdit}
               />
             </div>
           )}
