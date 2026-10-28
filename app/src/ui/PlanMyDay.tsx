@@ -5,7 +5,9 @@ import { estimateNote } from "../domain/model.ts";
 import { planDay, samePlan, unplacedNotice, type Plan, type PlanTask, type Unplaced } from "../planning/place.ts";
 import { usePlannerWindow } from "./CapacityBar.tsx";
 import { UndoToast, type PendingUndo, type UndoableDelete } from "./UndoToast.tsx";
-import { dateKey, localValue, pad, toZonedInstant } from "./time.ts";
+import { t } from "../i18n/index.ts";
+import { hasFreeTimeAhead } from "./shutdownRitual.ts";
+import { dateKey, localValue, pad, toZonedInstant, wallMinutes } from "./time.ts";
 import { settle } from "./write.ts";
 import "./PlanMyDay.css";
 
@@ -73,6 +75,16 @@ export function PlanMyDay({
 
   const nowMs = now.getTime();
   const unscheduled = tasks.filter(task => !task.completed && !blocks.some(block => block.taskId === task.id && Date.parse(block.end) > nowMs));
+  /* No free stretch left in the work window: the button would only answer
+     "Nothing to plan", so it is disabled and says why (R5-18). */
+  const todayIntervals = blocks
+    .filter(block => dateKey(new Date(block.start), timeZone) === today)
+    .map(block => {
+      const startMinutes = wallMinutes(new Date(block.start), timeZone);
+      const endMinutes = wallMinutes(new Date(block.end), timeZone);
+      return { startMinutes, endMinutes: endMinutes <= startMinutes ? 1440 : endMinutes };
+    });
+  const noTimeLeft = !hasFreeTimeAhead(todayIntervals, workWindow, wallMinutes(now, timeZone));
   const lede =
     unscheduled.length === 0
       ? "Every open task has time set aside."
@@ -152,10 +164,13 @@ export function PlanMyDay({
         type="button"
         className="button plan-trigger"
         aria-expanded={plan !== null}
+        aria-describedby={noTimeLeft && !plan ? "plan-no-time" : undefined}
+        disabled={noTimeLeft && !plan}
         onClick={() => (plan ? close() : propose())}
       >
         Plan my day
       </button>
+      {noTimeLeft && !plan && <p id="plan-no-time" className="plan-status">{t("today.plan.noFreeTime")}</p>}
       {plan && (
         <div
           className="plan-panel"

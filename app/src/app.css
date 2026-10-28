@@ -297,6 +297,15 @@ time,
   font-variant-numeric: tabular-nums;
 }
 
+/* Display numerals keep proportional figures: Onest's tabular 1 is wide enough
+   that `11:00 – 12:00` at 17-22 px reads as `1 1 : 0 0` (R5-20). Columns that
+   must line up (gutter, row meta, calendar) stay tabular above. */
+.now-when,
+.now-card time,
+.sidebar time {
+  font-variant-numeric: normal;
+}
+
 /* ---------- material ---------- */
 
 /* Materials, tint tokens and fallbacks live in ui/glass.css. */
@@ -936,6 +945,8 @@ time,
   box-shadow: var(--card-shadow);
   color: var(--label-2);
 }
+
+.empty-action { margin-top: 14px; }
 
 .empty-title {
   color: var(--label);
@@ -1858,6 +1869,17 @@ time,
 .gate-form .form-row.stacked .form-control { background: var(--surface); }
 .gate-actions { display: flex; flex-direction: column; gap: 8px; }
 .gate-actions .button { height: 40px; }
+/* The sign-in secondary is the tinted pill: a neutral .button has no boundary
+   beside the filled primary (R5-19, proven in scripts/glass-contrast.mjs). */
+.gate-actions .button {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .gate-actions .button:hover:not(:disabled) { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
 
 /* ---------- view transition: the row becomes the panel ---------- */
 

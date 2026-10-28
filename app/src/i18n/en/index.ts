@@ -6,6 +6,7 @@ import { forms } from "./forms.ts";
 import { palette } from "./palette.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
+import { today } from "./today.ts";
 
 /** Every English message, composed from one file per area. */
 export const en = {
@@ -17,4 +18,5 @@ export const en = {
   ...palette,
   ...settings,
   ...shell,
+  ...today,
 } as const;

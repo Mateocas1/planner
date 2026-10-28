@@ -42,6 +42,20 @@
   flex: none;
 }
 
+/* The card's main action wears the tinted pill: the neutral .button's only
+   boundary is the card shadow, which vanishes on a white card and in dark
+   (R5-19). Accent on --accent-soft is proven in scripts/glass-contrast.mjs. */
+.button.plan-trigger {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .button.plan-trigger:hover:not(:disabled) { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
+
 .plan-panel {
   display: flex;
   flex-direction: column;

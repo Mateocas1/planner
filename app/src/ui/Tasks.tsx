@@ -8,7 +8,8 @@ import { linkedBlocks } from "../data/blocks.ts";
 import { formatDateKey, isPastDateKey } from "./format.ts";
 import { DragGrip } from "./drag.tsx";
 import { completedSamples } from "./BiasHint.tsx";
-import { RepeatIcon } from "./icons.tsx";
+import { t } from "../i18n/index.ts";
+import { PlusIcon, RepeatIcon } from "./icons.tsx";
 import { spring } from "./motion.ts";
 import { morphClose, morphOpen } from "./morph.ts";
 import { SeriesDetails, TaskDetails, type SeriesOccurrenceView } from "./TaskDetails.tsx";
@@ -87,6 +88,7 @@ export function Tasks({
   onDeleted,
   openTaskId = null,
   onOpenTaskHandled,
+  onNewTask,
 }: {
   uid: string;
   tasks: TaskView[];
@@ -102,6 +104,8 @@ export function Tasks({
    * palette found. Null when nothing is pending. */
   openTaskId?: string | null;
   onOpenTaskHandled?: () => void;
+  /** Opens the create sheet, the path the header's New task takes (R5-17). */
+  onNewTask: (origin: HTMLElement | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -364,6 +368,9 @@ export function Tasks({
         <div className="empty-state" role="status">
           <p className="empty-title">No tasks yet.</p>
           <p>Add your first one with New task. Give it a deadline, or make it repeat.</p>
+          <button type="button" className="button button-accent empty-action" onClick={event => onNewTask(event.currentTarget)}>
+            <PlusIcon />{t("today.addFirstTask")}
+          </button>
         </div>
       ) : (
         <LayoutGroup>

@@ -7,6 +7,7 @@ import { forms } from "./forms.ts";
 import { palette } from "./palette.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
+import { today } from "./today.ts";
 
 /** A key missing here (or an extra one) is a type error: `Dictionary` mirrors `en`. */
 export const es: Dictionary = {
@@ -18,4 +19,5 @@ export const es: Dictionary = {
   ...palette,
   ...settings,
   ...shell,
+  ...today,
 };
