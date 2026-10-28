@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteSeries, readRemoteTasks, submitAuthForm } from "./browser-helpers.ts";
+import { readRemoteSeries, readRemoteTasks, submitAuthForm, pickDate } from "./browser-helpers.ts";
 
 /**
  * Estimates and completion instants (E1).
@@ -178,7 +178,7 @@ test("a repeating task keeps its estimate through the series sheet and undo", as
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Stretch");
   await page.getByLabel("Repeat").selectOption({ label: "Daily" });
-  await page.getByLabel("Start date").fill(new Date().toISOString().slice(0, 10));
+  await pickDate(page, "Start date", new Date().toISOString().slice(0, 10));
   await page.getByRole("complementary", { name: "New task" }).getByLabel("Estimate", { exact: true }).fill("30");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: "Stretch" })).toBeVisible();

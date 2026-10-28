@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteProfile, readRemoteSeries, readRemoteState, readRemoteTasks, createRemoteAccount, seedProfileAndBlock, seedTaskAndBlock, updateRemoteProfile, submitAuthForm, pickDate, expectDate, type RemoteData } from "./browser-helpers.ts";
 
 test.setTimeout(60_000);
 
@@ -105,12 +105,12 @@ test("Today shows what is due, what is coming up and today's schedule from the p
   await addTaskThroughForm(page, "Open task");
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Dental bill");
-  await page.getByLabel("Deadline").fill(today);
+  await pickDate(page, "Deadline", today);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Dental bill" })).toBeVisible();
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Renew passport");
-  await page.getByLabel("Deadline").fill(dayKey(3));
+  await pickDate(page, "Deadline", dayKey(3));
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: "Renew passport" })).toBeVisible();
   await addTaskThroughForm(page, "Done task");
@@ -150,7 +150,7 @@ test("creating a task with a deadline shows the row and persists it to the serve
 
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Write review");
-  await page.getByLabel("Deadline").fill("2026-04-01");
+  await pickDate(page, "Deadline", "2026-04-01");
   await page.getByRole("button", { name: "Add task" }).click();
 
   await expect(page.locator(".task-title", { hasText: "Write review" })).toBeVisible();
@@ -278,13 +278,13 @@ test("editing the deadline in the details panel persists the change and clearing
   await page.getByRole("button", { name: "Scheduled task" }).click();
   const panel = page.getByRole("complementary", { name: "Task details" });
 
-  await panel.getByLabel("Deadline").fill("2026-05-10");
+  await pickDate(panel, "Deadline", "2026-05-10");
   // C1: the panel writes ISO; the row reads back human (locale pinned to en-US)
   await expect(page.locator(".task-deadline", { hasText: "Sun, May 10" })).toBeVisible();
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false, deadline: "2026-05-10" }]);
 
   // clearing the control removes the field on the server entirely
-  await panel.getByLabel("Deadline").fill("");
+  await pickDate(panel, "Deadline", "");
   await expect(page.locator(".task-deadline")).toHaveCount(0);
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false }]);
 });
@@ -300,7 +300,7 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   // C1: today's deadline is a word, not its ISO key
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Water plants");
-  await page.getByLabel("Deadline").fill(today);
+  await pickDate(page, "Deadline", today);
   await page.getByRole("button", { name: "Add task" }).click();
   const todayRow = page.locator("li.task", { hasText: "Water plants" });
   await expect(todayRow.locator(".task-deadline")).toHaveText("due today");
@@ -311,7 +311,7 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   // C1: a past deadline on an unfinished task carries the overdue state
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Pay bill");
-  await page.getByLabel("Deadline").fill(yesterday);
+  await pickDate(page, "Deadline", yesterday);
   await page.getByRole("button", { name: "Add task" }).click();
   const lateRow = page.locator("li.task", { hasText: "Pay bill" });
   await expect(lateRow.locator(".task-deadline")).toHaveClass(/task-deadline-overdue/);
@@ -736,7 +736,7 @@ async function addSeriesThroughForm(page: Page, title: string, frequency: "Daily
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
   await page.getByLabel("Repeat").selectOption({ label: frequency });
-  await page.getByLabel("Start date").fill(start);
+  await pickDate(page, "Start date", start);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: title })).toBeVisible();
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
@@ -849,7 +849,7 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
   await expect(panel.getByLabel("Frequency")).toHaveValue("weekly");
-  await expect(panel.getByLabel("Anchor")).toHaveValue(start);
+  await expectDate(panel, "Anchor", start);
   // C1: the panel shows human dates; the ISO keys are gone from the display
   // (the checkbox below still addresses the occurrence by its ISO key)
   await expect(panel.locator(".series-occurrences")).not.toContainText(start);
@@ -954,9 +954,9 @@ test("changing a series' anchor persists the new date", async ({ page }) => {
   const moved = futureDateKey(10);
 
   const panel = await openSeriesPanel(page, "Review");
-  await panel.getByLabel("Anchor").fill(moved);
+  await pickDate(panel, "Anchor", moved);
 
-  await expect(panel.getByLabel("Anchor")).toHaveValue(moved);
+  await expectDate(panel, "Anchor", moved);
   await expect(page.locator(".series-row", { hasText: "Review" })).toHaveAttribute("data-next-occurrence", moved);
 
   await expectRemoteSeriesField(email, "anchorDate", moved);
@@ -979,9 +979,9 @@ test("an invalid series edit is refused with a visible error and writes nothing"
   await expect(page.getByRole("alert")).toContainText("task title is required");
 
   // an empty anchor is not a valid date-only value and is refused too
-  await panel.getByLabel("Anchor").fill("");
+  await pickDate(panel, "Anchor", "");
   await expect(page.getByRole("alert")).toContainText("expected a valid ISO date-only value");
-  await expect(panel.getByLabel("Anchor")).toHaveValue(start);
+  await expectDate(panel, "Anchor", start);
 
   // nothing was written: the stored series still holds its original values
   const series = await expectOneRemoteSeries(email);

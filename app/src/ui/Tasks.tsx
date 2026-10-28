@@ -459,6 +459,7 @@ export function Tasks({
             task={selectedTask}
             origin={selected.origin}
             shared
+            today={today}
             busy={busy}
             biasSamples={biasSamples}
             onClose={() => morphClose(() => setSelected(null), selected.origin)}

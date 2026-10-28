@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * Browser-test helpers that touch the Auth and Firestore emulators.
@@ -28,6 +28,60 @@ const AUTH_EMULATOR_API = `${AUTH_EMULATOR}/identitytoolkit.googleapis.com/v1`;
  * every server wait uses this budget and the assertion itself stays unchanged.
  */
 const SERVER_WAIT = 15_000;
+
+/* ---------- DateField (the Deadline, Start date and Anchor triggers) ---------- */
+
+/**
+ * Waits until a trigger's popover is closed and has finished its exit: a
+ * fading popover is still in the top layer and would swallow the next click.
+ */
+async function settlePopover(trigger: Locator): Promise<void> {
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect
+    .poll(() =>
+      trigger.evaluate(element => {
+        const popover = document.getElementById(element.getAttribute("aria-controls") ?? "");
+        return popover !== null && !popover.matches(":popover-open") && popover.getAnimations().length === 0;
+      }),
+    )
+    .toBe(true);
+}
+
+const monthIndex = (key: string) => Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7)) - 1;
+
+/**
+ * Chooses a day (`YYYY-MM-DD`) or clears the field (`""`) through its popover:
+ * pages the month with the dialog's own Previous/Next buttons, then presses the
+ * day. Scoped to the "Choose date" dialog because the sidebar's mini month
+ * uses the same button names.
+ */
+export async function pickDate(scope: Page | Locator, label: string, iso: string): Promise<void> {
+  const trigger = scope.getByLabel(label);
+  if (iso === "" && (await trigger.getAttribute("data-value")) === "") return; // nothing to clear
+  await trigger.click();
+  const dialog = scope.getByRole("dialog", { name: "Choose date" });
+  await expect(dialog).toBeVisible();
+  if (iso === "") {
+    await dialog.getByRole("button", { name: "No date" }).click();
+  } else {
+    const grid = dialog.locator("[data-month]");
+    let shown = (await grid.getAttribute("data-month")) as string;
+    while (shown !== iso.slice(0, 7)) {
+      const delta = monthIndex(iso) - monthIndex(shown);
+      await dialog.getByRole("button", { name: delta > 0 ? "Next month" : "Previous month" }).click();
+      const expected = `${Math.floor((monthIndex(shown) + Math.sign(delta)) / 12)}-${String(((monthIndex(shown) + Math.sign(delta)) % 12) + 1).padStart(2, "0")}`;
+      await expect(grid).toHaveAttribute("data-month", expected);
+      shown = expected;
+    }
+    await dialog.locator(`[data-date="${iso}"]`).click();
+  }
+  await settlePopover(trigger);
+}
+
+/** The stored value of a DateField (`YYYY-MM-DD` or ""), whatever words it shows. */
+export async function expectDate(scope: Page | Locator, label: string, iso: string): Promise<void> {
+  await expect(scope.getByLabel(label)).toHaveAttribute("data-value", iso);
+}
 
 /* ---------- Auth emulator REST (no sign-in) ---------- */
 

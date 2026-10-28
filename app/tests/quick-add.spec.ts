@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteSeries, readRemoteTasks, seedProfile, submitAuthForm } from "./browser-helpers.ts";
+import { readRemoteSeries, readRemoteTasks, seedProfile, submitAuthForm, expectDate, pickDate } from "./browser-helpers.ts";
 
 /**
  * Natural-language quick add (value roadmap §2.2, roadmap step 3), end to end.
@@ -124,7 +124,7 @@ test("typing a date in the title creates the task with that deadline", async ({ 
 
   // The chip previews exactly what will be stored, in the planner's own words.
   await expect(chips(page)).toHaveText([dateLabel(friday, today)]);
-  await expect(page.getByLabel("Deadline")).toHaveValue(friday);
+  await expectDate(page, "Deadline", friday);
 
   await submitFromTitle(page);
   await openTasksByKeyboard(page);
@@ -167,7 +167,7 @@ test("undoing a chip keeps its text in the title, from the keyboard", async ({ p
   await page.keyboard.press("Enter");
 
   await expect(chips(page)).toHaveCount(0);
-  await expect(page.getByLabel("Deadline")).toHaveValue("");
+  await expectDate(page, "Deadline", "");
   // Shift+Tab puts the caret back in the title, where Enter submits.
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByLabel("Task title")).toBeFocused();
@@ -188,7 +188,7 @@ test("a deadline the user picks outranks the parsed one", async ({ page }) => {
   await expect(chips(page)).toHaveText([dateLabel(addDays(today, 1), today)]);
 
   const chosen = addDays(today, 10);
-  await page.getByLabel("Deadline").fill(chosen);
+  await pickDate(page, "Deadline", chosen);
 
   // The chip would be lying about the stored value, so it is gone; the text it
   // matched is still consumed, which is what the user's own choice means.
@@ -248,7 +248,7 @@ test.describe("on a phone", () => {
 
     await expect(chips(page)).toHaveText(["Weekly"]);
     // The start date the series will be anchored to follows the weekday named.
-    await expect(page.getByLabel("Start date")).toHaveValue(monday);
+    await expectDate(page, "Start date", monday);
     const chip = await chips(page).first().boundingBox();
     expect(chip).not.toBeNull();
     expect(chip!.x + chip!.width).toBeLessThanOrEqual(390);

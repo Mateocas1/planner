@@ -3,6 +3,8 @@ import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES, estimateNote } from "../dom
 import type { SeriesView, TaskView } from "../data/store.ts";
 import type { BiasSample } from "../planning/bias.ts";
 import { ActualSummary, BiasHint } from "./BiasHint.tsx";
+import { DateField } from "./DateField.tsx";
+import { dateFieldLabels } from "./DateField.labels.ts";
 import { formatDateKey } from "./format.ts";
 import { CloseIcon } from "./icons.tsx";
 import { Sheet } from "./Sheet.tsx";
@@ -110,6 +112,7 @@ export function TaskDetails({
   task,
   origin,
   shared = false,
+  today,
   busy,
   biasSamples,
   onClose,
@@ -123,6 +126,8 @@ export function TaskDetails({
   origin: HTMLElement | null;
   /** Opened through the row-to-panel view transition (see morph.ts). */
   shared?: boolean;
+  /** Today's key in the profile zone: the Deadline field's words and quick days. */
+  today: string;
   busy: boolean;
   /**
    * Completed tasks the estimate learner may read (F2b). The sheet does not
@@ -185,12 +190,12 @@ export function TaskDetails({
       <div className="form-group">
         <div className="form-row">
           <label htmlFor="task-details-deadline">Deadline</label>
-          <input
+          <DateField
             id="task-details-deadline"
-            className="form-control"
-            type="date"
             value={task.deadline ?? ""}
-            onChange={event => onDeadlineChange(event.target.value)}
+            today={today}
+            labels={dateFieldLabels}
+            onChange={onDeadlineChange}
           />
         </div>
         <EstimateField
@@ -323,13 +328,13 @@ export function SeriesDetails({
         </div>
         <div className="form-row">
           <label htmlFor="series-details-anchor">Anchor</label>
-          <input
+          <DateField
             id="series-details-anchor"
-            className="form-control"
-            type="date"
             value={series.anchorDate}
+            today={today}
+            labels={dateFieldLabels}
             disabled={busy}
-            onChange={event => onAnchorChange(event.target.value)}
+            onChange={onAnchorChange}
           />
         </div>
         <EstimateField

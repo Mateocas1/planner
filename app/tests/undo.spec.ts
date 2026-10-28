@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData } from "./browser-helpers.ts";
+import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, pickDate, type RemoteData } from "./browser-helpers.ts";
 
 /**
  * Undo for delete (F1 / spec S6).
@@ -59,7 +59,7 @@ async function revealTaskForm(page: Page) {
 async function addTaskThroughForm(page: Page, title: string, deadline?: string) {
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill(title);
-  if (deadline) await page.getByLabel("Deadline").fill(deadline);
+  if (deadline) await pickDate(page, "Deadline", deadline);
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".task-title", { hasText: title })).toBeVisible();
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
@@ -245,7 +245,7 @@ test("deleting a series offers undo, and undo restores the same id, schedule and
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Stretch");
   await page.getByLabel("Repeat").selectOption({ label: "Daily" });
-  await page.getByLabel("Start date").fill(dayKey(0));
+  await pickDate(page, "Start date", dayKey(0));
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.locator(".series-row", { hasText: "Stretch" })).toBeVisible();
 
