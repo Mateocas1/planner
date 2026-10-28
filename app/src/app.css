@@ -266,6 +266,26 @@ ul, ol {
   border: 0;
 }
 
+/* First Tab stop (WCAG 2.4.1): parked above the viewport at rest, a card at the
+   top-left while it has keyboard focus. No transition: it appears, it does not
+   animate. <main id="content"> is a focus target, not a control, so it carries
+   no ring of its own. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 10px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--label);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.skip-link:focus-visible { top: 10px; outline: none; }
+#content:focus { outline: none; }
+
 .tnum,
 time,
 .row-meta,

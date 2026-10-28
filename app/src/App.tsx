@@ -3,7 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
 import { useProfileTimeZone } from "./data/profile.ts";
-import { useLocale, useSyncedLanguage } from "./i18n/index.ts";
+import { t, useLocale, useSyncedLanguage } from "./i18n/index.ts";
 import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
@@ -418,6 +418,19 @@ function Shell({
           across the window boundary. */}
       <FocusPillBridge focus={focus} />
       <div className={`shell${phone ? " is-phone" : ""}`}>
+      {/* The first Tab stop (WCAG 2.4.1): shown only while it has focus. It
+          moves focus by script instead of following the hash, which the
+          window routes (main.tsx) read. */}
+      <a
+        className="skip-link"
+        href="#content"
+        onClick={event => {
+          event.preventDefault();
+          document.getElementById("content")?.focus();
+        }}
+      >
+        {t("shell.skipToContent")}
+      </a>
       {!phone && (
         <Sidebar
           email={user.email ?? ""}
@@ -482,7 +495,7 @@ function Shell({
             <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => setLateError(null)}><CloseIcon /></button>
           </div>
         )}
-        <main className="content">
+        <main id="content" tabIndex={-1} className="content">
           {/* The page lands where it lands: opacity only, one 120 ms beat, and
               no exit at all. mode="wait" made every navigation pay the old
               view's departure first (280 ms in total, including the palette's
