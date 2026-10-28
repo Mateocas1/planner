@@ -509,7 +509,7 @@ test("the mini-month is one tab stop with arrow-key navigation", async ({ page }
 
   /* Arrows move focus and the stop with it. */
   await stops.focus();
-  const start = await stops.getAttribute("data-date");
+  const start = await stops.getAttribute("data-mini-date");
   await page.keyboard.press("ArrowRight");
   const next = month.locator(".mini-day:focus");
   const shifted = (key: string, days: number) => {
@@ -517,21 +517,21 @@ test("the mini-month is one tab stop with arrow-key navigation", async ({ page }
     date.setUTCDate(date.getUTCDate() + days);
     return date.toISOString().slice(0, 10);
   };
-  await expect(next).toHaveAttribute("data-date", shifted(start!, 1));
+  await expect(next).toHaveAttribute("data-mini-date", shifted(start!, 1));
   await expect(next).toHaveAttribute("tabindex", "0");
   await expect(month.locator(".mini-day[tabindex='0']")).toHaveCount(1);
   await page.keyboard.press("ArrowDown");
-  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-date", shifted(start!, 8));
+  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-mini-date", shifted(start!, 8));
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowUp");
-  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-date", shifted(start!, 0));
+  await expect(month.locator(".mini-day:focus")).toHaveAttribute("data-mini-date", shifted(start!, 0));
 
   /* Home and End are the row's edges (Monday to Sunday). */
   await page.keyboard.press("Home");
-  const monday = await month.locator(".mini-day:focus").getAttribute("data-date");
+  const monday = await month.locator(".mini-day:focus").getAttribute("data-mini-date");
   expect(new Date(`${monday}T00:00:00Z`).getUTCDay()).toBe(1);
   await page.keyboard.press("End");
-  const sunday = await month.locator(".mini-day:focus").getAttribute("data-date");
+  const sunday = await month.locator(".mini-day:focus").getAttribute("data-mini-date");
   expect(new Date(`${sunday}T00:00:00Z`).getUTCDay()).toBe(0);
 
   /* PageDown pages the month. */

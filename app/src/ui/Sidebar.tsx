@@ -362,7 +362,7 @@ function MiniMonth({
   useEffect(() => {
     if (!pendingFocus.current) return;
     pendingFocus.current = false;
-    gridRef.current?.querySelector<HTMLElement>(`[data-date="${activeKey}"]`)?.focus();
+    gridRef.current?.querySelector<HTMLElement>(`[data-mini-date="${activeKey}"]`)?.focus();
   });
 
   const moveTo = (key: string) => {
@@ -373,7 +373,7 @@ function MiniMonth({
 
   const onGridKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    const key = (event.target as HTMLElement).closest<HTMLElement>("[data-date]")?.dataset.date;
+    const key = (event.target as HTMLElement).closest<HTMLElement>("[data-mini-date]")?.dataset.miniDate;
     if (!key) return;
     let next: string | null = null;
     switch (event.key) {
@@ -428,7 +428,7 @@ function MiniMonth({
               className={classes}
               aria-label={formatWall(utc, { weekday: "long", month: "long", day: "numeric" })}
               aria-pressed={key === selected}
-              data-date={key}
+              data-mini-date={key}
               tabIndex={key === activeKey ? 0 : -1}
               onClick={() => onPickDay(key)}
             >
