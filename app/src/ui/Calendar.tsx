@@ -37,7 +37,6 @@ import { useRowCursor, useSurfaceShortcuts } from "./useRowCursor.ts";
 import { Select } from "./Select.tsx";
 import { DateTimeField } from "./DateTimeField.tsx";
 import { dateFieldLabels } from "./DateField.labels.ts";
-import { t, useLocale } from "../i18n/index.ts";
 import { settle } from "./write.ts";
 
 /**
