@@ -1001,31 +1001,44 @@ time,
 
 .row-meta {
   margin-left: auto;
-  /* The meta used to be `flex: none`, so it took its full width and the title
-     yielded everything (odd/research/responsive-audit.md F2): at 320 px a
-     series title was 34 px wide, and at 200 % text zoom the title vanished.
-     It now shrinks, and what is left over is the title's room. */
-  flex: 0 1 auto;
+  /* A date is at most ~16 characters and the title is the part a reader can
+     recover from the `title` attribute, so the meta keeps its width and the
+     title yields (Ronda 5, R5-01). It is a block, not a flex container, so its
+     own text is the thing `text-overflow` clips: an inline-flex meta held the
+     date as an anonymous flex item, which painted a hard clip mid-glyph. The
+     two metas that carry an icon opt back into flex with `.has-icon` and wrap
+     their text in `.row-meta-text`, which owns the ellipsis. */
+  flex: none;
   min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  display: block;
   font-size: var(--text-sub);
   color: var(--label-3);
-}
-
-/* Each piece of the meta truncates inside its own slice instead of pushing the
-   row wider, and the deadline text keeps its own ellipsis. */
-.row-meta > *,
-.row-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Under 420 px the meta may not take more than its share even when the title is
-   short: the cap is what keeps a 320 px title readable. */
-@media (max-width: 420px) {
+.row-meta.has-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row-meta-text,
+.row-meta > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On a phone the meta keeps its natural width but never more than its share, so
+   a long series meta cannot starve a 320 px title
+   (odd/research/responsive-audit.md F2). It is capped rather than left to
+   flex-shrink: shrink is proportional to the flex basis, and next to a long
+   title it took a date down to a third of its width. The ellipsis above is what
+   shows when the cap does bite. */
+@media (max-width: 520px) {
   .row-meta { max-width: 42%; }
 }
 
@@ -1390,7 +1403,19 @@ time,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.calendar-block.is-short { flex-direction: row; gap: 6px; padding-top: 2px; }
+/* Under 40 px a block is one line: the title leads on a single line with an
+   ellipsis and the time follows only while the column has room for both
+   (Ronda 5, R5-11). The full text is the block's `title`. */
+.calendar-block.is-short { flex-direction: row; align-items: flex-start; gap: 6px; padding-top: 2px; }
+.calendar-block.is-short b {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+.calendar-block.is-short span { flex: none; }
+@container (max-width: 120px) {
+  .calendar-block.is-short span { display: none; }
+}
 .calendar-block.is-past { opacity: 0.55; }
 .calendar-block:active {
   transform: scale(var(--press-scale-large));
