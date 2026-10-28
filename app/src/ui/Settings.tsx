@@ -9,6 +9,7 @@
  */
 
 export { formatClock, parseClock } from "./clock.ts";
+import { ICON_STROKE } from "./icons.tsx";
 
 /** The gear that opens Settings from the sidebar's account row. Drawn in
  * ui/icons.tsx's stroke family on the same 24 px grid; it lives here because
@@ -21,7 +22,7 @@ export function SettingsIcon({ className }: { className?: string }) {
       stroke="currentColor"
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth={1.7}
+      strokeWidth={ICON_STROKE}
       aria-hidden="true"
       className={className}
     >

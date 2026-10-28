@@ -162,9 +162,14 @@
 
 .now-up-next {
   margin: 0;
-  font-size: var(--text-sub);
+  font-size: clamp(0.9375rem, 1.6vmin + 0.5rem, 1.25rem);
   color: var(--label-3);
   font-variant-numeric: tabular-nums;
+}
+
+/* A glance surface: the buttons scale with the secondary line, never 13 px. */
+.now-actions .button {
+  font-size: clamp(0.9375rem, 1.6vmin + 0.5rem, 1.25rem);
 }
 
 .now-actions {
