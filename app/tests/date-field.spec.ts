@@ -292,8 +292,9 @@ test.describe("with reduced motion", () => {
       return pop
         .getAnimations({ subtree: true })
         .map(animation => (animation as CSSTransition).transitionProperty)
-        .filter(property => property !== "display" && property !== "overlay");
+        .filter(property => ["opacity", "transform", "scale", "filter"].includes(property));
     });
+    // Gentler, not zero: the fade stays, the scale and the blur are gone.
     expect(properties.length).toBeGreaterThan(0);
     for (const property of properties) expect(property).toBe("opacity");
     await expect(dialog(sheet)).toBeVisible();
