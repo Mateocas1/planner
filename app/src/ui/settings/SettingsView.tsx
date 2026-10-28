@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { motion } from "motion/react";
+import { t } from "../../i18n/index.ts";
 import { isTauri } from "../../desktop.ts";
 import type { WorkWindow } from "../../planning/window.ts";
 import type { WeeklyReviewSettings } from "../../planning/weekly.ts";
@@ -71,11 +72,24 @@ export function SettingsView({
 
   return (
     <section aria-label="Settings" className={`settings${phone ? " is-phone" : ""}`}>
+      {/* The page head every view carries (Today, Tasks, Calendar): the 34 px
+          title, and on the phone the back chevron, since the rail's Back is
+          desktop-only there. */}
+      <header className="page-head settings-page-head">
+        {phone && (
+          <button type="button" className="settings-back-icon-button" aria-label={t("shell.back")} onClick={onBack}>
+            <ChevronLeftIcon />
+          </button>
+        )}
+        <h2 className="large-title">{t("shell.title.settings")}</h2>
+      </header>
       <div className="settings-rail">
-        <button type="button" className="settings-back" onClick={onBack}>
-          <ChevronLeftIcon />
-          Back
-        </button>
+        {!phone && (
+          <button type="button" className="settings-back" onClick={onBack}>
+            <ChevronLeftIcon />
+            {t("shell.back")}
+          </button>
+        )}
         <nav aria-label="Settings sections" className="settings-nav">
           {tabs.map(({ id, label }) => (
             <button
@@ -105,7 +119,7 @@ export function SettingsView({
           transition={{ duration: dur.enter, ease: easeOut }}
         >
           <header className="settings-head">
-            <h2>{tabs.find(entry => entry.id === active)?.label}</h2>
+            <h3>{tabs.find(entry => entry.id === active)?.label}</h3>
             <p>{tabs.find(entry => entry.id === active)?.description}</p>
           </header>
           {active === "general" && (

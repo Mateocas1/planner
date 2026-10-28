@@ -3,7 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import type { User } from "firebase/auth";
 import { signOutUser, useSession } from "./data/session.ts";
 import { useProfileTimeZone } from "./data/profile.ts";
-import { useLocale, useSyncedLanguage } from "./i18n/index.ts";
+import { t, useLocale, useSyncedLanguage } from "./i18n/index.ts";
 import { addSeries, type Frequency } from "./data/series.ts";
 import { useStore } from "./data/store.ts";
 import { addTask } from "./data/tasks.ts";
@@ -76,6 +76,15 @@ export default function App() {
   useLocale();
   const { loading, user } = useSession();
   const [view, setView] = useState<View>("home");
+  // The tab title names the current view, localized (the locale subscription
+  // above re-renders this on a language switch); signed out it is the app name.
+  const documentTitle = user ? t("shell.documentTitle", { view: t(`shell.title.${view}`) }) : "Personal Planner";
+  useEffect(() => {
+    document.documentElement.dataset.pageTitle = documentTitle;
+    // While the focus timer is counting down it owns the tab title; it restores
+    // `data-page-title` when it stops.
+    if (!/^\d+:\d\d · /.test(document.title)) document.title = documentTitle;
+  }, [documentTitle]);
   // Settings (Ronda 2, S1) is a view in the shell; the tab it opens on lives
   // here — not in the shell — so `openSettings(tab?)` stays the single entry
   // point for the shell's doors (palette, `Ctrl+,`, account menus) AND for the

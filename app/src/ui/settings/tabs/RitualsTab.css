@@ -85,3 +85,9 @@
 .rituals-foot .inline-error {
   margin: 0;
 }
+
+/* Touch: the chip keeps its look and takes a 44 px target (sizes only, R5-16). */
+@media (pointer: coarse) {
+  .rituals-step-chip { height: 44px; padding: 0 16px; }
+  .rituals-steps { gap: 8px; }
+}
