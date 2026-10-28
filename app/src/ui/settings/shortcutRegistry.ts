@@ -24,6 +24,8 @@
 
 import { useSyncExternalStore } from "react";
 import { isApplePlatform, modifierLabel } from "../shortcuts.ts";
+import { en } from "../../i18n/en/index.ts";
+import { t } from "../../i18n/index.ts";
 
 /** The three shortcuts a person may rebind. Quick-add is desktop-only. */
 export type RebindableShortcutId = "palette" | "chat" | "quickAdd";
@@ -41,9 +43,9 @@ export type RebindableShortcut = {
 };
 
 export const rebindableShortcuts: readonly RebindableShortcut[] = [
-  { id: "palette", label: "Command palette", defaultAccelerator: "ctrl+KeyK", desktopOnly: false },
-  { id: "chat", label: "Chat", defaultAccelerator: "ctrl+KeyJ", desktopOnly: false },
-  { id: "quickAdd", label: "Quick add anywhere", defaultAccelerator: "ctrl+alt+Space", desktopOnly: true },
+  { id: "palette", get label() { return t("shortcuts.rebind.palette"); }, defaultAccelerator: "ctrl+KeyK", desktopOnly: false },
+  { id: "chat", get label() { return t("shortcuts.rebind.chat"); }, defaultAccelerator: "ctrl+KeyJ", desktopOnly: false },
+  { id: "quickAdd", get label() { return t("shortcuts.rebind.quickAdd"); }, defaultAccelerator: "ctrl+alt+Space", desktopOnly: true },
 ];
 
 export function rebindableShortcut(id: RebindableShortcutId): RebindableShortcut {
@@ -168,10 +170,10 @@ export const MODIFIER_CODES = new Set([
   "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight",
 ]);
 
-export const CAPTURE_MODIFIER_ERROR =
-  "Include Ctrl, Alt or the Windows key (or Cmd) plus a regular key.";
-export const CAPTURE_KEY_ERROR =
-  "That key cannot be part of the shortcut. Use a letter, number or symbol key.";
+/** The English wording, which the capture returns in English; other languages
+ * read the same keys through `t()`. */
+export const CAPTURE_MODIFIER_ERROR = en["shortcuts.capture.modifier"];
+export const CAPTURE_KEY_ERROR = en["shortcuts.capture.key"];
 
 /** The fields of a keydown the capture reads; a stub in tests, a real event in the browser. */
 export type CaptureInput = { code: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean };
@@ -188,9 +190,9 @@ export type Capture =
  * capital letter the user was typing.
  */
 export function captureFromEvent(event: CaptureInput): Capture {
-  if (event.code === "" || event.code === "Unidentified") return { ok: false, error: CAPTURE_KEY_ERROR };
-  if (MODIFIER_CODES.has(event.code)) return { ok: false, error: CAPTURE_MODIFIER_ERROR };
-  if (!event.ctrlKey && !event.altKey && !event.metaKey) return { ok: false, error: CAPTURE_MODIFIER_ERROR };
+  if (event.code === "" || event.code === "Unidentified") return { ok: false, error: t("shortcuts.capture.key") };
+  if (MODIFIER_CODES.has(event.code)) return { ok: false, error: t("shortcuts.capture.modifier") };
+  if (!event.ctrlKey && !event.altKey && !event.metaKey) return { ok: false, error: t("shortcuts.capture.modifier") };
   return {
     ok: true,
     accelerator: acceleratorOf({
@@ -225,7 +227,7 @@ export type Conflict =
  * shadow.
  */
 export const fixedInAppShortcuts: readonly { accelerator: Accelerator; label: string }[] = [
-  { accelerator: "ctrl+Comma", label: "Settings" },
+  { accelerator: "ctrl+Comma", get label() { return t("shortcuts.fixed.settings"); } },
 ];
 
 /**
@@ -273,7 +275,7 @@ export function findConflict(
       return {
         kind: "rebindable",
         holder: shortcut.id,
-        message: `Already used by ${shortcut.label}. Pick a different combination.`,
+        message: t("shortcuts.conflict.rebindable", { holder: shortcut.label }),
       };
     }
   }
@@ -282,7 +284,7 @@ export function findConflict(
   for (const fixed of fixedInAppShortcuts) {
     const held = parseAccelerator(fixed.accelerator);
     if (held !== null && sameCombo(candidate, held)) {
-      return { kind: "fixed", message: `${acceleratorLabel(fixed.accelerator)} is reserved for ${fixed.label}.` };
+      return { kind: "fixed", message: t("shortcuts.conflict.fixed", { keys: acceleratorLabel(fixed.accelerator), holder: fixed.label }) };
     }
   }
 
@@ -291,7 +293,7 @@ export function findConflict(
   const plainKey = chord && !candidate.shift && RESERVED_CHORD_KEYS.has(candidate.code);
   const shiftedKey = chord && candidate.shift && RESERVED_CHORD_KEYS.has(candidate.code);
   if (plainKey || shiftedKey) {
-    return { kind: "reserved", message: `${acceleratorLabel(accelerator)} is reserved by your browser/system.` };
+    return { kind: "reserved", message: t("shortcuts.conflict.reserved", { keys: acceleratorLabel(accelerator) }) };
   }
   if (context.desktop) {
     // Win-key combos: the OS owns Meta everywhere on Windows.
