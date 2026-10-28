@@ -1610,7 +1610,16 @@ time,
   line-height: 1.25;
 }
 
+/* The borderless title shows focus as a 2 px accent underline, not an outline (R5-14);
+   a missing title turns it red. */
 .sheet-title:focus { outline: none; }
+.sheet-title:focus-visible { box-shadow: 0 2px 0 0 var(--accent); }
+.sheet-title[aria-invalid="true"] { box-shadow: 0 2px 0 0 var(--red); }
+.sheet-title-error {
+  margin: -6px 0 0;
+  color: var(--red);
+  font-size: var(--text-sub);
+}
 .sheet-title::placeholder { color: var(--label-3); font-weight: 600; }
 
 .form-group {

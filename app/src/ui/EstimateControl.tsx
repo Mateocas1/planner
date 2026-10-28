@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { MAX_ESTIMATE_MINUTES, MIN_ESTIMATE_MINUTES } from "../domain/model.ts";
 import { ESTIMATE_COARSE_STEP, ESTIMATE_GRID_MINUTES, digitsOnly, parseDraft, stepEstimate } from "./estimateStep.ts";
+import { useKeyboardUp } from "./viewport.ts";
 import "./EstimateControl.css";
 
 /** Quiet time after the last stepper click or arrow key before the draft is committed. */
@@ -25,6 +26,7 @@ export interface EstimateControlProps {
   onDraftChange: (draft: string) => void;
   /** Commit the given draft (always passed explicitly, never read from stale state). */
   onCommit: (draft: string) => void;
+  /** Locks the control while a write is in flight. Focus stays where it is: the field goes read-only and chips are aria-disabled instead of `disabled`. */
   disabled?: boolean;
   describedBy?: string;
   presets: readonly EstimatePreset[];
@@ -79,6 +81,9 @@ export function EstimateControl(props: EstimateControlProps) {
   const { id, draft, revertTo, onDraftChange, onCommit, disabled, describedBy, presets } = props;
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // No room for a second row while a keyboard covers the sheet (the same rule
+  // as the pace hint); the field and the stepper stay.
+  const keyboardUp = useKeyboardUp();
   const debounced = useDebouncedCommit(() => onCommit(draftRef.current), ESTIMATE_COMMIT_DELAY_MS);
 
   const current = parseDraft(draft);
@@ -87,6 +92,7 @@ export function EstimateControl(props: EstimateControlProps) {
     onDraftChange(next);
   };
   const step = (delta: number) => {
+    if (disabled) return;
     setDraft(String(stepEstimate(parseDraft(draftRef.current), delta)));
     debounced.schedule();
   };
@@ -126,21 +132,25 @@ export function EstimateControl(props: EstimateControlProps) {
 
   return (
     <div className="est-control">
-      <div className="est-chips" role="group" aria-label={props.presetsLabel}>
-        {presets.map(preset => (
-          <button
-            key={preset.minutes}
-            type="button"
-            className="est-chip"
-            aria-label={preset.name}
-            aria-pressed={current === preset.minutes}
-            disabled={disabled}
-            onClick={() => pressPreset(preset.minutes)}
-          >
-            {preset.text}
-          </button>
-        ))}
-      </div>
+      {!keyboardUp && (
+        <div className="est-chips" role="group" aria-label={props.presetsLabel}>
+          {presets.map(preset => (
+            <button
+              key={preset.minutes}
+              type="button"
+              className="est-chip"
+              aria-label={preset.name}
+              aria-pressed={current === preset.minutes}
+              aria-disabled={disabled || undefined}
+              onClick={() => {
+                if (!disabled) pressPreset(preset.minutes);
+              }}
+            >
+              {preset.text}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="est-field">
         <input
           id={id}
@@ -152,7 +162,8 @@ export function EstimateControl(props: EstimateControlProps) {
           autoComplete="off"
           placeholder={props.placeholder}
           value={draft}
-          disabled={disabled}
+          readOnly={disabled}
+          aria-disabled={disabled || undefined}
           aria-valuemin={MIN_ESTIMATE_MINUTES}
           aria-valuemax={MAX_ESTIMATE_MINUTES}
           aria-valuenow={current}
