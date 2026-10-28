@@ -20,6 +20,7 @@ import {
   validateBaseUrlClient,
   validateKeyClient,
 } from "../aiSettings.ts";
+import { t, useLocale } from "../../../i18n/index.ts";
 import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
 import "./AiTab.css";
@@ -39,6 +40,7 @@ import "./AiTab.css";
  */
 
 export function AiTab() {
+  useLocale();
   const [status, setStatus] = useState<ChatKeyStatus | null>(null);
   const [urlDraft, setUrlDraft] = useState(DEFAULT_CHAT_BASE_URL);
   const [keyDraft, setKeyDraft] = useState("");
@@ -133,13 +135,13 @@ export function AiTab() {
   return (
     <>
       <Section
-        title="Provider"
-        description="An OpenAI-compatible endpoint. The key lives in Windows Credential Manager and is never returned to this page."
+        title={t("ai.provider.title")}
+        description={t("ai.provider.description")}
       >
         <SettingRow
-          label="Base URL"
+          label={t("ai.baseUrl.label")}
           controlId="ai-base-url"
-          description="https://, or http:// on this computer (localhost). Changing it means entering the key again."
+          description={t("ai.baseUrl.description")}
           error={urlError}
         >
           {() => (
@@ -157,9 +159,9 @@ export function AiTab() {
         </SettingRow>
         {showKeyField && (
           <SettingRow
-            label="API key"
+            label={t("ai.apiKey.label")}
             controlId="ai-api-key"
-            description="Paste the provider's key. It is written to Windows Credential Manager and cleared from this field after saving."
+            description={t("ai.apiKey.description")}
             error={keyError}
           >
             {() => (
@@ -169,7 +171,7 @@ export function AiTab() {
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={saved ? "Paste the new key" : "Paste your key"}
+                placeholder={saved ? t("ai.apiKey.placeholderNew") : t("ai.apiKey.placeholder")}
                 value={keyDraft}
                 onChange={event => setKeyDraft(event.target.value)}
                 onKeyDown={onKeyFieldKeyDown}
@@ -178,42 +180,42 @@ export function AiTab() {
           </SettingRow>
         )}
         <SettingRow
-          label="Key status"
+          label={t("ai.keyStatus.label")}
           description={
             confirmRemove
-              ? "Remove the saved key? The assistant asks for it again before the next chat."
+              ? t("ai.keyStatus.confirm")
               : keyStatusText(status)
           }
         >
           {() =>
             saved && !editing ? (
               confirmRemove ? (
-                <div className="ai-actions" role="group" aria-label="Confirm removing the key">
+                <div className="ai-actions" role="group" aria-label={t("ai.confirmRemoveKey")}>
                   <button type="button" className="button-danger ai-button" disabled={busy} onClick={() => void remove()}>
-                    Remove
+                    {t("ai.remove")}
                   </button>
                   <button type="button" className="button ai-button" onClick={() => setConfirmRemove(false)}>
-                    Keep
+                    {t("ai.keep")}
                   </button>
                 </div>
               ) : (
                 <div className="ai-actions">
                   <button type="button" className="button ai-button" onClick={startReplace}>
-                    Replace
+                    {t("ai.replace")}
                   </button>
                   <button type="button" className="button ai-button" onClick={() => setConfirmRemove(true)}>
-                    Remove
+                    {t("ai.remove")}
                   </button>
                 </div>
               )
             ) : (
               <div className="ai-actions">
                 <button type="button" className="button ai-button" disabled={busy} onClick={() => void save()}>
-                  Save
+                  {t("ai.save")}
                 </button>
                 {editing && (
                   <button type="button" className="button ai-button" onClick={cancelEdit}>
-                    Cancel
+                    {t("ai.cancel")}
                   </button>
                 )}
               </div>
@@ -226,7 +228,7 @@ export function AiTab() {
 
       <MemoriesSection />
 
-      <p className="ai-privacy">Conversations are not stored. Memories stay on this computer. Messages go to the provider you configure.</p>
+      <p className="ai-privacy">{t("ai.privacy")}</p>
     </>
   );
 }
@@ -238,13 +240,14 @@ export function AiTab() {
  * guessed.
  */
 function ModelSection() {
+  useLocale();
   const [draft, setDraft] = useState(() => getChatModel());
   const [error, setError] = useState<string | null>(null);
 
   const commit = () => {
     const text = draft.trim();
     if (text === "") {
-      setError("Name a model, or restore the default.");
+      setError(t("ai.model.error"));
       return;
     }
     setError(null);
@@ -266,8 +269,8 @@ function ModelSection() {
   };
 
   return (
-    <Section title="Model" description="The model id your provider receives, sent with every request.">
-      <SettingRow label="Model" controlId="ai-model" error={error}>
+    <Section title={t("ai.model.title")} description={t("ai.model.description")}>
+      <SettingRow label={t("ai.model.label")} controlId="ai-model" error={error}>
         {() => (
           <>
             <input
@@ -287,7 +290,7 @@ function ModelSection() {
             </datalist>
             {draft.trim() !== DEFAULT_CHAT_MODEL && (
               <button type="button" className="link-button" onClick={restoreDefault}>
-                Restore default
+                {t("ai.model.restoreDefault")}
               </button>
             )}
           </>
@@ -306,6 +309,7 @@ function ModelSection() {
  * whenever it is shown.
  */
 function MemoriesSection() {
+  useLocale();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -347,12 +351,12 @@ function MemoriesSection() {
   const sorted = [...memories].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return (
-    <Section title="Memories" description="Notes the assistant keeps between chats, on this computer only.">
+    <Section title={t("ai.memories.title")} description={t("ai.memories.description")}>
       <EngramSection />
       {sorted.length === 0 ? (
         <div className="settings-empty">
-          <p>No memories yet.</p>
-          <p className="settings-row-desc">As you chat, notes worth keeping are saved here — never in the cloud.</p>
+          <p>{t("ai.memories.empty")}</p>
+          <p className="settings-row-desc">{t("ai.memories.emptyHint")}</p>
         </div>
       ) : (
         <>
@@ -365,31 +369,31 @@ function MemoriesSection() {
               </div>
               <div className="settings-row-control">
                 <button type="button" className="link-button ai-danger-link" onClick={() => void deleteOne(memory.id)}>
-                  Delete
+                  {t("ai.memories.delete")}
                 </button>
               </div>
             </div>
           ))}
           <div className="settings-row">
             <div className="settings-row-text">
-              <span className="settings-row-label">Clear all</span>
+              <span className="settings-row-label">{t("ai.memories.clearAll")}</span>
               <span className="settings-row-desc">
-                {confirmClear ? "Delete every memory? This cannot be undone." : "Remove every memory from this computer."}
+                {confirmClear ? t("ai.memories.clearConfirm") : t("ai.memories.clearAll.description")}
               </span>
             </div>
             <div className="settings-row-control">
               {confirmClear ? (
-                <div className="ai-actions" role="group" aria-label="Confirm clearing all memories">
+                <div className="ai-actions" role="group" aria-label={t("ai.memories.clearConfirmLabel")}>
                   <button type="button" className="button-danger ai-button" onClick={() => void clearAll()}>
-                    Clear
+                    {t("ai.memories.clear")}
                   </button>
                   <button type="button" className="button ai-button" onClick={() => setConfirmClear(false)}>
-                    Keep
+                    {t("ai.keep")}
                   </button>
                 </div>
               ) : (
                 <button type="button" className="button ai-button" onClick={() => setConfirmClear(true)}>
-                  Clear all
+                  {t("ai.memories.clearAll")}
                 </button>
               )}
             </div>
@@ -408,6 +412,7 @@ function MemoriesSection() {
  * whole store and reports the last attempt here.
  */
 function EngramSection() {
+  useLocale();
   const [settings, setSettings] = useState<EngramSettings | null>(null);
   const [status, setStatus] = useState<EngramMirrorStatus | null>(null);
   const [addressDraft, setAddressDraft] = useState("");
@@ -490,10 +495,8 @@ function EngramSection() {
     <>
       <div className="settings-row">
         <div className="settings-row-text">
-          <span className="settings-row-label">Also save to Engram</span>
-          <span className="settings-row-desc">
-            Mirror memories to a local Engram server. The local copy stays the source of truth; a failed mirror never loses a memory.
-          </span>
+          <span className="settings-row-label">{t("ai.engram.label")}</span>
+          <span className="settings-row-desc">{t("ai.engram.description")}</span>
           <span className="ai-memory-date">{engramStatusText(settings.enabled, status)}</span>
         </div>
         <div className="settings-row-control">
@@ -503,9 +506,9 @@ function EngramSection() {
       {settings.enabled && (
         <>
           <SettingRow
-            label="Engram address"
+            label={t("ai.engram.addressLabel")}
             controlId="engram-address"
-            description="Where your local Engram server listens. Loopback only: localhost, 127.0.0.1 or [::1]."
+            description={t("ai.engram.addressDescription")}
             error={error}
           >
             {() => (
@@ -521,9 +524,9 @@ function EngramSection() {
             )}
           </SettingRow>
           <SettingRow
-            label="Engram project"
+            label={t("ai.engram.projectLabel")}
             controlId="engram-project"
-            description="The Engram project the memories are mirrored into."
+            description={t("ai.engram.projectDescription")}
           >
             {() => (
               <input
@@ -539,12 +542,12 @@ function EngramSection() {
           </SettingRow>
           <div className="settings-row">
             <div className="settings-row-text">
-              <span className="settings-row-label">Sync now</span>
-              <span className="settings-row-desc">Push every memory to Engram and remove the ones deleted here.</span>
+              <span className="settings-row-label">{t("ai.engram.syncNow")}</span>
+              <span className="settings-row-desc">{t("ai.engram.syncNowDescription")}</span>
             </div>
             <div className="settings-row-control">
               <button type="button" className="button ai-button" disabled={busy} onClick={() => void syncNow()}>
-                Sync now
+                {t("ai.engram.syncNow")}
               </button>
             </div>
           </div>

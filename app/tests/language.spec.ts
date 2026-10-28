@@ -28,7 +28,7 @@ async function enter(page: Page) {
 }
 
 const dateLine = (page: Page) => page.locator("#home-heading + .subtitle");
-const settings = (page: Page) => page.getByRole("region", { name: "Settings" });
+const settings = (page: Page) => page.getByRole("region", { name: /^(Settings|Ajustes)$/ });
 const english = (page: Page) => page.getByRole("button", { name: "English", exact: true });
 const spanish = (page: Page) => page.getByRole("button", { name: "Español", exact: true });
 const deviceOnly = (page: Page) => page.getByRole("switch", { name: /^(Only on this device|Solo en este dispositivo)$/ });

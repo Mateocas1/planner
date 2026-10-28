@@ -5,6 +5,8 @@
  * exists and every entry point agrees.
  */
 
+import { t } from "../../i18n/index.ts";
+
 export type SettingsTab = "general" | "rituals" | "shortcuts" | "desktop" | "ai";
 
 export type SettingsTabDef = {
@@ -21,32 +23,52 @@ export type SettingsTabDef = {
 export const settingsTabs: readonly SettingsTabDef[] = [
   {
     id: "general",
-    label: "General",
-    description: "Your day and the app's language.",
+    get label() {
+      return t("tabs.general.label");
+    },
+    get description() {
+      return t("tabs.general.description");
+    },
     desktopOnly: false,
   },
   {
     id: "rituals",
-    label: "Rituals",
-    description: "The daily shutdown and the weekly review.",
+    get label() {
+      return t("tabs.rituals.label");
+    },
+    get description() {
+      return t("tabs.rituals.description");
+    },
     desktopOnly: false,
   },
   {
     id: "shortcuts",
-    label: "Shortcuts",
-    description: "Rebind the chords you press most, and read the rest.",
+    get label() {
+      return t("tabs.shortcuts.label");
+    },
+    get description() {
+      return t("tabs.shortcuts.description");
+    },
     desktopOnly: false,
   },
   {
     id: "desktop",
-    label: "Desktop",
-    description: "How Planner behaves on this computer.",
+    get label() {
+      return t("tabs.desktop.label");
+    },
+    get description() {
+      return t("tabs.desktop.description");
+    },
     desktopOnly: true,
   },
   {
     id: "ai",
-    label: "AI",
-    description: "The assistant's setup.",
+    get label() {
+      return t("tabs.ai.label");
+    },
+    get description() {
+      return t("tabs.ai.description");
+    },
     desktopOnly: true,
   },
 ];

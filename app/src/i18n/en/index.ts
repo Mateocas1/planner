@@ -8,6 +8,7 @@ import { gcal } from "./gcal.ts";
 import { rituals } from "./rituals.ts";
 import { planning } from "./planning.ts";
 import { settings } from "./settings.ts";
+import { settingsTabs } from "./settingsTabs.ts";
 import { shell } from "./shell.ts";
 import { today } from "./today.ts";
 
@@ -23,6 +24,7 @@ export const en = {
   ...rituals,
   ...planning,
   ...settings,
+  ...settingsTabs,
   ...shell,
   ...today,
 } as const;

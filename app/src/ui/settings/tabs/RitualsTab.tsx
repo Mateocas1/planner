@@ -6,6 +6,7 @@ import {
   type WeeklyReviewSettings,
   type WeeklyReviewStep,
 } from "../../../planning/weekly.ts";
+import { t, useLocale, type MessageKey } from "../../../i18n/index.ts";
 import { Select } from "../../Select.tsx";
 import { formatClock, parseClock, TimeField } from "../../Settings.tsx";
 import { settle } from "../../write.ts";
@@ -30,10 +31,6 @@ import "./RitualsTab.css";
 /** How many moments one week's schedule may hold. */
 const maxMoments = 4;
 
-const notATime = "Use a time like 09:00.";
-const beforeMidnight = "Pick a time before midnight.";
-const needStep = "A moment must run at least one step.";
-
 export function RitualsTab({
   uid,
   settings,
@@ -46,6 +43,7 @@ export function RitualsTab({
   shutdownTime: number;
   onOpenGeneral: () => void;
 }) {
+  useLocale();
   const [error, setError] = useState<string | null>(null);
   // The time field keeps its text while it is being typed; everything else
   // writes straight through (the day select and the step chips commit one
@@ -56,9 +54,9 @@ export function RitualsTab({
    *  before anything is sent (the API refuses what its reader would drop). */
   const save = (next: WeeklyReviewSettings) => {
     try {
-      void settle(setProfileWeeklyReview(uid, next)).catch(() => setError("The schedule could not be saved."));
+      void settle(setProfileWeeklyReview(uid, next)).catch(() => setError(t("rituals.error.saveFailed")));
     } catch {
-      setError(needStep);
+      setError(t("rituals.error.needStep"));
     }
   };
 
@@ -74,7 +72,7 @@ export function RitualsTab({
       ? moment.steps.filter(entry => entry !== step)
       : [...moment.steps, step];
     if (steps.length === 0) {
-      setError(needStep);
+      setError(t("rituals.error.needStep"));
       return;
     }
     setError(null);
@@ -84,11 +82,11 @@ export function RitualsTab({
   const commitTime = (index: number, text: string) => {
     const minutes = parseClock(text);
     if (minutes === null) {
-      setError(notATime);
+      setError(t("settings.error.notATime"));
       return;
     }
     if (minutes >= 1440) {
-      setError(beforeMidnight);
+      setError(t("rituals.error.beforeMidnight"));
       return;
     }
     setError(null);
@@ -115,23 +113,23 @@ export function RitualsTab({
 
   return (
     <>
-      <Section title="Daily shutdown">
-        <SettingRow label={`Shut down at ${formatClock(shutdownTime)}`} description="Lives in General — one time, one place to change it.">
+      <Section title={t("rituals.daily.title")}>
+        <SettingRow label={t("rituals.daily.label", { time: formatClock(shutdownTime) })} description={t("rituals.daily.description")}>
           {() => (
             <button type="button" className="link-button" onClick={onOpenGeneral}>
-              Edit in General
+              {t("rituals.daily.edit")}
             </button>
           )}
         </SettingRow>
       </Section>
 
       <Section
-        title="Weekly review"
-        description="One review a week, in the moments you set: each runs its own steps on its own day and time."
+        title={t("rituals.weekly.title")}
+        description={t("rituals.weekly.description")}
       >
         <SettingRow
-          label="Propose the review"
-          description="A toast on the day, and a quiet banner on Home. The review stays open by hand either way."
+          label={t("rituals.propose.label")}
+          description={t("rituals.propose.description")}
         >
           {labelId => (
             <SettingsSwitch
@@ -143,21 +141,21 @@ export function RitualsTab({
         </SettingRow>
       </Section>
 
-      <section className="settings-section" aria-label="Weekly review moments">
-        <h3 className="settings-section-title">Moments</h3>
-        <p className="settings-section-desc">When each moment opens, and the steps it runs.</p>
+      <section className="settings-section" aria-label={t("rituals.moments.label")}>
+        <h3 className="settings-section-title">{t("rituals.moments.title")}</h3>
+        <p className="settings-section-desc">{t("rituals.moments.description")}</p>
         <div className="settings-card rituals-moments">
           {settings.moments.map((moment, index) => (
             <div key={index} className="rituals-moment">
               <div className="rituals-moment-row">
-                <label className="rituals-moment-label" htmlFor={`rituals-day-${index}`}>Moment {index + 1}</label>
+                <label className="rituals-moment-label" htmlFor={`rituals-day-${index}`}>{t("rituals.moment", { n: index + 1 })}</label>
                 <div className="rituals-moment-controls">
                   <Select
                     id={`rituals-day-${index}`}
-                    label={`Moment ${index + 1}`}
+                    label={t("rituals.moment", { n: index + 1 })}
                     className="rituals-day"
                     value={String(moment.day)}
-                    options={dayOptions}
+                    options={dayOptions()}
                     onChange={value => editMoment(index, { day: Number(value) })}
                   />
                   <TimeField
@@ -167,16 +165,16 @@ export function RitualsTab({
                     onCommit={() => commitTime(index, timeDrafts[index] ?? formatClock(moment.time))}
                   />
                   {settings.moments.length > 1 && (
-                    <button type="button" className="link-button" aria-label={`Remove moment ${index + 1}`} onClick={() => removeMoment(index)}>
-                      Remove
+                    <button type="button" className="link-button" aria-label={t("rituals.removeMoment", { n: index + 1 })} onClick={() => removeMoment(index)}>
+                      {t("rituals.remove")}
                     </button>
                   )}
                 </div>
               </div>
               <div className="rituals-moment-row">
-                <span className="rituals-moment-label" id={`rituals-steps-${index}`}>Steps</span>
+                <span className="rituals-moment-label" id={`rituals-steps-${index}`}>{t("rituals.steps")}</span>
                 <div className="rituals-steps" role="group" aria-labelledby={`rituals-steps-${index}`}>
-                  {stepNames.map(([step, label]) => (
+                  {stepNames().map(([step, label]) => (
                     <button
                       key={step}
                       type="button"
@@ -195,7 +193,7 @@ export function RitualsTab({
         <div className="rituals-foot">
           {settings.moments.length < maxMoments && (
             <button type="button" className="link-button" onClick={addMoment}>
-              Add a moment
+              {t("rituals.addMoment")}
             </button>
           )}
           {error && <p className="inline-error" role="alert">{error}</p>}
@@ -206,11 +204,22 @@ export function RitualsTab({
 }
 
 /** The weekday select's options, in stored order (0 = Sunday, as weekly.ts documents). */
-const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const dayOptions = weekdayNames.map((label, day) => ({ value: String(day), label }));
+const weekdayKeys = [
+  "rituals.day.0",
+  "rituals.day.1",
+  "rituals.day.2",
+  "rituals.day.3",
+  "rituals.day.4",
+  "rituals.day.5",
+  "rituals.day.6",
+] as const;
+const dayOptions = () => weekdayKeys.map((key, day) => ({ value: String(day), label: t(key) }));
 
 /** The four steps, in flow order, as the chips' labels. */
-const stepNames: ReadonlyArray<[WeeklyReviewStep, string]> = weeklyReviewSteps.map(step => [
-  step,
-  { review: "Review", cleanup: "Clean up", plan: "Plan", reflect: "Reflect" }[step],
-]);
+const stepKeys = {
+  review: "rituals.step.review",
+  cleanup: "rituals.step.cleanup",
+  plan: "rituals.step.plan",
+  reflect: "rituals.step.reflect",
+} as const satisfies Record<WeeklyReviewStep, MessageKey>;
+const stepNames = (): ReadonlyArray<[WeeklyReviewStep, string]> => weeklyReviewSteps.map(step => [step, t(stepKeys[step])]);

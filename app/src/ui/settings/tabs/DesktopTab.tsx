@@ -26,7 +26,8 @@ import { SettingsSwitch } from "../SettingsSwitch.tsx";
  */
 
 /** The idle setting's own sentence, for a value outside the 5–60 range. */
-const outsideThreshold = `Pick between ${MIN_IDLE_THRESHOLD_MINUTES} and ${MAX_IDLE_THRESHOLD_MINUTES} minutes.`;
+const outsideThreshold = () =>
+  t("desktop.error.threshold", { min: MIN_IDLE_THRESHOLD_MINUTES, max: MAX_IDLE_THRESHOLD_MINUTES });
 
 /** This device's notification toggles (T7, S8.3): desktop only, never synced. */
 function readNotifySettings(): NotifySettings {
@@ -51,6 +52,7 @@ function writeNotifySettings(next: NotifySettings): void {
  * the tab opens and again after every change, never a cached flag.
  */
 function SignInStartupRow() {
+  useLocale();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +64,7 @@ function SignInStartupRow() {
         if (live) setEnabled(value);
       })
       .catch(() => {
-        if (live) setError("Windows did not report the startup setting.");
+        if (live) setError(t("desktop.error.startupRead"));
       });
     return () => {
       live = false;
@@ -74,17 +76,17 @@ function SignInStartupRow() {
     setBusy(true);
     setError(null);
     void (enabled ? disable() : enable())
-      .catch(() => setError("Windows did not change the startup setting. Try again."))
+      .catch(() => setError(t("desktop.error.startupChange")))
       .then(() => isEnabled())
       .then(value => setEnabled(value))
-      .catch(() => setError("Windows did not report the startup setting."))
+      .catch(() => setError(t("desktop.error.startupRead")))
       .finally(() => setBusy(false));
   };
 
   return (
     <SettingRow
-      label="Open Planner when I sign in to Windows"
-      description="It starts in the background and shows the window only when today's morning brief applies."
+      label={t("desktop.startup.label")}
+      description={t("desktop.startup.description")}
       error={error}
     >
       {labelId => <SettingsSwitch labelledBy={labelId} checked={enabled === true} disabled={enabled === null || busy} onChange={toggle} />}
@@ -109,7 +111,7 @@ export function DesktopTab() {
   const commitIdle = (text: string) => {
     const minutes = Number(text);
     if (text === "" || !Number.isInteger(minutes) || minutes < MIN_IDLE_THRESHOLD_MINUTES || minutes > MAX_IDLE_THRESHOLD_MINUTES) {
-      return setIdleError(outsideThreshold);
+      return setIdleError(outsideThreshold());
     }
     setIdleError(null);
     setIdleDraft(null);
@@ -130,14 +132,14 @@ export function DesktopTab() {
 
   return (
     <>
-      <Section title="Windows" description="These belong to this computer only.">
+      <Section title={t("desktop.windows.title")} description={t("desktop.windows.description")}>
         <SignInStartupRow />
-        <SettingRow label="Show floating timer" description="A mini timer above other windows while a focus session runs.">
+        <SettingRow label={t("desktop.pill.label")} description={t("desktop.pill.description")}>
           {labelId => <SettingsSwitch labelledBy={labelId} checked={pillEnabled} onChange={togglePill} />}
         </SettingRow>
         <SettingRow
-          label="Away after"
-          description="Minutes of no input during focus before the app asks whether to subtract them. This device only."
+          label={t("desktop.away.label")}
+          description={t("desktop.away.description")}
           controlId="day-idle-threshold"
           error={idleError}
         >
@@ -158,11 +160,11 @@ export function DesktopTab() {
           )}
         </SettingRow>
       </Section>
-      <Section title="Notifications" description="Windows notifications, on this computer.">
-        <SettingRow label="Block reminders">
+      <Section title={t("desktop.notifications.title")} description={t("desktop.notifications.description")}>
+        <SettingRow label={t("desktop.blockReminders")}>
           {labelId => <SettingsSwitch labelledBy={labelId} checked={notify.blockReminders} onChange={() => toggleNotify("blockReminders")} />}
         </SettingRow>
-        <SettingRow label="Shutdown nudge">
+        <SettingRow label={t("desktop.shutdownNudge")}>
           {labelId => <SettingsSwitch labelledBy={labelId} checked={notify.shutdownNudge} onChange={() => toggleNotify("shutdownNudge")} />}
         </SettingRow>
       </Section>
