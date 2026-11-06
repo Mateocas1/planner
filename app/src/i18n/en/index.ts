@@ -13,6 +13,7 @@ import { settings } from "./settings.ts";
 import { settingsTabs } from "./settingsTabs.ts";
 import { shell } from "./shell.ts";
 import { today } from "./today.ts";
+import { tray } from "./tray.ts";
 
 /** Every English message, composed from one file per area. */
 export const en = {
@@ -31,4 +32,5 @@ export const en = {
   ...settingsTabs,
   ...shell,
   ...today,
+  ...tray,
 } as const;

@@ -14,6 +14,7 @@ import { settings } from "./settings.ts";
 import { settingsTabs } from "./settingsTabs.ts";
 import { shell } from "./shell.ts";
 import { today } from "./today.ts";
+import { tray } from "./tray.ts";
 
 /** A key missing here (or an extra one) is a type error: `Dictionary` mirrors `en`. */
 export const es: Dictionary = {
@@ -32,4 +33,5 @@ export const es: Dictionary = {
   ...settingsTabs,
   ...shell,
   ...today,
+  ...tray,
 };

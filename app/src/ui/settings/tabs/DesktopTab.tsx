@@ -16,11 +16,18 @@ import { t, useLocale } from "../../../i18n/index.ts";
 import { NumberStepper } from "../../NumberStepper.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
+import {
+  notificationsDescription,
+  startupChangeError,
+  startupLabel,
+  startupReadError,
+  systemSectionTitle,
+} from "../desktopCopy.ts";
 
 /**
  * Desktop (design brief §4): everything that belongs to this computer rather
  * than to the plan — sign-in startup, the floating timer, the away threshold
- * and the Windows notification toggles — moved from the old sheet with their
+ * and the native notification toggles — moved from the old sheet with their
  * storage untouched. Rendered only inside the desktop shell; the web build
  * never mounts this tab (§3, no disabled teaser).
  */
@@ -47,9 +54,10 @@ function writeNotifySettings(next: NotifySettings): void {
 }
 
 /**
- * Desktop only (T10, spec S8.6): "Open Planner when I sign in to Windows". The
- * switch shows the operating system's own state (the HKCU Run entry), read when
- * the tab opens and again after every change, never a cached flag.
+ * Desktop only (T10, spec S8.6): "Open Planner when I sign in to Windows" (or
+ * its Linux wording, `desktopCopy.ts`). The switch shows the operating system's
+ * own state (the HKCU Run entry, the XDG autostart file), read when the tab
+ * opens and again after every change, never a cached flag.
  */
 function SignInStartupRow() {
   useLocale();
@@ -64,7 +72,7 @@ function SignInStartupRow() {
         if (live) setEnabled(value);
       })
       .catch(() => {
-        if (live) setError(t("desktop.error.startupRead"));
+        if (live) setError(startupReadError());
       });
     return () => {
       live = false;
@@ -76,16 +84,16 @@ function SignInStartupRow() {
     setBusy(true);
     setError(null);
     void (enabled ? disable() : enable())
-      .catch(() => setError(t("desktop.error.startupChange")))
+      .catch(() => setError(startupChangeError()))
       .then(() => isEnabled())
       .then(value => setEnabled(value))
-      .catch(() => setError(t("desktop.error.startupRead")))
+      .catch(() => setError(startupReadError()))
       .finally(() => setBusy(false));
   };
 
   return (
     <SettingRow
-      label={t("desktop.startup.label")}
+      label={startupLabel()}
       description={t("desktop.startup.description")}
       error={error}
     >
@@ -132,7 +140,7 @@ export function DesktopTab() {
 
   return (
     <>
-      <Section title={t("desktop.windows.title")} description={t("desktop.windows.description")}>
+      <Section title={systemSectionTitle()} description={t("desktop.system.description")}>
         <SignInStartupRow />
         <SettingRow label={t("desktop.pill.label")} description={t("desktop.pill.description")}>
           {labelId => <SettingsSwitch labelledBy={labelId} checked={pillEnabled} onChange={togglePill} />}
@@ -160,7 +168,7 @@ export function DesktopTab() {
           )}
         </SettingRow>
       </Section>
-      <Section title={t("desktop.notifications.title")} description={t("desktop.notifications.description")}>
+      <Section title={t("desktop.notifications.title")} description={notificationsDescription()}>
         <SettingRow label={t("desktop.blockReminders")}>
           {labelId => <SettingsSwitch labelledBy={labelId} checked={notify.blockReminders} onChange={() => toggleNotify("blockReminders")} />}
         </SettingRow>

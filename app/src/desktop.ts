@@ -23,3 +23,22 @@ export function desktopPlatform(
   if (/linux|x11|freebsd|openbsd/i.test(name)) return "linux";
   return "other";
 }
+
+/** The copy family for strings that name the OS: Windows and Linux have their
+ * own wording, everything else (macOS, unknown) gets the neutral sentence. */
+export type CopyFamily = "windows" | "linux" | "other";
+
+export function copyFamily(platform: DesktopPlatform = desktopPlatform()): CopyFamily {
+  return platform === "windows" || platform === "linux" ? platform : "other";
+}
+
+/**
+ * Why the quick-add chord is not registered, from the status Rust reports
+ * (`quickadd_get_config`). Under Wayland the shell never grabs the chord and
+ * says so with a reason that starts with `Wayland:` (`WAYLAND_NOTE` in
+ * `src-tauri/src/quickadd.rs`): the compositor owns it. Any other reason is a
+ * refused registration, most likely a chord another app holds.
+ */
+export function quickAddUnregisteredCause(error: string | null | undefined): "compositor" | "refused" {
+  return error?.startsWith("Wayland:") ? "compositor" : "refused";
+}

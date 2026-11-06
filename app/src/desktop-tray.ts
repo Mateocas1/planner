@@ -19,6 +19,11 @@
  *    never updates faster than ~10 s) and at least one push per
  *    `TRAY_HEARTBEAT_MS` while a focus session runs.
  *
+ * Every string Rust draws -- the menu rows, the close-to-tray notice and the
+ * native notifications' text and buttons -- travels in the payload's `labels`,
+ * already in the app's language (T10b): Rust keeps no translation table, and a
+ * language change reaches the tray on the next evaluation.
+ *
  * A plain browser never talks to Rust: every entry point is behind `isTauri`.
  */
 import { useEffect, useRef } from "react";
@@ -26,13 +31,18 @@ import type { BlockView, TaskView } from "./data/store.ts";
 import { isTauri } from "./desktop.ts";
 import { focusStatus, focusedMs, remainingMs, type FocusSession } from "./domain/focus.ts";
 import { currentAndNext } from "./domain/upNext.ts";
+import { t, useLocale } from "./i18n/index.ts";
 import { timeLabel } from "./ui/time.ts";
 
-/** What the tray shows before anybody signed in (also Rust's starting label). */
-export const SIGNED_OUT_UP_NEXT = "Sign in to see Up next";
+/** What the tray shows before anybody signed in (Rust starts with the English one). */
+export function signedOutUpNext(): string {
+  return t("tray.signedOut");
+}
 
 /** The tray's line for a day with nothing left in it. */
-export const NOTHING_UP_NEXT = "Up next: Nothing else today";
+export function nothingUpNext(): string {
+  return t("tray.nothingNext");
+}
 
 /** Never more than one push per 10 s: the taskbar progress update cap (S8.2). */
 export const TRAY_PUSH_MIN_GAP_MS = 10_000;
@@ -46,6 +56,51 @@ export const TRAY_EVALUATE_MS = 5_000;
 /** The taskbar bar while a session runs (`normal`) or is held (`paused`). */
 export type TrayProgress = { status: "normal" | "paused"; fraction: number } | null;
 
+/** Every static string Rust draws, translated here (`TrayLabels` in
+ * `src-tauri/src/tray.rs` has exactly these fields, English by default). */
+export type TrayLabels = {
+  open: string;
+  quit: string;
+  noticeTitle: string;
+  noticeBody: string;
+  blockLead: string;
+  blockSnoozedLead: string;
+  blockStartFocus: string;
+  blockSnooze: string;
+  workBlock: string;
+  shutdownTitle: string;
+  shutdownBody: string;
+  shutdownAction: string;
+  weeklyTitle: string;
+  weeklyBody: string;
+  weeklyStart: string;
+  weeklyLater: string;
+  weeklySkip: string;
+};
+
+/** The labels in the current language. */
+export function trayLabels(): TrayLabels {
+  return {
+    open: t("tray.open"),
+    quit: t("tray.quit"),
+    noticeTitle: t("tray.notice.title"),
+    noticeBody: t("tray.notice.body"),
+    blockLead: t("toast.block.lead"),
+    blockSnoozedLead: t("toast.block.snoozedLead"),
+    blockStartFocus: t("toast.block.startFocus"),
+    blockSnooze: t("toast.block.snooze"),
+    workBlock: t("tray.workBlock"),
+    shutdownTitle: t("toast.shutdown.title"),
+    shutdownBody: t("toast.shutdown.body"),
+    shutdownAction: t("toast.shutdown.action"),
+    weeklyTitle: t("toast.weekly.title"),
+    weeklyBody: t("toast.weekly.body"),
+    weeklyStart: t("toast.weekly.start"),
+    weeklyLater: t("toast.weekly.later"),
+    weeklySkip: t("toast.weekly.skip"),
+  };
+}
+
 /** Exactly what Rust receives: menu labels, tooltip and the taskbar state. */
 export type TrayPayload = {
   /** The whole disabled menu line, e.g. `Up next: Deep work · 14:00`. */
@@ -53,6 +108,7 @@ export type TrayPayload = {
   /** The focus line, or null while no session runs (the row is dropped). */
   focus: string | null;
   progress: TrayProgress;
+  labels: TrayLabels;
 };
 
 /** What the shell knows and the tray mirrors; null while signed out. */
@@ -69,16 +125,16 @@ export type TrayData = {
 export function upNextLabel(blocks: BlockView[], tasks: TaskView[], timeZone: string, nowMs: number): string {
   const { current, next } = currentAndNext(blocks, nowMs, timeZone);
   const block = current ?? next;
-  if (block === undefined) return NOTHING_UP_NEXT;
-  const title = tasks.find(task => task.id === block.taskId)?.title ?? "Work block";
-  return `Up next: ${title} · ${timeLabel(new Date(block.start), timeZone)}`;
+  if (block === undefined) return nothingUpNext();
+  const title = tasks.find(task => task.id === block.taskId)?.title ?? t("tray.workBlock");
+  return t("tray.upNext", { title, time: timeLabel(new Date(block.start), timeZone) });
 }
 
 /** "Focus: 18 min left". Whole minutes, rounding up so the last minute is
  * never shown as zero; the caller drops the line when the session is over. */
 export function focusLine(remaining: number): string {
   const minutes = Math.max(1, Math.ceil(remaining / 60_000));
-  return `Focus: ${minutes} min left`;
+  return t("tray.focus", { minutes });
 }
 
 /** Elapsed fraction of the session's planned span, 0..1. Paused time is
@@ -116,18 +172,19 @@ export function liveTrayPayload(data: TrayData, nowMs: number): TrayPayload {
   const status = data.session === null ? null : focusStatus(data.session, nowMs);
   const session = data.session;
   if (session === null || status === null || status === "done") {
-    return { upNext: upNextLabel(data.blocks, data.tasks, zone, nowMs), focus: null, progress: null };
+    return { upNext: upNextLabel(data.blocks, data.tasks, zone, nowMs), focus: null, progress: null, labels: trayLabels() };
   }
   return {
     upNext: upNextLabel(data.blocks, data.tasks, zone, nowMs),
     focus: focusLine(remainingMs(session, nowMs)),
     progress: { status: status === "paused" ? "paused" : "normal", fraction: focusFraction(session, nowMs) },
+    labels: trayLabels(),
   };
 }
 
 /** The payload for a signed-out app: no focus, no progress, one instruction. */
 export function signedOutTrayPayload(): TrayPayload {
-  return { upNext: SIGNED_OUT_UP_NEXT, focus: null, progress: null };
+  return { upNext: signedOutUpNext(), focus: null, progress: null, labels: trayLabels() };
 }
 
 /**
@@ -136,6 +193,8 @@ export function signedOutTrayPayload(): TrayPayload {
  * shell (a sign-out) replaces the last live line with the signed-out one.
  */
 export function useDesktopTray(data: TrayData | null): void {
+  // A language change re-words every label: evaluate now, not on the next tick.
+  const locale = useLocale();
   const latest = useRef(data);
   latest.current = data;
   const sentRef = useRef<{ payload: TrayPayload; at: number } | null>(null);
@@ -183,5 +242,5 @@ export function useDesktopTray(data: TrayData | null): void {
   // Sign-in, new blocks or a started session: refresh now, do not wait a tick.
   useEffect(() => {
     evaluateRef.current();
-  }, [data]);
+  }, [data, locale]);
 }
