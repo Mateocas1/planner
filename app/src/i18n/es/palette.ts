@@ -61,6 +61,7 @@ export const palette = {
   "shortcuts.rebind.quickAdd": "Añadir tarea desde cualquier lugar",
   "shortcuts.fixed.settings": "Ajustes",
   "shortcuts.capture.modifier": "Incluye Ctrl, Alt o la tecla Windows (o Cmd) más una tecla normal.",
+  "shortcuts.capture.modifier.linux": "Incluye Ctrl, Alt o la tecla Super más una tecla normal.",
   "shortcuts.capture.key": "Esa tecla no puede formar parte del atajo. Usa una letra, un número o un símbolo.",
   "shortcuts.conflict.rebindable": "Ya lo usa {holder}. Elige otra combinación.",
   "shortcuts.conflict.fixed": "{keys} está reservado para {holder}.",
