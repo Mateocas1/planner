@@ -40,6 +40,7 @@ import { matchesEvent, useShortcutBinding } from "./ui/settings/shortcutRegistry
 import { dueMoment, snoozedUntil } from "./planning/weekly.ts";
 import { skipWeeklyReview, snoozeWeeklyReview } from "./data/weeklyReview.ts";
 import { useNow } from "./ui/motion.ts";
+import { useDayPlanSnapshot } from "./ui/useDayPlanSnapshot.ts";
 import { Select } from "./ui/Select.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
 import { ShortcutHelp } from "./ui/ShortcutHelp.tsx";
@@ -171,6 +172,8 @@ function Shell({
   const profile = useProfileTimeZone(user.uid);
   useSyncedLanguage(profile.loading || profile.error !== null ? undefined : profile.language);
   const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Day replay: the device-local morning plan, taken once the day's blocks are settled.
+  useDayPlanSnapshot({ uid: user.uid, ready: !loading && pending === 0, blocks, tasks, timeZone: profile.timeZone, now: shellNow });
   // A sign-in launch (T10) shows the window only when today's brief applies.
   useSignInReveal({ ready: !loading && !profile.loading, blocks, timeZone: profile.timeZone, workWindow: profile.workWindow });
   const phone = useMediaQuery(phoneQuery);
