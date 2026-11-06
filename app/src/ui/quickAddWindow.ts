@@ -9,6 +9,8 @@
  *   manual navigation) tells the bundle to render the mini window instead of
  *   the shell.
  * - `formatShortcutLabel` — the wording the settings row shows.
+ * - `listenThenAnnounce` — the cold-start handshake: register the reveal
+ *   listener, then tell Rust the page is ready to be shown.
  */
 
 import { desktopPlatform, type DesktopPlatform } from "../desktop.ts";
@@ -53,4 +55,26 @@ export function formatShortcutLabel(accelerator: string, platform: DesktopPlatfo
       return part.charAt(0).toUpperCase() + part.slice(1);
     })
     .join("+");
+}
+
+/** The event the page emits once its reveal listener exists; Rust shows a
+ * cold-started window on it (`quickadd.rs`, `ColdStart`). */
+export const QUICKADD_READY_EVENT = "quickadd-ready";
+
+/** Registers the reveal listener, then announces the page as ready. A failed
+ * registration still announces (the window shows, only the focus is lost) and
+ * a failed announcement is swallowed (Rust falls back to a bounded wait).
+ * Resolves to the listener's disposer, or `undefined` when it failed. */
+export async function listenThenAnnounce<T>(
+  register: () => Promise<T>,
+  announce: () => Promise<unknown>,
+): Promise<T | undefined> {
+  let registered: T | undefined;
+  try {
+    registered = await register();
+  } catch {
+    registered = undefined;
+  }
+  await announce().catch(() => undefined);
+  return registered;
 }
