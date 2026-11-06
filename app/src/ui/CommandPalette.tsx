@@ -57,6 +57,8 @@ export function CommandPalette({
   onImport,
   onOpenNow,
   onCloseDay,
+  onReplayDay,
+  replayDay = false,
   onOpenWeeklyReview,
   onOpenSettings,
 }: {
@@ -76,6 +78,10 @@ export function CommandPalette({
   onOpenNow: () => void;
   /** Runs the "Close the day" command (the ritual is the shell's, F3c). */
   onCloseDay: () => void;
+  /** Runs the "Replay the day" command (the stage lives in the shutdown sheet). */
+  onReplayDay?: () => void;
+  /** Today has a replay to show and the setting allows it: only then is the command offered. */
+  replayDay?: boolean;
   /** Runs the "Weekly review" command (the flow is the shell's, S3). */
   onOpenWeeklyReview: () => void;
   /** Opens the Settings view, optionally on a tab (Ronda 2, S1). */
@@ -112,9 +118,9 @@ export function CommandPalette({
         tasks,
         destinations(),
         focusCommands({ canStart: focus?.canStart ?? false, status: focus?.status ?? null }),
-        { shortcuts: hints, focusedTask: taskFocused, settingsCommands: settingsCommands(desktop) },
+        { shortcuts: hints, focusedTask: taskFocused, settingsCommands: settingsCommands(desktop), replayDay },
       ),
-    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused, desktop, locale],
+    [query, tasks, focus?.canStart, focus?.status, hints, taskFocused, desktop, locale, replayDay],
   );
   // The same parser the New task sheet uses, so one line creates the same task
   // from either place. The clock is read per keystroke: "tomorrow" follows the
@@ -181,6 +187,7 @@ export function CommandPalette({
       restoreFocus.current = false;
       if (command.action === "now-mode") onOpenNow();
       else if (command.action === "close-day") onCloseDay();
+      else if (command.action === "replay-day") onReplayDay?.();
       else if (command.action === "weekly-review") onOpenWeeklyReview();
       else onImport();
       onClose();
