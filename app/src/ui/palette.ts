@@ -50,7 +50,14 @@ export type PaletteActionCommand = {
 
 /** Every action the palette can run. The two task actions act on the row the
  * palette was opened from; the others open a surface of their own. */
-export type PaletteActionKind = "gcal-import" | "now-mode" | "close-day" | "weekly-review" | "complete-task" | "move-tomorrow";
+export type PaletteActionKind =
+  | "gcal-import"
+  | "now-mode"
+  | "close-day"
+  | "replay-day"
+  | "weekly-review"
+  | "complete-task"
+  | "move-tomorrow";
 
 /** The keyboard action each palette action performs, so its hint is the key
  * the router already answers with. */
@@ -181,6 +188,19 @@ export const actionCommands: PaletteActionCommand[] = [
       return keywords(t("palette.action.closeDay.keywords"));
     },
   },
+  /* The day replay, on request (Ronda 8): offered only while today has a replay
+     to show and the setting is not Off -- see `PaletteContext.replayDay`. */
+  {
+    kind: "action",
+    id: "action-replay-day",
+    action: "replay-day",
+    get label() {
+      return t("palette.action.replay");
+    },
+    get keywords() {
+      return keywords(t("palette.action.replay.keywords"));
+    },
+  },
   /* The weekly review's manual entry (S3): the review proposes itself, but it
      is reachable any day, from here too. */
   {
@@ -238,6 +258,9 @@ export type PaletteContext = {
   /** The Settings commands this device offers (Desktop and AI drop on web).
    * Absent in contexts that never render them (tests, older callers). */
   settingsCommands?: PaletteSettingsCommand[];
+  /** Today has a day replay to show and the setting allows it. Absent means
+   * no: the palette never offers a replay of an empty day. */
+  replayDay?: boolean;
 };
 
 const defaultPaletteContext: PaletteContext = {
@@ -271,7 +294,8 @@ export function buildCommands(
     .map(task => ({ kind: "task" as const, id: `task-${task.id}`, taskId: task.id, label: task.title }));
   const matchedDestinations = destinations.filter(destination => matches(destination.label)).map(navigateCommand);
   const matchedThemes = themeCommands.filter(command => matches(command.label));
-  const actions = context.focusedTask ? [...taskActionCommands, ...actionCommands] : actionCommands;
+  const available = context.replayDay === true ? actionCommands : actionCommands.filter(command => command.action !== "replay-day");
+  const actions = context.focusedTask ? [...taskActionCommands, ...available] : available;
   const matchedActions = actions
     .filter(command => matches(command.label, command.keywords))
     .map(command => withHint(command, context.shortcuts));

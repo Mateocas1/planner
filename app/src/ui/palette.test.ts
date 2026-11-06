@@ -151,3 +151,17 @@ test("hints are absent when keyboard shortcuts are off, and the actions stay", (
     assert.equal("hint" in command, false, `no hint key on ${command.id}`);
   }
 });
+
+test("the day replay is offered only while today has one to show", () => {
+  const replayIds = (query: string, context: PaletteContext) =>
+    buildCommands(query, tasks, destinations, [], context)
+      .filter(command => command.kind === "action" && command.action === "replay-day")
+      .map(command => command.id);
+  assert.deepEqual(replayIds("replay", { shortcuts: true, focusedTask: false, replayDay: true }), ["action-replay-day"]);
+  assert.deepEqual(replayIds("replay the day", { shortcuts: true, focusedTask: false, replayDay: true }), ["action-replay-day"]);
+  assert.deepEqual(replayIds("replay", { shortcuts: true, focusedTask: false, replayDay: false }), []);
+  assert.deepEqual(replayIds("replay", { shortcuts: true, focusedTask: false }), [], "absent means no replay");
+  assert.deepEqual(replayIds("replay", { shortcuts: true, focusedTask: true, replayDay: true }), ["action-replay-day"]);
+  // Closing the day never drags the replay in.
+  assert.deepEqual(replayIds("close", { shortcuts: true, focusedTask: false, replayDay: true }), []);
+});

@@ -27,6 +27,8 @@ import { TaskDragProvider } from "./ui/drag.tsx";
 import { FocusPillBridge } from "./ui/FocusPillBridge.tsx";
 import { Home } from "./ui/Home.tsx";
 import { NowMode } from "./ui/NowMode.tsx";
+import { prepareDayReplay } from "./ui/dayReplayData.ts";
+import { deviceSnapshotStorage, readReplayMode } from "./ui/dayReplayMode.ts";
 import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
 import { CalendarIcon, CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
@@ -230,11 +232,27 @@ function Shell({
   // turns Today to Tomorrow. Opened from Home's banner (or the page turn) and
   // from the palette, which is why the origin of its entrance is recorded here.
   const [shutdownOpen, setShutdownOpen] = useState(false);
+  // `replay` opens the same sheet showing only the day's replay (palette).
+  const [shutdownMode, setShutdownMode] = useState<"close" | "replay">("close");
   const shutdownOrigin = useRef<HTMLElement | null>(null);
-  const openShutdown = (origin: HTMLElement | null) => {
+  const openShutdown = (origin: HTMLElement | null, mode: "close" | "replay" = "close") => {
     shutdownOrigin.current = origin;
+    setShutdownMode(mode);
     setShutdownOpen(true);
   };
+  // The palette offers "Replay the day" only while today has a replay to show
+  // and the setting is not Off; read when the palette renders, not per frame.
+  const replayOffered = () =>
+    readReplayMode() !== "off" &&
+    prepareDayReplay({
+      uid: user.uid,
+      day: dateKey(new Date(), zone),
+      timeZone: zone,
+      tasks,
+      blocks,
+      samples: completedSamples(tasks),
+      storage: deviceSnapshotStorage(),
+    }) !== null;
   // The Google Calendar import sheet: whether it is open, and the control that
   // opened it (its box is what the panel grows out of). The palette closes
   // before the sheet mounts, so that path has no origin and the panel pops.
@@ -663,6 +681,8 @@ function Shell({
           onImport={() => openImport(null)}
           onOpenNow={() => setNowOpen(true)}
           onCloseDay={() => openShutdown(null)}
+          onReplayDay={() => openShutdown(null, "replay")}
+          replayDay={replayOffered()}
           onOpenWeeklyReview={() => openWeeklyReview("manual")}
           onOpenSettings={openSettings}
           onOpenTask={taskId => {
@@ -684,6 +704,7 @@ function Shell({
             storedShutdown={profile.storedLastShutdown}
             weeklyOffer={weeklyDue !== null}
             origin={shutdownOrigin.current}
+            mode={shutdownMode}
             onClose={() => setShutdownOpen(false)}
             onOpenWeeklyReview={() => {
               setShutdownOpen(false);

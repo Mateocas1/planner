@@ -21,7 +21,7 @@ test("a Spanish query finds the Spanish keyword, and the create row is a whole s
   const rows = buildCommands("semanal", [], [], [], { shortcuts: false, focusedTask: false });
   assert.equal(rows[0].kind, "action");
   assert.equal(rows[0].kind === "action" && rows[0].label, "Revisión semanal");
-  assert.equal(actionCommands.length, 4);
+  assert.equal(actionCommands.length, 5);
 });
 
 test("the group ids stay the English slugs", () => {

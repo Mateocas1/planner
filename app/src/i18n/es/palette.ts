@@ -25,6 +25,8 @@ export const palette = {
   "palette.action.now.keywords": "ahora,vistazo,pantalla completa",
   "palette.action.closeDay": "Cerrar el día",
   "palette.action.closeDay.keywords": "cerrar,cierre,día,ritual",
+  "palette.action.replay": "Volver a ver el día",
+  "palette.action.replay.keywords": "repetir,repaso,día,resumen,volver",
   "palette.action.weekly": "Revisión semanal",
   "palette.action.weekly.keywords": "semanal,revisión,repaso,semana",
   "palette.action.complete": "Completar tarea",
