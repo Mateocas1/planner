@@ -27,9 +27,70 @@ local function run(command)
   return command
 end
 
--- Quick add: the same default chord as Windows (Ctrl+Alt+Space; free in
--- Omarchy's defaults). If Day settings use another chord, change it here too.
-hl.bind("CTRL + ALT + SPACE", hl.dsp.exec_cmd(run(planner .. " --quickadd")), {
+-- Quick add: the chord chosen in Day settings. Planner writes it, in
+-- Hyprland's key-string form, to $XDG_DATA_HOME/planner/quickadd.bind and runs
+-- `hyprctl reload`; the file is read as data, never run. Without the file, or
+-- when its line is not modifiers plus one known key, the default chord
+-- applies: Ctrl+Alt+Space, as on Windows and free in Omarchy's defaults.
+-- (Hyprland reports an unknown key as a config error rather than a Lua error,
+-- so the line is checked against the keys Planner writes before binding.)
+local default_chord = "CTRL + ALT + space"
+
+local modifiers = { CTRL = true, ALT = true, SHIFT = true, SUPER = true }
+local named_keys = {
+  space = true, Return = true, Tab = true, Escape = true, BackSpace = true,
+  Delete = true, Insert = true, Home = true, End = true, Page_Up = true,
+  Page_Down = true, Up = true, Down = true, Left = true, Right = true,
+  comma = true, period = true, slash = true, grave = true, minus = true,
+  equal = true, bracketleft = true, bracketright = true, semicolon = true,
+  apostrophe = true, backslash = true, KP_Add = true, KP_Subtract = true,
+  KP_Multiply = true, KP_Divide = true, KP_Decimal = true, KP_Enter = true,
+}
+
+local function known_key(key)
+  if named_keys[key] or key:match("^[A-Z0-9]$") or key:match("^KP_[0-9]$") then
+    return true
+  end
+  local n = tonumber(key:match("^F([1-9][0-9]?)$"))
+  return n ~= nil and n <= 24
+end
+
+-- "CTRL + ALT + space": one or more distinct modifiers, then one known key.
+local function valid_chord(line)
+  local tokens, seen = {}, {}
+  for token in (line .. " + "):gmatch("(.-) %+ ") do
+    tokens[#tokens + 1] = token
+  end
+  if #tokens < 2 or table.concat(tokens, " + ") ~= line then
+    return false
+  end
+  for i = 1, #tokens - 1 do
+    if not modifiers[tokens[i]] or seen[tokens[i]] then
+      return false
+    end
+    seen[tokens[i]] = true
+  end
+  return known_key(tokens[#tokens])
+end
+
+local function chosen_chord()
+  local data = os.getenv("XDG_DATA_HOME")
+  if not (data and data:sub(1, 1) == "/") then
+    data = (os.getenv("HOME") or "") .. "/.local/share"
+  end
+  local file = io.open(data .. "/planner/quickadd.bind", "r")
+  if not file then
+    return nil
+  end
+  local line = file:read("*l")
+  file:close()
+  if line and #line <= 80 and valid_chord(line) then
+    return line
+  end
+  return nil
+end
+
+hl.bind(chosen_chord() or default_chord, hl.dsp.exec_cmd(run(planner .. " --quickadd")), {
   description = "Planner quick add",
 })
 

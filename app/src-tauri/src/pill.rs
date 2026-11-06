@@ -151,15 +151,25 @@ fn apply_position<R: Runtime>(app: &AppHandle<R>, pill: &tauri::WebviewWindow<R>
 
 /// Creates the hidden pill window and wires its two Rust-side facts.
 pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
-    let pill = WebviewWindowBuilder::new(app, PILL_LABEL, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, PILL_LABEL, WebviewUrl::App("index.html".into()))
         .title("Focus timer")
         .inner_size(PILL_SIZE.0, PILL_SIZE.1)
         .decorations(false)
         .transparent(true)
         .shadow(false)
         .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
+        .skip_taskbar(true);
+    // GTK sizes a non-resizable window to its content's natural height (65 px
+    // for this page on Hyprland), not to `inner_size`; equal min and max
+    // sizes pin the pill to the chip instead.
+    #[cfg(target_os = "linux")]
+    let builder = builder
+        .resizable(true)
+        .min_inner_size(PILL_SIZE.0, PILL_SIZE.1)
+        .max_inner_size(PILL_SIZE.0, PILL_SIZE.1);
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.resizable(false);
+    let pill = builder
         .focused(false)
         .visible(false)
         // Must match the config windows or WebView2 refuses to create it.

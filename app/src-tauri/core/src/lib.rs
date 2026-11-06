@@ -6,6 +6,7 @@
 pub mod chat;
 pub mod engram;
 pub mod fsutil;
+pub mod hyprbind;
 pub mod idle;
 pub mod launch;
 pub mod loopback;
