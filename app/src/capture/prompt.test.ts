@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCapturePrompt, CAPTURE_SYSTEM_PROMPT, MAX_CAPTURE_CHARS } from "./prompt.ts";
+import { buildCapturePrompt, cleanCaptureText, CAPTURE_SYSTEM_PROMPT, MAX_CAPTURE_CHARS } from "./prompt.ts";
 
 const now = new Date("2026-11-06T15:00:00Z");
 const zone = "America/Argentina/Buenos_Aires";
@@ -104,4 +104,9 @@ test("today comes from the profile zone, not the runtime zone", () => {
   assert.match(buildCapturePrompt({ text: "x", now: late, timeZone: "America/Argentina/Buenos_Aires" }).messages[1].content, /^Today is 2026-11-06 \(Friday\)/);
   assert.match(buildCapturePrompt({ text: "x", now: late, timeZone: "Asia/Tokyo" }).messages[1].content, /^Today is 2026-11-07 \(Saturday\)/);
   assert.equal(buildCapturePrompt({ text: "x", now: late, timeZone: "Asia/Tokyo" }).todayKey, "2026-11-07");
+});
+
+test("cleanCaptureText strips tag characters and invisible fillers but keeps accents and emoji", () => {
+  const hidden = "\u{E0049}\u{E007F}\u00ad\u034f\u3164\u115f\u1160\uffa0\ufe0f\u{E0100}";
+  assert.equal(cleanCaptureText(`Llamar${hidden} a José 📅 mañana\nSee you`), "Llamar a José 📅 mañana\nSee you");
 });
