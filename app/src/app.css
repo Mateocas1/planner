@@ -1974,6 +1974,13 @@ time,
   animation: var(--morph-new), morph-focus var(--morph-dur) var(--ease-out) both;
 }
 
+/* WebKitGTK (marked by compositorHandoff.ts) spent most of the morph's CPU
+   blurring two window-sized snapshots every frame (odd/research/audit-r7.md
+   R7-08). There the snapshots only fade: the box's growth and the cross-fade
+   carry the change, and canon §9.6 keeps blur off large surfaces anyway. */
+:root[data-compositor-handoff]::view-transition-old(task-morph) { animation: var(--morph-old); }
+:root[data-compositor-handoff]::view-transition-new(task-morph) { animation: var(--morph-new); }
+
 @keyframes morph-focus { from { filter: blur(6px) } }
 @keyframes morph-unfocus { to { filter: blur(6px) } }
 

@@ -27,6 +27,12 @@
  * New task close showed the whole panel and scrim again just before they
  * unmounted. So a cancel resolves that commit with transitions turned off.
  *
+ * A View Transition's pseudo-elements get no guard: the morph showed no stale
+ * frame without one (0/12, odd/runs/r6-motion2.md), and the guard only moved
+ * its snapshots onto the main thread. While installed, the root carries
+ * `data-compositor-handoff` so app.css can drop the snapshot blur, the
+ * costliest part of the morph on this engine (odd/research/audit-r7.md R7-08).
+ *
  * Installed only when the shell marks the page as WebKitGTK
  * (`window.__WEBKITGTK__`, src-tauri/src/window.rs); no other engine runs it.
  * Durations, curves and the reduced-motion paths are untouched.
@@ -79,21 +85,35 @@ export function holdMs(
   }
   const end = typeof timing.endTime === "number" ? timing.endTime : Infinity;
   if (!composited || !Number.isFinite(end) || playbackRate === 0) return null;
-  const left = (end - currentTime) / Math.abs(playbackRate);
+  // Played backwards, what is left runs from the current time down to zero.
+  const left = (playbackRate > 0 ? end - currentTime : currentTime) / Math.abs(playbackRate);
   return left > 0 ? left + MARGIN_MS : null;
 }
 
 type Guard = { animation: Animation; until: number };
 
-/** Patches `Element.prototype.animate` and listens for CSS transitions and
- * animations. Returns a disposer. */
+/** Pseudo-elements of a View Transition (see the header). */
+const isViewTransition = (pseudo: string | null) => pseudo?.startsWith("::view-transition") === true;
+
+/** Patches `Element.prototype.animate` and the playback methods of
+ * `Animation.prototype`, and listens for CSS transitions and animations.
+ * Returns a disposer that puts everything back and drops the live guards. */
 export function installCompositorHandoff(doc: Document = document): () => void {
   const view = doc.defaultView;
   if (!view) return () => {};
   const proto = view.Element.prototype;
   const nativeAnimate = proto.animate;
+  const animationProto = view.Animation.prototype;
+  const native = {
+    cancel: animationProto.cancel,
+    play: animationProto.play,
+    reverse: animationProto.reverse,
+    updatePlaybackRate: animationProto.updatePlaybackRate,
+  };
   /** One guard per element and pseudo-element, extended rather than stacked. */
   const guards = new WeakMap<Element, Map<string, Guard>>();
+  /** Every guard still running, for the disposer. */
+  const live = new Set<Animation>();
 
   const guard = (element: Element, pseudo: string | null, ms: number) => {
     const key = pseudo ?? "";
@@ -102,7 +122,7 @@ export function installCompositorHandoff(doc: Document = document): () => void {
     const now = view.performance.now();
     const current = byPseudo.get(key);
     if (current && current.until >= now + ms) return;
-    current?.animation.cancel();
+    if (current) native.cancel.call(current.animation);
     try {
       const clip = view.getComputedStyle(element, pseudo).clipPath || "none";
       const animation = nativeAnimate.call(element, { clipPath: [clip, clip] }, {
@@ -111,7 +131,9 @@ export function installCompositorHandoff(doc: Document = document): () => void {
       });
       const entry = { animation, until: now + ms };
       byPseudo.set(key, entry);
+      live.add(animation);
       const release = () => {
+        live.delete(animation);
         if (byPseudo.get(key) === entry) byPseudo.delete(key);
       };
       animation.addEventListener("finish", release);
@@ -121,46 +143,62 @@ export function installCompositorHandoff(doc: Document = document): () => void {
     }
   };
 
-  const cover = (animation: Animation) => {
+  /** `rate` stands in for a playback rate that is still pending. */
+  const cover = (animation: Animation, rate = animation.playbackRate) => {
     const effect = animation.effect;
-    if (!(effect instanceof view.KeyframeEffect) || !effect.target) return;
+    if (!(effect instanceof view.KeyframeEffect) || !effect.target || isViewTransition(effect.pseudoElement)) return;
     const ms = holdMs(
       effect.getKeyframes() as Array<Record<string, unknown>>,
       effect.getComputedTiming(),
       typeof animation.currentTime === "number" ? animation.currentTime : 0,
-      animation.playbackRate,
+      rate,
     );
     if (ms !== null) guard(effect.target, effect.pseudoElement, ms);
   };
 
   /** Turns a cancel into a commit no CSS transition starts from (see above):
    * the element's style is resolved once, right after the native cancel, with
-   * `transition-property: none` inline, and the inline value is put back. */
-  const settleOnCancel = (animation: Animation) => {
-    const effect = animation.effect;
-    if (!(effect instanceof view.KeyframeEffect) || !effect.target || effect.pseudoElement) return;
-    const element = effect.target;
-    const style = (element as HTMLElement).style;
-    if (!style || !touchesComposited(effect.getKeyframes() as Array<Record<string, unknown>>)) return;
-    const nativeCancel = animation.cancel;
-    animation.cancel = function cancel(this: Animation) {
-      const previous = style.getPropertyValue("transition-property");
-      const priority = style.getPropertyPriority("transition-property");
-      style.setProperty("transition-property", "none", "important");
-      try {
-        nativeCancel.call(this);
-        void view.getComputedStyle(element).opacity;
-      } finally {
-        if (previous) style.setProperty("transition-property", previous, priority);
-        else style.removeProperty("transition-property");
-      }
-    };
+   * `transition-property: none` inline, and the inline value is put back. It
+   * patches the prototype, so a CSS animation or transition cancelled from
+   * script gets it too. */
+  animationProto.cancel = function cancel(this: Animation) {
+    const effect = this.effect;
+    const element = effect instanceof view.KeyframeEffect && !effect.pseudoElement ? effect.target : null;
+    const style = (element as HTMLElement | null)?.style;
+    if (!element || !style || !touchesComposited((effect as KeyframeEffect).getKeyframes() as Array<Record<string, unknown>>)) {
+      native.cancel.call(this);
+      return;
+    }
+    const previous = style.getPropertyValue("transition-property");
+    const priority = style.getPropertyPriority("transition-property");
+    style.setProperty("transition-property", "none", "important");
+    try {
+      native.cancel.call(this);
+      void view.getComputedStyle(element).opacity;
+    } finally {
+      if (previous) style.setProperty("transition-property", previous, priority);
+      else style.removeProperty("transition-property");
+    }
+  };
+
+  /** A replay, a turn-around or a new speed starts a run the first guard was
+   * not sized for. */
+  animationProto.play = function play(this: Animation) {
+    native.play.call(this);
+    cover(this);
+  };
+  animationProto.reverse = function reverse(this: Animation) {
+    native.reverse.call(this);
+    cover(this);
+  };
+  animationProto.updatePlaybackRate = function updatePlaybackRate(this: Animation, rate: number) {
+    native.updatePlaybackRate.call(this, rate);
+    cover(this, rate);
   };
 
   proto.animate = function animate(this: Element, ...args: Parameters<Element["animate"]>) {
     const animation = nativeAnimate.apply(this, args);
     cover(animation);
-    settleOnCancel(animation);
     return animation;
   };
 
@@ -189,8 +227,13 @@ export function installCompositorHandoff(doc: Document = document): () => void {
 
   doc.addEventListener("transitionrun", onTransition, true);
   doc.addEventListener("animationstart", onAnimation, true);
+  doc.documentElement.setAttribute("data-compositor-handoff", "");
   return () => {
     proto.animate = nativeAnimate;
+    Object.assign(animationProto, native);
+    for (const animation of live) native.cancel.call(animation);
+    live.clear();
+    doc.documentElement.removeAttribute("data-compositor-handoff");
     doc.removeEventListener("transitionrun", onTransition, true);
     doc.removeEventListener("animationstart", onAnimation, true);
   };
