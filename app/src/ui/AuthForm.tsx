@@ -40,6 +40,16 @@ export function AuthForm() {
     else setError(outcome.error);
   }
 
+  // The reset outcome is about the typed email, so editing it clears that outcome.
+  function editEmail(value: string) {
+    setEmail(value);
+    setResetSent(false);
+    if (emailOnlyError) {
+      setError(null);
+      setEmailOnlyError(false);
+    }
+  }
+
   const emailInvalid = error ? true : undefined;
   const passwordInvalid = error && !emailOnlyError ? true : undefined;
 
@@ -57,7 +67,7 @@ export function AuthForm() {
           <div className="form-group">
             <div className="form-row stacked">
               <label htmlFor="email">{t("auth.email")}</label>
-              <input id="email" className="form-control" type="email" autoComplete="email" aria-invalid={emailInvalid} aria-describedby={emailInvalid ? "auth-error" : undefined} value={email} onChange={event => setEmail(event.target.value)} required />
+              <input id="email" className="form-control" type="email" autoComplete="email" aria-invalid={emailInvalid} aria-describedby={emailInvalid ? "auth-error" : undefined} value={email} onChange={event => editEmail(event.target.value)} required />
             </div>
             <div className="form-row stacked">
               <label htmlFor="password">{t("auth.password")}</label>

@@ -50,10 +50,62 @@ test("a missing or malformed email is flagged on the email field only", async ({
   await expect(page.getByLabel("Email")).toHaveAttribute("aria-describedby", "auth-error");
   await expect(page.getByLabel("Password")).not.toHaveAttribute("aria-invalid", "true");
 
-  await requestReset(page, "not-an-email");
+  // Editing the email clears the first error, so the next alert proves the second attempt.
+  await page.getByLabel("Email").fill("not-an-email");
+  await expect(alert).toHaveCount(0);
+  await page.getByRole("button", { name: "Forgot password?", exact: true }).click();
   await expect(alert).toHaveText("Enter a valid email address.", { timeout: 20_000 });
   await expect(alert).not.toContainText("Firebase:");
   await expect(page.getByText(sentCopy)).toHaveCount(0);
+});
+
+test("the live region is a real box that takes no room while empty", async ({ page }) => {
+  await page.goto("/");
+  const status = page.getByRole("status");
+  await expect(status).toHaveCount(1);
+  // display: contents can drop the region from the accessibility tree in some screen readers.
+  expect(await status.evaluate(element => getComputedStyle(element).display)).not.toBe("contents");
+  const forgot = await page.getByRole("button", { name: "Forgot password?", exact: true }).boundingBox();
+  const signIn = await page.getByRole("button", { name: "Sign in", exact: true }).boundingBox();
+  // One form gap (14px) between the link and the actions, as if the region were not there.
+  expect(Math.round(signIn!.y - (forgot!.y + forgot!.height))).toBe(14);
+});
+
+test("editing the email clears the reset confirmation", async ({ page }) => {
+  await page.goto("/");
+  await requestReset(page, newEmail("edit"));
+  const status = page.getByRole("status");
+  await expect(status).toHaveText(sentCopy, { timeout: 20_000 });
+  await page.getByLabel("Email").pressSequentially("x");
+  await expect(status).toHaveText("");
+});
+
+test("a reset error neither blocks nor leaks into a normal sign-in", async ({ page }) => {
+  const email = newEmail("signin");
+  await page.goto("/");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("correct-horse-1");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Sign out" }).click();
+
+  await requestReset(page, "not-an-email");
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveText("Enter a valid email address.", { timeout: 20_000 });
+
+  // A wrong password is a sign-in error about both fields, not the stale email-only one.
+  await page.getByLabel("Email").fill(email);
+  await expect(alert).toHaveCount(0);
+  await page.getByLabel("Password").fill("wrong-horse-1");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(alert).toBeVisible({ timeout: 20_000 });
+  await expect(alert).not.toHaveText("Enter a valid email address.");
+  await expect(page.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
+
+  await page.getByLabel("Password").fill("correct-horse-1");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible({ timeout: 20_000 });
+  await expect(alert).toHaveCount(0);
 });
 
 test("a network failure says so and can be retried from the keyboard", async ({ page }) => {
