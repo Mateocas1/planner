@@ -14,6 +14,14 @@
 //! when the user picks a taken combination in Day settings —
 //! `quickadd_set_shortcut` rolls back to the previous shortcut and reports the
 //! failure instead of leaving the app hotkey-less.
+//!
+//! Under Wayland (Hyprland) an app cannot grab global keys: the plugin's X11
+//! grab only sees XWayland windows. There the shell registers nothing, the
+//! status reports the chord as unregistered, and the compositor binds the same
+//! chord to `planner --quickadd` (or `calendar://quickadd`), which reaches
+//! `toggle_window` through the single-instance plugin. A cold launch with the
+//! trigger shows the window once its page has loaded (`on_page_load`), so the
+//! reveal event that focuses the field is not sent before anyone listens.
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -21,7 +29,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Runtime, State, WindowEvent};
+use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Runtime, State, Webview, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// L12: the user picked `Ctrl+Alt+Space` over the alternatives.
@@ -30,6 +39,24 @@ const DEFAULT_SHORTCUT: &str = "ctrl+alt+Space";
 /// Emitted to the quick-add window every time the hotkey reveals it, so the
 /// page can focus the field and replay its short entrance.
 const SHOWN_EVENT: &str = "quickadd-shown";
+
+/// Why the chord is not registered under Wayland (read by `quickadd_get_config`).
+const WAYLAND_NOTE: &str = "Wayland: bind this chord in the compositor to `planner --quickadd`.";
+
+/// Whether this session runs on Wayland, where the shell leaves the chord to
+/// the compositor. Always `false` off Linux.
+fn wayland() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let display = std::env::var("WAYLAND_DISPLAY").ok();
+        let backend = std::env::var("GDK_BACKEND").ok();
+        planner_core::launch::wayland_session(display.as_deref(), backend.as_deref())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
 
 /// What the settings UI reads: the configured shortcut, whether the OS
 /// actually accepted it, and why not when it did not.
@@ -56,6 +83,9 @@ struct ConfigFile {
 pub struct QuickAddState {
     shortcut: Mutex<Option<String>>,
     registered: AtomicBool,
+    /// Cold launch with the trigger: `(asked, page_loaded)`. The window shows
+    /// when both are true, whichever arrives second.
+    cold_start: Mutex<(bool, bool)>,
 }
 
 impl QuickAddState {
@@ -69,7 +99,7 @@ impl QuickAddState {
         ShortcutStatus {
             shortcut,
             registered: self.registered.load(Ordering::Relaxed),
-            error: None,
+            error: wayland().then(|| WAYLAND_NOTE.to_string()),
         }
     }
 
@@ -179,9 +209,13 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .filter(|stored| validate(stored).is_ok())
         .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string());
 
-    let status = match register(app, &shortcut) {
-        Ok(()) => ShortcutStatus { shortcut: shortcut.clone(), registered: true, error: None },
-        Err(error) => ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(error) },
+    let status = if wayland() {
+        ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(WAYLAND_NOTE.to_string()) }
+    } else {
+        match register(app, &shortcut) {
+            Ok(()) => ShortcutStatus { shortcut: shortcut.clone(), registered: true, error: None },
+            Err(error) => ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(error) },
+        }
     };
     app.state::<QuickAddState>().set(status.shortcut.clone(), status.registered);
     if let Some(error) = &status.error {
@@ -208,6 +242,64 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+/// A launch that carried the quick-add trigger (`planner --quickadd` from a
+/// compositor bind while nothing was running). Shows the window now if its
+/// page already loaded, otherwise when it does.
+pub fn show_on_cold_start<R: Runtime>(app: &AppHandle<R>) {
+    let ready = {
+        let state = app.state::<QuickAddState>();
+        let Ok(mut cold) = state.cold_start.lock() else { return };
+        cold.0 = true;
+        cold.1
+    };
+    if ready {
+        reveal_cold(app);
+    }
+}
+
+/// `tauri::Builder::on_page_load` hook: records that the quick-add page
+/// finished loading and shows the window when a cold start asked for it.
+pub fn on_page_load<R: Runtime>(webview: &Webview<R>, event: PageLoadEvent) {
+    if webview.label() != "quickadd" || event != PageLoadEvent::Finished {
+        return;
+    }
+    let app = webview.app_handle();
+    let asked = {
+        let state = app.state::<QuickAddState>();
+        let Ok(mut cold) = state.cold_start.lock() else { return };
+        cold.1 = true;
+        cold.0
+    };
+    if asked {
+        reveal_cold(app);
+    }
+}
+
+/// Shows the window for a cold start, once. The page registers its reveal
+/// listener in an effect right after load, so the show waits a moment for it.
+fn reveal_cold<R: Runtime>(app: &AppHandle<R>) {
+    if let Ok(mut cold) = app.state::<QuickAddState>().cold_start.lock() {
+        if !cold.0 {
+            return;
+        }
+        cold.0 = false;
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            let visible = inner
+                .get_webview_window("quickadd")
+                .and_then(|window| window.is_visible().ok())
+                .unwrap_or(false);
+            if !visible {
+                toggle_window(&inner);
+            }
+        });
+    });
+}
+
 /// Frontend command: the current shortcut and whether the OS accepted it.
 #[tauri::command]
 pub fn quickadd_get_config(state: State<'_, QuickAddState>) -> ShortcutStatus {
@@ -226,6 +318,13 @@ pub fn quickadd_set_shortcut<R: Runtime>(
 ) -> Result<ShortcutStatus, String> {
     let shortcut = shortcut.trim().to_string();
     validate(&shortcut)?;
+    if wayland() {
+        // Nothing to grab: keep the choice so the settings show it, and leave
+        // the binding to the compositor.
+        state.set(shortcut.clone(), false);
+        save_config(&app, &shortcut);
+        return Ok(state.status());
+    }
     let previous = state.status();
 
     // Unregister first so re-using a modifier subset of the old combo works.

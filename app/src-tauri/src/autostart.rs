@@ -10,6 +10,10 @@
 //! sign-in launch never flashes it. `tauri-plugin-window-state` would show a
 //! window when its saved `visible` flag is set (or no state exists yet), so the
 //! plugin does not manage visibility at all: see `window_state_flags`.
+//!
+//! A launch carrying the quick-add trigger (`--quickadd` or
+//! `calendar://quickadd`, a Hyprland bind while nothing ran) also keeps the
+//! main window hidden and opens the quick-add window instead.
 
 use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -38,13 +42,19 @@ pub fn window_state_flags() -> StateFlags {
 }
 
 /// Records how the app was started and shows the main window for every launch
-/// except a sign-in one. Runs after the window exists and its state is restored.
+/// except a sign-in or quick-add one. Runs after the window exists and its
+/// state is restored.
 pub fn setup<R: Runtime>(app: &AppHandle<R>) {
-    let at_sign_in = std::env::args_os()
+    let args: Vec<String> = std::env::args_os()
         .skip(1)
-        .any(|arg| arg.to_str() == Some(AUTOSTART_ARG));
+        .filter_map(|arg| arg.into_string().ok())
+        .collect();
+    let at_sign_in = args.iter().any(|arg| arg == AUTOSTART_ARG);
+    let quick_add = planner_core::launch::quickadd_requested(&args);
     app.manage(SignInLaunch(at_sign_in));
-    if !at_sign_in {
+    if quick_add {
+        crate::quickadd::show_on_cold_start(app);
+    } else if !at_sign_in {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.show();
         }

@@ -46,11 +46,19 @@ pub fn deeplink_take_pending(state: State<'_, PendingRoute>) -> Option<Route> {
     state.0.lock().ok().and_then(|mut pending| pending.take())
 }
 
-/// A second launch does not open a second window: it focuses the running one.
+/// A second launch does not open a second window: it focuses the running one,
+/// or, when it carries the quick-add trigger (`--quickadd`,
+/// `calendar://quickadd`: the Wayland stand-in for the global hotkey), toggles
+/// the quick-add window without raising `main` (which would blur and hide it).
 /// (The single-instance plugin's `deep-link` feature forwards a link in `argv`
-/// to the deep-link handler registered in `setup`.)
-pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>) {
-    focus_main(app);
+/// to the deep-link handler registered in `setup` first; `calendar://quickadd`
+/// is not a route, so that handler ignores it.)
+pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>, argv: &[String]) {
+    if planner_core::launch::quickadd_requested(argv.iter().skip(1)) {
+        crate::quickadd::toggle_window(app);
+    } else {
+        focus_main(app);
+    }
 }
 
 /// Registers the live handler and picks up the link that started the app.

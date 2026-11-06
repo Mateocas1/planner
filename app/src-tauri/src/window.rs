@@ -27,10 +27,24 @@ pub fn apply_backdrop<R: Runtime>(window: &WebviewWindow<R>, dark: bool) -> Resu
     window_vibrancy::apply_mica(window, Some(dark)).map_err(|error| error.to_string())
 }
 
-/// Non-Windows builds (e.g. a Linux `cargo check` of this crate) never run
-/// the shell; the frontend treats the error as "opaque window" and keeps the
-/// web-only background.
-#[cfg(not(target_os = "windows"))]
+/// Linux has no backdrop API of its own: a compositor (Hyprland's blur) blurs
+/// whatever shows through a transparent window, and the app cannot tell
+/// whether it does. So the translucent page is opt-in: with
+/// `PLANNER_BACKDROP=blur` in the environment (set it only where a compositor
+/// blur rule covers the window, see `packaging/linux/hyprland/planner.lua`)
+/// the command succeeds and the page drops its opaque background the way it
+/// does over Mica; otherwise the page stays opaque.
+#[cfg(target_os = "linux")]
+pub fn apply_backdrop<R: Runtime>(_window: &WebviewWindow<R>, _dark: bool) -> Result<(), String> {
+    match std::env::var("PLANNER_BACKDROP") {
+        Ok(value) if value == "blur" => Ok(()),
+        _ => Err("no compositor backdrop (set PLANNER_BACKDROP=blur)".into()),
+    }
+}
+
+/// Other builds never run the shell; the frontend treats the error as
+/// "opaque window" and keeps the web-only background.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn apply_backdrop<R: Runtime>(_window: &WebviewWindow<R>, _dark: bool) -> Result<(), String> {
     Err("window backdrops are Windows-only".into())
 }
