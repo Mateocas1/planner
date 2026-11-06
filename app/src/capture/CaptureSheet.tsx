@@ -300,32 +300,38 @@ function CaptureBody({
                 {uid === null && <p className="sheet-note">{t("capture.needsSession")}</p>}
                 {result.capped && <p className="sheet-note">{t("capture.capped", { count: cards.cards.length })}</p>}
                 <ul className="capture-list">
-                  {cards.cards.map((card, index) => {
-                    const proposal = result.tasks[index] ?? {
-                      title: card.draft.title,
-                      dueDay: null,
-                      startMinutes: null,
-                      estimateMinutes: null,
-                      quote: null,
-                      dateIgnored: false,
-                    };
-                    return (
-                      <CaptureCard
-                        key={index}
-                        index={index}
-                        card={card}
-                        proposal={proposal}
-                        impact={impactFor(card.draft)}
-                        similar={isSimilarTitle(card.draft.title, tasks)}
-                        todayKey={todayKey}
-                        canAdd={uid !== null}
-                        onEdit={patch => dispatch({ type: "edit", index, patch })}
-                        onToggleEdit={() => dispatch({ type: "toggleEdit", index })}
-                        onAdd={() => void write(index, [])}
-                        onDiscard={() => dispatch({ type: "discard", index })}
-                      />
-                    );
-                  })}
+                  {/* popLayout: a discarded card leaves the flow at once and fades
+                      where it stood while the cards below close the gap, so the
+                      two moves overlap instead of queueing (CaptureCard.tsx). */}
+                  <AnimatePresence mode="popLayout">
+                    {cards.cards.map((card, index) => {
+                      if (card.status === "discarded") return null;
+                      const proposal = result.tasks[index] ?? {
+                        title: card.draft.title,
+                        dueDay: null,
+                        startMinutes: null,
+                        estimateMinutes: null,
+                        quote: null,
+                        dateIgnored: false,
+                      };
+                      return (
+                        <CaptureCard
+                          key={index}
+                          index={index}
+                          card={card}
+                          proposal={proposal}
+                          impact={impactFor(card.draft)}
+                          similar={isSimilarTitle(card.draft.title, tasks)}
+                          todayKey={todayKey}
+                          canAdd={uid !== null}
+                          onEdit={patch => dispatch({ type: "edit", index, patch })}
+                          onToggleEdit={() => dispatch({ type: "toggleEdit", index })}
+                          onAdd={() => void write(index, [])}
+                          onDiscard={() => dispatch({ type: "discard", index })}
+                        />
+                      );
+                    })}
+                  </AnimatePresence>
                 </ul>
               </>
             )}
