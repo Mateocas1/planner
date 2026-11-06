@@ -10,11 +10,23 @@
  *
  * Motion budget (find-animation-opportunities): one entrance, because a
  * surface that appears over your work must not pop; nothing else moves — the
- * digits are plain tabular text and the ring eases its own stroke-dashoffset
- * (a captured stroke, not layout), so a second's progress glides without a
- * rAF loop. Reduced motion drops the entrance; the ring transition is progress
- * feedback, not decoration, and stays.
+ * digits are plain tabular text and the ring steps once per tick. A 1 s
+ * stroke-dashoffset glide restarted every second never settles, so WebKit
+ * painted at vsync for the whole session to move the ring under 0.1 px a
+ * second (R7-01). Reduced motion drops the entrance.
  */
+
+/* The window is transparent (src-tauri/pill.rs); the page around the chip must
+   be too, or the app's html/body fill and ambient blobs paint a box behind the
+   rounded corners. main.tsx marks <html> before the pill renders. */
+html[data-window="pill"],
+html[data-window="pill"] body {
+  background: transparent;
+}
+
+html[data-window="pill"] body::before {
+  content: none;
+}
 
 .focus-pill {
   display: flex;
@@ -50,9 +62,7 @@
   }
 }
 
-/* The countdown ring: a captured stroke whose dash offset eases, so each
-   second's tick glides instead of stepping. Transform/opacity/stroke only —
-   nothing here can thrash layout. */
+/* The countdown ring: a stroke whose dash offset steps with each tick. */
 .focus-pill-ring {
   flex: none;
   width: 26px;
@@ -72,7 +82,6 @@
 
 .focus-pill-ring-fill {
   stroke: var(--brand-400);
-  transition: stroke-dashoffset 1s linear;
 }
 
 .focus-pill.is-paused .focus-pill-ring-fill {
@@ -125,9 +134,11 @@
     background-color var(--dur-hover, 120ms) ease, color var(--dur-hover, 120ms) ease;
 }
 
-.focus-pill-button:hover {
-  background: rgb(255 255 255 / 0.1);
-  color: var(--ink-50);
+@media (hover: hover) and (pointer: fine) {
+  .focus-pill-button:hover {
+    background: rgb(255 255 255 / 0.1);
+    color: var(--ink-50);
+  }
 }
 
 .focus-pill-button svg {
