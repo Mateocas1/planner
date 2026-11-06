@@ -58,6 +58,7 @@ export function CommandPalette({
   onOpenNow,
   onCloseDay,
   onReplayDay,
+  onCapture,
   replayDay = false,
   onOpenWeeklyReview,
   onOpenSettings,
@@ -80,6 +81,8 @@ export function CommandPalette({
   onCloseDay: () => void;
   /** Runs the "Replay the day" command (the stage lives in the shutdown sheet). */
   onReplayDay?: () => void;
+  /** Runs the "Capture" command (the sheet is the shell's, Ronda 8). */
+  onCapture: () => void;
   /** Today has a replay to show and the setting allows it: only then is the command offered. */
   replayDay?: boolean;
   /** Runs the "Weekly review" command (the flow is the shell's, S3). */
@@ -188,6 +191,7 @@ export function CommandPalette({
       if (command.action === "now-mode") onOpenNow();
       else if (command.action === "close-day") onCloseDay();
       else if (command.action === "replay-day") onReplayDay?.();
+      else if (command.action === "capture") onCapture();
       else if (command.action === "weekly-review") onOpenWeeklyReview();
       else onImport();
       onClose();

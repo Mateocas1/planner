@@ -21,10 +21,19 @@ test("a Spanish query finds the Spanish keyword, and the create row is a whole s
   const rows = buildCommands("semanal", [], [], [], { shortcuts: false, focusedTask: false });
   assert.equal(rows[0].kind, "action");
   assert.equal(rows[0].kind === "action" && rows[0].label, "Revisión semanal");
-  assert.equal(actionCommands.length, 5);
+  assert.equal(actionCommands.length, 6);
 });
 
 test("the group ids stay the English slugs", () => {
   setDeviceLanguage("es");
   assert.deepEqual(shortcutHelpFor(false).map(group => group.id), ["move", "act-on-the-focused-row", "create", "go", "anywhere"]);
+});
+
+test("Capture follows the language: Spanish words find it, English unchanged", () => {
+  const capture = () => actionCommands.find(command => command.action === "capture");
+  assert.equal(capture()?.label, "Capture");
+  setDeviceLanguage("es");
+  assert.equal(capture()?.label, "Capturar");
+  const rows = buildCommands("pegar", [], [], [], { shortcuts: false, focusedTask: false });
+  assert.equal(rows[0].kind === "action" && rows[0].id, "action-capture");
 });
