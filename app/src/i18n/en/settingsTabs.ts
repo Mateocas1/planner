@@ -72,6 +72,8 @@ export const settingsTabs = {
   "recorder.recording": "Recording — press the new combination, Escape to cancel.",
   "recorder.unavailable": "Planner could not register this shortcut — another app may be using it.",
   "recorder.compositor": "On Wayland, your compositor owns global shortcuts. Planner installs a Hyprland bind for this one.",
+  "recorder.bindWriteFailed": "Saved, but Planner could not write its Hyprland bind file. Hyprland still uses the previous shortcut.",
+  "recorder.reloadFailed": "Saved, but Hyprland did not reload. Run `hyprctl reload`.",
 
   "desktop.error.threshold": "Pick between {min} and {max} minutes.",
   "desktop.error.startupRead.windows": "Windows did not report the startup setting.",
