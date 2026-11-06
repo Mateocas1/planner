@@ -78,6 +78,12 @@ export const planning = {
   "bias.estimated": "Estimated {estimate}",
   "bias.tookDone": "{planned} · took {actual}",
   "bias.tookOpen": "{planned} · tracked {actual} so far",
+  // Day replay: the closing sentence about the estimate bias
+  "dayBias.under": "You underestimate “{word}” tasks by {percent}.",
+  "dayBias.over": "You overestimate “{word}” tasks by {percent}.",
+  "dayBias.longer": "Your tasks take {percent} longer than you estimate.",
+  "dayBias.shorter": "Your tasks take {percent} less time than you estimate.",
+  "dayBias.basis": { one: "Based on {count} finished task.", other: "Based on {count} finished tasks." },
   // Plan my day
   "plan.title": "Plan my day",
   "plan.lede": {

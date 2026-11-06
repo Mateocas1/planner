@@ -108,7 +108,7 @@ const stopWords = new Set([
 ]);
 
 /** Lowercase and unaccent one word, so "Sesión" and "sesion" are the same key. */
-function normalize(word: string): string {
+export function normalize(word: string): string {
   return word
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -140,13 +140,13 @@ function sampleRatio(sample: BiasSample): number | null {
 }
 
 /** The middle value, or the mean of the two middle values for an even count. */
-function median(values: readonly number[]): number {
+export function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
@@ -156,7 +156,7 @@ function ceil5(minutes: number): number {
 }
 
 /** One token's capped ratio list, plus the ratios of every usable sample. */
-function collect(samples: readonly BiasSample[]): { byToken: Map<string, number[]>; all: number[] } {
+export function collect(samples: readonly BiasSample[]): { byToken: Map<string, number[]>; all: number[] } {
   const byToken = new Map<string, number[]>();
   const all: number[] = [];
   for (const sample of samples) {
