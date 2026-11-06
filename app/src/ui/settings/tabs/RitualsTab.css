@@ -41,6 +41,13 @@
   min-width: 116px;
 }
 
+/* Two classes, because app.css's `.form-control { min-width: 0 }` loads later
+   and a single class loses to it; "Auto" alone is 42 px wide, under a thumb. */
+.form-control.rituals-replay-mode {
+  width: auto;
+  min-width: 116px;
+}
+
 /* The step chips: one press toggles the step in or out of the moment's run.
    Pressed state is the accent wash, told three ways (fill, aria-pressed, and
    the label's weight). */

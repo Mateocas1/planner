@@ -121,6 +121,9 @@ async function open(
   prefix: string,
   fixture: Parameters<typeof seedShutdownFixture>[2],
 ): Promise<{ email: string; taskIds: Record<string, string> }> {
+  /* These specs are about the roll, not the day replay (tests/day-replay.spec.ts):
+     with the replay on request the close lands on Tomorrow, as it always did. */
+  await page.addInitScript(() => window.localStorage.setItem("planner-replay-mode", "request"));
   await page.clock.install({ time: base });
   const email = newEmail(prefix);
   const { taskIds } = await seedShutdownFixture(email, ZONE, fixture);

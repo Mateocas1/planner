@@ -8,6 +8,7 @@ import {
 } from "../../../planning/weekly.ts";
 import { capitalize } from "../../../i18n/capitalize.ts";
 import { t, useLocale, type MessageKey } from "../../../i18n/index.ts";
+import { readReplayMode, replayModes, writeReplayMode, type ReplayMode } from "../../dayReplayMode.ts";
 import { Select } from "../../Select.tsx";
 import { formatClock, parseClock, TimeField } from "../../Settings.tsx";
 import { settle } from "../../write.ts";
@@ -51,6 +52,9 @@ export function RitualsTab({
   // writes straight through (the day select and the step chips commit one
   // whole schedule each press, and the profile snapshot fills them back in).
   const [timeDrafts, setTimeDrafts] = useState<Record<number, string>>({});
+  // The day replay's mode is a property of this device (localStorage), read once
+  // and written through: there is no profile field to wait for.
+  const [replayMode, setReplayMode] = useState<ReplayMode>(readReplayMode);
 
   /** One write path: the whole schedule, validated by the profile write
    *  before anything is sent (the API refuses what its reader would drop). */
@@ -121,6 +125,26 @@ export function RitualsTab({
             <button type="button" className="link-button" onClick={onOpenGeneral}>
               {t("rituals.daily.edit")}
             </button>
+          )}
+        </SettingRow>
+      </Section>
+
+      <Section title={t("rituals.replay.title")} description={t("rituals.replay.description")}>
+        <SettingRow label={t("rituals.replay.label")} controlId="rituals-replay-mode" description={t("rituals.replay.help")}>
+          {() => (
+            <Select
+              id="rituals-replay-mode"
+              className="rituals-replay-mode"
+              label={t("rituals.replay.label")}
+              value={replayMode}
+              options={replayModes.map(mode => ({ value: mode, label: t(replayModeKeys[mode]) }))}
+              onChange={value => {
+                const mode = replayModes.find(entry => entry === value);
+                if (mode === undefined) return;
+                writeReplayMode(mode);
+                setReplayMode(mode);
+              }}
+            />
           )}
         </SettingRow>
       </Section>
@@ -207,6 +231,13 @@ export function RitualsTab({
 
 /** The weekday select's options, in stored order (0 = Sunday, as weekly.ts documents), named by `Intl` in the app language. */
 const dayOptions = () => Array.from({ length: 7 }, (_, day) => ({ value: String(day), label: capitalize(weekdayName(day)) }));
+
+/** The day replay mode select's labels. */
+const replayModeKeys = {
+  auto: "rituals.replay.auto",
+  request: "rituals.replay.request",
+  off: "rituals.replay.off",
+} as const satisfies Record<ReplayMode, MessageKey>;
 
 /** The four steps, in flow order, as the chips' labels. */
 const stepKeys = {

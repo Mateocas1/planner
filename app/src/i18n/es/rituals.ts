@@ -131,6 +131,7 @@ export const rituals = {
   "weekly.banner.schedule": "Programar",
   // day replay
   "replay.title": "Cómo fue el día",
+  "replay.again": "Volver a ver el día",
   "replay.legend.plan": "Plan",
   "replay.legend.actual": "Lo que pasó",
   "replay.totals": "Planificado {planned} · registrado {tracked}",
