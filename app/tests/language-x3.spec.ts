@@ -30,7 +30,9 @@ test("Today, Tasks and the task sheet are in Spanish", async ({ page }) => {
   await page.locator("nav").getByRole("button", { name: /^(Tasks|Tareas)\b/ }).click();
   await expect(page.getByRole("heading", { name: "Tareas", level: 2 })).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Abiertas/ })).toBeVisible();
-  await expect(page.getByText("vence hoy")).toBeVisible();
+  // Exact: Today's "Vence hoy" heading can still be leaving when Tasks mounts,
+  // and a substring match would count it as a second hit.
+  await expect(page.getByText("vence hoy", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Pagar el alquiler vence hoy" }).click();
   const sheet = page.getByRole("complementary", { name: "Detalles de la tarea" });

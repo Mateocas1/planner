@@ -325,6 +325,26 @@ export function useProfileTimeZone(uid: string | null): ProfileState {
             lastShutdown: parseLastShutdown(data),
             storedLastShutdown: storedLastShutdown(data),
           });
+        } else if (snapshot.metadata.fromCache) {
+          /* Only the server can say the zone is missing. A cache snapshot can be
+             the local echo of a merge write made before the stored document
+             arrived (a Settings edit right after sign-in): it holds only the
+             fields that write touched, and initializing from it overwrote a
+             stored zone with this device's one. Render with the zone already
+             known, or this device's for a first-ever offline load, and write
+             nothing until a server snapshot confirms the absence. */
+          setState((previous) => ({
+            ...unloadedProfile,
+            loading: false,
+            timeZone: previous.timeZone ?? browserTimeZone,
+            workWindow: parseWorkWindow(data),
+            shutdownTime: parseShutdownTime(data),
+            shortcutsEnabled: parseShortcutsEnabled(data),
+            weeklyReview: parseWeeklyReviewSettings(data),
+            language: parseLanguage(data),
+            lastShutdown: parseLastShutdown(data),
+            storedLastShutdown: storedLastShutdown(data),
+          }));
         } else {
           initialize(data);
         }

@@ -8,6 +8,9 @@ import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpe
 
 test.setTimeout(120_000);
 
+/* Next to this checkout's odd/runs, not an absolute path into another checkout. */
+const shots = new URL("../../odd/runs/r5-x2a-shots/", import.meta.url).pathname;
+
 const newEmail = () => `lang-x2a-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
 
 for (const [name, viewport] of [
@@ -45,6 +48,6 @@ for (const [name, viewport] of [
     await expect(sheet.getByText("Repetir", { exact: true }).first()).toBeVisible();
     await expect(sheet.getByRole("button", { name: "Añadir tarea" })).toBeVisible();
     await page.waitForTimeout(600);
-    await page.screenshot({ path: `test-results/r5-x2a-shots/shell-es-${name}.png` });
+    await page.screenshot({ path: `${shots}shell-es-${name}.png` });
   });
 }
