@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Planner
+GenericName=Day planner
+Comment=Plan your day in focus blocks
+Exec=planner %u
+Icon=com.picala.planner
+Terminal=false
+StartupNotify=true
+StartupWMClass=planner
+Categories=Office;Calendar;
+Keywords=calendar;tasks;focus;planner;
+MimeType=x-scheme-handler/calendar;
+Actions=quick-add;
+
+[Desktop Action quick-add]
+Name=Quick add
+Exec=planner --quickadd

@@ -1,0 +1,55 @@
+# Planner as an Arch package, built from this repository checkout (no
+# download): `makepkg` here runs `npm run desktop:build:linux` in app/ and
+# packages the release binary, the desktop entry, the icons and the Hyprland
+# snippet. Install the result with `sudo pacman -U picala-planner-*.pkg.tar.zst`.
+#
+# makedepends: `cargo` comes from either the `rust` or the `rustup` package;
+# node_modules is installed with `npm ci` only when app/node_modules is missing.
+# Cargo builds into $srcdir/target, so makepkg's RUSTFLAGS never invalidate the
+# checkout's own app/src-tauri/target.
+#
+# The binary keeps the name `planner` (it is the Wayland app id the window
+# rules match), which is also the binary of extra/planner (GNOME Planner).
+
+pkgname=picala-planner
+pkgver=0.1.0.r862.7bd9c43
+pkgrel=1
+pkgdesc="Personal Planner desktop app (Tauri 2 on the system WebKitGTK)"
+arch=('x86_64')
+url="https://github.com/Mateocas1/calendar"
+license=('LicenseRef-proprietary')
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'libayatana-appindicator' 'hicolor-icon-theme' 'xdg-utils')
+makedepends=('cargo' 'npm' 'git')
+conflicts=('planner')
+optdepends=('gnome-keyring: Secret Service store for the chat API key'
+            'hyprland: global quick add through the bundled bind (/usr/share/planner/hyprland.lua)')
+# The release profile already uses LTO; makepkg's own LTO flags would fight it.
+options=('!lto' '!debug')
+
+_repo="$(git -C "$startdir" rev-parse --show-toplevel)"
+_app_id=com.picala.planner
+
+pkgver() {
+  printf '0.1.0.r%s.%s' "$(git -C "$_repo" rev-list --count HEAD)" "$(git -C "$_repo" rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$_repo/app"
+  [ -d node_modules ] || npm ci
+  CARGO_TARGET_DIR="$srcdir/target" npm run desktop:build:linux
+}
+
+package() {
+  local tauri="$_repo/app/src-tauri"
+  local linux="$_repo/packaging/linux"
+
+  install -Dm755 "$srcdir/target/release/planner" "$pkgdir/usr/bin/planner"
+  install -Dm644 "$linux/$_app_id.desktop" "$pkgdir/usr/share/applications/$_app_id.desktop"
+  install -Dm644 "$linux/hyprland/planner.lua" "$pkgdir/usr/share/planner/hyprland.lua"
+
+  install -Dm644 "$tauri/icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/$_app_id.png"
+  install -Dm644 "$tauri/icons/64x64.png" "$pkgdir/usr/share/icons/hicolor/64x64/apps/$_app_id.png"
+  install -Dm644 "$tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/$_app_id.png"
+  install -Dm644 "$tauri/icons/128x128@2x.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/$_app_id.png"
+  install -Dm644 "$tauri/icons/icon.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/$_app_id.png"
+}
