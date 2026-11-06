@@ -132,54 +132,89 @@ fn lock_registry(
 // ---------------------------------------------------------------------------
 // Key storage (spec S3). The key only ever lives in the credential store.
 
+/// The IPC error of a failed credential store call. On Linux a missing
+/// Secret Service (no keyring daemon) surfaces as `PlatformFailure` and a
+/// locked collection as `NoStorageAccess`; both become
+/// `credential_store_unavailable` so the page can show a localized hint
+/// naming the system keyring. Windows keeps the `provider` code.
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-fn key_entry() -> Result<keyring::Entry, String> {
+fn key_store_error(context: &str, error: keyring::Error) -> IpcError {
+    let code = match error {
+        #[cfg(target_os = "linux")]
+        keyring::Error::PlatformFailure(_) | keyring::Error::NoStorageAccess(_) => {
+            ChatErrorCode::CredentialStoreUnavailable
+        }
+        _ => ChatErrorCode::Provider,
+    };
+    IpcError::new(code, format!("{context}: {error}"))
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn key_entry() -> Result<keyring::Entry, IpcError> {
     keyring::Entry::new(KEY_SERVICE, KEY_USER)
-        .map_err(|error| format!("the credential store is unavailable: {error}"))
+        .map_err(|error| key_store_error("the credential store is unavailable", error))
 }
 
 /// Reads the stored key, if any. Never logs or returns the key itself except
 /// to the caller that uses it as a request header.
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-fn stored_key() -> Result<Option<String>, String> {
-    match key_entry()?.get_password() {
+fn stored_key() -> Result<Option<String>, IpcError> {
+    read_key(&key_entry()?)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn store_key(key: &str) -> Result<(), IpcError> {
+    write_key(&key_entry()?, key)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn clear_stored_key() -> Result<(), IpcError> {
+    delete_key(&key_entry()?)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn read_key(entry: &keyring::Entry) -> Result<Option<String>, IpcError> {
+    match entry.get_password() {
         Ok(key) => Ok(Some(key)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(format!("the stored key could not be read: {error}")),
+        Err(error) => Err(key_store_error("the stored key could not be read", error)),
     }
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-fn store_key(key: &str) -> Result<(), String> {
-    key_entry()
-        .and_then(|entry| entry.set_password(key).map_err(|error| error.to_string()))
-        .map_err(|error| format!("the key could not be saved: {error}"))
+fn write_key(entry: &keyring::Entry, key: &str) -> Result<(), IpcError> {
+    entry
+        .set_password(key)
+        .map_err(|error| key_store_error("the key could not be saved", error))
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-fn clear_stored_key() -> Result<(), String> {
-    match key_entry()?.delete_credential() {
+fn delete_key(entry: &keyring::Entry) -> Result<(), IpcError> {
+    match entry.delete_credential() {
         Ok(()) => Ok(()),
         // Removing a key that is not there is already the desired state.
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(format!("the key could not be removed: {error}")),
+        Err(error) => Err(key_store_error("the key could not be removed", error)),
     }
 }
 
 /// Other targets have no credential store wired up (Windows uses Credential
 /// Manager, Linux the desktop Secret Service).
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn stored_key() -> Result<Option<String>, String> {
+fn stored_key() -> Result<Option<String>, IpcError> {
     Ok(None)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn store_key(_key: &str) -> Result<(), String> {
-    Err("the credential store is only available on Windows and Linux".into())
+fn store_key(_key: &str) -> Result<(), IpcError> {
+    Err(IpcError::new(
+        ChatErrorCode::Provider,
+        "the credential store is only available on Windows and Linux",
+    ))
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn clear_stored_key() -> Result<(), String> {
+fn clear_stored_key() -> Result<(), IpcError> {
     Ok(())
 }
 
@@ -236,9 +271,10 @@ pub struct ChatKeyStatus {
 }
 
 #[tauri::command]
-pub fn chat_key_status(app: tauri::AppHandle) -> Result<ChatKeyStatus, String> {
+pub fn chat_key_status(app: tauri::AppHandle) -> Result<ChatKeyStatus, IpcError> {
     let has_key = stored_key()?.is_some();
-    let base_url = stored_base_url(&app)?;
+    let base_url = stored_base_url(&app)
+        .map_err(|message| IpcError::new(ChatErrorCode::Provider, message))?;
     Ok(ChatKeyStatus { has_key, base_url })
 }
 
@@ -252,28 +288,32 @@ pub fn chat_key_set(
     app: tauri::AppHandle,
     key: String,
     base_url: String,
-) -> Result<(), String> {
+) -> Result<(), IpcError> {
     let key = key.trim();
     if let Err(problem) = validate_key(key) {
-        return Err(match problem {
+        return Err(IpcError::new(ChatErrorCode::InvalidRequest, match problem {
             KeyProblem::TooLong => format!(
                 "The API key must be at most {MAX_KEY_CHARS} characters."
             ),
             other => other.to_string(),
-        });
+        }));
     }
     let base_url = base_url.trim().to_string();
     if validate_base_url(&base_url).is_err() {
         // Never echo the raw URL: it may contain userinfo.
-        return Err("The provider address is not allowed.".into());
+        return Err(IpcError::new(
+            ChatErrorCode::InvalidRequest,
+            "The provider address is not allowed.",
+        ));
     }
     store_key(key)?;
     store_base_url(&app, &base_url)
+        .map_err(|message| IpcError::new(ChatErrorCode::Provider, message))
 }
 
 /// Removes the API key and the provider address bound to it.
 #[tauri::command]
-pub fn chat_key_clear(app: tauri::AppHandle) -> Result<(), String> {
+pub fn chat_key_clear(app: tauri::AppHandle) -> Result<(), IpcError> {
     let result = clear_stored_key();
     remove_base_url(&app);
     result
@@ -357,11 +397,8 @@ fn run_stream(
             });
             return;
         }
-        Err(message) => {
-            let _ = on_event.send(ChatEvent::Error {
-                code: ChatErrorCode::Provider,
-                message,
-            });
+        Err(IpcError { code, message }) => {
+            let _ = on_event.send(ChatEvent::Error { code, message });
             return;
         }
     };
@@ -556,8 +593,7 @@ fn run_complete(request: ChatRequest, base_url: String) -> Result<String, IpcErr
             "the provider address is not allowed",
         ));
     }
-    let key = stored_key()
-        .map_err(|message| IpcError::new(ChatErrorCode::Provider, message))?
+    let key = stored_key()?
         .ok_or_else(|| {
             IpcError::new(ChatErrorCode::NoKey, "No API key is saved. Add one in Settings.")
         })?;
@@ -611,5 +647,78 @@ fn provider_error_message(status: u16, response: ureq::Response) -> String {
         format!("The provider returned HTTP {status}.")
     } else {
         body
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use keyring::mock;
+
+    /// An entry backed by keyring's in-memory mock, never the user's keyring.
+    fn mock_entry() -> keyring::Entry {
+        let credential = mock::default_credential_builder()
+            .build(None, KEY_SERVICE, KEY_USER)
+            .expect("mock credential");
+        keyring::Entry::new_with_credential(credential)
+    }
+
+    fn fail_next(entry: &keyring::Entry, error: keyring::Error) {
+        let credential: &mock::MockCredential =
+            entry.get_credential().downcast_ref().expect("mock credential");
+        credential.set_error(error);
+    }
+
+    fn platform_failure() -> keyring::Error {
+        keyring::Error::PlatformFailure(Box::new(io::Error::other(
+            "org.freedesktop.DBus.Error.ServiceUnknown",
+        )))
+    }
+
+    fn locked() -> keyring::Error {
+        keyring::Error::NoStorageAccess(Box::new(io::Error::other("collection is locked")))
+    }
+
+    #[test]
+    fn a_missing_secret_service_is_credential_store_unavailable() {
+        let entry = mock_entry();
+        fail_next(&entry, platform_failure());
+        let error = read_key(&entry).expect_err("read fails");
+        assert_eq!(error.code, ChatErrorCode::CredentialStoreUnavailable);
+
+        fail_next(&entry, platform_failure());
+        let error = write_key(&entry, "sk-test").expect_err("save fails");
+        assert_eq!(error.code, ChatErrorCode::CredentialStoreUnavailable);
+
+        fail_next(&entry, platform_failure());
+        let error = delete_key(&entry).expect_err("remove fails");
+        assert_eq!(error.code, ChatErrorCode::CredentialStoreUnavailable);
+    }
+
+    #[test]
+    fn a_locked_keyring_is_credential_store_unavailable() {
+        let entry = mock_entry();
+        fail_next(&entry, locked());
+        let error = read_key(&entry).expect_err("read fails");
+        assert_eq!(error.code, ChatErrorCode::CredentialStoreUnavailable);
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["code"], "credential_store_unavailable");
+    }
+
+    #[test]
+    fn other_store_failures_keep_the_provider_code() {
+        let entry = mock_entry();
+        fail_next(&entry, keyring::Error::BadEncoding(vec![0xff]));
+        let error = read_key(&entry).expect_err("read fails");
+        assert_eq!(error.code, ChatErrorCode::Provider);
+    }
+
+    #[test]
+    fn a_missing_entry_is_no_key_and_removing_it_succeeds() {
+        let entry = mock_entry();
+        assert_eq!(read_key(&entry).expect("no entry"), None);
+        delete_key(&entry).expect("already removed");
+        write_key(&entry, "sk-test").expect("saved");
+        assert_eq!(read_key(&entry).expect("read").as_deref(), Some("sk-test"));
     }
 }

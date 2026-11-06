@@ -61,7 +61,8 @@ export type ChatErrorCode =
   | "rate_limited" // 429
   | "network" // DNS/TLS/connection/timeout
   | "provider" // any other non-2xx or malformed stream
-  | "invalid_request"; // rejected locally (bad base URL, empty messages)
+  | "invalid_request" // rejected locally (bad base URL, empty messages)
+  | "credential_store_unavailable"; // OS keyring missing or locked (Linux Secret Service)
 
 export interface ChatTransport {
   /** Streams one reply. Resolves after the terminal event was emitted. */

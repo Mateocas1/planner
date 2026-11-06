@@ -8,6 +8,7 @@
  */
 
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { t } from "../i18n/index.ts";
 import type {
   ChatErrorCode,
   ChatEvent,
@@ -55,9 +56,12 @@ export function toChatEvent(raw: unknown): ChatEvent | null {
     case "error": {
       const code = (raw as { code?: unknown }).code;
       const message = (raw as { message?: unknown }).message;
-      return typeof code === "string" && typeof message === "string"
-        ? { type: "error", code: code as ChatErrorCode, message }
-        : null;
+      if (typeof code !== "string" || typeof message !== "string") return null;
+      // A missing or locked keyring gets a localized hint instead of Rust's
+      // English diagnostic.
+      return code === "credential_store_unavailable"
+        ? { type: "error", code, message: t("chat.error.credentialStoreUnavailable") }
+        : { type: "error", code: code as ChatErrorCode, message };
     }
     default:
       return null;

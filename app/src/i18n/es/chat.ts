@@ -11,6 +11,7 @@ export const chat = {
   "chat.noKey.heading": "Añadir una clave de API para empezar a chatear.",
   "chat.noKey.setup": "Configurar el asistente",
   "chat.retry": "Reintentar",
+  "chat.error.credentialStoreUnavailable": "El llavero del sistema no está disponible o está bloqueado. Iniciar o desbloquear un llavero como GNOME Keyring o KWallet y volver a intentarlo.",
   "chat.jump": "Ir al último ↓",
   "chat.placeholder": "Escribir un mensaje…",
   "chat.message": "Mensaje",
