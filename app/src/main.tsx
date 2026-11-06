@@ -15,6 +15,7 @@ import "./ui/glass.css";
 // pressable answers with, and its element-level rules must sit after the
 // sheets whose class rules consume its tokens (app.css, glass.css).
 import "./ui/press.css";
+import { installCompositorHandoff } from "./ui/compositorHandoff.ts";
 import { installLens } from "./ui/lens.ts";
 import { installSheen } from "./ui/sheen.ts";
 import { installUpdatePrompt } from "./pwa-update.ts";
@@ -24,6 +25,11 @@ import { installUpdatePrompt } from "./pwa-update.ts";
  * renders the floating timer alone — no Firestore, no shortcuts, no document
  * motion — so its dynamic import keeps those modules out of its chunk graph. */
 const isPillWindow = (globalThis as { __PILL__?: boolean }).__PILL__ === true;
+
+// WebKitGTK (the Linux shell marks the page, src-tauri/src/window.rs) drops a
+// stale frame at the end of compositor animations; the guard must be in place
+// before anything animates.
+if ((globalThis as { __WEBKITGTK__?: boolean }).__WEBKITGTK__ === true) installCompositorHandoff();
 
 // Document-level motion is installed once, outside React: a StrictMode remount
 // must never stack a second pointer listener. The lens gate only sets an
