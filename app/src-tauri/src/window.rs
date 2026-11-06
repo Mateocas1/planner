@@ -44,3 +44,15 @@ pub fn apply_backdrop<R: Runtime>(_window: &WebviewWindow<R>, _dark: bool) -> Re
 pub fn desktop_backdrop<R: Runtime>(window: WebviewWindow<R>, dark: bool) -> Result<(), String> {
     apply_backdrop(&window, dark)
 }
+
+/// Linux: marks every webview as WebKitGTK before any app script runs
+/// (`window.__WEBKITGTK__`), so `main.tsx` installs the end-of-animation guard
+/// in `src/ui/compositorHandoff.ts` (Ronda 6 S5). WebKitGTK presents one stale
+/// frame when a compositor animation ends; WebView2 does not, so Windows never
+/// registers this plugin.
+#[cfg(target_os = "linux")]
+pub fn webkitgtk_marker<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("webkitgtk-marker")
+        .js_init_script("window.__WEBKITGTK__ = true;".to_string())
+        .build()
+}

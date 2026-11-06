@@ -12,7 +12,7 @@ mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // One `.plugin(...)` per line, so feature branches union cleanly.
         // single-instance must be the first plugin registered.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| deeplink::on_second_instance(app)))
@@ -73,7 +73,11 @@ pub fn run() {
             autostart::setup(app.handle());
             pill::setup(app.handle())?;
             Ok(())
-        })
+        });
+    // Linux only, so the Windows builder is unchanged (Ronda 6 S5).
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(window::webkitgtk_marker());
+    builder
         .run(tauri::generate_context!())
         .expect("error while running the Planner desktop app");
 }
