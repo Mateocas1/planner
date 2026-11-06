@@ -1,0 +1,227 @@
+/* The day replay stage (Ronda 8, odd/plans/day-replay.md §2, §3).
+ *
+ * A calm bar chart, not a dashboard: one row per task (or manual block) on the
+ * shared time-of-day axis. Each row holds a plan outline (dashed, drawn over)
+ * and a bar in the row's colour -- the plum of a task, the brand of a manual
+ * block -- that bends from the plan into what happened. No stripes, rings or
+ * stat cards (DESIGN.md).
+ *
+ * Every rule here is the *final frame*: the stage is complete and correct with
+ * no animation at all (reduced motion, a day where nothing changed, a skipped
+ * replay). The motion is WAAPI from ui/DayReplay.tsx; nothing here animates,
+ * nothing transitions, and nothing is hover-gated because nothing reacts to
+ * hover. Text is never dimmed: the contrast of every label is the one
+ * scripts/glass-contrast.mjs already proves on --surface.
+ */
+
+.day-replay {
+  /* app.css carries --ease-out only; this is the canonical strong ease-in-out
+     (odd/design/motion-system.md) for the one thing that moves on screen.
+     ui/DayReplay.tsx reads it, because WAAPI cannot take var(). */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.replay-title {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  color: var(--label);
+}
+
+.replay-unchanged {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--label-2);
+}
+
+.replay-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* What the dashed outline and the solid bar mean, and the hours the track covers. */
+.replay-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.replay-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-width: 0;
+}
+
+.replay-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.replay-swatch {
+  flex: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.replay-swatch-plan {
+  border: 1.5px dashed var(--label-3);
+}
+
+.replay-swatch-actual {
+  background: var(--label-2);
+}
+
+.replay-range {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replay-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 40 px a row: seven fit under the 390 x 844 phone with the totals, the
+   sentence and the button. */
+.replay-row {
+  --replay-ink: var(--cat-task-ink);
+
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 40px;
+  padding: 3px 0;
+}
+
+.replay-row[data-kind="block"] {
+  --replay-ink: var(--accent);
+}
+
+.replay-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-sub);
+  line-height: 18px;
+  color: var(--label);
+}
+
+.replay-name {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The line drawn through the name of a struck row: a real element, so it can
+   be revealed with clip-path (a pseudo-element cannot be reached by WAAPI on
+   every engine). It is the name's own colour. */
+.replay-strike {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.replay-check {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--green);
+}
+
+/* The lane the day runs on. It clips what a bar lays out past its own edge:
+   the bar is drawn at the widest it will be and trimmed by clip-path. */
+.replay-track {
+  position: relative;
+  height: 16px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--fill-hover);
+}
+
+/* The bar is inset in the lane, the plan outline is not: the dashed slot shows
+   above and below the bar, so after a stretch its edge is the tick that keeps
+   the planned end, and after a move the empty slot stays where the block was. */
+.replay-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  background: var(--replay-ink);
+}
+
+.replay-ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--label-3);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.replay-more {
+  margin: 0;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-3);
+}
+
+.replay-totals {
+  margin: 0;
+  font-size: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+  color: var(--label-2);
+}
+
+.replay-sentence-text {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--label);
+  text-wrap: balance;
+}
+
+.replay-basis {
+  margin: 4px 0 0;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+
+.replay-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Skip and Continue are one button that changes its word, so focus never
+   leaves it when the replay ends. */
+.replay-action {
+  min-width: 104px;
+}
