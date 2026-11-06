@@ -8,6 +8,11 @@
 # Cargo builds into $srcdir/target, so makepkg's RUSTFLAGS never invalidate the
 # checkout's own app/src-tauri/target.
 #
+# To use the Hyprland snippet, add `pcall(dofile, "/usr/share/planner/hyprland.lua")`
+# to ~/.config/hypr/hyprland.lua; pcall keeps that line harmless after
+# `pacman -R`. Removing the package leaves the chord file the app writes per
+# user ($XDG_DATA_HOME/planner/quickadd.bind); delete it by hand.
+#
 # The binary keeps the name `planner` (it is the Wayland app id the window
 # rules match), which is also the binary of extra/planner (GNOME Planner).
 
