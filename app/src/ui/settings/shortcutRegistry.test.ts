@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { DesktopPlatform } from "../../desktop.ts";
 import {
   CAPTURE_KEY_ERROR,
   CAPTURE_MODIFIER_ERROR,
@@ -24,8 +25,15 @@ const defaults: Record<RebindableShortcutId, Accelerator> = Object.fromEntries(
   rebindableShortcuts.map(shortcut => [shortcut.id, shortcut.defaultAccelerator]),
 ) as Record<RebindableShortcutId, Accelerator>;
 
-const press = (code: string, mods: Partial<{ ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }> = {}) =>
-  captureFromEvent({ code, ctrlKey: mods.ctrl ?? false, altKey: mods.alt ?? false, shiftKey: mods.shift ?? false, metaKey: mods.meta ?? false });
+const press = (
+  code: string,
+  mods: Partial<{ ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }> = {},
+  platform: DesktopPlatform = "windows",
+) =>
+  captureFromEvent(
+    { code, ctrlKey: mods.ctrl ?? false, altKey: mods.alt ?? false, shiftKey: mods.shift ?? false, metaKey: mods.meta ?? false },
+    platform,
+  );
 
 describe("parseAccelerator / acceleratorOf / keycaps", () => {
   it("round-trips the defaults", () => {
@@ -55,14 +63,20 @@ describe("parseAccelerator / acceleratorOf / keycaps", () => {
     assert.deepEqual(keycaps("ctrl+alt+Space"), ["Ctrl", "Alt", "Space"]);
     assert.deepEqual(keycaps("ctrl+KeyK"), ["Ctrl", "K"]);
     assert.deepEqual(keycaps("ctrl+Comma"), ["Ctrl", ","]);
-    assert.deepEqual(keycaps("meta+Digit1"), ["Win", "1"]);
+    assert.deepEqual(keycaps("meta+Digit1", false, "windows"), ["Win", "1"]);
   });
 
   it("prints the platform's modifier, matching the help sheet", () => {
     assert.deepEqual(keycaps("ctrl+KeyK", true), ["⌘", "K"]);
     assert.deepEqual(keycaps("ctrl+KeyK", false), ["Ctrl", "K"]);
     assert.deepEqual(keycaps("meta+KeyK", true), ["⌘", "K"]);
-    assert.deepEqual(keycaps("meta+KeyK", false), ["Win", "K"]);
+    assert.deepEqual(keycaps("meta+KeyK", false, "windows"), ["Win", "K"]);
+  });
+
+  it("names the meta key Super on Linux", () => {
+    assert.deepEqual(keycaps("meta+KeyK", false, "linux"), ["Super", "K"]);
+    assert.deepEqual(keycaps("ctrl+meta+Space", false, "linux"), ["Ctrl", "Super", "Space"]);
+    assert.deepEqual(keycaps("meta+KeyK", true, "macos"), ["⌘", "K"]);
   });
 
   it("labels accelerators the way messages quote them", () => {
@@ -94,6 +108,17 @@ describe("captureFromEvent", () => {
     const unknown = press("Unidentified", { ctrl: true });
     assert.equal(unknown.ok, false);
     if (!unknown.ok) assert.equal(unknown.error, CAPTURE_KEY_ERROR);
+  });
+
+  it("names the Super key in the refusal on Linux, the Windows key elsewhere", () => {
+    const linux = press("KeyK", {}, "linux");
+    assert.equal(linux.ok, false);
+    if (!linux.ok) {
+      assert.match(linux.error, /Super key/);
+      assert.doesNotMatch(linux.error, /Windows/);
+    }
+    const windows = press("KeyK", {}, "windows");
+    if (!windows.ok) assert.match(windows.error, /Windows key/);
   });
 });
 

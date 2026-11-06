@@ -62,6 +62,7 @@ export const palette = {
   "shortcuts.rebind.quickAdd": "Quick add anywhere",
   "shortcuts.fixed.settings": "Settings",
   "shortcuts.capture.modifier": "Include Ctrl, Alt or the Windows key (or Cmd) plus a regular key.",
+  "shortcuts.capture.modifier.linux": "Include Ctrl, Alt or the Super key plus a regular key.",
   "shortcuts.capture.key": "That key cannot be part of the shortcut. Use a letter, number or symbol key.",
   "shortcuts.conflict.rebindable": "Already used by {holder}. Pick a different combination.",
   "shortcuts.conflict.fixed": "{keys} is reserved for {holder}.",
