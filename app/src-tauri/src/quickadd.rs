@@ -65,6 +65,10 @@ const READY_FALLBACK: Duration = Duration::from_millis(1500);
 /// plus the file write.
 const SYNC_READ_WAIT: Duration = Duration::from_secs(4);
 
+/// How long a sync waits for the one in flight before it proceeds anyway:
+/// a stuck sync delays a Settings save, it does not hang it.
+const SYNC_BEGIN_WAIT: Duration = Duration::from_secs(8);
+
 /// Why the chord is not registered under Wayland (read by `quickadd_get_config`).
 const WAYLAND_NOTE: &str =
     "Wayland: the compositor binds this chord to `planner --quickadd` (Planner's Hyprland snippet follows it).";
@@ -107,41 +111,91 @@ fn next_note(previous: Option<&'static str>, outcome: BindSync) -> Option<&'stat
 
 /// One compositor bind sync at a time: a Settings save waits for the startup
 /// sync, so a stale startup chord can never land after a newer one, and a
-/// config read can wait for the sync in flight to see its note.
+/// config read can wait for the sync in flight to see its note. A turn is
+/// released when its `SyncTurn` drops, so a sync that panics frees the gate.
 #[derive(Default)]
 struct SyncGate {
-    busy: Mutex<bool>,
+    turn: Mutex<GateTurn>,
     idle: Condvar,
 }
 
+/// The sync holding the gate, by token, and the next token to hand out.
+#[derive(Default)]
+struct GateTurn {
+    holder: Option<u64>,
+    next: u64,
+}
+
+/// A claimed turn at the gate; dropping it releases the gate.
+struct SyncTurn<'a> {
+    gate: &'a SyncGate,
+    token: u64,
+}
+
+impl SyncTurn<'_> {
+    /// Hands the turn to another thread: the gate stays claimed until
+    /// `SyncGate::adopt` takes the token back.
+    fn detach(self) -> u64 {
+        let token = self.token;
+        std::mem::forget(self);
+        token
+    }
+}
+
+impl Drop for SyncTurn<'_> {
+    fn drop(&mut self) {
+        self.gate.end(self.token);
+    }
+}
+
 impl SyncGate {
-    /// Waits for the sync in flight, then claims the gate.
-    fn begin(&self) {
-        let Ok(mut busy) = self.busy.lock() else { return };
-        while *busy {
-            match self.idle.wait(busy) {
-                Ok(guard) => busy = guard,
-                Err(_) => return,
-            }
+    /// Waits up to `timeout` for the sync in flight, then claims the gate. A
+    /// sync still running after that is reported and no longer waited on; its
+    /// late release does not free the gate under the newer sync.
+    fn begin(&self, timeout: Duration) -> SyncTurn<'_> {
+        let mut turn = lock(&self.turn);
+        let (guard, waited) = self
+            .idle
+            .wait_timeout_while(turn, timeout, |turn| turn.holder.is_some())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        turn = guard;
+        if waited.timed_out() {
+            eprintln!("quickadd: a bind sync is still running after {timeout:?}; proceeding without it");
         }
-        *busy = true;
+        let token = turn.next;
+        turn.next += 1;
+        turn.holder = Some(token);
+        SyncTurn { gate: self, token }
     }
 
-    fn end(&self) {
-        if let Ok(mut busy) = self.busy.lock() {
-            *busy = false;
+    /// Takes back a turn detached with `SyncTurn::detach`.
+    fn adopt(&self, token: u64) -> SyncTurn<'_> {
+        SyncTurn { gate: self, token }
+    }
+
+    fn end(&self, token: u64) {
+        let mut turn = lock(&self.turn);
+        if turn.holder == Some(token) {
+            turn.holder = None;
         }
+        drop(turn);
         self.idle.notify_all();
     }
 
     /// Waits up to `timeout` for no sync to be in flight; `false` on timeout.
     fn wait_idle(&self, timeout: Duration) -> bool {
-        let Ok(busy) = self.busy.lock() else { return false };
+        let turn = lock(&self.turn);
         self.idle
-            .wait_timeout_while(busy, timeout, |busy| *busy)
+            .wait_timeout_while(turn, timeout, |turn| turn.holder.is_some())
             .map(|(_, result)| !result.timed_out())
             .unwrap_or(false)
     }
+}
+
+/// Locks `mutex`, recovering it from a panicked holder (the gate's state is
+/// a plain token, always consistent).
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A cold launch with the trigger: the window shows once it was `asked` for
@@ -431,12 +485,12 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         // Off the startup path (a reload can take a moment), with the gate
         // claimed here, before any command can run: a Settings save waits for
         // this sync and the first config read sees its note.
-        state.sync_gate.begin();
+        let token = state.sync_gate.begin(SYNC_BEGIN_WAIT).detach();
         let handle = app.clone();
         std::thread::spawn(move || {
             let state = handle.state::<QuickAddState>();
+            let _turn = state.sync_gate.adopt(token);
             state.record_bind_sync(sync_compositor_bind(&shortcut, true));
-            state.sync_gate.end();
         });
     }
 
@@ -547,11 +601,11 @@ pub fn quickadd_set_shortcut<R: Runtime>(
     if wayland() {
         // Nothing to grab: keep the choice so the settings show it, and leave
         // the binding to the compositor.
-        state.sync_gate.begin();
+        let turn = state.sync_gate.begin(SYNC_BEGIN_WAIT);
         state.set(shortcut.clone(), false);
         save_config(&app, &shortcut);
         state.record_bind_sync(sync_compositor_bind(&shortcut, false));
-        state.sync_gate.end();
+        drop(turn);
         return Ok(state.status());
     }
     let previous = state.status();
@@ -625,20 +679,58 @@ mod tests {
         use std::time::{Duration, Instant};
         let gate = Arc::new(SyncGate::default());
         assert!(gate.wait_idle(Duration::from_millis(1)), "idle at first");
-        gate.begin();
+        let first = gate.begin(Duration::from_secs(5));
         let started = Instant::now();
         assert!(!gate.wait_idle(Duration::from_millis(50)), "a stuck sync only delays the read");
         assert!(started.elapsed() < Duration::from_secs(2));
         let other = Arc::clone(&gate);
         let second = std::thread::spawn(move || {
-            other.begin();
-            other.end();
+            let _turn = other.begin(Duration::from_secs(5));
         });
         std::thread::sleep(Duration::from_millis(30));
         assert!(!second.is_finished(), "a second sync waits for the first");
-        gate.end();
+        drop(first);
         second.join().unwrap();
         assert!(gate.wait_idle(Duration::from_millis(500)));
+    }
+
+    #[test]
+    fn a_panicking_sync_releases_the_gate() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        let gate = Arc::new(SyncGate::default());
+        let other = Arc::clone(&gate);
+        let crashed = std::thread::spawn(move || {
+            let _turn = other.begin(Duration::from_secs(5));
+            panic!("sync crashed");
+        });
+        assert!(crashed.join().is_err());
+        assert!(gate.wait_idle(Duration::from_millis(100)), "the gate is free again");
+
+        // A turn adopted by the startup thread is released the same way.
+        let token = gate.begin(Duration::from_secs(5)).detach();
+        let other = Arc::clone(&gate);
+        let crashed = std::thread::spawn(move || {
+            let _turn = other.adopt(token);
+            panic!("startup sync crashed");
+        });
+        assert!(crashed.join().is_err());
+        assert!(gate.wait_idle(Duration::from_millis(100)), "the adopted turn is released");
+    }
+
+    #[test]
+    fn a_stuck_sync_only_delays_the_next_begin() {
+        use std::time::{Duration, Instant};
+        let gate = SyncGate::default();
+        let stuck = gate.begin(Duration::from_secs(5));
+        let started = Instant::now();
+        let next = gate.begin(Duration::from_millis(50));
+        assert!(started.elapsed() < Duration::from_secs(2), "begin gave up waiting");
+        // The stuck sync finishing late must not free the gate under the next one.
+        drop(stuck);
+        assert!(!gate.wait_idle(Duration::from_millis(20)), "the next sync still holds the gate");
+        drop(next);
+        assert!(gate.wait_idle(Duration::from_millis(20)));
     }
 
     #[cfg(unix)]
