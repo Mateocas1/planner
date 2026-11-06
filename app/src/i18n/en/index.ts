@@ -1,6 +1,7 @@
 import { app } from "./app.ts";
 import { auth } from "./auth.ts";
 import { calendar } from "./calendar.ts";
+import { capture } from "./capture.ts";
 import { chat } from "./chat.ts";
 import { controls } from "./controls.ts";
 import { forms } from "./forms.ts";
@@ -20,6 +21,7 @@ export const en = {
   ...app,
   ...auth,
   ...calendar,
+  ...capture,
   ...chat,
   ...controls,
   ...forms,
