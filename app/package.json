@@ -18,7 +18,8 @@
     "desktop:dev": "bash scripts/desktop-dev.sh",
     "desktop:build": "bash scripts/desktop-build.sh",
     "desktop:copy": "bash scripts/desktop-copy.sh",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "desktop:build:linux": "bash scripts/desktop-build-linux.sh"
   },
   "dependencies": {
     "@fontsource-variable/onest": "^5.3.1",
