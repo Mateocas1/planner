@@ -40,6 +40,9 @@ test.afterAll(() => {
 async function openSpanishPanel(page: Page, query: string) {
   await page.addInitScript(() => window.localStorage.setItem("planner-language", "es"));
   await page.goto(`${base}/${query}`);
+  // The launcher mounts with the panel's key handler: a chord pressed before it
+  // reaches no listener (as in chat-panel.spec.ts).
+  await expect(page.getByRole("button", { name: "Chat" })).toBeVisible();
   await page.keyboard.press("Control+j");
   const panel = page.getByRole("dialog", { name: "Chat" });
   await expect(panel).toHaveAttribute("data-open", "true");
