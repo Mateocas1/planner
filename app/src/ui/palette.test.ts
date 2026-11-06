@@ -165,3 +165,21 @@ test("the day replay is offered only while today has one to show", () => {
   // Closing the day never drags the replay in.
   assert.deepEqual(replayIds("close", { shortcuts: true, focusedTask: false, replayDay: true }), []);
 });
+
+test("Capture is offered for its own words and never on the empty palette", () => {
+  const captureIds = (query: string, context: PaletteContext) =>
+    buildCommands(query, tasks, destinations, [], context)
+      .filter(command => command.kind === "action" && command.action === "capture")
+      .map(command => command.id);
+  const context = { shortcuts: true, focusedTask: false };
+  assert.deepEqual(captureIds("capture", context), ["action-capture"]);
+  assert.deepEqual(captureIds("paste", context), ["action-capture"]);
+  assert.deepEqual(captureIds("inbox", context), ["action-capture"]);
+  assert.deepEqual(captureIds("capture", { ...context, focusedTask: true }), ["action-capture"]);
+  assert.deepEqual(captureIds("", context), []);
+  assert.deepEqual(captureIds("weekly", context), []);
+  // The create row stays last, so Enter on "capture" opens the sheet.
+  const rows = buildCommands("capture", tasks, destinations, [], context);
+  assert.equal(rows[rows.length - 1].kind, "create");
+  assert.equal(rows.find(row => row.kind === "action")?.id, "action-capture");
+});

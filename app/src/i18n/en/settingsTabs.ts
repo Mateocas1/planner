@@ -131,7 +131,7 @@ export const settingsTabs = {
   "ai.replace": "Replace",
   "ai.save": "Save",
   "ai.cancel": "Cancel",
-  "ai.privacy": "Conversations are not stored. Memories stay on this computer. Messages go to the provider you configure.",
+  "ai.privacy": "Conversations are not stored. Memories stay on this computer. Messages go to the provider you configure. Capture sends only the text you paste.",
   "ai.error.keyEmpty": "The API key must not be empty.",
   "ai.error.baseUrl": "The provider address is not allowed.",
   "ai.model.title": "Model",

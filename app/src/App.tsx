@@ -21,6 +21,8 @@ import { EstimateControl } from "./ui/EstimateControl.tsx";
 import { estimateControlLabels } from "./ui/estimateLabels.ts";
 import { Calendar } from "./ui/Calendar.tsx";
 import { ChatSurface } from "./chat/ChatSurface.tsx";
+import { CaptureSheet } from "./capture/CaptureSheet.tsx";
+import { pasteCaptureText } from "./capture/pasteTarget.ts";
 import { CommandPalette } from "./ui/CommandPalette.tsx";
 import { GcalImportSheet } from "./ui/GcalImport.tsx";
 import { TaskDragProvider } from "./ui/drag.tsx";
@@ -31,7 +33,7 @@ import { prepareDayReplay } from "./ui/dayReplayData.ts";
 import { deviceSnapshotStorage, readReplayMode } from "./ui/dayReplayMode.ts";
 import { ShutdownSheet } from "./ui/ShutdownSheet.tsx";
 import { QuickAddChips } from "./ui/QuickAddChips.tsx";
-import { CalendarIcon, CloseIcon, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
+import { CalendarIcon, CloseIcon, ICON_STROKE, PersonIcon, PlusIcon, SearchIcon } from "./ui/icons.tsx";
 import { dur, easeOut, phoneQuery, spring, useMediaQuery } from "./ui/motion.ts";
 import { SettingsIcon } from "./ui/Settings.tsx";
 import { SettingsView } from "./ui/settings/SettingsView.tsx";
@@ -262,6 +264,18 @@ function Shell({
     importOrigin.current = origin;
     setImportOpen(true);
   };
+  // The capture inbox (Ronda 8, S3): a sheet like the import's. `captureText`
+  // pre-fills it when it opened from a paste; the origin is the control it grows
+  // from (the palette path has none, like the import sheet).
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureText, setCaptureText] = useState("");
+  const captureOrigin = useRef<HTMLElement | null>(null);
+  const captureButtonRef = useRef<HTMLButtonElement>(null);
+  const openCapture = (origin: HTMLElement | null, text = "") => {
+    captureOrigin.current = origin;
+    setCaptureText(text);
+    setCaptureOpen(true);
+  };
   // Settings (Ronda 2, S1) is a view in the shell, not a sheet; its tab state
   // and `openSettings(tab?)` live in App — see the comment there.
   // The weekly review (S3) is a view in the shell too. `via` remembers whether
@@ -357,6 +371,25 @@ function Shell({
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
   }, [openSettings]);
+
+  /* Paste-anywhere (Ronda 8, S3): a paste with no field focused and no dialog
+     open opens the capture sheet with the text. Pasting into a field never
+     reaches it (pasteCaptureText answers null), so a field behaves as before. */
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const text = pasteCaptureText({
+        target: event.target,
+        active: document.activeElement,
+        dialogOpen: dialogOpen(),
+        text: event.clipboardData?.getData("text/plain") ?? "",
+      });
+      if (text === null) return;
+      event.preventDefault();
+      openCapture(keyboardOrigin(captureButtonRef.current), text);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   /* The keyboard (F6): one more listener, and the only one that reads letters.
      ui/shortcuts.ts decides -- is this a field, a dialog, an IME, a browser
@@ -506,6 +539,15 @@ function Shell({
               onClick={() => setPaletteOpen(true)}
             >
               <SearchIcon />
+            </button>
+            <button
+              ref={captureButtonRef}
+              type="button"
+              className="icon-button large"
+              aria-label={t("capture.title")}
+              onClick={event => openCapture(event.currentTarget)}
+            >
+              <CaptureIcon />
             </button>
             {phone ? (
               <AccountMenu
@@ -682,6 +724,7 @@ function Shell({
           onOpenNow={() => setNowOpen(true)}
           onCloseDay={() => openShutdown(null)}
           onReplayDay={() => openShutdown(null, "replay")}
+          onCapture={() => openCapture(null)}
           replayDay={replayOffered()}
           onOpenWeeklyReview={() => openWeeklyReview("manual")}
           onOpenSettings={openSettings}
@@ -691,6 +734,23 @@ function Shell({
           }}
         />
       )}
+      <CaptureSheet
+        open={captureOpen}
+        onClose={() => setCaptureOpen(false)}
+        initialText={captureText}
+        origin={captureOrigin.current}
+        uid={user.uid}
+        timeZone={zone}
+        tasks={tasks}
+        blocks={blocks}
+        series={series}
+        completions={completions}
+        workWindow={profile.workWindow}
+        onSetupKey={() => {
+          setCaptureOpen(false);
+          openSettings("ai");
+        }}
+      />
       <AnimatePresence>
         {shutdownOpen && (
           <ShutdownSheet
@@ -1023,6 +1083,17 @@ function NewTaskSheet({
         <button type="submit" className="button-primary" disabled={busy}>{t("app.sheet.submit")}</button>
       </form>
     </Sheet>
+  );
+}
+
+/** The header's capture control: a tray receiving a drop, drawn in the icon set's
+ * stroke family (ui/icons.tsx keeps its base private). */
+function CaptureIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3.5 13.5 6 6.5A2 2 0 0 1 7.9 5h8.2A2 2 0 0 1 18 6.5l2.5 7" />
+      <path d="M3.5 13.5V18a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-4.5h-5.2a3.3 3.3 0 0 1-6.6 0Z" />
+    </svg>
   );
 }
 
