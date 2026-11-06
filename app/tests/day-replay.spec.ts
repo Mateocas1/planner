@@ -221,6 +221,34 @@ test.describe("on a desktop", () => {
     await expect(ritual(page).getByRole("heading", { name: "Tomorrow" })).toHaveCount(0);
   });
 
+  test("one live region speaks while the stage plays: the sheet's, with the replay inside it", async ({ page }) => {
+    const base = at(18, 30);
+    await open(page, base, "replay-live", meetingsDay(base));
+
+    await closeTheDay(page);
+    const stage = stageOf(page);
+    await expect(stage).toHaveAttribute("data-state", "playing");
+    // The stage adds no second status: the close and the replay arrive as one utterance.
+    await expect(stage.getByRole("status")).toHaveCount(0);
+    const live = ritual(page).getByRole("status");
+    await expect(live).toHaveCount(1);
+    await expect(live).toContainText("Day closed.");
+    await expect(live).toContainText("longer than planned.");
+    await expect(live).toContainText("You underestimate “reunión” tasks by 30%.");
+    const spoken = (await live.textContent()) ?? "";
+    expect(spoken.match(/You underestimate/g)).toHaveLength(1);
+
+    // Replaying from the Done page speaks through the same region, still one at a time.
+    await skipButton(page).click();
+    await stage.getByRole("button", { name: "Continue" }).click();
+    await expect(stage).toHaveCount(0);
+    await ritual(page).getByRole("button", { name: "Replay the day" }).click();
+    await expect(stageOf(page)).toBeVisible();
+    await expect(stageOf(page).getByRole("status")).toHaveCount(0);
+    await expect(ritual(page).getByRole("status")).toHaveCount(1);
+    await expect(ritual(page).getByRole("status")).toContainText("You underestimate “reunión” tasks by 30%.");
+  });
+
   test("Skip lands the final frame, Continue reveals Tomorrow and Done", async ({ page }) => {
     const base = at(18, 30);
     await open(page, base, "replay-skip", meetingsDay(base));
@@ -381,6 +409,8 @@ test.describe("on a desktop", () => {
     await expect(palette).toHaveCount(0);
     await expect(stageOf(page)).toBeVisible();
     await expect(page.getByRole("complementary", { name: "How the day went" })).toBeVisible();
+    // The replay-only sheet has no close line to share a region with: the stage speaks for itself.
+    await expect(stageOf(page).getByRole("status")).toContainText("You underestimate “reunión” tasks by 30%.");
     await page.keyboard.press("Escape");
     await expect(stageOf(page)).toHaveAttribute("data-state", "done");
     await page.keyboard.press("Escape");
