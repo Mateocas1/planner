@@ -2,6 +2,7 @@
 # Installs Planner for the current user only (no root):
 #
 #   packaging/linux/install-local.sh [path/to/planner]
+#   packaging/linux/install-local.sh --uninstall
 #
 # - the binary            -> ${XDG_BIN_HOME:-~/.local/bin}/planner
 # - the desktop entry     -> $XDG_DATA_HOME/applications/com.picala.planner.desktop
@@ -10,6 +11,10 @@
 # - the Hyprland snippet  -> $XDG_DATA_HOME/planner/hyprland.lua (not loaded until
 #   you add the dofile line it prints to ~/.config/hypr/hyprland.lua)
 # - a list of every file written -> $XDG_DATA_HOME/planner/installed-files
+#
+# --uninstall removes every file in that list plus the quick-add chord file the
+# app writes ($XDG_DATA_HOME/planner/quickadd.bind), then prints the line to
+# delete from ~/.config/hypr/hyprland.lua.
 #
 # Start at sign-in needs nothing here: the in-app switch writes
 # ~/.config/autostart/Planner.desktop pointing at the running binary, which
@@ -26,10 +31,6 @@ icons="$repo/app/src-tauri/icons"
 app_id="com.picala.planner"
 
 [ -n "${HOME:-}" ] || { echo "install-local: HOME is not set" >&2; exit 1; }
-if [ ! -x "$binary" ]; then
-  echo "install-local: no executable at $binary (run 'npm run desktop:build:linux' in app/ first)" >&2
-  exit 1
-fi
 
 bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
 data_dir="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -37,6 +38,35 @@ apps_dir="$data_dir/applications"
 share_dir="$data_dir/planner"
 manifest="$share_dir/installed-files"
 target="$bin_dir/planner"
+# The Hyprland load line, the path as a Lua string. pcall keeps a missing or
+# broken snippet from stopping the rest of hyprland.lua.
+lua_path="$(printf '%s' "$share_dir/hyprland.lua" | sed 's/[\\"]/\\&/g')"
+load_line="pcall(dofile, \"$lua_path\")"
+
+if [ "$binary" = "--uninstall" ]; then
+  [ -f "$manifest" ] || { echo "install-local: nothing to uninstall ($manifest is missing)" >&2; exit 1; }
+  # One path per line, read whole: names may hold spaces or quotes.
+  while IFS= read -r path; do
+    [ -z "$path" ] || rm -f -- "$path"
+  done < "$manifest"
+  rm -f -- "$share_dir/quickadd.bind"
+  rmdir -- "$share_dir" 2> /dev/null || true
+  if command -v update-desktop-database > /dev/null; then
+    update-desktop-database "$apps_dir" || true
+  fi
+  cat <<EOF
+Planner uninstalled for $(id -un). Delete this line from ~/.config/hypr/hyprland.lua,
+then run 'hyprctl reload':
+  $load_line
+The app's settings and the calendar:// default in mimeapps.list are left as they are.
+EOF
+  exit 0
+fi
+
+if [ ! -x "$binary" ]; then
+  echo "install-local: no executable at $binary (run 'npm run desktop:build:linux' in app/ first)" >&2
+  exit 1
+fi
 case "$target" in
   *[[:space:]\"\'\\]*) echo "install-local: $target has spaces or quotes; set XDG_BIN_HOME to a plain path" >&2; exit 1 ;;
 esac
@@ -88,11 +118,11 @@ Planner installed for $(id -un):
   binary         $target
   desktop entry  $apps_dir/$app_id.desktop
   icons          $data_dir/icons/hicolor/*/apps/$app_id.png
-  installed list $manifest  (remove with: xargs rm -f < "$manifest")
+  installed list $manifest  (remove with: $0 --uninstall)
 
 Hyprland (global quick add, floating quick-add and timer windows): add this line
 to ~/.config/hypr/hyprland.lua, then run 'hyprctl reload' and 'hyprctl configerrors':
-  dofile("$share_dir/hyprland.lua")
+  $load_line
 EOF
 case ":$PATH:" in
   *":$bin_dir:"*) ;;

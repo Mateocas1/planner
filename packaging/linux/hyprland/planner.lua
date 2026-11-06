@@ -2,9 +2,11 @@
 --
 -- Load it from ~/.config/hypr/hyprland.lua, after Omarchy's defaults, with
 -- the path your install used:
---   dofile(os.getenv("HOME") .. "/.local/share/planner/hyprland.lua") -- install-local.sh
---   dofile("/usr/share/planner/hyprland.lua")                          -- the Arch package
--- then validate with `hyprctl reload` and `hyprctl configerrors`.
+--   pcall(dofile, os.getenv("HOME") .. "/.local/share/planner/hyprland.lua") -- install-local.sh
+--   pcall(dofile, "/usr/share/planner/hyprland.lua")                          -- the Arch package
+-- then validate with `hyprctl reload` and `hyprctl configerrors`. pcall keeps
+-- the rest of your config loading once Planner is uninstalled (the file is
+-- gone) or if a Hyprland update rejects a rule below.
 --
 -- Wayland does not let an app grab global keys, so the quick-add chord is a
 -- compositor bind that runs `planner --quickadd`; the running Planner gets the
@@ -100,7 +102,9 @@ hl.bind(chosen_chord() or default_chord, hl.dsp.exec_cmd(run(planner .. " --quic
 -- first mouse nudge would focus the window under the cursor, and the app
 -- hides the palette when it loses focus. Enter, Esc or the chord close it.
 -- The page draws its own surface, so no border, shadow or default opacity.
-hl.window_rule({
+-- Each rule goes through pcall: a field a Hyprland release no longer knows
+-- raises a Lua error, which would otherwise skip the rules after it.
+pcall(hl.window_rule, {
   match = { class = class, title = "^(Quick add)$" },
   float = true,
   center = true,
@@ -114,7 +118,7 @@ hl.window_rule({
 
 -- Focus-timer pill: floating, pinned to every workspace (the always-on-top of
 -- Windows), top-right corner, and never takes focus when it appears.
-hl.window_rule({
+pcall(hl.window_rule, {
   match = { class = class, title = "^(Focus timer)$" },
   float = true,
   pin = true,
