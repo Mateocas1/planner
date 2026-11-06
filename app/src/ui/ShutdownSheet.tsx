@@ -13,6 +13,7 @@ import { type WorkWindow } from "../planning/window.ts";
 import { t } from "../i18n/index.ts";
 import { completedSamples } from "./BiasHint.tsx";
 import { DayReplayStage, type DayReplayHandle } from "./DayReplay.tsx";
+import { replayAnnouncement } from "./dayReplayLayout.ts";
 import { prepareDayReplay, type PreparedReplay } from "./dayReplayData.ts";
 import { autoPlays, deviceSnapshotStorage, readReplayMode, readReplaySeen, writeReplaySeen } from "./dayReplayMode.ts";
 import { formatDateKey } from "./format.ts";
@@ -163,6 +164,11 @@ export function ShutdownSheet({
   const [stage, setStage] = useState<PreparedReplay | null>(() => (mode === "replay" ? buildReplay() : null));
   const stageHandle = useRef<DayReplayHandle>(null);
   const [announcement, setAnnouncement] = useState("");
+  /* The replay as one text for a screen reader. It is spoken through the
+     sheet's own live region, appended to the close line in the same commit, so
+     the two are one utterance and the stage adds no second status. `n` makes a
+     replay of the same day a fresh node, which a live region announces again. */
+  const [replaySpeech, setReplaySpeech] = useState<{ text: string; n: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const committing = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -291,10 +297,16 @@ export function ShutdownSheet({
       // A day where nothing changed has no motion to show; it stays on request.
       if (prepared !== null && prepared.timeline !== null) {
         writeReplaySeen(uid, today);
-        setStage(prepared);
+        showStage(prepared);
       }
     }
     setTurned(true);
+  }
+
+  /** Puts a prepared replay on stage and queues its spoken summary. */
+  function showStage(prepared: PreparedReplay): void {
+    setStage(prepared);
+    setReplaySpeech(previous => ({ text: replayAnnouncement(prepared.replay, prepared.sentence), n: (previous?.n ?? 0) + 1 }));
   }
 
   /** Escape: a replay that is playing is skipped first; the next press closes. */
@@ -325,6 +337,7 @@ export function ShutdownSheet({
       offeredUndo.current = null;
     }
     setAnnouncement("");
+    setReplaySpeech(null);
     setStage(null);
     setTurned(false);
     report(failure.message);
@@ -419,6 +432,7 @@ export function ShutdownSheet({
       sentence={stage.sentence}
       basis={stage.basis}
       timeZone={timeZone}
+      announce={mode === "replay"}
       onSkip={() => undefined}
       onDone={mode === "replay" ? onClose : () => setStage(null)}
     />
@@ -517,7 +531,10 @@ export function ShutdownSheet({
       {/* The result is announced once, outside the turning page: the page that
           carried the summary has just been turned away, and a live region that
           unmounts with it announces nothing. */}
-      <p className="shutdown-live" role="status" aria-live="polite">{announcement}</p>
+      <p className="shutdown-live" role="status" aria-live="polite">
+        {announcement}
+        {replaySpeech !== null && <span key={replaySpeech.n} className="sr-only"> {replaySpeech.text}</span>}
+      </p>
       {turned && stage === null && (
         <div className="shutdown-actions">
           {/* The week's chain (S3): on the day the review is due, the ritual
@@ -532,7 +549,14 @@ export function ShutdownSheet({
             </button>
           )}
           {canReplay && (
-            <button type="button" className="button" onClick={() => setStage(buildReplay())}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                const prepared = buildReplay();
+                if (prepared !== null) showStage(prepared);
+              }}
+            >
               {t("replay.again")}
             </button>
           )}

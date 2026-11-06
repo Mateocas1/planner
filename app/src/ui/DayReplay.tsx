@@ -33,7 +33,10 @@ import "./DayReplay.css";
  * Exposed for the specs and the sheet: `data-state` (`playing` | `done`) on
  * the stage, `data-outcome` on every row. The chart is `aria-hidden`; one
  * `role="status"` text carries the whole replay for a screen reader, set once
- * after mount so it is announced then, not frame by frame.
+ * after mount so it is announced then, not frame by frame. A host that owns a
+ * live region of its own (the shutdown sheet's close line) passes
+ * `announce={false}` and speaks `replayAnnouncement` through it, so the two
+ * never talk over each other.
  *
  * Escape belongs to the sheet: call `skip()` on the `ref` first (it returns
  * whether it skipped something) and close only when it did not.
@@ -54,6 +57,8 @@ type Props = {
   basis?: string | null;
   /** The profile zone: with it the chart names the hours it covers. */
   timeZone?: string;
+  /** False when the host already announces the replay in its own live region. */
+  announce?: boolean;
   /** Continue: the stage has faded out (reduced motion: at once); unmount it. */
   onDone: () => void;
   /** The user skipped the playback; the final frame is showing. */
@@ -125,7 +130,7 @@ function ReplayRowView({ row, range }: { row: ReplayRow; range: ReplaySpan }) {
   );
 }
 
-export function DayReplayStage({ replay, timeline, sentence, basis = null, timeZone, onDone, onSkip, ref }: Props) {
+export function DayReplayStage({ replay, timeline, sentence, basis = null, timeZone, announce = true, onDone, onSkip, ref }: Props) {
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const stageRef = useRef<HTMLElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -141,8 +146,8 @@ export function DayReplayStage({ replay, timeline, sentence, basis = null, timeZ
   /* The replay as one text. It is written after the first paint so the live
      region is announced when it fills in, not skipped as initial content. */
   useEffect(() => {
-    setAnnouncement(replayAnnouncement(replay, sentence));
-  }, [replay, sentence]);
+    if (announce) setAnnouncement(replayAnnouncement(replay, sentence));
+  }, [announce, replay, sentence]);
 
   /* Skip (or Continue, when there is nothing to skip) holds focus from frame 0. */
   useLayoutEffect(() => {
@@ -233,9 +238,11 @@ export function DayReplayStage({ replay, timeline, sentence, basis = null, timeZ
   const done = state === "done";
   return (
     <section ref={stageRef} className="day-replay" data-part="stage" data-state={state} aria-labelledby={titleId}>
-      <p className="sr-only" role="status" aria-live="polite">
-        {announcement}
-      </p>
+      {announce && (
+        <p className="sr-only" role="status" aria-live="polite">
+          {announcement}
+        </p>
+      )}
       <h2 className="replay-title" id={titleId}>
         {t("replay.title")}
       </h2>
