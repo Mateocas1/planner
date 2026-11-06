@@ -7,8 +7,9 @@
 
 .gate-forgot[aria-disabled="true"] { opacity: 0.6; }
 
-/* The live region stays mounted; it takes no room in the form's gap while empty. */
-.gate-status:empty { display: contents; }
+/* The live region stays mounted as a real box (display: contents can drop it
+   from the accessibility tree). Out of flow while empty, it adds no form gap. */
+.gate-status:empty { position: absolute; }
 
 .gate-notice {
   margin: 0;
