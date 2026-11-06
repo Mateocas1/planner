@@ -26,6 +26,9 @@ import { installUpdatePrompt } from "./pwa-update.ts";
  * motion — so its dynamic import keeps those modules out of its chunk graph. */
 const isPillWindow = (globalThis as { __PILL__?: boolean }).__PILL__ === true;
 
+// FocusPill.css keys its transparent page on this mark.
+if (isPillWindow) document.documentElement.dataset.window = "pill";
+
 // WebKitGTK (the Linux shell marks the page, src-tauri/src/window.rs) drops a
 // stale frame at the end of compositor animations; the guard must be in place
 // before anything animates.
