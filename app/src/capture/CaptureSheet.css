@@ -6,9 +6,13 @@
  * opaque `--surface` (the pairs glass-contrast.mjs already proves: --label,
  * --label-2, --label-3, --red, --orange on --surface).
  *
- * Motion: none of its own. Typing, "Reading…" and the numbers are static; the
- * cards' entrance and the gap closing on Add/Discard belong to the motion
- * polish (U6). The shared press feedback on buttons is the only movement.
+ * Motion (U6): three moments, all in CaptureCard.tsx / CaptureSheet.tsx. The
+ * cards rise and fade in once when the answer lands (Motion, 40 ms stagger);
+ * a discarded card fades out while the rest close the gap (AnimatePresence +
+ * layout); and the two small reveals below -- the edit form and the "Added"
+ * line -- fade in. Typing, "Reading…" and every number stay still. Only
+ * transform and opacity move; under reduced motion the rise is dropped and
+ * the same moments are opacity-only.
  */
 
 .capture-sheet { width: min(560px, calc(100% - 24px)); }
@@ -69,9 +73,14 @@
 .capture-empty p { margin: 0; font-size: var(--text-body); color: var(--label-2); }
 
 .capture-list {
+  /* the offset parent AnimatePresence "popLayout" pins a leaving card to */
+  position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
+  /* The surface is on the list and on each card: when a card leaves, the list
+     shrinks at once and the cards still sliding up carry their own surface, so
+     none of them is ever drawn bare beside the inset group. */
   background: var(--surface);
   border-radius: var(--r-group);
   box-shadow: var(--card-shadow);
@@ -80,10 +89,17 @@
 
 .capture-card {
   position: relative;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+.capture-card:first-child { border-top-left-radius: var(--r-group); border-top-right-radius: var(--r-group); }
+.capture-card:last-child { border-bottom-left-radius: var(--r-group); border-bottom-right-radius: var(--r-group); }
+/* the arrival animates this box, so the card's own box is free to travel with
+   the layout without the two transforms ever meeting */
+.capture-card-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px;
 }
 .capture-card + .capture-card::before {
   content: "";
@@ -107,13 +123,39 @@
 .capture-bias { font-size: var(--text-sub); color: var(--label-2); }
 .capture-block[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 
-.capture-edit { box-shadow: none; background: var(--surface-2); }
+.capture-edit {
+  box-shadow: none;
+  background: var(--surface-2);
+  animation: capture-reveal var(--dur-state) var(--ease-out) both;
+}
 .capture-edit .form-control { background: var(--surface); }
 
 .capture-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
-.capture-added { font-size: var(--text-sub); color: var(--label-2); }
+.capture-added {
+  font-size: var(--text-sub);
+  color: var(--label-2);
+  animation: capture-reveal var(--dur-state) var(--ease-out) both;
+}
 .capture-added-label { font-weight: 600; color: var(--green); }
+
+/* A mount-time reveal (the edit form opening, the add confirmed): it rises 4 px
+   into the space it already holds, so nothing around it is pushed by the motion. */
+@keyframes capture-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Reduced motion: gentler, not zero. The global rule shortens every animation
+   to 1 ms; these keep a plain fade long enough to read as a state change. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes capture-reveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .capture-edit,
+  .capture-added { animation-duration: 150ms !important; }
+}
 
 @media (max-width: 760px) {
   .capture-bar { flex-wrap: wrap; }
