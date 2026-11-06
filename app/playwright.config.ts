@@ -9,6 +9,15 @@ for (const [name, value] of Object.entries(required)) {
   if (process.env[name] !== value) throw new Error(`test:browser requires ${name}=${value}`);
 }
 
+// The specs compute day keys and instants in this process (`new Date()`,
+// `toISOString()`, local `getDate()`) and seed UTC instants, assuming this
+// process and the browser share one zone, UTC. A WSL host defaults to UTC, a
+// desktop Linux box to its real zone (America/Buenos_Aires here), which moved
+// every seeded 10:00Z block to 07:00 on screen. Pin both sides: TZ for this
+// process and its workers (they inherit the environment), `timezoneId` below
+// for the browser. Specs that test another zone still override `timezoneId`.
+process.env.TZ = "UTC";
+
 export default defineConfig({
   testDir: "./tests",
   // The suite runs on a 6 GB host that other agents share, and every worker is a
@@ -32,6 +41,7 @@ export default defineConfig({
     // C1: the rendered date string depends on the locale, so pin it. The
     // browser tests assert that literal; an unpinned locale would flake.
     locale: "en-US",
+    timezoneId: "UTC",
   },
   webServer: {
     command: "npm run build && vite preview --host 127.0.0.1 --port 4174",

@@ -27,6 +27,12 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 const ZONE = "UTC";
 
+/* This device is in another zone than the stored one: saving a day setting
+   must leave the stored zone alone. A cache echo of the first write once made
+   the app "initialize" the zone with this device's, which only a host whose
+   zone was the stored one (UTC) could not see. */
+test.use({ timezoneId: "America/Argentina/Buenos_Aires" });
+
 const view = (page: Page) => page.getByRole("region", { name: "Settings" });
 const entry = (page: Page) => page.getByRole("button", { name: "Settings", exact: true });
 const shortcuts = (page: Page) => page.getByRole("switch", { name: "Keyboard shortcuts" });

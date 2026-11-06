@@ -56,7 +56,9 @@ test("memory previews collapse to one line and cap their length", () => {
 });
 
 test("memory dates format in the app's English UI", () => {
-  assert.equal(memoryDate(Date.UTC(2026, 9, 24)), "Oct 24, 2026");
+  // Local noon: the row shows this device's date, and midnight UTC is already
+  // the previous day anywhere west of Greenwich.
+  assert.equal(memoryDate(new Date(2026, 9, 24, 12).getTime()), "Oct 24, 2026");
 });
 
 test("the Engram status line follows mirroring off, last error, then success (spec S2)", () => {
