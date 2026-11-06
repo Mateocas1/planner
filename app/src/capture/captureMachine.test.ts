@@ -418,3 +418,24 @@ test("a console spy never sees the pasted text, the model reply or anything at a
   assert.equal(JSON.stringify(calls).includes("ZEBRA"), false);
   assert.deepEqual(calls, []);
 });
+
+test("a reply beyond the length cap stops the stream and the device answers as unparseable", async () => {
+  const { transport, controller } = setup();
+  controller.start(PASTE);
+  await settle();
+  transport.streams[0].emit({ type: "delta", text: "x".repeat(70_000) });
+  await settle();
+  const state = controller.getState();
+  assert.equal(state.phase, "proposals");
+  assert.ok(state.phase === "proposals" && state.source === "device" && state.reason === "unparseable");
+  assert.deepEqual(transport.cancels, [transport.streams[0].request.id]);
+});
+
+test("a prompt that cannot be built falls back to the device instead of staying in reading", async () => {
+  const { controller } = setup({ timeZone: () => "Not/AZone" });
+  controller.start(PASTE);
+  await settle();
+  const state = controller.getState();
+  assert.equal(state.phase, "proposals");
+  assert.ok(state.phase === "proposals" && state.source === "device" && state.reason === "provider");
+});
