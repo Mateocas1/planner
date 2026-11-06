@@ -18,6 +18,7 @@ import {
   type NotifyState,
   type WeeklyNudgeMoment,
 } from "../desktop-notify.ts";
+import { t } from "../i18n/index.ts";
 import { dateKey, wallMinutes } from "./time.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
@@ -152,7 +153,7 @@ export function useDesktopNotifications({
 
     const blockTitle = (block: { title?: string; taskId?: string }): string => {
       const { tasks: currentTasks } = latest.current;
-      return block.title ?? currentTasks.find(task => task.id === block.taskId)?.title ?? "Work block";
+      return block.title ?? currentTasks.find(task => task.id === block.taskId)?.title ?? t("tray.workBlock");
     };
 
     const showToast = (request: Record<string, unknown>): void => {

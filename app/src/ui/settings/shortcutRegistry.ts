@@ -24,6 +24,7 @@
 
 import { useSyncExternalStore } from "react";
 import { isApplePlatform, modifierLabel } from "../shortcuts.ts";
+import { desktopPlatform, type DesktopPlatform } from "../../desktop.ts";
 import { en } from "../../i18n/en/index.ts";
 import { t } from "../../i18n/index.ts";
 
@@ -104,7 +105,6 @@ export function acceleratorOf(combo: Combo): Accelerator {
 }
 
 /** The keycap labels a chip shows, in press order: modifiers, then the key. */
-const MODIFIER_LABELS: Record<string, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win" };
 const KEY_LABELS: Record<string, string> = {
   Space: "Space",
   Comma: ",",
@@ -128,14 +128,24 @@ const KEY_LABELS: Record<string, string> = {
   PageDown: "PgDn",
 };
 
-export function keycaps(accelerator: Accelerator, apple: boolean = isApplePlatform()): string[] {
+/** The meta key's keycap: "⌘" on Apple platforms, "Super" on Linux, "Win" elsewhere. */
+function metaLabel(apple: boolean, platform: DesktopPlatform): string {
+  if (apple) return "⌘";
+  return platform === "linux" ? "Super" : "Win";
+}
+
+export function keycaps(
+  accelerator: Accelerator,
+  apple: boolean = isApplePlatform(),
+  platform: DesktopPlatform = desktopPlatform(),
+): string[] {
   const combo = parseAccelerator(accelerator);
   if (combo === null) return [];
   const caps: string[] = [];
   if (combo.ctrl) caps.push(modifierLabel(apple));
   if (combo.alt) caps.push("Alt");
   if (combo.shift) caps.push("Shift");
-  if (combo.meta) caps.push(apple ? "⌘" : "Win");
+  if (combo.meta) caps.push(metaLabel(apple, platform));
   const code = combo.code;
   const named = KEY_LABELS[code];
   if (named !== undefined) caps.push(named);
@@ -189,10 +199,11 @@ export type Capture =
  * chord and a press without Ctrl/Alt/Cmd -- Shift alone would swallow a
  * capital letter the user was typing.
  */
-export function captureFromEvent(event: CaptureInput): Capture {
+export function captureFromEvent(event: CaptureInput, platform: DesktopPlatform = desktopPlatform()): Capture {
+  const modifierError = t(platform === "linux" ? "shortcuts.capture.modifier.linux" : "shortcuts.capture.modifier");
   if (event.code === "" || event.code === "Unidentified") return { ok: false, error: t("shortcuts.capture.key") };
-  if (MODIFIER_CODES.has(event.code)) return { ok: false, error: t("shortcuts.capture.modifier") };
-  if (!event.ctrlKey && !event.altKey && !event.metaKey) return { ok: false, error: t("shortcuts.capture.modifier") };
+  if (MODIFIER_CODES.has(event.code)) return { ok: false, error: modifierError };
+  if (!event.ctrlKey && !event.altKey && !event.metaKey) return { ok: false, error: modifierError };
   return {
     ok: true,
     accelerator: acceleratorOf({
