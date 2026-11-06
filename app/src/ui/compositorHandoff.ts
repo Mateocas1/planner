@@ -18,6 +18,15 @@
  * its last frame is the one the page commits. The guard outlives the animation
  * by a short margin so the hand-back never happens mid-flight.
  *
+ * The same engine also starts CSS transitions from the wrong value when a
+ * script animation ends. Motion ends one by writing its final value inline and
+ * cancelling it; WebKit takes the transition's start from the value under the
+ * animation, not the one it showed. Wherever a transition applies -- every
+ * element under reduced motion, where app.css gives `all` a 1 ms transition --
+ * the element paints its pre-animation value for one frame: the reduced-motion
+ * New task close showed the whole panel and scrim again just before they
+ * unmounted. So a cancel resolves that commit with transitions turned off.
+ *
  * Installed only when the shell marks the page as WebKitGTK
  * (`window.__WEBKITGTK__`, src-tauri/src/window.rs); no other engine runs it.
  * Durations, curves and the reduced-motion paths are untouched.
@@ -42,6 +51,11 @@ const MARGIN_MS = 50;
 
 export function isCompositedProperty(name: string): boolean {
   return COMPOSITED.has(name);
+}
+
+/** Whether any keyframe animates a property WebKit composites. */
+export function touchesComposited(keyframes: ReadonlyArray<Record<string, unknown>>): boolean {
+  return keyframes.some((frame) => Object.keys(frame).some(isCompositedProperty));
 }
 
 /**
@@ -119,9 +133,34 @@ export function installCompositorHandoff(doc: Document = document): () => void {
     if (ms !== null) guard(effect.target, effect.pseudoElement, ms);
   };
 
+  /** Turns a cancel into a commit no CSS transition starts from (see above):
+   * the element's style is resolved once, right after the native cancel, with
+   * `transition-property: none` inline, and the inline value is put back. */
+  const settleOnCancel = (animation: Animation) => {
+    const effect = animation.effect;
+    if (!(effect instanceof view.KeyframeEffect) || !effect.target || effect.pseudoElement) return;
+    const element = effect.target;
+    const style = (element as HTMLElement).style;
+    if (!style || !touchesComposited(effect.getKeyframes() as Array<Record<string, unknown>>)) return;
+    const nativeCancel = animation.cancel;
+    animation.cancel = function cancel(this: Animation) {
+      const previous = style.getPropertyValue("transition-property");
+      const priority = style.getPropertyPriority("transition-property");
+      style.setProperty("transition-property", "none", "important");
+      try {
+        nativeCancel.call(this);
+        void view.getComputedStyle(element).opacity;
+      } finally {
+        if (previous) style.setProperty("transition-property", previous, priority);
+        else style.removeProperty("transition-property");
+      }
+    };
+  };
+
   proto.animate = function animate(this: Element, ...args: Parameters<Element["animate"]>) {
     const animation = nativeAnimate.apply(this, args);
     cover(animation);
+    settleOnCancel(animation);
     return animation;
   };
 
