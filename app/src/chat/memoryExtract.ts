@@ -110,7 +110,7 @@ export function parseMemoryOps(raw: string, maxOps: number = MAX_OPS): MemoryOp[
 }
 
 /** Strips code fences and takes the outermost JSON object or array, if any. */
-function extractJson(raw: string): string | null {
+export function extractJson(raw: string): string | null {
   const trimmed = raw.trim();
   const unfenced = trimmed
     .replace(/^```(?:json)?\s*/i, "")
