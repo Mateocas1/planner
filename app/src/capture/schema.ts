@@ -18,6 +18,8 @@ import { extractJson } from "../chat/memoryExtract.ts";
 import { checkCreateTask, isValidDayKey } from "../chat/tools.ts";
 
 export const MAX_CAPTURE_TASKS = 8;
+/** Items of a reply that are inspected at all. */
+const MAX_REPLY_ITEMS = 64;
 export const MAX_CAPTURE_TITLE_CHARS = 120;
 export const MAX_CAPTURE_QUOTE_CHARS = 160;
 export const MIN_CAPTURE_ESTIMATE = 5;
@@ -71,8 +73,9 @@ export type CaptureReply = {
 
 /* ---------- text hygiene ---------- */
 
-/** C0/C1 controls, bidi overrides and isolates, zero-width marks, BOM. */
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]/gu;
+/** C0/C1 controls, bidi overrides and isolates, zero-width marks, BOM, soft
+ * hyphen, fillers, variation selectors and Unicode tag characters. */
+const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff\u00ad\u034f\u115f\u1160\u3164\uffa0\ufe00-\ufe0f\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu;
 
 /** One line of plain text: controls gone, whitespace collapsed, trimmed. */
 export function cleanLine(value: string): string {
@@ -204,12 +207,14 @@ export function parseCaptureReply(raw: unknown, context: CaptureContext): Captur
     if (!Array.isArray(list)) return unparseable();
     const valid: CaptureProposal[] = [];
     let dropped = 0;
-    for (const item of list) {
+    // Bound the work on a hostile reply: the sheet shows at most 8.
+    const items = list.slice(0, MAX_REPLY_ITEMS);
+    for (const item of items) {
       const entry = isRecord(item) && !Array.isArray(item) ? normalizeProposal(item, context) : null;
       if (entry === null) dropped += 1;
       else valid.push(entry);
     }
-    if (list.length === 0) return { status: "empty", tasks: [], dropped: 0, capped: false };
+    if (items.length === 0) return { status: "empty", tasks: [], dropped: 0, capped: false };
     if (valid.length === 0) return unparseable(dropped);
     const unique = mergeDuplicates(valid);
     return { status: "ok", tasks: unique.slice(0, MAX_CAPTURE_TASKS), dropped, capped: unique.length > MAX_CAPTURE_TASKS };

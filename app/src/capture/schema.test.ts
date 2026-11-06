@@ -202,3 +202,19 @@ test("the validator is total: hostile shapes never throw", () => {
   assert.equal(last.status, "ok");
   assert.deepEqual(last.tasks, [proposal({ title: "ok", dueDay: null, estimateMinutes: null, quote: null })]);
 });
+
+test("a hostile 10k-item reply is bounded: fast and at most 8 proposals", () => {
+  const items = Array.from({ length: 10_000 }, (_, index) => task({ title: `Task number ${index}`, quote: null }));
+  const started = performance.now();
+  const result = parseCaptureReply(reply(items), ctx);
+  assert.ok(performance.now() - started < 500);
+  assert.equal(result.status, "ok");
+  assert.equal(result.tasks.length, MAX_CAPTURE_TASKS);
+  assert.equal(result.capped, true);
+});
+
+test("tag characters, soft hyphens, fillers and variation selectors are stripped from titles; text and emoji survive", () => {
+  const hidden = "\u{E0041}\u{E007F}\u00ad\u034f\u3164\u115f\u1160\uffa0\ufe0f\u{E0100}";
+  const result = parseCaptureReply(reply([task({ title: `Revisar${hidden} el pedido 📅 de María`, quote: null })]), ctx);
+  assert.equal(result.tasks[0].title, "Revisar el pedido 📅 de María");
+});

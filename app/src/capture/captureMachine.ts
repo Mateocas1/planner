@@ -116,6 +116,8 @@ export type CaptureDeps = {
 };
 
 export const CAPTURE_TIMEOUT_MS = 90_000;
+/** Far above any legitimate reply (8 short tasks). */
+const MAX_REPLY_CHARS = 64_000;
 
 export type CaptureController = {
   getState: () => CaptureState;
@@ -166,7 +168,16 @@ export function createCaptureController(deps: CaptureDeps): CaptureController {
 
     const now = deps.now();
     const timeZone = deps.timeZone();
-    const prompt = buildCapturePrompt({ text: raw, now, timeZone });
+    let prompt: ReturnType<typeof buildCapturePrompt>;
+    try {
+      prompt = buildCapturePrompt({ text: raw, now, timeZone });
+    } catch {
+      // An unusable zone cannot be read by either reader; answer empty-handed
+      // rather than staying in `reading`.
+      retire(false);
+      dispatch({ type: "result", requestId: id, source: "device", reason: "provider", tasks: [], truncated: false, capped: false, dropped: 0 });
+      return;
+    }
 
     const finishWithDevice = (reason: CaptureFallbackReason) => {
       if (!isCurrent()) return;
@@ -217,6 +228,12 @@ export function createCaptureController(deps: CaptureDeps): CaptureController {
         switch (event.type) {
           case "delta":
             reply += event.text;
+            if (reply.length > MAX_REPLY_CHARS) {
+              // A reply this long is hostile or broken: stop it, read on device.
+              void transport.cancel(id).catch(() => undefined);
+              run.streaming = false;
+              finishWithDevice("unparseable");
+            }
             return;
           case "done":
             return finishWithReply(reply);
