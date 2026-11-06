@@ -49,10 +49,10 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
-/// Credential Manager service and account names (spec S3).
-#[cfg(target_os = "windows")]
+/// Credential store service and account names (spec S3).
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const KEY_SERVICE: &str = "com.picala.planner";
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const KEY_USER: &str = "chat-api-key";
 
 /// Longest accepted API key, in characters: [`planner_core::chat::MAX_KEY_CHARS`].
@@ -132,7 +132,7 @@ fn lock_registry(
 // ---------------------------------------------------------------------------
 // Key storage (spec S3). The key only ever lives in the credential store.
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn key_entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEY_SERVICE, KEY_USER)
         .map_err(|error| format!("the credential store is unavailable: {error}"))
@@ -140,7 +140,7 @@ fn key_entry() -> Result<keyring::Entry, String> {
 
 /// Reads the stored key, if any. Never logs or returns the key itself except
 /// to the caller that uses it as a request header.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn stored_key() -> Result<Option<String>, String> {
     match key_entry()?.get_password() {
         Ok(key) => Ok(Some(key)),
@@ -149,14 +149,14 @@ fn stored_key() -> Result<Option<String>, String> {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn store_key(key: &str) -> Result<(), String> {
     key_entry()
         .and_then(|entry| entry.set_password(key).map_err(|error| error.to_string()))
         .map_err(|error| format!("the key could not be saved: {error}"))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn clear_stored_key() -> Result<(), String> {
     match key_entry()?.delete_credential() {
         Ok(()) => Ok(()),
@@ -166,19 +166,19 @@ fn clear_stored_key() -> Result<(), String> {
     }
 }
 
-/// Non-Windows builds (a Linux `cargo check` of this crate) have no shell to
-/// hold a key; the desktop target is Windows-only.
-#[cfg(not(target_os = "windows"))]
+/// Other targets have no credential store wired up (Windows uses Credential
+/// Manager, Linux the desktop Secret Service).
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn stored_key() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn store_key(_key: &str) -> Result<(), String> {
-    Err("the credential store is only available on Windows".into())
+    Err("the credential store is only available on Windows and Linux".into())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn clear_stored_key() -> Result<(), String> {
     Ok(())
 }
