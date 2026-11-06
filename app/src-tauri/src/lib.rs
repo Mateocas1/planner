@@ -15,7 +15,7 @@ pub fn run() {
     tauri::Builder::default()
         // One `.plugin(...)` per line, so feature branches union cleanly.
         // single-instance must be the first plugin registered.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| deeplink::on_second_instance(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deeplink::on_second_instance(app, &argv)))
         // The pill window keeps its own position (src/pill.rs): the plugin's
         // `visible` restore would re-show it on launch without a session.
         .plugin(
@@ -66,6 +66,8 @@ pub fn run() {
             chat::engram::engram_sync_now,
             chat::engram::engram_status,
         ])
+        // A cold quick-add launch waits for the quick-add page (quickadd.rs).
+        .on_page_load(|webview, payload| quickadd::on_page_load(webview, payload.event()))
         .setup(|app| {
             deeplink::setup(app.handle())?;
             quickadd::setup(app.handle())?;
