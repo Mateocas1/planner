@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useSession } from "../data/session.ts";
 import { useProfileTimeZone } from "../data/profile.ts";
@@ -11,6 +11,7 @@ import { parseQuickAdd } from "../domain/quickAdd.ts";
 import { isTauri } from "../desktop.ts";
 import { syncBackdropClasses } from "./desktopBackdrop.ts";
 import { QuickAddChips } from "./QuickAddChips.tsx";
+import { listenThenAnnounce, QUICKADD_READY_EVENT } from "./quickAddWindow.ts";
 import { settle } from "./write.ts";
 import "./DesktopShell.css";
 import "./QuickAddWindow.css";
@@ -87,19 +88,23 @@ export function QuickAddWindow() {
     const observer = new MutationObserver(apply);
     observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
     let unlisten: (() => void) | undefined;
-    listen("quickadd-shown", () => {
-      setEnterCount(count => count + 1);
-      setError(null);
-      setBusy(false);
-      window.setSize(new LogicalSize(WINDOW_WIDTH, BASE_HEIGHT)).catch(() => undefined);
-      // The caret first, the entrance second: a key typed on the opening
-      // frame lands in the field.
-      fieldRef.current?.focus();
-    })
-      .then(off => {
-        unlisten = off;
-      })
-      .catch(() => undefined);
+    // A cold start reveals the window only after this listener exists, so the
+    // first reveal focuses the field too.
+    void listenThenAnnounce(
+      () =>
+        listen("quickadd-shown", () => {
+          setEnterCount(count => count + 1);
+          setError(null);
+          setBusy(false);
+          window.setSize(new LogicalSize(WINDOW_WIDTH, BASE_HEIGHT)).catch(() => undefined);
+          // The caret first, the entrance second: a key typed on the opening
+          // frame lands in the field.
+          fieldRef.current?.focus();
+        }),
+      () => emit(QUICKADD_READY_EVENT),
+    ).then(off => {
+      unlisten = off;
+    });
     return () => {
       observer.disconnect();
       unlisten?.();

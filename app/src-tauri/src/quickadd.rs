@@ -20,8 +20,10 @@
 //! status reports the chord as unregistered, and the compositor binds the same
 //! chord to `planner --quickadd` (or `calendar://quickadd`), which reaches
 //! `toggle_window` through the single-instance plugin. A cold launch with the
-//! trigger shows the window once its page has loaded (`on_page_load`), so the
-//! reveal event that focuses the field is not sent before anyone listens.
+//! trigger shows the window once its page says it is listening
+//! (`READY_EVENT`), so the reveal event that focuses the field is not sent
+//! before anyone listens; a bounded wait after page load covers a page that
+//! never says so.
 //!
 //! The Hyprland snippet binds the chord chosen here: under Wayland the shell
 //! writes it to `$XDG_DATA_HOME/planner/quickadd.bind` (Hyprland's key-string
@@ -29,16 +31,19 @@
 //! session, so a new chord in Day settings takes effect without editing the
 //! compositor config. When the write or the reload fails, the
 //! status reports that instead of the plain Wayland note, so Settings says the
-//! chord is saved but not live yet.
+//! chord is saved but not live yet. Syncs run one at a time (`SyncGate`), off
+//! the UI thread, and the first config read waits for the startup sync, so its
+//! note reaches Settings too.
 
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Runtime, State, Webview, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, Runtime, State, Webview, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// L12: the user picked `Ctrl+Alt+Space` over the alternatives.
@@ -47,6 +52,18 @@ const DEFAULT_SHORTCUT: &str = "ctrl+alt+Space";
 /// Emitted to the quick-add window every time the hotkey reveals it, so the
 /// page can focus the field and replay its short entrance.
 const SHOWN_EVENT: &str = "quickadd-shown";
+
+/// Emitted by the quick-add page once its `SHOWN_EVENT` listener exists
+/// (`QUICKADD_READY_EVENT` in `quickAddWindow.ts`): the cold-start handshake.
+const READY_EVENT: &str = "quickadd-ready";
+
+/// How long a cold start waits after page load for `READY_EVENT` before it
+/// shows the window anyway (an unfocused field beats no window).
+const READY_FALLBACK: Duration = Duration::from_millis(1500);
+
+/// How long a config read waits for a bind sync in flight: the reload wait
+/// plus the file write.
+const SYNC_READ_WAIT: Duration = Duration::from_secs(4);
 
 /// Why the chord is not registered under Wayland (read by `quickadd_get_config`).
 const WAYLAND_NOTE: &str =
@@ -61,7 +78,7 @@ const RELOAD_NOTE: &str = "Hyprland reload failed: the chord is saved, but Hyprl
 
 /// How long a bind sync waits for `hyprctl reload` before it stops asking.
 #[cfg(target_os = "linux")]
-const RELOAD_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+const RELOAD_WAIT: Duration = Duration::from_secs(3);
 
 /// What one compositor bind sync did. Only the two failures reach the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +102,76 @@ fn next_note(previous: Option<&'static str>, outcome: BindSync) -> Option<&'stat
         BindSync::Written | BindSync::Reloaded => None,
         BindSync::WriteFailed => Some(BIND_WRITE_NOTE),
         BindSync::ReloadFailed => Some(RELOAD_NOTE),
+    }
+}
+
+/// One compositor bind sync at a time: a Settings save waits for the startup
+/// sync, so a stale startup chord can never land after a newer one, and a
+/// config read can wait for the sync in flight to see its note.
+#[derive(Default)]
+struct SyncGate {
+    busy: Mutex<bool>,
+    idle: Condvar,
+}
+
+impl SyncGate {
+    /// Waits for the sync in flight, then claims the gate.
+    fn begin(&self) {
+        let Ok(mut busy) = self.busy.lock() else { return };
+        while *busy {
+            match self.idle.wait(busy) {
+                Ok(guard) => busy = guard,
+                Err(_) => return,
+            }
+        }
+        *busy = true;
+    }
+
+    fn end(&self) {
+        if let Ok(mut busy) = self.busy.lock() {
+            *busy = false;
+        }
+        self.idle.notify_all();
+    }
+
+    /// Waits up to `timeout` for no sync to be in flight; `false` on timeout.
+    fn wait_idle(&self, timeout: Duration) -> bool {
+        let Ok(busy) = self.busy.lock() else { return false };
+        self.idle
+            .wait_timeout_while(busy, timeout, |busy| *busy)
+            .map(|(_, result)| !result.timed_out())
+            .unwrap_or(false)
+    }
+}
+
+/// A cold launch with the trigger: the window shows once it was `asked` for
+/// and the page is `ready`, whichever comes second, and only once.
+#[derive(Debug, Default)]
+struct ColdStart {
+    asked: bool,
+    ready: bool,
+}
+
+impl ColdStart {
+    /// The trigger arrived; `true` when the window should show now.
+    fn ask(&mut self) -> bool {
+        self.asked = true;
+        self.take()
+    }
+
+    /// The page is listening (or the fallback gave up waiting); `true` when
+    /// the window should show now.
+    fn ready(&mut self) -> bool {
+        self.ready = true;
+        self.take()
+    }
+
+    fn take(&mut self) -> bool {
+        let reveal = self.asked && self.ready;
+        if reveal {
+            self.asked = false;
+        }
+        reveal
     }
 }
 
@@ -189,12 +276,11 @@ struct ConfigFile {
 pub struct QuickAddState {
     shortcut: Mutex<Option<String>>,
     registered: AtomicBool,
-    /// Cold launch with the trigger: `(asked, page_loaded)`. The window shows
-    /// when both are true, whichever arrives second.
-    cold_start: Mutex<(bool, bool)>,
+    cold_start: Mutex<ColdStart>,
     /// Why the last compositor bind sync left the chord saved but not live
     /// (`next_note`); shown instead of `WAYLAND_NOTE`.
     bind_note: Mutex<Option<&'static str>>,
+    sync_gate: SyncGate,
 }
 
 impl QuickAddState {
@@ -328,14 +414,8 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .filter(|stored| validate(stored).is_ok())
         .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string());
 
+    let state = app.state::<QuickAddState>();
     let status = if wayland() {
-        // Off the startup path: a reload can take a moment.
-        let handle = app.clone();
-        let chord = shortcut.clone();
-        std::thread::spawn(move || {
-            let outcome = sync_compositor_bind(&chord, true);
-            handle.state::<QuickAddState>().record_bind_sync(outcome);
-        });
         ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(WAYLAND_NOTE.to_string()) }
     } else {
         match register(app, &shortcut) {
@@ -343,10 +423,26 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
             Err(error) => ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(error) },
         }
     };
-    app.state::<QuickAddState>().set(status.shortcut.clone(), status.registered);
+    state.set(status.shortcut.clone(), status.registered);
     if let Some(error) = &status.error {
         eprintln!("quickadd: hotkey '{}' not registered: {}", status.shortcut, error);
     }
+    if wayland() {
+        // Off the startup path (a reload can take a moment), with the gate
+        // claimed here, before any command can run: a Settings save waits for
+        // this sync and the first config read sees its note.
+        state.sync_gate.begin();
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let state = handle.state::<QuickAddState>();
+            state.record_bind_sync(sync_compositor_bind(&shortcut, true));
+            state.sync_gate.end();
+        });
+    }
+
+    // The cold-start handshake: the page emits this once it listens.
+    let handle = app.clone();
+    app.listen_any(READY_EVENT, move |_| mark_ready(&handle));
 
     // Hide on blur: a floating palette that stays up after clicking elsewhere
     // is in the way, not on hand.
@@ -370,73 +466,77 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
 
 /// A launch that carried the quick-add trigger (`planner --quickadd` from a
 /// compositor bind while nothing was running). Shows the window now if its
-/// page already loaded, otherwise when it does.
+/// page is already listening, otherwise when it is.
 pub fn show_on_cold_start<R: Runtime>(app: &AppHandle<R>) {
-    let ready = {
+    let reveal = {
         let state = app.state::<QuickAddState>();
         let Ok(mut cold) = state.cold_start.lock() else { return };
-        cold.0 = true;
-        cold.1
+        cold.ask()
     };
-    if ready {
+    if reveal {
         reveal_cold(app);
     }
 }
 
-/// `tauri::Builder::on_page_load` hook: records that the quick-add page
-/// finished loading and shows the window when a cold start asked for it.
+/// `tauri::Builder::on_page_load` hook: once the quick-add page has loaded,
+/// gives its `READY_EVENT` up to `READY_FALLBACK`, then treats it as ready.
 pub fn on_page_load<R: Runtime>(webview: &Webview<R>, event: PageLoadEvent) {
     if webview.label() != "quickadd" || event != PageLoadEvent::Finished {
         return;
     }
-    let app = webview.app_handle();
-    let asked = {
+    let handle = webview.app_handle().clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(READY_FALLBACK);
+        mark_ready(&handle);
+    });
+}
+
+/// The page is listening (or the fallback stopped waiting): shows the window
+/// when a cold start asked for it and it has not shown yet.
+fn mark_ready<R: Runtime>(app: &AppHandle<R>) {
+    let reveal = {
         let state = app.state::<QuickAddState>();
         let Ok(mut cold) = state.cold_start.lock() else { return };
-        cold.1 = true;
-        cold.0
+        cold.ready()
     };
-    if asked {
+    if reveal {
         reveal_cold(app);
     }
 }
 
-/// Shows the window for a cold start, once. The page registers its reveal
-/// listener in an effect right after load, so the show waits a moment for it.
+/// Shows the window for a cold start on the main thread, unless the user
+/// already toggled it in.
 fn reveal_cold<R: Runtime>(app: &AppHandle<R>) {
-    if let Ok(mut cold) = app.state::<QuickAddState>().cold_start.lock() {
-        if !cold.0 {
-            return;
-        }
-        cold.0 = false;
-    }
     let handle = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let inner = handle.clone();
-        let _ = handle.run_on_main_thread(move || {
-            let visible = inner
-                .get_webview_window("quickadd")
-                .and_then(|window| window.is_visible().ok())
-                .unwrap_or(false);
-            if !visible {
-                toggle_window(&inner);
-            }
-        });
+    let _ = app.run_on_main_thread(move || {
+        let visible = handle
+            .get_webview_window("quickadd")
+            .and_then(|window| window.is_visible().ok())
+            .unwrap_or(false);
+        if !visible {
+            toggle_window(&handle);
+        }
     });
 }
 
 /// Frontend command: the current shortcut and whether the OS accepted it.
-#[tauri::command]
+/// Waits (bounded) for a bind sync in flight, so the startup sync's note is
+/// not missed; on Linux it runs off the UI thread for that wait.
+#[cfg_attr(target_os = "linux", tauri::command(async))]
+#[cfg_attr(not(target_os = "linux"), tauri::command)]
 pub fn quickadd_get_config(state: State<'_, QuickAddState>) -> ShortcutStatus {
+    state.sync_gate.wait_idle(SYNC_READ_WAIT);
     state.status()
 }
 
 /// Frontend command: switch the global shortcut (Day settings). Validates,
 /// swaps the registration live, persists the choice and reports the new
 /// status. On a failed registration the previous shortcut is restored, so a
-/// taken combination never leaves the app without a working hotkey.
-#[tauri::command]
+/// taken combination never leaves the app without a working hotkey. On Linux
+/// it runs off the UI thread: a Hyprland reload is waited on for up to
+/// `RELOAD_WAIT`. Windows keeps the synchronous command.
+#[cfg_attr(target_os = "linux", tauri::command(async))]
+#[cfg_attr(not(target_os = "linux"), tauri::command)]
 pub fn quickadd_set_shortcut<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, QuickAddState>,
@@ -447,9 +547,11 @@ pub fn quickadd_set_shortcut<R: Runtime>(
     if wayland() {
         // Nothing to grab: keep the choice so the settings show it, and leave
         // the binding to the compositor.
+        state.sync_gate.begin();
         state.set(shortcut.clone(), false);
         save_config(&app, &shortcut);
         state.record_bind_sync(sync_compositor_bind(&shortcut, false));
+        state.sync_gate.end();
         return Ok(state.status());
     }
     let previous = state.status();
@@ -501,6 +603,42 @@ mod tests {
         // Nothing was written, so nothing was reloaded: the earlier failure stands.
         assert_eq!(next_note(Some(RELOAD_NOTE), BindSync::Unchanged), Some(RELOAD_NOTE));
         assert_eq!(next_note(None, BindSync::Unchanged), None);
+    }
+
+    #[test]
+    fn a_cold_start_reveals_once_when_asked_and_ready() {
+        let mut cold = ColdStart::default();
+        assert!(!cold.ask(), "the page is not ready yet");
+        assert!(cold.ready(), "the handshake reveals the asked window");
+        // The fallback firing after the handshake must not reveal again.
+        assert!(!cold.ready());
+
+        let mut early = ColdStart::default();
+        assert!(!early.ready(), "ready without a cold-start trigger shows nothing");
+        assert!(early.ask(), "a trigger after the handshake reveals at once");
+        assert!(!early.ready(), "a late fallback does not reveal it twice");
+    }
+
+    #[test]
+    fn the_sync_gate_serializes_syncs_and_bounds_the_wait() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        let gate = Arc::new(SyncGate::default());
+        assert!(gate.wait_idle(Duration::from_millis(1)), "idle at first");
+        gate.begin();
+        let started = Instant::now();
+        assert!(!gate.wait_idle(Duration::from_millis(50)), "a stuck sync only delays the read");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let other = Arc::clone(&gate);
+        let second = std::thread::spawn(move || {
+            other.begin();
+            other.end();
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!second.is_finished(), "a second sync waits for the first");
+        gate.end();
+        second.join().unwrap();
+        assert!(gate.wait_idle(Duration::from_millis(500)));
     }
 
     #[cfg(unix)]
