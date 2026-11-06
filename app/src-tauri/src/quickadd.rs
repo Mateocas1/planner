@@ -27,7 +27,9 @@
 //! writes it to `$XDG_DATA_HOME/planner/quickadd.bind` (Hyprland's key-string
 //! form, `planner_core::hyprbind`) and runs `hyprctl reload` inside a Hyprland
 //! session, so a new chord in Day settings takes effect without editing the
-//! compositor config.
+//! compositor config. When the write or the reload fails, the
+//! status reports that instead of the plain Wayland note, so Settings says the
+//! chord is saved but not live yet.
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -50,6 +52,52 @@ const SHOWN_EVENT: &str = "quickadd-shown";
 const WAYLAND_NOTE: &str =
     "Wayland: the compositor binds this chord to `planner --quickadd` (Planner's Hyprland snippet follows it).";
 
+/// Why the chord may not work under Wayland even though it was saved: the
+/// Hyprland bind file could not be written, or `hyprctl reload` failed.
+/// `desktop.ts` (`quickAddUnregisteredCause`) tells them apart by prefix.
+const BIND_WRITE_NOTE: &str =
+    "Hyprland bind not written: the chord is saved, but the compositor still binds the previous one.";
+const RELOAD_NOTE: &str = "Hyprland reload failed: the chord is saved, but Hyprland did not reload.";
+
+/// How long a bind sync waits for `hyprctl reload` before it stops asking.
+#[cfg(target_os = "linux")]
+const RELOAD_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// What one compositor bind sync did. Only the two failures reach the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindSync {
+    /// Nothing written: the file already matched, or the chord or data dir has
+    /// no Hyprland form.
+    Unchanged,
+    /// Written, with no reload confirmed (no Hyprland session, or the reload
+    /// still running after `RELOAD_WAIT`).
+    Written,
+    Reloaded,
+    WriteFailed,
+    ReloadFailed,
+}
+
+/// The bind-sync note after `outcome`. An unchanged file triggers no reload,
+/// so an earlier failure still stands; a write clears it.
+fn next_note(previous: Option<&'static str>, outcome: BindSync) -> Option<&'static str> {
+    match outcome {
+        BindSync::Unchanged => previous,
+        BindSync::Written | BindSync::Reloaded => None,
+        BindSync::WriteFailed => Some(BIND_WRITE_NOTE),
+        BindSync::ReloadFailed => Some(RELOAD_NOTE),
+    }
+}
+
+/// Maps `hyprctl reload`'s result (`None` when it did not finish in time).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn reload_outcome(result: Option<std::io::Result<std::process::ExitStatus>>) -> BindSync {
+    match result {
+        None => BindSync::Written,
+        Some(Ok(status)) if status.success() => BindSync::Reloaded,
+        Some(_) => BindSync::ReloadFailed,
+    }
+}
+
 /// Whether this session runs on Wayland, where the shell leaves the chord to
 /// the compositor. Always `false` off Linux.
 fn wayland() -> bool {
@@ -66,43 +114,55 @@ fn wayland() -> bool {
 }
 
 /// Writes `shortcut` to the Hyprland snippet's bind file when it changed, then
-/// reloads Hyprland when this session runs inside one. Best-effort and quiet:
-/// a chord with no Hyprland form, an unwritable data dir or a missing `hyprctl`
-/// leave the previous bind in place. At `startup` a missing file stays missing
-/// for the default chord (the snippet falls back to it), so a first launch
-/// does not reload the compositor.
+/// reloads Hyprland when this session runs inside one, and reports what
+/// happened. A chord with no Hyprland form or an unresolvable data dir leave
+/// the previous bind in place quietly; a failed write or reload is returned so
+/// Settings can say the chord is saved but not live. At `startup` a missing
+/// file stays missing for the default chord (the snippet falls back to it), so
+/// a first launch does not reload the compositor.
 #[cfg(target_os = "linux")]
-fn sync_compositor_bind(shortcut: &str, startup: bool) {
+fn sync_compositor_bind(shortcut: &str, startup: bool) -> BindSync {
     use planner_core::hyprbind;
     let Some(bind) = hyprbind::hyprland_bind(shortcut) else {
         eprintln!("quickadd: '{shortcut}' has no Hyprland form; the compositor bind is unchanged");
-        return;
+        return BindSync::Unchanged;
     };
     let xdg = std::env::var("XDG_DATA_HOME").ok();
     let home = std::env::var("HOME").ok();
-    let Some(path) = hyprbind::bind_file(xdg.as_deref(), home.as_deref()) else { return };
+    let Some(path) = hyprbind::bind_file(xdg.as_deref(), home.as_deref()) else { return BindSync::Unchanged };
     let current = std::fs::read_to_string(&path).ok();
     if !hyprbind::bind_needs_write(current.as_deref(), &bind, startup) {
-        return;
+        return BindSync::Unchanged;
     }
     if let Err(error) = planner_core::fsutil::atomic_write(&path, &hyprbind::bind_file_contents(&bind)) {
         eprintln!("quickadd: the Hyprland bind file was not written: {error}");
-        return;
+        return BindSync::WriteFailed;
     }
-    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok_and(|value| !value.is_empty()) {
-        // Off the caller's thread: the reload re-reads the whole config.
-        std::thread::spawn(|| {
-            let _ = std::process::Command::new("hyprctl")
-                .arg("reload")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-        });
+    if !std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok_and(|value| !value.is_empty()) {
+        return BindSync::Written;
     }
+    // On its own thread, waited on for at most `RELOAD_WAIT`: the reload
+    // re-reads the whole config and must not hang the caller.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let status = std::process::Command::new("hyprctl")
+            .arg("reload")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        let _ = sender.send(status);
+    });
+    let outcome = reload_outcome(receiver.recv_timeout(RELOAD_WAIT).ok());
+    if outcome == BindSync::ReloadFailed {
+        eprintln!("quickadd: `hyprctl reload` failed; the new bind is not live yet");
+    }
+    outcome
 }
 
 #[cfg(not(target_os = "linux"))]
-fn sync_compositor_bind(_shortcut: &str, _startup: bool) {}
+fn sync_compositor_bind(_shortcut: &str, _startup: bool) -> BindSync {
+    BindSync::Unchanged
+}
 
 /// What the settings UI reads: the configured shortcut, whether the OS
 /// actually accepted it, and why not when it did not.
@@ -132,6 +192,9 @@ pub struct QuickAddState {
     /// Cold launch with the trigger: `(asked, page_loaded)`. The window shows
     /// when both are true, whichever arrives second.
     cold_start: Mutex<(bool, bool)>,
+    /// Why the last compositor bind sync left the chord saved but not live
+    /// (`next_note`); shown instead of `WAYLAND_NOTE`.
+    bind_note: Mutex<Option<&'static str>>,
 }
 
 impl QuickAddState {
@@ -145,7 +208,17 @@ impl QuickAddState {
         ShortcutStatus {
             shortcut,
             registered: self.registered.load(Ordering::Relaxed),
-            error: wayland().then(|| WAYLAND_NOTE.to_string()),
+            error: wayland().then(|| self.bind_note().unwrap_or(WAYLAND_NOTE).to_string()),
+        }
+    }
+
+    fn bind_note(&self) -> Option<&'static str> {
+        self.bind_note.lock().ok().and_then(|guard| *guard)
+    }
+
+    fn record_bind_sync(&self, outcome: BindSync) {
+        if let Ok(mut guard) = self.bind_note.lock() {
+            *guard = next_note(*guard, outcome);
         }
     }
 
@@ -256,7 +329,13 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string());
 
     let status = if wayland() {
-        sync_compositor_bind(&shortcut, true);
+        // Off the startup path: a reload can take a moment.
+        let handle = app.clone();
+        let chord = shortcut.clone();
+        std::thread::spawn(move || {
+            let outcome = sync_compositor_bind(&chord, true);
+            handle.state::<QuickAddState>().record_bind_sync(outcome);
+        });
         ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(WAYLAND_NOTE.to_string()) }
     } else {
         match register(app, &shortcut) {
@@ -370,7 +449,7 @@ pub fn quickadd_set_shortcut<R: Runtime>(
         // the binding to the compositor.
         state.set(shortcut.clone(), false);
         save_config(&app, &shortcut);
-        sync_compositor_bind(&shortcut, false);
+        state.record_bind_sync(sync_compositor_bind(&shortcut, false));
         return Ok(state.status());
     }
     let previous = state.status();
@@ -395,4 +474,46 @@ pub fn quickadd_set_shortcut<R: Runtime>(
 #[tauri::command]
 pub fn quickadd_focus_main<R: Runtime>(app: AppHandle<R>) {
     crate::deeplink::focus_main(&app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_write_or_reload_gets_its_own_note() {
+        assert_eq!(next_note(None, BindSync::WriteFailed), Some(BIND_WRITE_NOTE));
+        assert_eq!(next_note(None, BindSync::ReloadFailed), Some(RELOAD_NOTE));
+        assert_ne!(BIND_WRITE_NOTE, RELOAD_NOTE);
+        // `desktop.ts` tells the causes apart by prefix; none may read as the
+        // plain Wayland note.
+        for note in [BIND_WRITE_NOTE, RELOAD_NOTE] {
+            assert!(!note.starts_with("Wayland:"), "{note}");
+        }
+        assert!(BIND_WRITE_NOTE.starts_with("Hyprland bind not written:"));
+        assert!(RELOAD_NOTE.starts_with("Hyprland reload failed:"));
+    }
+
+    #[test]
+    fn a_successful_sync_clears_the_note_and_an_unchanged_one_keeps_it() {
+        assert_eq!(next_note(Some(RELOAD_NOTE), BindSync::Reloaded), None);
+        assert_eq!(next_note(Some(BIND_WRITE_NOTE), BindSync::Written), None);
+        // Nothing was written, so nothing was reloaded: the earlier failure stands.
+        assert_eq!(next_note(Some(RELOAD_NOTE), BindSync::Unchanged), Some(RELOAD_NOTE));
+        assert_eq!(next_note(None, BindSync::Unchanged), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_reload_exit_status_decides_the_outcome() {
+        use std::os::unix::process::ExitStatusExt;
+        let ok = std::process::ExitStatus::from_raw(0);
+        let failed = std::process::ExitStatus::from_raw(1 << 8);
+        assert_eq!(reload_outcome(Some(Ok(ok))), BindSync::Reloaded);
+        assert_eq!(reload_outcome(Some(Ok(failed))), BindSync::ReloadFailed);
+        let missing = std::io::Error::new(std::io::ErrorKind::NotFound, "hyprctl");
+        assert_eq!(reload_outcome(Some(Err(missing))), BindSync::ReloadFailed);
+        // Still running after the wait: unconfirmed, not reported as a failure.
+        assert_eq!(reload_outcome(None), BindSync::Written);
+    }
 }

@@ -36,9 +36,16 @@ export function copyFamily(platform: DesktopPlatform = desktopPlatform()): CopyF
  * Why the quick-add chord is not registered, from the status Rust reports
  * (`quickadd_get_config`). Under Wayland the shell never grabs the chord and
  * says so with a reason that starts with `Wayland:` (`WAYLAND_NOTE` in
- * `src-tauri/src/quickadd.rs`): the compositor owns it. Any other reason is a
- * refused registration, most likely a chord another app holds.
+ * `src-tauri/src/quickadd.rs`): the compositor owns it. When the Hyprland bind
+ * sync failed, the reason names the step instead (`BIND_WRITE_NOTE`,
+ * `RELOAD_NOTE`). Any other reason is a refused registration, most likely a
+ * chord another app holds.
  */
-export function quickAddUnregisteredCause(error: string | null | undefined): "compositor" | "refused" {
-  return error?.startsWith("Wayland:") ? "compositor" : "refused";
+export type QuickAddUnregisteredCause = "compositor" | "bindWrite" | "reload" | "refused";
+
+export function quickAddUnregisteredCause(error: string | null | undefined): QuickAddUnregisteredCause {
+  if (error?.startsWith("Wayland:")) return "compositor";
+  if (error?.startsWith("Hyprland bind not written:")) return "bindWrite";
+  if (error?.startsWith("Hyprland reload failed:")) return "reload";
+  return "refused";
 }

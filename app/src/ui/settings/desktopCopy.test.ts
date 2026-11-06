@@ -63,3 +63,19 @@ test("an unregistered quick-add chord under Wayland points at the compositor", (
   assert.match(quickAddUnregisteredNote(wayland), /^On Wayland, your compositor owns global shortcuts\./);
   assert.match(quickAddUnregisteredNote("HotKey already registered"), /another app may be using it/);
 });
+
+test("a failed Hyprland bind sync gets its own cause and note", () => {
+  const write = "Hyprland bind not written: the chord is saved, but the compositor still binds the previous one.";
+  const reload = "Hyprland reload failed: the chord is saved, but Hyprland did not reload.";
+  assert.equal(quickAddUnregisteredCause(write), "bindWrite");
+  assert.equal(quickAddUnregisteredCause(reload), "reload");
+  assert.equal(quickAddUnregisteredNote(reload), "Saved, but Hyprland did not reload. Run `hyprctl reload`.");
+  assert.match(quickAddUnregisteredNote(write), /^Saved, but Planner could not write its Hyprland bind file\./);
+  setDeviceLanguage("es");
+  try {
+    assert.equal(quickAddUnregisteredNote(reload), "Guardado, pero Hyprland no se recargó. Para aplicarlo, ejecutar `hyprctl reload`.");
+    assert.match(quickAddUnregisteredNote(write), /^Guardado, pero Planner no pudo escribir/);
+  } finally {
+    setDeviceLanguage(null);
+  }
+});

@@ -74,6 +74,8 @@ export const settingsTabs = {
   "recorder.recording": "Grabando: pulsa la nueva combinación; Esc para cancelar.",
   "recorder.unavailable": "Planner no pudo registrar este atajo; puede que otra app lo esté usando.",
   "recorder.compositor": "En Wayland, los atajos globales los gestiona el compositor. Planner instala un atajo de Hyprland para este.",
+  "recorder.bindWriteFailed": "Guardado, pero Planner no pudo escribir su archivo de atajo de Hyprland. Hyprland sigue usando el atajo anterior.",
+  "recorder.reloadFailed": "Guardado, pero Hyprland no se recargó. Para aplicarlo, ejecutar `hyprctl reload`.",
 
   "desktop.error.threshold": "Elige un valor entre {min} y {max} minutos.",
   "desktop.error.startupRead.windows": "Windows no informó del ajuste de inicio.",
