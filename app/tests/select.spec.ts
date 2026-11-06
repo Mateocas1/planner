@@ -72,7 +72,9 @@ test.describe("Select on a desktop viewport", () => {
     expect(mid.body).toEqual(expect.arrayContaining(["filter"]));
     expect(mid.transform === "none" || mid.transform.startsWith("matrix")).toBe(true);
 
-    await expect.poll(async () => (await runningTransitions(pop)).surface.length).toBe(0);
+    // The body lands 30 ms after the surface (filter 160 ms + 30 ms delay), so
+    // wait for both: a settled surface alone can leave the blur mid-flight.
+    await expect.poll(async () => runningTransitions(pop)).toEqual({ surface: [], body: [] });
     const settled = await look(pop);
     expect(settled.opacity).toBe(1);
     expect(isIdentity(settled.transform)).toBe(true);
