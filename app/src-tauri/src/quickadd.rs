@@ -22,6 +22,12 @@
 //! `toggle_window` through the single-instance plugin. A cold launch with the
 //! trigger shows the window once its page has loaded (`on_page_load`), so the
 //! reveal event that focuses the field is not sent before anyone listens.
+//!
+//! The Hyprland snippet binds the chord chosen here: under Wayland the shell
+//! writes it to `$XDG_DATA_HOME/planner/quickadd.bind` (Hyprland's key-string
+//! form, `planner_core::hyprbind`) and runs `hyprctl reload` inside a Hyprland
+//! session, so a new chord in Day settings takes effect without editing the
+//! compositor config.
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -41,7 +47,8 @@ const DEFAULT_SHORTCUT: &str = "ctrl+alt+Space";
 const SHOWN_EVENT: &str = "quickadd-shown";
 
 /// Why the chord is not registered under Wayland (read by `quickadd_get_config`).
-const WAYLAND_NOTE: &str = "Wayland: bind this chord in the compositor to `planner --quickadd`.";
+const WAYLAND_NOTE: &str =
+    "Wayland: the compositor binds this chord to `planner --quickadd` (Planner's Hyprland snippet follows it).";
 
 /// Whether this session runs on Wayland, where the shell leaves the chord to
 /// the compositor. Always `false` off Linux.
@@ -57,6 +64,45 @@ fn wayland() -> bool {
         false
     }
 }
+
+/// Writes `shortcut` to the Hyprland snippet's bind file when it changed, then
+/// reloads Hyprland when this session runs inside one. Best-effort and quiet:
+/// a chord with no Hyprland form, an unwritable data dir or a missing `hyprctl`
+/// leave the previous bind in place. At `startup` a missing file stays missing
+/// for the default chord (the snippet falls back to it), so a first launch
+/// does not reload the compositor.
+#[cfg(target_os = "linux")]
+fn sync_compositor_bind(shortcut: &str, startup: bool) {
+    use planner_core::hyprbind;
+    let Some(bind) = hyprbind::hyprland_bind(shortcut) else {
+        eprintln!("quickadd: '{shortcut}' has no Hyprland form; the compositor bind is unchanged");
+        return;
+    };
+    let xdg = std::env::var("XDG_DATA_HOME").ok();
+    let home = std::env::var("HOME").ok();
+    let Some(path) = hyprbind::bind_file(xdg.as_deref(), home.as_deref()) else { return };
+    let current = std::fs::read_to_string(&path).ok();
+    if !hyprbind::bind_needs_write(current.as_deref(), &bind, startup) {
+        return;
+    }
+    if let Err(error) = planner_core::fsutil::atomic_write(&path, &hyprbind::bind_file_contents(&bind)) {
+        eprintln!("quickadd: the Hyprland bind file was not written: {error}");
+        return;
+    }
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok_and(|value| !value.is_empty()) {
+        // Off the caller's thread: the reload re-reads the whole config.
+        std::thread::spawn(|| {
+            let _ = std::process::Command::new("hyprctl")
+                .arg("reload")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn sync_compositor_bind(_shortcut: &str, _startup: bool) {}
 
 /// What the settings UI reads: the configured shortcut, whether the OS
 /// actually accepted it, and why not when it did not.
@@ -210,6 +256,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string());
 
     let status = if wayland() {
+        sync_compositor_bind(&shortcut, true);
         ShortcutStatus { shortcut: shortcut.clone(), registered: false, error: Some(WAYLAND_NOTE.to_string()) }
     } else {
         match register(app, &shortcut) {
@@ -323,6 +370,7 @@ pub fn quickadd_set_shortcut<R: Runtime>(
         // the binding to the compositor.
         state.set(shortcut.clone(), false);
         save_config(&app, &shortcut);
+        sync_compositor_bind(&shortcut, false);
         return Ok(state.status());
     }
     let previous = state.status();
