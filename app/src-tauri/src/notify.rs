@@ -34,6 +34,12 @@
 //! answer and maps it to the same `NotifyAction` the Windows toast reports;
 //! closing or expiring the notification reports nothing. Do Not Disturb is the
 //! notification server's business, as on Windows.
+//!
+//! A failed `show` (no notification server, a broken bus) is logged and
+//! returned as `notify_show`'s error. Waiting threads are bounded: a new
+//! notification for a live slot (the same block, the shutdown or the weekly
+//! nudge) replaces it in place and inherits its thread, and past
+//! `MAX_WAITERS` open notifications the oldest is replaced instead.
 
 use serde::{Deserialize, Serialize};
 
@@ -79,9 +85,13 @@ pub enum NotifyAction {
 
 /// Shows the requested toast and wires its activation callbacks. The action
 /// itself belongs to the frontend: Rust only reports what was pressed.
+/// `show` may block on D-Bus (Linux), so it runs on the blocking pool and its
+/// failure comes back to the caller as the command's error.
 #[tauri::command]
-pub fn notify_show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
-    show(request, app)
+pub async fn notify_show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || show(request, app))
+        .await
+        .map_err(|error| format!("notification task failed: {error}"))?
 }
 
 /// Brings the main window back, for actions that mean "look at the app".
@@ -284,11 +294,55 @@ fn resolve(request: &NotifyRequest, action: &str) -> Option<(NotifyAction, bool)
     })
 }
 
+/// The most notifications (and so waiting threads) the app keeps open at once.
+#[cfg(target_os = "linux")]
+const MAX_WAITERS: usize = 4;
+
+/// A shown notification whose thread waits for an answer. `request` is what
+/// the answer means: a replacement swaps it in place.
+#[cfg(target_os = "linux")]
+struct Waiter {
+    id: u32,
+    slot: String,
+    request: NotifyRequest,
+}
+
+/// The live notifications, oldest first.
+#[cfg(target_os = "linux")]
+static WAITERS: std::sync::Mutex<Vec<Waiter>> = std::sync::Mutex::new(Vec::new());
+
+/// Requests in the same slot supersede each other: a block's re-reminder
+/// replaces its first reminder, a new nudge replaces the last one.
+#[cfg(target_os = "linux")]
+fn slot(request: &NotifyRequest) -> String {
+    match request {
+        NotifyRequest::Block { block_id, .. } => format!("block:{block_id}"),
+        NotifyRequest::Shutdown => "shutdown".into(),
+        NotifyRequest::WeeklyReview { .. } => "weekly".into(),
+    }
+}
+
+/// Which live notification a new one replaces: the one in its slot, else the
+/// oldest once `cap` are open, else none (it gets its own waiting thread).
+#[cfg(target_os = "linux")]
+fn reuse(waiters: &[Waiter], slot: &str, cap: usize) -> Option<u32> {
+    waiters
+        .iter()
+        .find(|waiter| waiter.slot == slot)
+        .or_else(|| waiters.first().filter(|_| waiters.len() >= cap))
+        .map(|waiter| waiter.id)
+}
+
+/// Linux: shows the notification synchronously, so a D-Bus failure is logged
+/// and returned. A replacement (same XDG id, `replaces_id`) keeps the old
+/// notification's waiting thread, which then answers for the new request; so
+/// at most `MAX_WAITERS` threads ever wait.
 #[cfg(target_os = "linux")]
 fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
     use notify_rust::{Notification, Timeout};
 
     let content = content(&request, &crate::tray::labels(&app));
+    let slot = slot(&request);
     let mut notification = Notification::new();
     notification
         .appname(&app.config().product_name.clone().unwrap_or_else(|| "Planner".into()))
@@ -300,22 +354,56 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
         notification.action(id, label);
     }
 
-    // The D-Bus call and the wait for an answer block, so both run on their
-    // own thread; the IPC command returns at once.
+    // Held across the D-Bus call so a waiter cannot vanish mid-replacement.
+    let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let replaced = reuse(&waiters, &slot, MAX_WAITERS);
+    if let Some(id) = replaced {
+        notification.id(id);
+    }
+    let handle = notification.show().map_err(|error| {
+        let error = format!("could not show notification: {error}");
+        eprintln!("{error}");
+        error
+    })?;
+    let id = handle.id();
+    if let Some(old) = replaced {
+        // Same id: same notification, new content, and its thread answers for
+        // this request. A new id means the old one was already gone.
+        waiters.retain(|w| w.id != old);
+        if old == id {
+            waiters.push(Waiter { id, slot, request });
+            return Ok(());
+        }
+    }
+    waiters.push(Waiter { id, slot, request });
+    drop(waiters);
+
+    // The wait for an answer blocks, so it runs on its own thread.
     std::thread::Builder::new()
         .name("planner-notify".into())
-        .spawn(move || match notification.show() {
-            Ok(handle) => handle.wait_for_action(|action| {
-                if let Some((action, focus)) = resolve(&request, action) {
+        .spawn(move || {
+            let take = || {
+                let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let index = waiters.iter().position(|w| w.id == id)?;
+                Some(waiters.remove(index))
+            };
+            handle.wait_for_action(|action| {
+                let Some(waiter) = take() else { return };
+                if let Some((action, focus)) = resolve(&waiter.request, action) {
                     if focus {
                         focus_main(&app);
                     }
                     report(&app, action);
                 }
-            }),
-            Err(error) => eprintln!("could not show notification: {error}"),
+            });
+            // A lost bus ends the wait without an answer; free the slot anyway.
+            take();
         })
-        .map_err(|error| format!("could not spawn notification thread: {error}"))?;
+        .map_err(|error| {
+            let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            waiters.retain(|w| w.id != id);
+            format!("could not spawn notification thread: {error}")
+        })?;
     Ok(())
 }
 
@@ -400,5 +488,29 @@ mod tests {
         assert_eq!(resolve(&block(None, None), "__closed"), None);
         assert_eq!(resolve(&NotifyRequest::Shutdown, "__closed"), None);
         assert_eq!(resolve(&NotifyRequest::WeeklyReview { key: "w".into() }, "__closed"), None);
+    }
+
+    #[test]
+    fn slots_group_requests_that_supersede_each_other() {
+        assert_eq!(slot(&block(None, None)), "block:b1");
+        assert_eq!(slot(&block(Some(true), Some("Write"))), "block:b1");
+        assert_eq!(slot(&NotifyRequest::Shutdown), "shutdown");
+        assert_eq!(slot(&NotifyRequest::WeeklyReview { key: "w".into() }), "weekly");
+    }
+
+    fn waiter(id: u32, slot: &str) -> Waiter {
+        Waiter { id, slot: slot.into(), request: NotifyRequest::Shutdown }
+    }
+
+    /// A new notification for a live slot replaces that one; past the cap the
+    /// oldest is replaced; otherwise it gets its own waiting thread.
+    #[test]
+    fn reuse_bounds_waiting_threads() {
+        let live = [waiter(7, "block:b1"), waiter(9, "shutdown")];
+        assert_eq!(reuse(&live, "shutdown", 4), Some(9));
+        assert_eq!(reuse(&live, "block:b1", 4), Some(7));
+        assert_eq!(reuse(&live, "weekly", 4), None);
+        assert_eq!(reuse(&live, "weekly", 2), Some(7));
+        assert_eq!(reuse(&[], "weekly", 4), None);
     }
 }
