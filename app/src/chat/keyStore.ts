@@ -7,6 +7,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../i18n/index.ts";
 
 /** The default OpenAI-compatible endpoint (spec S3, parent decision L1/L4). */
 export const DEFAULT_CHAT_BASE_URL = "https://api.nan.builders/v1";
@@ -18,8 +19,26 @@ export type ChatKeyStatus = {
   baseUrl: string | null;
 };
 
+/**
+ * Turns a key command's rejection (`{code, message}` from Rust) into an
+ * `Error` Settings can show: a missing or locked system keyring gets the
+ * localized hint, anything else keeps Rust's own wording.
+ */
+export function keyStoreError(raw: unknown): Error {
+  if (typeof raw === "object" && raw !== null) {
+    const { code, message } = raw as { code?: unknown; message?: unknown };
+    if (code === "credential_store_unavailable") return new Error(t("chat.error.credentialStoreUnavailable"));
+    if (typeof message === "string") return new Error(message);
+  }
+  return new Error(String(raw));
+}
+
+function rethrow(raw: unknown): never {
+  throw keyStoreError(raw);
+}
+
 export function getKeyStatus(): Promise<ChatKeyStatus> {
-  return invoke<ChatKeyStatus>("chat_key_status");
+  return invoke<ChatKeyStatus>("chat_key_status").catch(rethrow);
 }
 
 /**
@@ -28,10 +47,10 @@ export function getKeyStatus(): Promise<ChatKeyStatus> {
  * storing anything.
  */
 export function setKey(key: string, baseUrl: string): Promise<void> {
-  return invoke("chat_key_set", { key, baseUrl });
+  return invoke<void>("chat_key_set", { key, baseUrl }).catch(rethrow);
 }
 
 /** Removes the API key and the provider address bound to it. */
 export function clearKey(): Promise<void> {
-  return invoke("chat_key_clear");
+  return invoke<void>("chat_key_clear").catch(rethrow);
 }
