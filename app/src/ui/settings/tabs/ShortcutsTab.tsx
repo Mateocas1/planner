@@ -2,6 +2,7 @@ import { t, useLocale } from "../../../i18n/index.ts";
 import { shortcutHelp } from "../../shortcuts.ts";
 import { keycaps, rebindableShortcuts } from "../shortcutRegistry.ts";
 import { Keycap } from "../Keycap.tsx";
+import { quickAddDescription } from "../desktopCopy.ts";
 import { ShortcutRecorder } from "../ShortcutRecorder.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 
@@ -35,7 +36,7 @@ export function ShortcutsTab({
                 ? t("shortcuts.palette.description")
                 : shortcut.id === "chat"
                   ? t("shortcuts.chat.description")
-                  : t("shortcuts.quickAdd.description")
+                  : quickAddDescription()
             }
           >
             {() => <ShortcutRecorder id={shortcut.id} desktop={desktop} />}

@@ -14,6 +14,10 @@
 //!   when there is no session). The webview rate-limits pushes to one per 10 s
 //!   (`trayPushDecision` in `src/desktop-tray.ts`, unit-tested), so this side
 //!   simply applies what it receives.
+//!
+//! Every string drawn here and in `notify.rs` arrives translated in the
+//! payload's `labels` (T10b): Rust keeps no translation table. Until the first
+//! push the English defaults of `TrayLabels` stand in.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -49,6 +53,70 @@ const TOOLTIP_MAX_CHARS: usize = 127;
 /// so a double click does not toggle the window straight back to hidden.
 const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
 
+/// The static strings Rust draws, in the app's language (`TrayLabels` in
+/// `src/desktop-tray.ts` has exactly these fields). `Default` is the English
+/// copy shown before the webview's first push. The toast fields are read only
+/// by the Windows notifier (`notify.rs`).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(not(windows), allow(dead_code))]
+#[serde(rename_all = "camelCase")]
+pub struct TrayLabels {
+    pub open: String,
+    pub quit: String,
+    pub notice_title: String,
+    pub notice_body: String,
+    pub block_lead: String,
+    pub block_snoozed_lead: String,
+    pub block_start_focus: String,
+    pub block_snooze: String,
+    pub work_block: String,
+    pub shutdown_title: String,
+    pub shutdown_body: String,
+    pub shutdown_action: String,
+    pub weekly_title: String,
+    pub weekly_body: String,
+    pub weekly_start: String,
+    pub weekly_later: String,
+    pub weekly_skip: String,
+}
+
+impl Default for TrayLabels {
+    fn default() -> Self {
+        Self {
+            open: "Open Planner".into(),
+            quit: "Quit".into(),
+            notice_title: "Planner is still running in the tray".into(),
+            notice_body: "Closing hides the window: reopen it or quit from the tray icon.".into(),
+            block_lead: "Deep work starts in 2 min".into(),
+            block_snoozed_lead: "Starting now".into(),
+            block_start_focus: "Start focus".into(),
+            block_snooze: "+5 min".into(),
+            work_block: "Work block".into(),
+            shutdown_title: "Time to close the day.".into(),
+            shutdown_body: "The shutdown ritual is ready.".into(),
+            shutdown_action: "Close the day".into(),
+            weekly_title: "Time to close the week.".into(),
+            weekly_body: "The weekly review is ready.".into(),
+            weekly_start: "Start review".into(),
+            weekly_later: "Later".into(),
+            weekly_skip: "Skip this week".into(),
+        }
+    }
+}
+
+/// The last labels the webview pushed, read by the close-to-tray notice and
+/// by `notify.rs`. Managed by `setup`; a reader that finds it missing uses
+/// the defaults.
+#[derive(Default)]
+pub struct Labels(Mutex<TrayLabels>);
+
+/// The current labels (the English defaults when none were pushed yet).
+pub fn labels<R: Runtime>(app: &AppHandle<R>) -> TrayLabels {
+    app.try_state::<Labels>()
+        .map(|state| state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone())
+        .unwrap_or_default()
+}
+
 /// What the webview pushes (`src/desktop-tray.ts` sends exactly this shape).
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +129,9 @@ pub struct TrayPayload {
     /// The taskbar bar; absent clears it.
     #[serde(default)]
     pub progress: Option<TrayProgress>,
+    /// The translated static strings; absent keeps the last ones.
+    #[serde(default)]
+    pub labels: Option<TrayLabels>,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -85,6 +156,8 @@ pub struct Tray<R: Runtime> {
     menu: Menu<R>,
     up_next: MenuItem<R>,
     focus: MenuItem<R>,
+    open: MenuItem<R>,
+    quit: MenuItem<R>,
     /// Whether the focus row is currently in the menu.
     focus_row: Mutex<bool>,
     /// Set by a double click; its trailing click sees it and steps aside.
@@ -98,8 +171,9 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
     let up_next = MenuItem::with_id(app, ITEM_UP_NEXT, SIGNED_OUT_UP_NEXT, false, None::<&str>)?;
     let focus = MenuItem::with_id(app, ITEM_FOCUS, "", false, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let open = MenuItem::with_id(app, MENU_OPEN, "Open Planner", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, MENU_QUIT, "Quit", true, None::<&str>)?;
+    let defaults = TrayLabels::default();
+    let open = MenuItem::with_id(app, MENU_OPEN, &defaults.open, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, MENU_QUIT, &defaults.quit, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&up_next, &separator, &open, &quit])?;
 
     let icon = app
@@ -125,15 +199,18 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
         menu,
         up_next,
         focus,
+        open,
+        quit,
         focus_row: Mutex::new(false),
         last_double: Mutex::new(None),
     });
+    app.manage(Labels::default());
     attach_close_to_tray(app);
     Ok(())
 }
 
-/// Applies one webview payload: the two menu lines, the tooltip and the
-/// taskbar bar. The focus row is only inserted or removed when the session
+/// Applies one webview payload: the two menu lines, the action rows' labels,
+/// the tooltip and the taskbar bar. The focus row is only inserted or removed when the session
 /// starts or ends; between those moments only its text changes.
 #[tauri::command]
 pub fn tray_sync<R: Runtime>(app: AppHandle<R>, payload: TrayPayload) -> Result<(), String> {
@@ -166,6 +243,14 @@ pub fn tray_sync<R: Runtime>(app: AppHandle<R>, payload: TrayPayload) -> Result<
     tray.icon
         .set_tooltip(Some(tooltip))
         .map_err(|error| error.to_string())?;
+
+    if let Some(labels) = payload.labels {
+        tray.open.set_text(&labels.open).map_err(|error| error.to_string())?;
+        tray.quit.set_text(&labels.quit).map_err(|error| error.to_string())?;
+        if let Some(state) = app.try_state::<Labels>() {
+            *state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = labels;
+        }
+    }
 
     set_progress(&app, payload.progress);
     Ok(())
@@ -281,14 +366,48 @@ fn show_tray_notice_once<R: Runtime>(app: &AppHandle<R>) {
     if flag.exists() {
         return;
     }
+    let labels = labels(app);
     let shown = app
         .notification()
         .builder()
-        .title("Planner is still running in the tray")
-        .body("Closing hides the window: reopen it or quit from the tray icon.")
+        .title(labels.notice_title)
+        .body(labels.notice_body)
         .show();
     if shown.is_ok() {
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(&flag, b"shown");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shape `trayLabels()` in `src/desktop-tray.ts` sends: a field renamed
+    /// on one side only fails here instead of silently keeping English.
+    #[test]
+    fn payload_with_labels_deserializes() {
+        let json = r#"{
+            "upNext": "A continuación: nada más por hoy", "focus": null, "progress": null,
+            "labels": {
+                "open": "Abrir Planner", "quit": "Salir",
+                "noticeTitle": "t", "noticeBody": "b",
+                "blockLead": "l", "blockSnoozedLead": "s", "blockStartFocus": "f", "blockSnooze": "+5 min",
+                "workBlock": "Bloque de trabajo",
+                "shutdownTitle": "t", "shutdownBody": "b", "shutdownAction": "Cerrar el día",
+                "weeklyTitle": "t", "weeklyBody": "b", "weeklyStart": "s", "weeklyLater": "l", "weeklySkip": "k"
+            }
+        }"#;
+        let payload: TrayPayload = serde_json::from_str(json).expect("payload");
+        let labels = payload.labels.expect("labels");
+        assert_eq!(labels.quit, "Salir");
+        assert_eq!(labels.shutdown_action, "Cerrar el día");
+    }
+
+    #[test]
+    fn payload_without_labels_keeps_the_last_ones() {
+        let payload: TrayPayload = serde_json::from_str(r#"{ "upNext": "Up next: Nothing else today" }"#).expect("payload");
+        assert!(payload.labels.is_none());
+        assert_eq!(TrayLabels::default().open, "Open Planner");
     }
 }

@@ -101,6 +101,9 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
 
     // Dev exes are not registered under the bundle id; installed ones are
     // (the NSIS shortcuts carry it). See the module docs.
+    // The toast's words, already in the app's language (pushed with `tray_sync`).
+    let labels = crate::tray::labels(&app);
+
     let app_id = dev_exe()
         .map(|_| tauri_winrt_notification::Toast::POWERSHELL_APP_ID.to_string())
         .unwrap_or_else(|| app.config().identifier.clone());
@@ -112,13 +115,13 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
         .spawn(move || {
             let result = match request {
                 NotifyRequest::Block { key, block_id, date, title, snoozed } => {
-                    let lead = if snoozed == Some(true) { "Starting now" } else { "Deep work starts in 2 min" };
+                    let lead = if snoozed == Some(true) { &labels.block_snoozed_lead } else { &labels.block_lead };
                     let toast = Toast::new(&app_id)
                         .title(lead)
-                        .text1(title.as_deref().unwrap_or("Work block"))
+                        .text1(title.as_deref().unwrap_or(labels.work_block.as_str()))
                         .scenario(Scenario::Reminder)
-                        .add_button("Start focus", "start-focus")
-                        .add_button("+5 min", "snooze-5")
+                        .add_button(&labels.block_start_focus, "start-focus")
+                        .add_button(&labels.block_snooze, "snooze-5")
                         .on_activated({
                             let app = app.clone();
                             let key = key.clone();
@@ -146,10 +149,10 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
                 }
                 NotifyRequest::Shutdown => {
                     let toast = Toast::new(&app_id)
-                        .title("Time to close the day.")
-                        .text1("The shutdown ritual is ready.")
+                        .title(&labels.shutdown_title)
+                        .text1(&labels.shutdown_body)
                         .scenario(Scenario::Reminder)
-                        .add_button("Close the day", "close-day")
+                        .add_button(&labels.shutdown_action, "close-day")
                         .on_activated({
                             let app = app.clone();
                             move |_action| {
@@ -162,12 +165,12 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
                 }
                 NotifyRequest::WeeklyReview { key } => {
                     let toast = Toast::new(&app_id)
-                        .title("Time to close the week.")
-                        .text1("The weekly review is ready.")
+                        .title(&labels.weekly_title)
+                        .text1(&labels.weekly_body)
                         .scenario(Scenario::Reminder)
-                        .add_button("Start review", "start")
-                        .add_button("Later", "later")
-                        .add_button("Skip this week", "skip")
+                        .add_button(&labels.weekly_start, "start")
+                        .add_button(&labels.weekly_later, "later")
+                        .add_button(&labels.weekly_skip, "skip")
                         .on_activated({
                             let app = app.clone();
                             let key = key.clone();
