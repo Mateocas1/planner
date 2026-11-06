@@ -101,7 +101,12 @@
 
 /* ---------- the content column ---------- */
 
-.settings-pane { min-width: 0; }
+/* The pane is the rows' container: a row lays out by the width it actually
+   gets, which the app sidebar and the rail both take from the window. */
+.settings-pane {
+  min-width: 0;
+  container: settings-pane / inline-size;
+}
 
 .settings-pane-inner {
   max-width: 640px;
@@ -153,11 +158,15 @@
 
 /* ---------- the setting row ---------- */
 
+/* Text and control share one line while the text keeps at least 12rem; below
+   that the control wraps under the text instead of squeezing it (a 280 px
+   field in a 960 px window left the label column a few px wide, one letter
+   per line). */
 .settings-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
+  gap: 8px 16px;
   min-height: 56px;
   padding: 10px 14px;
 }
@@ -165,6 +174,7 @@
 .settings-row + .settings-row { border-top: 0.5px solid var(--separator); }
 
 .settings-row-text {
+  flex: 1 1 12rem;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -189,10 +199,24 @@
 }
 
 .settings-row-control {
+  flex: 0 1 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  justify-self: end;
+  max-width: 100%;
+  margin-inline-start: auto;
+}
+
+/* A narrow pane stacks the text-field rows on purpose: label and note on top,
+   the field the row's full width under them, so a URL is never cut to a
+   sliver beside its label. */
+@container settings-pane (max-width: 559px) {
+  .settings-row:has(.ai-field) .settings-row-control {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .settings-placeholder-value {
@@ -275,6 +299,43 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--r-control);
+}
+
+/* ---------- a narrow desktop window: the rail becomes a row ----------
+
+   The app sidebar keeps its 244 px at every desktop width, so at 800-960 px
+   the content column is 480-640 px and a 196 px rail left the pane under
+   360 px. Below 760 px of content the rail moves above the pane as one
+   wrapping row (no hidden tabs, no sideways scroll for a mouse), and the
+   pane gets the column's full width. */
+@container content (max-width: 759px) {
+  .settings:not(.is-phone) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    padding-inline: 0;
+  }
+
+  .settings:not(.is-phone) .settings-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-bottom: 24px;
+  }
+
+  .settings:not(.is-phone) .settings-back { align-self: center; }
+
+  .settings:not(.is-phone) .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+  }
+
+  .settings:not(.is-phone) .settings-nav-item {
+    flex: none;
+    height: 36px;
+  }
 }
 
 /* ---------- the phone (≤ 760 px): the rail becomes a sticky strip ---------- */
