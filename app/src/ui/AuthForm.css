@@ -1,0 +1,20 @@
+/* Password reset on the sign-in card (Ronda 7, R7-16). */
+
+.gate-forgot {
+  align-self: flex-start;
+  margin-top: -6px;
+}
+
+.gate-forgot[aria-disabled="true"] { opacity: 0.6; }
+
+/* The live region stays mounted; it takes no room in the form's gap while empty. */
+.gate-status:empty { display: contents; }
+
+.gate-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r-control);
+  background: var(--accent-soft);
+  color: var(--label);
+  font-size: var(--text-sub);
+}
