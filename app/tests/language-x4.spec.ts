@@ -18,7 +18,11 @@ for (const [name, viewport] of [
     await page.setViewportSize(viewport);
     const email = `x4-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
     await seedRadarFixture(email, "UTC", { tasks: [{ title: "Informe trimestral", estimate: 90 }, { title: "Pagar impuestos", estimate: 45 }] });
-    await submitAuthForm(page, email, "sign in");
+    // Plan my day is disabled past the work window: pin a morning so the spec does not depend on the hour.
+    await page.clock.install({ time: new Date(`${new Date().toISOString().slice(0, 10)}T10:00:00Z`) });
+    await expect(async () => {
+      await submitAuthForm(page, email, "sign in");
+    }).toPass({ timeout: 60_000 });
     await expectSignedIn(page, email);
     await page.evaluate(() => window.localStorage.setItem("planner-language", "es"));
     await page.reload();
