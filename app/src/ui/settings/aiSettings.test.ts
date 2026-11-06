@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { desktopPlatform } from "../../desktop.ts";
+import { setSyncedLanguage } from "../../i18n/index.ts";
 import {
+  apiKeyDescription,
   engramStatusText,
   keyStatusText,
   memoryDate,
   memoryPreview,
+  providerDescription,
   providerHost,
   validateBaseUrlClient,
   validateEngramAddressClient,
@@ -91,4 +95,35 @@ test("an empty Engram project is refused; a named one passes", () => {
   assert.equal(validateEngramProjectClient(""), "The Engram project must not be empty.");
   assert.equal(validateEngramProjectClient("   "), "The Engram project must not be empty.");
   assert.equal(validateEngramProjectClient("calendar-assistant"), null);
+});
+
+test("desktopPlatform reads the webview's platform string", () => {
+  assert.equal(desktopPlatform({ platform: "Win32" }), "windows");
+  assert.equal(desktopPlatform({ userAgentData: { platform: "Windows" }, platform: "Win32" }), "windows");
+  assert.equal(desktopPlatform({ platform: "Linux x86_64" }), "linux");
+  assert.equal(desktopPlatform({ userAgentData: { platform: "Linux" } }), "linux");
+  assert.equal(desktopPlatform({ platform: "MacIntel" }), "macos");
+  assert.equal(desktopPlatform({ platform: "" }), "other");
+  assert.equal(desktopPlatform({}), "other");
+});
+
+test("the key notes name this platform's credential store, in English and Spanish", () => {
+  assert.match(providerDescription("windows"), /Windows Credential Manager/);
+  assert.match(apiKeyDescription("windows"), /Windows Credential Manager/);
+  assert.match(providerDescription("linux"), /system keyring \(GNOME Keyring or KWallet\)/);
+  assert.match(apiKeyDescription("linux"), /system keyring/);
+  for (const platform of ["linux", "macos", "other"] as const) {
+    assert.doesNotMatch(providerDescription(platform), /Windows/);
+    assert.doesNotMatch(apiKeyDescription(platform), /Windows/);
+  }
+  assert.match(providerDescription("macos"), /system's credential store/);
+  setSyncedLanguage("es");
+  try {
+    assert.match(providerDescription("windows"), /Administrador de credenciales de Windows/);
+    assert.match(providerDescription("linux"), /llavero del sistema \(GNOME Keyring o KWallet\)/);
+    assert.match(apiKeyDescription("linux"), /llavero del sistema/);
+    assert.doesNotMatch(apiKeyDescription("linux"), /Windows/);
+  } finally {
+    setSyncedLanguage(undefined);
+  }
 });

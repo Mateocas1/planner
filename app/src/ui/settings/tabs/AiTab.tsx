@@ -11,10 +11,12 @@ import {
 } from "../../../chat/engramSettings.ts";
 import { chatMemoriesClear, chatMemoriesDelete, chatMemoriesList, MEMORIES_CHANGED_EVENT, type Memory } from "../../../chat/memoryStore.ts";
 import {
+  apiKeyDescription,
   engramStatusText,
   keyStatusText,
   memoryDate,
   memoryPreview,
+  providerDescription,
   validateEngramAddressClient,
   validateEngramProjectClient,
   validateBaseUrlClient,
@@ -27,7 +29,7 @@ import "./AiTab.css";
 
 /**
  * AI (design brief §4, spec S3 + S5): the assistant's setup. The API key is
- * typed once, stored in the Windows Credential Manager by Rust, and never
+ * typed once, stored in the OS credential store by Rust, and never
  * returned to this page — the field is a password input that starts empty
  * every time and is cleared after a save. The base URL and the model are
  * non-secret settings; the model persists locally (`chat/config.ts`). The
@@ -136,7 +138,7 @@ export function AiTab() {
     <>
       <Section
         title={t("ai.provider.title")}
-        description={t("ai.provider.description")}
+        description={providerDescription()}
       >
         <SettingRow
           label={t("ai.baseUrl.label")}
@@ -161,7 +163,7 @@ export function AiTab() {
           <SettingRow
             label={t("ai.apiKey.label")}
             controlId="ai-api-key"
-            description={t("ai.apiKey.description")}
+            description={apiKeyDescription()}
             error={keyError}
           >
             {() => (

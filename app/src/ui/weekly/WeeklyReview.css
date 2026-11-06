@@ -550,6 +550,16 @@
   .weekly-banner-menu-item:hover { background: var(--fill-hover); }
 }
 
+/* ---------- a narrow desktop window ----------
+
+   The sidebar keeps its width, so at 800-960 px the content column is
+   480-640 px; the flow drops its own inset there (the column already has
+   one) so the four steps keep one line. */
+
+@container content (max-width: 759px) {
+  .weekly { padding-inline: 0; }
+}
+
 /* ---------- phone ---------- */
 
 @media (max-width: 760px) {

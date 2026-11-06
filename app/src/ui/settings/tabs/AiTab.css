@@ -8,6 +8,7 @@
 .form-control.ai-field {
   width: 280px;
   max-width: 100%;
+  min-width: 0;
   text-align: left;
   color: var(--label);
   padding: 8px 10px;
@@ -43,4 +44,10 @@
 
 .ai-danger-link {
   color: var(--red);
+}
+
+/* Stacked under its label in a narrow pane (SettingsView.css), the field
+   takes the row's width. */
+@container settings-pane (max-width: 559px) {
+  .form-control.ai-field { width: 100%; }
 }
