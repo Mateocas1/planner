@@ -1,0 +1,128 @@
+/* The capture sheet (Ronda 8, S3, plan §2).
+ *
+ * It lives on the shared glass `Sheet`, so the panel, its scrim and its
+ * entrance are that primitive's. What is here is the inside: a paste area, a
+ * bar with the consent line, and an inset list of proposal cards on the sheet's
+ * opaque `--surface` (the pairs glass-contrast.mjs already proves: --label,
+ * --label-2, --label-3, --red, --orange on --surface).
+ *
+ * Motion: none of its own. Typing, "Reading…" and the numbers are static; the
+ * cards' entrance and the gap closing on Add/Discard belong to the motion
+ * polish (U6). The shared press feedback on buttons is the only movement.
+ */
+
+.capture-sheet { width: min(560px, calc(100% - 24px)); }
+
+.capture-text {
+  width: 100%;
+  min-height: 112px;
+  max-height: 40vh;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-group);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1.45;
+}
+.capture-text::placeholder { color: var(--label-3); }
+.capture-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+
+.capture-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -4px;
+}
+
+.capture-meta {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-caption);
+  color: var(--label-3);
+}
+.capture-count { font-variant-numeric: tabular-nums; }
+
+.capture-invite,
+.capture-note,
+.capture-status { margin: 0; }
+.capture-status { min-height: 0; font-size: var(--text-sub); color: var(--label-2); }
+.capture-status:empty { display: none; }
+.capture-note { font-size: var(--text-sub); color: var(--label-2); }
+
+.capture-results { display: flex; flex-direction: column; gap: 10px; }
+
+.capture-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.capture-found { margin: 0; font-size: var(--text-sub); font-weight: 600; color: var(--label-2); }
+.capture-provenance { font-weight: 400; color: var(--label-3); }
+
+.capture-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.capture-empty p { margin: 0; font-size: var(--text-body); color: var(--label-2); }
+
+.capture-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-group);
+  box-shadow: var(--card-shadow);
+}
+.capture-list:empty { display: none; }
+
+.capture-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.capture-card + .capture-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  border-top: 0.5px solid var(--separator);
+}
+.capture-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.capture-card p { margin: 0; overflow-wrap: anywhere; }
+
+.capture-card-title { font-size: var(--text-headline); font-weight: 600; color: var(--label); letter-spacing: -0.01em; }
+.capture-card-meta { font-size: var(--text-sub); color: var(--label-2); font-variant-numeric: tabular-nums; }
+.capture-card-impact { font-size: var(--text-sub); color: var(--label-2); font-variant-numeric: tabular-nums; }
+.capture-over { color: var(--orange); }
+.capture-warn { font-size: var(--text-sub); color: var(--orange); }
+.capture-quote { font-size: var(--text-sub); color: var(--label-3); font-style: italic; }
+
+.capture-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0; }
+.capture-bias { font-size: var(--text-sub); color: var(--label-2); }
+.capture-block[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+
+.capture-edit { box-shadow: none; background: var(--surface-2); }
+.capture-edit .form-control { background: var(--surface); }
+
+.capture-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+.capture-added { font-size: var(--text-sub); color: var(--label-2); }
+.capture-added-label { font-weight: 600; color: var(--green); }
+
+@media (max-width: 760px) {
+  .capture-bar { flex-wrap: wrap; }
+}
+
+@media (pointer: coarse) {
+  .capture-card-actions .button,
+  .capture-chips .button,
+  .capture-results-head .button,
+  .capture-bar .button { min-height: 44px; }
+  .capture-card-actions { gap: 10px; }
+}
