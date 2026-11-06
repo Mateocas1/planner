@@ -133,7 +133,7 @@ export const settingsTabs = {
   "ai.replace": "Reemplazar",
   "ai.save": "Guardar",
   "ai.cancel": "Cancelar",
-  "ai.privacy": "Las conversaciones no se guardan. Las memorias permanecen en este equipo. Los mensajes van al proveedor que configures.",
+  "ai.privacy": "Las conversaciones no se guardan. Las memorias permanecen en este equipo. Los mensajes van al proveedor que configures. Capturar envía solo el texto que pegas.",
   "ai.error.keyEmpty": "La clave de API no puede estar vacía.",
   "ai.error.baseUrl": "La dirección del proveedor no está permitida.",
   "ai.model.title": "Modelo",

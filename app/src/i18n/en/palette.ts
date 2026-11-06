@@ -28,6 +28,8 @@ export const palette = {
   "palette.action.closeDay.keywords": "close,shutdown,day,ritual",
   "palette.action.replay": "Replay the day",
   "palette.action.replay.keywords": "replay,day,recap,review,history",
+  "palette.action.capture": "Capture",
+  "palette.action.capture.keywords": "capture,paste,inbox",
   "palette.action.weekly": "Weekly review",
   "palette.action.weekly.keywords": "weekly,review,retro,week",
   "palette.action.complete": "Complete task",

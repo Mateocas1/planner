@@ -55,6 +55,7 @@ export type PaletteActionKind =
   | "now-mode"
   | "close-day"
   | "replay-day"
+  | "capture"
   | "weekly-review"
   | "complete-task"
   | "move-tomorrow";
@@ -199,6 +200,19 @@ export const actionCommands: PaletteActionCommand[] = [
     },
     get keywords() {
       return keywords(t("palette.action.replay.keywords"));
+    },
+  },
+  /* The capture inbox (Ronda 8): paste anything, review the tasks found. The
+     sheet is the shell's; the palette only opens it. */
+  {
+    kind: "action",
+    id: "action-capture",
+    action: "capture",
+    get label() {
+      return t("palette.action.capture");
+    },
+    get keywords() {
+      return keywords(t("palette.action.capture.keywords"));
     },
   },
   /* The weekly review's manual entry (S3): the review proposes itself, but it
