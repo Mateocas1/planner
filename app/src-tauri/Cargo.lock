@@ -2892,6 +2892,7 @@ name = "planner"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "notify-rust",
  "planner-core",
  "serde",
  "serde_json",

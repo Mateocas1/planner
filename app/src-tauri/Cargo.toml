@@ -51,3 +51,7 @@ keyring = { version = "3", default-features = false, features = ["windows-native
 # Chat key storage (spec S3) on Linux: the desktop Secret Service (GNOME
 # Keyring / KWallet) over D-Bus, with the pure-Rust crypto so no OpenSSL link.
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+# Block, shutdown and weekly notifications with actions (notify.rs, R7-03):
+# XDG notifications over zbus. Same 4.18 the notification plugin already pulls
+# in, default features, so no new crate enters the lock file.
+notify-rust = "4.18"

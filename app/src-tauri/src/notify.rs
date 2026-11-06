@@ -24,6 +24,16 @@
 //!
 //! Respect for Focus Assist / Do Not Disturb is the OS's own behaviour for
 //! toast notifications; this module does nothing about it on purpose (S10).
+//!
+//! ## Linux (R7-03)
+//!
+//! On Linux the same requests become XDG desktop notifications through
+//! `notify-rust` (already in the tree through `tauri-plugin-notification`).
+//! Each one carries the same buttons plus the XDG `default` action, which
+//! servers such as mako invoke on a body click. A worker thread waits for the
+//! answer and maps it to the same `NotifyAction` the Windows toast reports;
+//! closing or expiring the notification reports nothing. Do Not Disturb is the
+//! notification server's business, as on Windows.
 
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +61,7 @@ pub enum NotifyRequest {
 }
 
 /// What a pressed action means, as the `notify-action` event payload.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum NotifyAction {
     /// [Start focus] (or [Start focus] pressed on a re-reminder).
@@ -76,7 +86,7 @@ pub fn notify_show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), 
 
 /// Brings the main window back, for actions that mean "look at the app".
 /// Safe from any thread: `show`/`set_focus` are proxied to the main thread.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn focus_main(app: &tauri::AppHandle) {
     use tauri::Manager;
     if let Some(window) = app.get_webview_window("main") {
@@ -87,7 +97,7 @@ fn focus_main(app: &tauri::AppHandle) {
 }
 
 /// Emits the action event; a webview that is momentarily gone just misses it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn report(app: &tauri::AppHandle, action: NotifyAction) {
     use tauri::Emitter;
     if let Err(error) = app.emit("notify-action", action) {
@@ -213,9 +223,182 @@ fn dev_exe() -> Option<std::path::PathBuf> {
     (dir.contains(&dev) || dir.contains(&release)).then_some(exe)
 }
 
-/// Non-Windows builds (e.g. a Linux `cargo check`) never run the shell; the
+#[cfg(target_os = "linux")]
+use crate::tray::TrayLabels;
+
+/// A Linux notification's words and actions, `(id, label)` in button order.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct Content {
+    summary: String,
+    body: String,
+    actions: Vec<(&'static str, String)>,
+}
+
+/// Draws a request with the pushed labels: the same title, text and buttons
+/// as the Windows toast. `default` is the body click (its label is not shown
+/// by servers that support it).
+#[cfg(target_os = "linux")]
+fn content(request: &NotifyRequest, labels: &TrayLabels) -> Content {
+    let (summary, body, buttons) = match request {
+        NotifyRequest::Block { title, snoozed, .. } => (
+            if *snoozed == Some(true) { &labels.block_snoozed_lead } else { &labels.block_lead },
+            title.as_ref().unwrap_or(&labels.work_block),
+            vec![("start-focus", &labels.block_start_focus), ("snooze-5", &labels.block_snooze)],
+        ),
+        NotifyRequest::Shutdown => (&labels.shutdown_title, &labels.shutdown_body, vec![("close-day", &labels.shutdown_action)]),
+        NotifyRequest::WeeklyReview { .. } => (
+            &labels.weekly_title,
+            &labels.weekly_body,
+            vec![("start", &labels.weekly_start), ("later", &labels.weekly_later), ("skip", &labels.weekly_skip)],
+        ),
+    };
+    let mut actions = vec![("default", summary.clone())];
+    actions.extend(buttons.into_iter().map(|(id, label)| (id, label.clone())));
+    Content { summary: summary.clone(), body: body.clone(), actions }
+}
+
+/// Maps the invoked action id to what the Windows `on_activated` handlers
+/// report, plus whether the main window comes forward. `None` for a close
+/// (`__closed`, notify-rust's dismissal or expiry): that is not an answer.
+#[cfg(target_os = "linux")]
+fn resolve(request: &NotifyRequest, action: &str) -> Option<(NotifyAction, bool)> {
+    if action == "__closed" {
+        return None;
+    }
+    Some(match request {
+        NotifyRequest::Block { key, block_id, date, .. } => match action {
+            "start-focus" => (NotifyAction::BlockFocus { key: key.clone(), block_id: block_id.clone() }, true),
+            "snooze-5" => (NotifyAction::BlockSnooze { key: key.clone() }, false),
+            _ => (NotifyAction::BlockOpen { key: key.clone(), block_id: block_id.clone(), date: date.clone() }, true),
+        },
+        NotifyRequest::Shutdown => (NotifyAction::ShutdownOpen, true),
+        NotifyRequest::WeeklyReview { key } => {
+            let action = match action {
+                "later" => "later",
+                "skip" => "skip",
+                _ => "start",
+            };
+            (NotifyAction::WeeklyReview { key: key.clone(), action: action.to_string() }, action != "skip")
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
+    use notify_rust::{Notification, Timeout};
+
+    let content = content(&request, &crate::tray::labels(&app));
+    let mut notification = Notification::new();
+    notification
+        .appname(&app.config().product_name.clone().unwrap_or_else(|| "Planner".into()))
+        .summary(&content.summary)
+        .body(&content.body)
+        // Stays until answered, like the Windows Reminder scenario.
+        .timeout(Timeout::Never);
+    for (id, label) in &content.actions {
+        notification.action(id, label);
+    }
+
+    // The D-Bus call and the wait for an answer block, so both run on their
+    // own thread; the IPC command returns at once.
+    std::thread::Builder::new()
+        .name("planner-notify".into())
+        .spawn(move || match notification.show() {
+            Ok(handle) => handle.wait_for_action(|action| {
+                if let Some((action, focus)) = resolve(&request, action) {
+                    if focus {
+                        focus_main(&app);
+                    }
+                    report(&app, action);
+                }
+            }),
+            Err(error) => eprintln!("could not show notification: {error}"),
+        })
+        .map_err(|error| format!("could not spawn notification thread: {error}"))?;
+    Ok(())
+}
+
+/// Other platforms (e.g. a macOS `cargo check`) never run the shell; the
 /// request is dropped and the frontend's tick moves on.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn show(_request: NotifyRequest, _app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    fn block(snoozed: Option<bool>, title: Option<&str>) -> NotifyRequest {
+        NotifyRequest::Block {
+            key: "b1@0900".into(),
+            block_id: "b1".into(),
+            date: Some("2026-11-06".into()),
+            title: title.map(Into::into),
+            snoozed,
+        }
+    }
+
+    fn labels() -> TrayLabels {
+        TrayLabels { block_lead: "Empieza en 2 min".into(), work_block: "Bloque de trabajo".into(), ..TrayLabels::default() }
+    }
+
+    #[test]
+    fn block_content_uses_pushed_labels_and_both_buttons() {
+        let labels = labels();
+        let c = content(&block(None, None), &labels);
+        assert_eq!(c.summary, "Empieza en 2 min");
+        assert_eq!(c.body, "Bloque de trabajo");
+        assert_eq!(c.actions, vec![("default", "Empieza en 2 min".to_string()), ("start-focus", labels.block_start_focus.clone()), ("snooze-5", labels.block_snooze.clone())]);
+        let snoozed = content(&block(Some(true), Some("Write")), &labels);
+        assert_eq!(snoozed.summary, labels.block_snoozed_lead);
+        assert_eq!(snoozed.body, "Write");
+    }
+
+    #[test]
+    fn shutdown_and_weekly_content() {
+        let labels = TrayLabels::default();
+        let c = content(&NotifyRequest::Shutdown, &labels);
+        assert_eq!((c.summary.as_str(), c.body.as_str()), (labels.shutdown_title.as_str(), labels.shutdown_body.as_str()));
+        assert_eq!(c.actions[1..], [("close-day", labels.shutdown_action.clone())]);
+        let c = content(&NotifyRequest::WeeklyReview { key: "w".into() }, &labels);
+        let ids: Vec<_> = c.actions.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, ["default", "start", "later", "skip"]);
+        assert_eq!(c.actions[3].1, labels.weekly_skip);
+    }
+
+    #[test]
+    fn block_actions_map_like_windows() {
+        let request = block(None, None);
+        assert_eq!(
+            resolve(&request, "start-focus"),
+            Some((NotifyAction::BlockFocus { key: "b1@0900".into(), block_id: "b1".into() }, true))
+        );
+        assert_eq!(resolve(&request, "snooze-5"), Some((NotifyAction::BlockSnooze { key: "b1@0900".into() }, false)));
+        assert_eq!(
+            resolve(&request, "default"),
+            Some((NotifyAction::BlockOpen { key: "b1@0900".into(), block_id: "b1".into(), date: Some("2026-11-06".into()) }, true))
+        );
+    }
+
+    #[test]
+    fn shutdown_and_weekly_actions_map_like_windows() {
+        assert_eq!(resolve(&NotifyRequest::Shutdown, "close-day"), Some((NotifyAction::ShutdownOpen, true)));
+        assert_eq!(resolve(&NotifyRequest::Shutdown, "default"), Some((NotifyAction::ShutdownOpen, true)));
+        let weekly = NotifyRequest::WeeklyReview { key: "w".into() };
+        let review = |action: &str| NotifyAction::WeeklyReview { key: "w".into(), action: action.into() };
+        assert_eq!(resolve(&weekly, "default"), Some((review("start"), true)));
+        assert_eq!(resolve(&weekly, "start"), Some((review("start"), true)));
+        assert_eq!(resolve(&weekly, "later"), Some((review("later"), true)));
+        assert_eq!(resolve(&weekly, "skip"), Some((review("skip"), false)));
+    }
+
+    /// Dismissing or expiring a notification is not an answer: nothing is reported.
+    #[test]
+    fn closing_reports_nothing() {
+        assert_eq!(resolve(&block(None, None), "__closed"), None);
+        assert_eq!(resolve(&NotifyRequest::Shutdown, "__closed"), None);
+        assert_eq!(resolve(&NotifyRequest::WeeklyReview { key: "w".into() }, "__closed"), None);
+    }
 }
