@@ -857,6 +857,9 @@ time,
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 28px;
+  /* Views lay out by the column they get, not the window: the sidebar takes
+     its 244 px from every desktop width (Settings' rail, SettingsView.css). */
+  container: content / inline-size;
 }
 
 /* ---------- page structure ---------- */
@@ -1696,7 +1699,10 @@ time,
 
 .form-row label,
 .form-row dt { flex: 1; }
-.form-row dd { color: var(--label-2); text-align: right; }
+/* A term never gives its width to a long value ("Para la tarea" beside a long
+   task title wrapped one word per line): the value wraps instead. */
+.form-row dt { flex: 1 0 auto; }
+.form-row dd { min-width: 0; color: var(--label-2); text-align: right; overflow-wrap: break-word; }
 
 .form-control {
   min-width: 0;
