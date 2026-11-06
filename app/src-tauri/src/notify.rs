@@ -333,10 +333,43 @@ fn reuse(waiters: &[Waiter], slot: &str, cap: usize) -> Option<u32> {
         .map(|waiter| waiter.id)
 }
 
+/// Records a shown notification and says whether it needs its own waiting
+/// thread. A live waiter with the same id (an in-place replacement) keeps its
+/// thread, which now answers for this request; it moves last, as the newest.
+/// Any other waiter is left alone: if the server gave a new id, the old
+/// notification may still be up and its thread still answers it.
+#[cfg(target_os = "linux")]
+fn record(waiters: &mut Vec<Waiter>, id: u32, slot: String, request: NotifyRequest) -> bool {
+    let waiting = remove(waiters, id).is_some();
+    waiters.push(Waiter { id, slot, request });
+    !waiting
+}
+
+/// Takes a notification's waiter out of the registry, if it is still there.
+#[cfg(target_os = "linux")]
+fn remove(waiters: &mut Vec<Waiter>, id: u32) -> Option<Waiter> {
+    let index = waiters.iter().position(|w| w.id == id)?;
+    Some(waiters.remove(index))
+}
+
+/// Serializes `show` so two requests never pick the same notification to
+/// replace. Only `show` takes it; waiting threads never block on D-Bus.
+#[cfg(target_os = "linux")]
+static SHOWING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(target_os = "linux")]
+fn waiters() -> std::sync::MutexGuard<'static, Vec<Waiter>> {
+    WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Linux: shows the notification synchronously, so a D-Bus failure is logged
 /// and returned. A replacement (same XDG id, `replaces_id`) keeps the old
 /// notification's waiting thread, which then answers for the new request; so
-/// at most `MAX_WAITERS` threads ever wait.
+/// at most `MAX_WAITERS` threads wait, unless a server ignores `replaces_id`
+/// (then each extra notification is still on screen and still answered).
+/// `WAITERS` is never held across the D-Bus call, so an answer arriving
+/// meanwhile is handled at once; `record` copes with the waiter it was going
+/// to replace being gone by then.
 #[cfg(target_os = "linux")]
 fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
     use notify_rust::{Notification, Timeout};
@@ -354,10 +387,8 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
         notification.action(id, label);
     }
 
-    // Held across the D-Bus call so a waiter cannot vanish mid-replacement.
-    let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let replaced = reuse(&waiters, &slot, MAX_WAITERS);
-    if let Some(id) = replaced {
+    let _showing = SHOWING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(id) = reuse(&waiters(), &slot, MAX_WAITERS) {
         notification.id(id);
     }
     let handle = notification.show().map_err(|error| {
@@ -366,27 +397,15 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
         error
     })?;
     let id = handle.id();
-    if let Some(old) = replaced {
-        // Same id: same notification, new content, and its thread answers for
-        // this request. A new id means the old one was already gone.
-        waiters.retain(|w| w.id != old);
-        if old == id {
-            waiters.push(Waiter { id, slot, request });
-            return Ok(());
-        }
+    if !record(&mut waiters(), id, slot, request) {
+        return Ok(());
     }
-    waiters.push(Waiter { id, slot, request });
-    drop(waiters);
 
     // The wait for an answer blocks, so it runs on its own thread.
     std::thread::Builder::new()
         .name("planner-notify".into())
         .spawn(move || {
-            let take = || {
-                let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                let index = waiters.iter().position(|w| w.id == id)?;
-                Some(waiters.remove(index))
-            };
+            let take = || remove(&mut waiters(), id);
             handle.wait_for_action(|action| {
                 let Some(waiter) = take() else { return };
                 if let Some((action, focus)) = resolve(&waiter.request, action) {
@@ -400,8 +419,7 @@ fn show(request: NotifyRequest, app: tauri::AppHandle) -> Result<(), String> {
             take();
         })
         .map_err(|error| {
-            let mut waiters = WAITERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            waiters.retain(|w| w.id != id);
+            remove(&mut waiters(), id);
             format!("could not spawn notification thread: {error}")
         })?;
     Ok(())
@@ -512,5 +530,56 @@ mod tests {
         assert_eq!(reuse(&live, "weekly", 4), None);
         assert_eq!(reuse(&live, "weekly", 2), Some(7));
         assert_eq!(reuse(&[], "weekly", 4), None);
+    }
+
+    fn ids(waiters: &[Waiter]) -> Vec<(u32, &str)> {
+        waiters.iter().map(|w| (w.id, w.slot.as_str())).collect()
+    }
+
+    /// A new id gets its own waiting thread and goes last (newest).
+    #[test]
+    fn record_new_id_needs_a_thread() {
+        let mut live = vec![waiter(7, "block:b1")];
+        assert!(record(&mut live, 9, "shutdown".into(), NotifyRequest::Shutdown));
+        assert_eq!(ids(&live), [(7, "block:b1"), (9, "shutdown")]);
+    }
+
+    /// A replacement that kept its id is answered by the live thread, which now
+    /// answers for the new request; it becomes the newest.
+    #[test]
+    fn record_same_id_swaps_the_request_in_place() {
+        let mut live = vec![waiter(7, "block:b1"), waiter(9, "shutdown")];
+        assert!(!record(&mut live, 7, "weekly".into(), NotifyRequest::WeeklyReview { key: "w".into() }));
+        assert_eq!(ids(&live), [(9, "shutdown"), (7, "weekly")]);
+        assert!(matches!(live[1].request, NotifyRequest::WeeklyReview { .. }));
+    }
+
+    /// The server ignored `replaces_id` (or the old one closed meanwhile): the
+    /// old waiter stays, so its thread still answers its notification, and the
+    /// new id gets its own thread.
+    #[test]
+    fn record_id_mismatch_keeps_the_old_waiter() {
+        let mut live = vec![waiter(7, "block:b1")];
+        assert!(record(&mut live, 8, "block:b1".into(), block(Some(true), None)));
+        assert_eq!(ids(&live), [(7, "block:b1"), (8, "block:b1")]);
+    }
+
+    /// The replaced waiter was answered while `show` ran (its thread took it):
+    /// even with the same id back, nothing waits, so a new thread is needed.
+    #[test]
+    fn record_after_the_old_thread_took_its_waiter_needs_a_thread() {
+        let mut live = vec![waiter(7, "block:b1")];
+        assert!(remove(&mut live, 7).is_some());
+        assert!(record(&mut live, 7, "block:b1".into(), block(None, None)));
+        assert_eq!(ids(&live), [(7, "block:b1")]);
+    }
+
+    #[test]
+    fn remove_takes_only_the_given_id_once() {
+        let mut live = vec![waiter(7, "block:b1"), waiter(9, "shutdown")];
+        assert_eq!(remove(&mut live, 9).map(|w| w.id), Some(9));
+        assert!(remove(&mut live, 9).is_none());
+        assert!(remove(&mut live, 3).is_none());
+        assert_eq!(ids(&live), [(7, "block:b1")]);
     }
 }
