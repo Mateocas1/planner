@@ -7,10 +7,13 @@ export const auth = {
   "auth.error.network": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
   "auth.error.sessionExpired": "Tu sesión expiró. Inténtalo de nuevo.",
   "auth.error.default": "No se pudo iniciar sesión. Inténtalo de nuevo.",
+  "auth.error.resetDefault": "No se pudo enviar el correo para restablecer la contraseña. Inténtalo de nuevo.",
   "auth.title": "Personal Planner",
   "auth.tagline": "Tareas, fechas límite y el tiempo que reservas para ellas. Funciona sin conexión.",
   "auth.email": "Correo electrónico",
   "auth.password": "Contraseña",
   "auth.signIn": "Iniciar sesión",
   "auth.createAccount": "Crear cuenta",
+  "auth.forgotPassword": "¿Olvidaste tu contraseña?",
+  "auth.resetSent": "Si hay una cuenta con este correo, te enviamos un enlace para restablecer la contraseña. Revisa tu bandeja de entrada.",
 } as const;

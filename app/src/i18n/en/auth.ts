@@ -8,10 +8,13 @@ export const auth = {
   "auth.error.network": "No connection. Check your network and try again.",
   "auth.error.sessionExpired": "Your session expired. Try again.",
   "auth.error.default": "Could not sign in. Try again.",
+  "auth.error.resetDefault": "Could not send the reset email. Try again.",
   "auth.title": "Personal Planner",
   "auth.tagline": "Tasks, deadlines and the time you set aside for them. Works offline.",
   "auth.email": "Email",
   "auth.password": "Password",
   "auth.signIn": "Sign in",
   "auth.createAccount": "Create account",
+  "auth.forgotPassword": "Forgot password?",
+  "auth.resetSent": "If an account uses this email, a link to reset the password is on its way. Check your inbox.",
 } as const;
