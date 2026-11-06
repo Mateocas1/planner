@@ -28,6 +28,9 @@ pub enum ChatErrorCode {
     Provider,
     /// Rejected locally (bad base URL, empty messages).
     InvalidRequest,
+    /// The OS credential store is missing or locked (Linux: no Secret
+    /// Service daemon running, or its collection is locked).
+    CredentialStoreUnavailable,
 }
 
 /// One complete tool call proposed by the model: the id, the function name
@@ -1042,6 +1045,14 @@ mod tests {
         assert_eq!(error_code_for_status(403), ChatErrorCode::Unauthorized);
         assert_eq!(error_code_for_status(429), ChatErrorCode::RateLimited);
         assert_eq!(error_code_for_status(500), ChatErrorCode::Provider);
+    }
+
+    #[test]
+    fn credential_store_unavailable_serializes_like_the_ts_contract() {
+        assert_eq!(
+            serde_json::to_string(&ChatErrorCode::CredentialStoreUnavailable).unwrap(),
+            r#""credential_store_unavailable""#
+        );
     }
 
     fn memory(id: &str, topic: &str) -> Memory {

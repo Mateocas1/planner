@@ -9,6 +9,7 @@ export const chat = {
   "chat.noKey.heading": "Add an API key to start chatting.",
   "chat.noKey.setup": "Set up the assistant",
   "chat.retry": "Retry",
+  "chat.error.credentialStoreUnavailable": "The system keyring is not available or is locked. Start or unlock a keyring such as GNOME Keyring or KWallet, then try again.",
   "chat.jump": "Jump to latest ↓",
   "chat.placeholder": "Type your message…",
   "chat.message": "Message",
