@@ -9,6 +9,24 @@
 
 import { getLocale, intlLocale, t } from "../../i18n/index.ts";
 import { DEFAULT_CHAT_BASE_URL, type ChatKeyStatus } from "../../chat/keyStore.ts";
+import { desktopPlatform, type DesktopPlatform } from "../../desktop.ts";
+
+/** The copy family that names where the key is stored: the Rust `keyring`
+ * crate writes to Windows Credential Manager on Windows and to the Secret
+ * Service (GNOME Keyring, KWallet) on Linux. */
+function storeFamily(platform: DesktopPlatform): "windows" | "linux" | "other" {
+  return platform === "windows" || platform === "linux" ? platform : "other";
+}
+
+/** The Provider section's note, naming this platform's credential store. */
+export function providerDescription(platform: DesktopPlatform = desktopPlatform()): string {
+  return t(`ai.provider.description.${storeFamily(platform)}`);
+}
+
+/** The API key row's note, naming this platform's credential store. */
+export function apiKeyDescription(platform: DesktopPlatform = desktopPlatform()): string {
+  return t(`ai.apiKey.description.${storeFamily(platform)}`);
+}
 
 /**
  * The host a saved key points at ("Key saved for api.nan.builders"), or the
