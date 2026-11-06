@@ -39,7 +39,13 @@ export function quickAddDescription(platform: DesktopPlatform = desktopPlatform(
 }
 
 /** The line under the quick-add chip when the chord is not registered: the
- * compositor's job under Wayland, a refusal anywhere else. */
+ * compositor's job under Wayland (or a failed Hyprland bind sync), a refusal
+ * anywhere else. */
 export function quickAddUnregisteredNote(error: string | null): string {
-  return quickAddUnregisteredCause(error) === "compositor" ? t("recorder.compositor") : t("recorder.unavailable");
+  switch (quickAddUnregisteredCause(error)) {
+    case "compositor": return t("recorder.compositor");
+    case "bindWrite": return t("recorder.bindWriteFailed");
+    case "reload": return t("recorder.reloadFailed");
+    default: return t("recorder.unavailable");
+  }
 }
