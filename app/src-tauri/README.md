@@ -1,6 +1,10 @@
-# Planner desktop shell (Tauri 2, Windows)
+# Planner desktop shell (Tauri 2, Windows and Linux)
 
-The React app in `app/` wrapped in a Tauri 2 shell that uses the system WebView2 (no bundled browser). Windows 10/11 x64 is the only target. Everything is built from WSL; Windows executables cannot be run from WSL, so you run them on Windows.
+The React app in `app/` wrapped in a Tauri 2 shell that uses the system webview (WebView2 on Windows, WebKitGTK on Linux; no bundled browser). Windows 10/11 x64 is built from WSL and run on Windows; Linux (Ronda 6, tested on Arch/Hyprland) is built and run natively.
+
+## Linux (native)
+
+Prerequisites: `rustup` (stable), `webkit2gtk-4.1`, `gtk3`, `libsoup3`, `libayatana-appindicator`, `librsvg`, `base-devel`, and `npm ci` in `app/`. `npm run desktop:build:linux` builds `src-tauri/target/release/planner` (embedded assets, no bundle); run it from a graphical session. On Linux the chat key lives in the desktop Secret Service (GNOME Keyring/KWallet), the tray uses AppIndicator/StatusNotifier, and the Windows-only pieces (Mica backdrop, WebView2 memory target, taskbar progress, native toast actions, idle probe) are compiled out. `rust-ini` is pinned to 0.21.1 in `Cargo.lock`: 0.21.3 added `ParseOption` fields that break `tauri-plugin-deep-link` 2.6.2 on Linux.
 
 ## Prerequisites (WSL)
 

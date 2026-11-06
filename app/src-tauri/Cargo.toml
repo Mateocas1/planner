@@ -46,3 +46,8 @@ tauri-winrt-notification = "0.8"
 # Chat key storage (spec S3): Windows Credential Manager through the
 # windows-native backend, so no secret-service/dbus dependency is pulled in.
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Chat key storage (spec S3) on Linux: the desktop Secret Service (GNOME
+# Keyring / KWallet) over D-Bus, with the pure-Rust crypto so no OpenSSL link.
+keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
