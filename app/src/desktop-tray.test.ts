@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BlockView, TaskView } from "./data/store.ts";
 import type { FocusSession } from "./domain/focus.ts";
+import { setDeviceLanguage } from "./i18n/index.ts";
 import {
-  NOTHING_UP_NEXT,
-  SIGNED_OUT_UP_NEXT,
   TRAY_HEARTBEAT_MS,
   TRAY_PUSH_MIN_GAP_MS,
   focusFraction,
   focusLine,
   liveTrayPayload,
+  nothingUpNext,
   signedOutTrayPayload,
+  signedOutUpNext,
+  trayLabels,
   trayPushDecision,
   upNextLabel,
   type TrayPayload,
@@ -39,7 +41,7 @@ function session(over: Partial<FocusSession> = {}): FocusSession {
 }
 
 function payload(over: Partial<TrayPayload> = {}): TrayPayload {
-  return { upNext: NOTHING_UP_NEXT, focus: null, progress: null, ...over };
+  return { upNext: nothingUpNext(), focus: null, progress: null, labels: trayLabels(), ...over };
 }
 
 const deepWork = task("t1", "Deep work");
@@ -65,8 +67,8 @@ test("a block with no task keeps the product's word for it", () => {
 
 test("a day with nothing left says so, and tomorrow's block does not count", () => {
   const tomorrow = block("b3", "2026-10-23T09:00:00Z", "2026-10-23T10:00:00Z", "t1");
-  assert.equal(upNextLabel([run1400], [deepWork], zone, iso("2026-10-22T20:00:00Z")), NOTHING_UP_NEXT);
-  assert.equal(upNextLabel([tomorrow], [deepWork], zone, iso("2026-10-22T20:00:00Z")), NOTHING_UP_NEXT);
+  assert.equal(upNextLabel([run1400], [deepWork], zone, iso("2026-10-22T20:00:00Z")), nothingUpNext());
+  assert.equal(upNextLabel([tomorrow], [deepWork], zone, iso("2026-10-22T20:00:00Z")), nothingUpNext());
 });
 
 test("the focus line counts whole minutes, rounding up and never reaching zero", () => {
@@ -141,5 +143,46 @@ test("a paused session keeps its line and marks the bar paused", () => {
 });
 
 test("signing out says so and carries nothing else", () => {
-  assert.deepEqual(signedOutTrayPayload(), { upNext: SIGNED_OUT_UP_NEXT, focus: null, progress: null });
+  assert.deepEqual(signedOutTrayPayload(), { upNext: signedOutUpNext(), focus: null, progress: null, labels: trayLabels() });
+});
+
+test("the tray and notification strings follow the app language", () => {
+  assert.equal(signedOutUpNext(), "Sign in to see Up next");
+  assert.equal(nothingUpNext(), "Up next: Nothing else today");
+  assert.equal(trayLabels().open, "Open Planner");
+  assert.equal(trayLabels().quit, "Quit");
+  assert.equal(trayLabels().weeklySkip, "Skip this week");
+  setDeviceLanguage("es");
+  try {
+    const labels = trayLabels();
+    assert.equal(labels.open, "Abrir Planner");
+    assert.equal(labels.quit, "Salir");
+    assert.equal(labels.noticeTitle, "Planner sigue abierto en la bandeja");
+    assert.equal(labels.blockStartFocus, "Iniciar enfoque");
+    assert.equal(labels.shutdownAction, "Cerrar el día");
+    assert.equal(upNextLabel([next1600], [], zone, iso("2026-10-22T14:30:00Z")), "A continuación: Bloque de trabajo · 16:00");
+    assert.equal(focusLine(18 * 60_000), "Enfoque: quedan 18 min");
+    assert.equal(signedOutTrayPayload().upNext, "Iniciar sesión para ver A continuación");
+    assert.equal(signedOutTrayPayload().labels.quit, "Salir");
+    // Every label is translated: none is left equal to its English twin.
+    setDeviceLanguage("en");
+    const english = trayLabels();
+    setDeviceLanguage("es");
+    for (const [field, value] of Object.entries(labels)) {
+      if (field === "blockSnooze") continue; // "+5 min" reads the same in both
+      assert.notEqual(value, english[field as keyof typeof english], field);
+    }
+  } finally {
+    setDeviceLanguage(null);
+  }
+});
+
+test("a language change alone is a payload change the tray pushes", () => {
+  const sent = payload();
+  setDeviceLanguage("es");
+  try {
+    assert.deepEqual(trayPushDecision(sent, payload(), 20_000, 0), { push: true });
+  } finally {
+    setDeviceLanguage(null);
+  }
 });

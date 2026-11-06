@@ -12,6 +12,7 @@ import {
   useShortcutBinding,
 } from "./shortcutRegistry.ts";
 import { Keycap } from "./Keycap.tsx";
+import { quickAddUnregisteredNote } from "./desktopCopy.ts";
 import "./ShortcutRecorder.css";
 
 /**
@@ -163,7 +164,7 @@ export function ShortcutRecorder({ id, desktop }: { id: "palette" | "chat" | "qu
         </p>
       )}
       {unavailable && !recording && (
-        <p className="settings-row-desc">{t("recorder.unavailable")}</p>
+        <p className="settings-row-desc">{quickAddUnregisteredNote(quickAddStatus.error)}</p>
       )}
       {message && <p className="inline-error shortcut-conflict" role="alert">{message}</p>}
     </div>
