@@ -2,19 +2,14 @@ import { initializeApp } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { connectFirestoreEmulator, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.ts";
+import { usesEmulators } from "./origin.ts";
 
-// Origin-driven configuration.
-//
-// On localhost / 127.0.0.1 the app runs against the throwaway `demo-calendar-app`
-// project and its local emulators, so the local suite can never reach production.
-// On any other origin it runs against the real Firebase project and connects to
-// no emulator.
+// Origin-driven configuration (rule and cases in origin.ts).
 //
 // This replaces the guard that used to throw on a non-local origin. That guard
 // was right while the app was local-only; now the non-local origin is the
 // production case, so the throw is removed deliberately rather than silently.
-const localOrigins = new Set(["localhost", "127.0.0.1"]);
-const isLocal = localOrigins.has(window.location.hostname);
+const isLocal = usesEmulators(window.location);
 
 const app = initializeApp(
   isLocal ? { projectId: "demo-calendar-app", apiKey: "local-only" } : firebaseConfig,
