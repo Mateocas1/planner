@@ -6,7 +6,7 @@
  * semantic state colours, all of which carry text somewhere in the app).
  *
  * Reads the real tokens out of `src/ui/brand.css`, `src/app.css` and
- * `src/ui/glass.css`, composites every glass tint over the backdrops the app
+ * `src/ui/glass.css` (and, for the Linux flat look, `src/ui/glass-linux.css`), composites every glass tint over the backdrops the app
  * actually puts behind chrome, and asserts WCAG AA (>= 4.5:1) for each label token on each material, in light
  * and dark mode. Fails loudly if a token pair is below the floor or if a token
  * the script depends on disappears.
@@ -168,16 +168,39 @@ function readRootTokens(file) {
 const brand = readRootTokens("src/ui/brand.css");
 
 /**
+ * The Linux flat look (Ronda 9): `glass-linux.css` overrides the tint and scrim
+ * tokens under `html[data-webkitgtk="flat"]`, with a dark block on top. Only
+ * custom properties are read; the backdrop-filter rules carry none.
+ */
+function readLinuxFlat() {
+  const css = readFileSync(join(appDir, "src/ui/glass-linux.css"), "utf8");
+  const out = {};
+  for (const [scheme, selector] of [
+    ["light", 'html[data-webkitgtk="flat"] {'],
+    ["dark", 'html[data-webkitgtk="flat"][data-theme="dark"] {'],
+  ]) {
+    const at = css.indexOf(selector);
+    if (at < 0) throw new Error(`glass-linux.css: no ${selector} block`);
+    const block = css.slice(at, css.indexOf("}", at));
+    out[scheme] = new Map([...block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+);/gi)].map((m) => [m[1], m[2].trim()]));
+  }
+  return out;
+}
+const linuxFlat = readLinuxFlat();
+
+/**
  * Every token the browser would resolve for one scheme. The brand scale comes
  * first so app.css and glass.css win any name they share, and a `var(--ink-N)`
  * reference in either of them resolves through this map instead of failing.
  */
-function tokensFor(scheme) {
+function tokensFor(scheme, flat = false) {
   return new Map([
     ...brand,
     ...app.light,
     ...glass.light,
     ...(scheme === "dark" ? [...app.dark, ...glass.dark] : []),
+    /* Same cascade as the CSS: the flat light block, then the dark one on top. */
+    ...(flat ? [...linuxFlat.light, ...(scheme === "dark" ? linuxFlat.dark : [])] : []),
   ]);
 }
 
@@ -230,8 +253,11 @@ const materials = [
 let failures = 0;
 const rows = [];
 
+/* Every material is proven twice: the default look, and the Linux flat look with
+   its raised tints and its stronger scrim (`scrim-page` reads `--scrim`). */
+for (const look of ["", "flat-"])
 for (const scheme of ["light", "dark"]) {
-  const tokens = tokensFor(scheme);
+  const tokens = tokensFor(scheme, look !== "");
   const backgrounds = backdrops(tokens);
   for (const material of materials) {
     const tint = parseColor(tokens.get(material.token), tokens);
@@ -251,7 +277,7 @@ for (const scheme of ["light", "dark"]) {
         if (enforced && !pass) failures += 1;
         rows.push({
           scheme,
-          material: material.name,
+          material: look + material.name,
           backdrop: backdrop.name,
           label,
           surface: toHex(surface),
