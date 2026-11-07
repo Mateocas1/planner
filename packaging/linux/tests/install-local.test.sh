@@ -75,7 +75,7 @@ if command -v lua > /dev/null; then
     io.write(binds, " ", rules)
 LUA
 )" || fail "snippet raised past a failing window rule: $lua_out"
-  [ "$lua_out" = "1 2" ] || fail "expected 1 bind and 2 rules, got: $lua_out"
+  [ "$lua_out" = "1 3" ] || fail "expected 1 bind and 3 rules, got: $lua_out"
 fi
 
 if [ "$failures" -gt 0 ]; then

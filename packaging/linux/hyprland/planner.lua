@@ -96,6 +96,16 @@ hl.bind(chosen_chord() or default_chord, hl.dsp.exec_cmd(run(planner .. " --quic
   description = "Planner quick add",
 })
 
+-- Every Planner window is fully opaque. Omarchy gives every window a default
+-- opacity (0.985 active, 0.96 inactive), which lets the wallpaper show through
+-- the page and makes the compositor redraw what is behind the window on every
+-- animation frame. The page paints its own opaque background on Linux (D4).
+pcall(hl.window_rule, {
+  match = { class = class },
+  tag = "-default-opacity",
+  opacity = "1 1",
+})
+
 -- Quick-add window: a floating palette centered on the focused monitor, at
 -- the size the app asks for (Hyprland would otherwise give it half the
 -- monitor). It keeps focus while open: with Omarchy's follow_mouse = 1 the

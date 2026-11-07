@@ -1,10 +1,10 @@
 /* F3c -- the shutdown ritual (odd/research/distinctive-roadmap.md §2 F3).
  *
  * Two pages inside one sheet. The Tomorrow page is pre-rendered beneath Today
- * by ui/PageTurn.tsx, which is why the turning page has to be painted on an
- * opaque surface: a see-through page would show tomorrow through today. The
- * surface is the sheet's own `--surface` (the one the creation sheets use), so
- * every text pair here is a pair scripts/glass-contrast.mjs already proves.
+ * by ui/PageTurn.tsx, hidden at rest; the turning page is painted on an opaque
+ * backing, so tomorrow never shows through today while it moves. At rest the
+ * page is transparent and the text sits on the sheet's own material, so every
+ * text pair here is a pair scripts/glass-contrast.mjs already proves.
  *
  * Motion: nothing new is animated by this file except the arrival of tomorrow,
  * and only opacity -- the page's own travel belongs to PageTurn (a transform on
@@ -13,7 +13,20 @@
  */
 
 .shutdown-sheet {
+  /* Only the page in motion is painted (PageTurn.css): at rest it is
+     transparent and the panel's own material shows, so the sheet is one
+     surface. The leaf takes the panel's tint at full opacity, which is the
+     colour a translucent panel over this app's page settles at (the alpha has to
+     be dropped explicitly: a relative colour keeps its own); where relative
+     colours are unsupported the plain surface stays. */
   --page-turn-surface: var(--surface);
+  --page-turn-radius: 18px;
+}
+
+@supports (color: rgb(from red r g b)) {
+  .shutdown-sheet {
+    --page-turn-surface: rgb(from var(--glass-tint-thick) r g b / 1);
+  }
 }
 
 .shutdown-turn {
