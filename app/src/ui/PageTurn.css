@@ -30,6 +30,14 @@
   transform-origin: 50% 50%;
   opacity: 0.6;
   pointer-events: none;
+  /* At rest nothing may show of the page beneath: the page above is see-through
+     (it takes the sheet's own material), so tomorrow is simply not painted
+     until a drag, a turn or a spring-back puts it in play. */
+  visibility: hidden;
+}
+
+.page-turn:not([data-page-turn-state="rest"]) .page-turn-under {
+  visibility: visible;
 }
 
 /* Once the turn has committed the page beneath is the day the user is on: it
@@ -47,12 +55,31 @@
   transform: translate3d(0px, 0px, 0px);
 }
 
-/* A page with another one beneath it has to hide it. Consumers set
- * --page-turn-surface to the surface they are painted on; the default is the
- * card surface every sheet already uses. On Today there is no next page yet, so
- * the page stays transparent and no seam appears over the page gradient. */
-.page-turn[data-page-turn-next="true"] .page-turn-top {
+/* A page with another one beneath it has to hide it -- but only while it moves.
+ * At rest the page is transparent, so the sheet reads as one surface (a page
+ * painted on a colour of its own never matches a translucent panel: it shows as
+ * a darker inset with square corners). The moment the page leaves rest an
+ * opaque backing appears behind its content, on a pseudo-element so the cut is
+ * an opacity write: instant on the way in (tomorrow must never show through for
+ * even one frame), a short fade on the way out. Consumers set --page-turn-surface
+ * to the colour closest to the surface they sit on, and --page-turn-radius to
+ * the corners of the lifted leaf. On Today there is no next page yet, so the
+ * page stays transparent throughout and no seam appears over the page gradient. */
+.page-turn[data-page-turn-next="true"] .page-turn-top::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--page-turn-radius, 0);
   background: var(--page-turn-surface, var(--surface));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-state) var(--ease-out);
+}
+
+.page-turn[data-page-turn-next="true"]:not([data-page-turn-state="rest"]) .page-turn-top::before {
+  opacity: 1;
+  transition: none;
 }
 
 /* The shadow the lifted sheet casts on its own trailing edge: one gradient,
