@@ -59,14 +59,90 @@ pub fn desktop_backdrop<R: Runtime>(window: WebviewWindow<R>, dark: bool) -> Res
     apply_backdrop(&window, dark)
 }
 
+/// The Ronda 9 Linux diagnostics, read from the environment once at startup.
+/// Unknown values fall back to the defaults, so a typo never changes behavior.
+#[cfg(target_os = "linux")]
+#[derive(Debug, PartialEq, Eq)]
+pub struct Diag {
+    /// `PLANNER_GUARD=off`: the page skips the compositor handoff (D11).
+    pub guard_off: bool,
+    /// `PLANNER_GLASS=blur`: the page keeps the blurred glass instead of the
+    /// flat Linux default.
+    pub glass_blur: bool,
+    /// `PLANNER_FPS=1`: the page shows the frame-time HUD.
+    pub fps: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl Diag {
+    pub fn from_values(guard: Option<&str>, glass: Option<&str>, fps: Option<&str>) -> Self {
+        Self {
+            guard_off: guard == Some("off"),
+            glass_blur: glass == Some("blur"),
+            fps: fps == Some("1"),
+        }
+    }
+
+    pub fn from_env() -> Self {
+        let read = |name: &str| std::env::var(name).ok();
+        Self::from_values(
+            read("PLANNER_GUARD").as_deref(),
+            read("PLANNER_GLASS").as_deref(),
+            read("PLANNER_FPS").as_deref(),
+        )
+    }
+
+    /// The init script: the WebKitGTK marker plus `window.__PLANNER_DIAG__`
+    /// (`src/ui/perfHud.ts` reads it). Only known values are emitted, as JSON.
+    pub fn init_script(&self) -> String {
+        let diag = serde_json::json!({
+            "guard": if self.guard_off { "off" } else { "on" },
+            "glass": if self.glass_blur { "blur" } else { "flat" },
+            "fps": self.fps,
+        });
+        format!("window.__WEBKITGTK__ = true; window.__PLANNER_DIAG__ = {diag};")
+    }
+}
+
 /// Linux: marks every webview as WebKitGTK before any app script runs
 /// (`window.__WEBKITGTK__`), so `main.tsx` installs the end-of-animation guard
 /// in `src/ui/compositorHandoff.ts` (Ronda 6 S5). WebKitGTK presents one stale
 /// frame when a compositor animation ends; WebView2 does not, so Windows never
-/// registers this plugin.
+/// registers this plugin. The same script hands the page the diagnostics
+/// switches (`PLANNER_GUARD`, `PLANNER_GLASS`, `PLANNER_FPS`, see the README).
 #[cfg(target_os = "linux")]
 pub fn webkitgtk_marker<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("webkitgtk-marker")
-        .js_init_script("window.__WEBKITGTK__ = true;".to_string())
+        .js_init_script(Diag::from_env().init_script())
         .build()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::Diag;
+
+    #[test]
+    fn defaults_keep_the_guard_flat_glass_and_no_hud() {
+        let diag = Diag::from_values(None, None, None);
+        assert_eq!(
+            diag.init_script(),
+            r#"window.__WEBKITGTK__ = true; window.__PLANNER_DIAG__ = {"fps":false,"glass":"flat","guard":"on"};"#
+        );
+    }
+
+    #[test]
+    fn known_values_switch_each_diagnostic() {
+        let diag = Diag::from_values(Some("off"), Some("blur"), Some("1"));
+        assert_eq!(
+            diag.init_script(),
+            r#"window.__WEBKITGTK__ = true; window.__PLANNER_DIAG__ = {"fps":true,"glass":"blur","guard":"off"};"#
+        );
+    }
+
+    #[test]
+    fn unknown_values_fall_back_and_are_never_echoed() {
+        let diag = Diag::from_values(Some("</script>\""), Some("flat"), Some("true"));
+        assert_eq!(diag, Diag::from_values(None, None, None));
+        assert!(!diag.init_script().contains("script"));
+    }
 }
