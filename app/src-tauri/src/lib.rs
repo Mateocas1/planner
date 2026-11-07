@@ -8,10 +8,16 @@ mod memory;
 mod notify;
 mod tray;
 mod pill;
+#[cfg(target_os = "linux")]
+mod refresh;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Linux only, before any GTK or tauri init: WebKit reads this variable once
+    // (Ronda 9 S2; `PLANNER_HZ=60` opts out). The webview half is in `window.rs`.
+    #[cfg(target_os = "linux")]
+    refresh::configure_env();
     let builder = tauri::Builder::default()
         // One `.plugin(...)` per line, so feature branches union cleanly.
         // single-instance must be the first plugin registered.

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 .firebase/
 test-results/
@@ -7,7 +7,7 @@ playwright-report/
 firebase-debug.log
 
 # Tauri (desktop)
-src-tauri/target/
+src-tauri/target
 src-tauri/gen/
 # unused mobile/mac icon output of `tauri icon`
 src-tauri/icons/android/

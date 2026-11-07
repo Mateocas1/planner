@@ -16,6 +16,17 @@ Prerequisites: `rustup` (stable), `webkit2gtk-4.1`, `gtk3`, `libsoup3`, `libayat
 | `PLANNER_GLASS` | `blur` | Keeps the old blurred glass. Default is flat: `main.tsx` sets `<html data-webkitgtk="flat">` (`"blur"` with this switch), which `glass-linux.css` keys on. |
 | `PLANNER_FPS` | `1` | Corner HUD (`src/ui/perfHud.ts`): p95 of the last 120 main-thread frame intervals and the count of frames over 20 ms since the last reset (Ctrl+Shift+F8), refreshed at most 4×/s. It measures the page's rAF, not presented frames: a smooth HUD with a laggy feel points at the compositor. |
 
+**Frame pacing (Ronda 9, Linux only).** On a 144 Hz Wayland monitor WebKitGTK 2.54.2 presented the page at 60 Hz (a 2/3-refresh judder; Chromium on the same box is uniform at 144). Two stacked limits, neither the vblank monitor (`odd/research/webkitgtk-vblank.md`, `odd/runs/r9-measure.md`): GTK 3's frame clock ticks at 60 Hz whenever the window paints through GL (the default DMABUF path), and WebKit's `PreferPageRenderingUpdatesNear60FPS` (default on) halves `requestAnimationFrame` on a 144 Hz output to 72. `src/refresh.rs` fixes both, with no setting for the user:
+
+1. `run()` sets `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` before any GTK or tauri init when it is unset (a value you export is kept). The window then paints through shared memory, which gives GTK's frame clock the real refresh rate; compositor-driven CSS/WAAPI motion presents at 144. It costs a GPU-to-shared-memory copy (about 10% of a core in the harness) and keeps GPU rendering, unlike `WEBKIT_DISABLE_DMABUF_RENDERER`.
+2. The `webkitgtk-marker` plugin (`on_webview_ready`) turns `PreferPageRenderingUpdatesNear60FPS` off on every webview (main, quick add, focus pill) through the WebKit feature C API, found by identifier (`webkit_settings_set_feature_enabled`; webkit2gtk-rs has no binding, so `refresh.rs` resolves the symbols with `dlsym`). All three windows are created hidden, so it lands before the first show; flipping it on an already visible window only reached 72 fps. A WebKitGTK without the feature API, or without the feature, prints one line to stderr and keeps the old pacing.
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `PLANNER_HZ` | `60` | Skips both steps (the old pacing), for an A/B: `PLANNER_HZ=60 planner`. Read by `refresh.rs`, not part of the diagnostics init script. Any other value is ignored. |
+
+Rejected for this (`webkitgtk-vblank.md`): `GDK_GL=disable`, `WEBKIT_DISABLE_DMABUF_RENDERER` and the hardware policy `NEVER` give 72 fps at best (the last two are the slow CPU path), and `GDK_BACKEND=x11` stays at 60.
+
 Measurement protocol (about 2 minutes, `odd/research/linux-sheet-motion.md`): four launches, each with `PLANNER_FPS=1` added: the default (flat glass, guard on); `PLANNER_GUARD=off`; `PLANNER_GLASS=blur` (the old baseline); and both together. Each launch: New task ×5, open a task row ×5, Close day ×3, then note the feel (1–5), the HUD p95 and over-20 ms count (reset with Ctrl+Shift+F8 before the run), the peak WebKitWebProcess CPU (`top -H -p $(pgrep -n WebKitWebProcess)`), and with `PLANNER_GUARD=off` whether the end-of-animation flash shows. Reading: the default beats the blur launch, so the blur was the cost; guard-off fixes it but flashes, D11 costs the main thread (handoff v2); nothing changes, escalate to the GPU/DMABUF path. Repeat after WebKitGTK 2.54.2.
 
 ## Hyprland and install (Linux, Ronda 6 phase B)

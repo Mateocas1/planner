@@ -110,10 +110,13 @@ impl Diag {
 /// frame when a compositor animation ends; WebView2 does not, so Windows never
 /// registers this plugin. The same script hands the page the diagnostics
 /// switches (`PLANNER_GUARD`, `PLANNER_GLASS`, `PLANNER_FPS`, see the README).
+/// It also hooks every webview's creation to switch off WebKit's 60 fps page
+/// pacing before its window is first shown (`refresh.rs`, `PLANNER_HZ`).
 #[cfg(target_os = "linux")]
 pub fn webkitgtk_marker<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("webkitgtk-marker")
         .js_init_script(Diag::from_env().init_script())
+        .on_webview_ready(|webview| crate::refresh::follow_monitor_refresh(&webview))
         .build()
 }
 
