@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { animate, usePresence, useReducedMotion } from "motion/react";
 import { currentMorph, registerPanel } from "./morph.ts";
 import { dur, easeOut, easeOutCss, expandBlur, ms } from "./motion.ts";
+import { bodyBlurFlight, handoffActive } from "./sheetFlight.ts";
 import { keepFocusedFieldVisible } from "./viewport.ts";
 import { useSwipeDismiss } from "./useSwipeDismiss.ts";
 import "./Sheet.css";
@@ -219,12 +220,17 @@ export function Sheet({
     // and, unlike a script-written value, leaves nothing behind: with fill
     // "backwards" it holds the first frame through the delay and hands the body
     // back un-filtered when it lands (no lingering layer under the caret).
-    body.animate([{ filter: `blur(${radius}px)` }, { filter: "blur(0px)" }], {
-      duration: ms(dur.blur),
-      delay: 60,
-      easing: easeOutCss,
-      fill: "backwards",
-    });
+    // Under the compositor handoff (WebKitGTK) the body only fades: the filter
+    // would be a main-thread repaint per frame there (sheetFlight.ts).
+    const blur = bodyBlurFlight(radius, handoffActive(document.documentElement));
+    if (blur) {
+      body.animate(blur, {
+        duration: ms(dur.blur),
+        delay: 60,
+        easing: easeOutCss,
+        fill: "backwards",
+      });
+    }
   };
 
   useLayoutEffect(() => {
