@@ -1,0 +1,40 @@
+/* Flat glass for WebKitGTK (Ronda 9, S1 and S2).
+
+   `main.tsx` marks `<html data-webkitgtk="flat">` on the Linux webview and
+   nothing else (Windows, the web and Chromium never carry it), so every rule
+   here is keyed on that attribute and is inert everywhere else.
+
+   Why: on Linux the window is opaque (D4), so a backdrop blur refracts almost
+   nothing and costs the most expensive layer on the page. Flat glass drops the
+   blur and raises the tint to the solid raised surface DESIGN §3 already uses
+   for popovers; the rim, the sheen and the shadow stay, so the sheet keeps its
+   edge. A stronger scrim gives the dark page the separation Windows gets from
+   Mica. Contrast figures: `scripts/glass-contrast.mjs` reads the two token
+   blocks below.
+
+   Specificity, not load order, wins here (this file is imported first, from
+   glass.css): the attribute selector outranks the `:root` and `.glass` rules
+   it overrides. Tokens only change the tint, so the reduced-transparency,
+   increased-contrast and forced-colors fallbacks in glass.css still win. */
+
+html[data-webkitgtk="flat"] {
+  --glass-tint-thin: rgb(250 252 255 / 0.9); /* ink-50 */
+  --glass-tint-float: rgb(250 252 255 / 0.92); /* ink-50 */
+  --glass-tint-regular: rgb(250 252 255 / 0.92); /* ink-50 */
+  --glass-tint-thick: rgb(250 252 255 / 0.96); /* ink-50 */
+  --scrim: rgb(11 14 21 / 0.28); /* ink-975 */
+}
+
+html[data-webkitgtk="flat"][data-theme="dark"] {
+  --glass-tint-thin: rgb(36 39 49 / 0.9); /* ink-900 */
+  --glass-tint-float: rgb(36 39 49 / 0.94); /* ink-900 */
+  --glass-tint-regular: rgb(27 30 38 / 0.94); /* ink-925 */
+  --glass-tint-thick: rgb(36 39 49 / 0.97); /* ink-900 */
+  --scrim: rgb(2 3 7 / 0.6);
+}
+
+html[data-webkitgtk="flat"] .glass,
+html[data-webkitgtk="flat"] .topbar::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
