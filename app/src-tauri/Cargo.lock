@@ -2907,6 +2907,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-winrt-notification",
  "ureq",
+ "webkit2gtk",
  "webview2-com",
  "window-vibrancy",
  "windows",

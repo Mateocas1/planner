@@ -55,3 +55,6 @@ keyring = { version = "3", default-features = false, features = ["sync-secret-se
 # XDG notifications over zbus. Same 4.18 the notification plugin already pulls
 # in, default features, so no new crate enters the lock file.
 notify-rust = "4.18"
+# Frame pacing (refresh.rs, Ronda 9): the WebKitGTK settings reached through
+# `with_webview`. Already in the lock file (tauri's webview), so no new package.
+webkit2gtk = "2"
