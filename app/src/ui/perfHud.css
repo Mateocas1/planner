@@ -1,0 +1,17 @@
+/* Corner frame-time HUD (PLANNER_FPS=1, Linux diagnostics only). It must never
+ * catch a click or move layout, and sits above every sheet. */
+.perf-hud {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 2147483647;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.78);
+  color: #fff;
+  font: 11px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}

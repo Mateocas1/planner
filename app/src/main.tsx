@@ -15,8 +15,11 @@ import "./ui/glass.css";
 // pressable answers with, and its element-level rules must sit after the
 // sheets whose class rules consume its tokens (app.css, glass.css).
 import "./ui/press.css";
+// The HUD rule only matches the element PLANNER_FPS=1 mounts.
+import "./ui/perfHud.css";
 import { installCompositorHandoff } from "./ui/compositorHandoff.ts";
 import { installLens } from "./ui/lens.ts";
+import { installPerfHud, readPlannerDiag } from "./ui/perfHud.ts";
 import { installSheen } from "./ui/sheen.ts";
 import { installUpdatePrompt } from "./pwa-update.ts";
 
@@ -31,8 +34,21 @@ if (isPillWindow) document.documentElement.dataset.window = "pill";
 
 // WebKitGTK (the Linux shell marks the page, src-tauri/src/window.rs) drops a
 // stale frame at the end of compositor animations; the guard must be in place
-// before anything animates.
-if ((globalThis as { __WEBKITGTK__?: boolean }).__WEBKITGTK__ === true) installCompositorHandoff();
+// before anything animates. PLANNER_GUARD=off (Ronda 9 diagnostics, read by the
+// shell into __PLANNER_DIAG__) leaves it out to A/B the guard's cost.
+const isWebKitGtk = (globalThis as { __WEBKITGTK__?: boolean }).__WEBKITGTK__ === true;
+const diag = readPlannerDiag(globalThis);
+if (isWebKitGtk && diag.guard !== "off") installCompositorHandoff();
+
+// Linux glass: flat by default (css keyed on html[data-webkitgtk="flat"]);
+// PLANNER_GLASS=blur keeps the blurred material.
+if (isWebKitGtk) document.documentElement.dataset.webkitgtk = diag.glass;
+
+// PLANNER_FPS=1: corner frame-time HUD, main window only.
+if (isWebKitGtk && diag.fps && !isPillWindow) {
+  // Module scripts run after parsing, so <body> exists.
+  installPerfHud();
+}
 
 // Document-level motion is installed once, outside React: a StrictMode remount
 // must never stack a second pointer listener. The lens gate only sets an
