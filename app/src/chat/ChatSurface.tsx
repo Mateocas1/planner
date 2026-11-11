@@ -387,7 +387,7 @@ export function ChatSurface({
     [backend, buildToolContext],
   );
 
-  // The panel's own useChat call site kept separate, so the
+  // The panel's own useChat call site is kept separate, so the
   // executor is installed through the readTools registry (see that module's
   // header) instead of a new panel prop.
   useEffect(() => {

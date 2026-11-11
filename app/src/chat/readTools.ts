@@ -5,8 +5,8 @@
  * panel's confirm flow.
  *
  * The executor is installed through this tiny registry instead of a
- * `ChatPanel` prop because `ChatPanel.tsx` kept separate
- * (r4-chatmotion) and its `useChat` call site must not gain options in this
+ * `ChatPanel` prop because `ChatPanel.tsx` is kept separate
+ * and its `useChat` call site must not gain options in this
  * task. The hook takes an `executeReadTool` option first and falls back to
  * the registry; integration can move the executor to a prop and drop this
  * module without changing behavior.
