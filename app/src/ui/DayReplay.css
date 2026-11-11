@@ -1,4 +1,4 @@
-/* The day replay stage (Ronda 8, odd/plans/day-replay.md §2, §3).
+/* The day replay stage.
  *
  * A calm bar chart, not a dashboard: one row per task (or manual block) on the
  * shared time-of-day axis. Each row holds a plan outline (dashed, drawn over)
@@ -16,7 +16,7 @@
 
 .day-replay {
   /* app.css carries --ease-out only; this is the canonical strong ease-in-out
-     (odd/design/motion-system.md) for the one thing that moves on screen.
+ for the one thing that moves on screen.
      ui/DayReplay.tsx reads it, because WAAPI cannot take var(). */
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 

@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { pickDate, seedProfile, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * DateField (Ronda 5, specs S3/S4): the Deadline control of "+ New task" and its
+ * DateField: the Deadline control of "+ New task" and its
  * popover, proven in a browser.
  *
  * The planner's clock is fixed after sign-in (Playwright fixes `Date` only, so

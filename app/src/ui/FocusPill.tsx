@@ -21,12 +21,12 @@ import {
   type PillSnapshot,
 } from "./focusPillState.ts";
 import { t, useLocale } from "../i18n/index.ts";
-// The pill's own paint ships beside it (AGENTS.md: co-located styles).
+// The pill's own paint ships beside it.
 import { ICON_STROKE } from "./icons.tsx";
 import "./FocusPill.css";
 
 /**
- * The mini floating focus timer pill (task T8, spec S8.4, S3).
+ * The mini floating focus timer pill.
  *
  * A second, tiny Tauri window (`pill`, created hidden by `src-tauri/pill.rs`)
  * loading this same bundle: `main.tsx` renders this component alone when the
@@ -48,7 +48,7 @@ import "./FocusPill.css";
  * session (until a new session starts), and Rust recreated it hidden at
  * startup, so nothing flashes before the first state arrives.
  *
- * Idle CPU (S3): the one-second interval exists only while the window is
+ * Idle CPU: the one-second interval exists only while the window is
  * visible and a session is live — hidden, the pill runs no timer at all and
  * wakes on events. No rAF loops anywhere; the ring glides on a CSS transition
  * of its own stroke.
@@ -93,7 +93,7 @@ export function FocusPill() {
   const [mainFocused, setMainFocused] = useState<boolean | null>(null);
   const [enabled, setEnabled] = useState(() => readPillEnabled());
   const [hiddenByUser, setHiddenByUser] = useState(false);
-  /** Replays the entrance each time the window appears (S3). */
+  /** Replays the entrance each time the window appears. */
   const [entrance, setEntrance] = useState(0);
   const shownRef = useRef(false);
 
@@ -131,7 +131,7 @@ export function FocusPill() {
     return () => window.clearInterval(id);
   }, [visible, snapshot !== null]);
 
-  /* A new session un-hides the pill the user closed (L15: "esconderla" lasts
+  /* A new session un-hides the pill the user closed ("esconderla" lasts
      one session, not forever). startedAt is the session's identity. */
   const startedAtRef = useRef<number | null>(snapshot?.session.startedAt ?? null);
   useEffect(() => {

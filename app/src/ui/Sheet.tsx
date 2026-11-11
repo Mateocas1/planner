@@ -56,7 +56,7 @@ function holdPageInert(sheet: HTMLElement): () => void {
 
 /**
  * The glass sheet (DESIGN.md §3, "Details"): a floating card centred in what the
- * user can see (app.css, S2/S3) that grows out of the element that opened it and
+ * user can see (app.css) that grows out of the element that opened it and
  * returns towards it when it closes. It is rendered inside an AnimatePresence by
  * its owner; the exit keeps it mounted (usePresence + safeToRemove) until the
  * dismissal animation finishes, so Close, Escape and a scrim click all leave the

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { submitAuthForm, chooseOption, fillDateTime } from "./browser-helpers.ts";
 
 /**
- * W3 of the motion review (odd/research/motion-review.md): the calendar body and
+ * W3 of the motion review: the calendar body and
  * the chrome around it. Every test here drives the real UI and reads what the
  * browser actually painted, so the reviewed motion is pinned as behaviour:
  *

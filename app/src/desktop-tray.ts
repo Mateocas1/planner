@@ -1,5 +1,5 @@
 /**
- * The tray line, desktop only (T6, S8.2): one hook that mirrors what the app
+ * The tray line, desktop only: one hook that mirrors what the app
  * already knows -- the Up next pick and the focus session -- into Rust, which
  * owns the tray menu, the tooltip and the taskbar progress.
  *
@@ -21,7 +21,7 @@
  *
  * Every string Rust draws -- the menu rows, the close-to-tray notice and the
  * native notifications' text and buttons -- travels in the payload's `labels`,
- * already in the app's language (T10b): Rust keeps no translation table, and a
+ * already in the app's language: Rust keeps no translation table, and a
  * language change reaches the tray on the next evaluation.
  *
  * A plain browser never talks to Rust: every entry point is behind `isTauri`.
@@ -44,7 +44,7 @@ export function nothingUpNext(): string {
   return t("tray.nothingNext");
 }
 
-/** Never more than one push per 10 s: the taskbar progress update cap (S8.2). */
+/** Never more than one push per 10 s: the taskbar progress update cap. */
 export const TRAY_PUSH_MIN_GAP_MS = 10_000;
 
 /** While focus runs, a payload identical to the last one is still resent. */

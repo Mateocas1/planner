@@ -203,7 +203,7 @@ test("the footer is one row: the account, the sync line and the theme control", 
 });
 
 /**
- * The footer inside its own column (SB2). The sidebar is a fixed 244 px box, so
+ * The footer inside its own column. The sidebar is a fixed 244 px box, so
  * a footer row that never wraps paints its last control past the edge: "Sign
  * out" was cut at "Sign o" on every desktop width. Every footer control -- the
  * account, Settings, the theme switch and both links -- must sit inside the
@@ -549,7 +549,7 @@ test("the mini-month is one tab stop with arrow-key navigation", async ({ page }
 });
 
 /**
- * R5-10: five due tasks at 1440x900 used to overflow the sidebar and squeeze
+ * Five due tasks at 1440x900 used to overflow the sidebar and squeeze
  * the last nav item to 21 px, with the footer below the fold.
  */
 test("five due tasks at 1440x900 keep the nav at 34 px and the footer visible", async ({ page }) => {

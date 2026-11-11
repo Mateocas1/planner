@@ -1,11 +1,11 @@
 /**
- * Learned estimate bias (F2a, "estimate vs actual").
+ * Learned estimate bias ("estimate vs actual").
  *
  * The planner learns one thing from finished work: how much longer (or
  * shorter) a task really took than the estimate said. The learned number is a
  * *suggestion* and nothing else: this module never writes a stored estimate,
  * so a task's estimate stays exactly what its owner wrote until they accept
- * the offer in the UI (F2b).
+ * the offer in the UI.
  *
  * The rule is deliberately conservative, because a wrong padding is worse than
  * no padding:

@@ -45,7 +45,7 @@ import { t } from "../i18n/index.ts";
  *    report rather than inside it, so the hook's own state never depends on a
  *    network round trip and a failed counter never breaks the timer.
  *
- * 4. Idle away (T9, desktop only): a subtraction the user confirmed while the
+ * 4. Idle away (desktop only): a subtraction the user confirmed while the
  *    session was still running is folded into this same write rather than sent
  *    as a second one -- domain/idle.ts holds the pending decision, consumed
  *    here exactly once, so the session's minutes land adjusted. The away span
@@ -172,7 +172,7 @@ export function useFocusTimer({
     const tracked = trackedMinutes(stopped);
     if (tracked === null || uid === undefined) return;
     // A subtraction confirmed while this session was still running folds into
-    // this write instead of becoming a second one (T9 S8.5). Consuming removes
+    // this write instead of becoming a second one. Consuming removes
     // the pending entry, so the adjustment happens exactly once; the away span
     // was clipped to the session's focused time before the user confirmed, so
     // the result can never go below zero.
@@ -180,7 +180,7 @@ export function useFocusTimer({
     const minutes = minutesToRecord(tracked.minutes, away);
     if (minutes === 0) return;
     // The day the minutes belong to is the profile-zone day the session
-    // STARTED (ronda 2 S3/L6), not the day the stop lands on: a session that
+    // STARTED, not the day the stop lands on: a session that
     // crosses midnight counts for the day the work began. The folded away
     // subtraction rides the same day — the away span is a clipped subset of
     // this session's focused time, so its minutes were credited here too.

@@ -43,7 +43,7 @@ export type PlannedBlock = { start: string; end: string; taskId?: string };
 export type BlockBatch = { ids: string[]; done: Promise<void> };
 
 /**
- * Writes every block of a day's plan in one `writeBatch` (F4b). One batch is the
+ * Writes every block of a day's plan in one `writeBatch`. One batch is the
  * atomicity the plan promises: a day is planned or it is not, never half of it,
  * and the pending-write counter sees one write per document because the commit
  * is one.
@@ -200,7 +200,7 @@ export function blockRestoreWrite(uid: string, block: DeletedBlock): BlockRestor
 /**
  * Puts several deleted work blocks back under their original document ids in
  * ONE `writeBatch`, with the exact instants, task links, titles and import
- * sources they held (the undo of a task delete that removed those blocks, S8).
+ * sources they held (the undo of a task delete that removed those blocks).
  * Every block is validated through the domain module before the batch is
  * built, so a rejected snapshot leaves nothing queued; the batch either lands
  * whole or not at all, which keeps an undo from splitting a task's schedule

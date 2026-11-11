@@ -168,7 +168,7 @@ function readRootTokens(file) {
 const brand = readRootTokens("src/ui/brand.css");
 
 /**
- * The Linux flat look (Ronda 9): `glass-linux.css` overrides the tint and scrim
+ * The Linux flat look: `glass-linux.css` overrides the tint and scrim
  * tokens under `html[data-webkitgtk="flat"]`, with a dark block on top. Only
  * custom properties are read; the backdrop-filter rules carry none.
  */
@@ -339,7 +339,7 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
-/* ---------- palette (F3) and toast (F1, dark glass since G6) ---------- */
+/* ---------- palette and toast (dark glass since G6) ---------- */
 
 /**
  * Reads the translucency a component sheet declares for its own surface, e.g.
@@ -493,7 +493,7 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 
-/* ---------- solid surfaces (C2b) ----------
+/* ---------- solid surfaces ----------
  *
  * Everything above proves glass. Most text in the app does not sit on glass: it
  * sits on the opaque page and card backdrops, or inside a filled control. These
@@ -532,7 +532,7 @@ for (const scheme of ["light", "dark"]) {
   /* `::selection` paints `--label` on the accent wash. */
   for (const base of ["--surface", "--bg-top"])
     pairs.push({ name: "selection", backdrop: base, label: "--label", bg: over(get("--accent-soft"), get(base)), floor: AA });
-  /* The tinted pill (R5-19): `.plan-trigger` and the sign-in secondary paint
+  /* The tinted pill: `.plan-trigger` and the sign-in secondary paint
      `--accent` on `--accent-soft` over the card or the page. Hover keeps the
      fill and adds an inset accent ring, so it needs no pair of its own. */
   for (const base of ["--surface", "--bg-top"]) {
@@ -626,7 +626,7 @@ for (const mode of ["default", "more"]) {
   }
 }
 
-/* ---------- APCA guard (canon F7, user decision L4: dark lifts) ----------
+/* ---------- APCA guard (canon F7, user: dark lifts) ----------
  *
  * WCAG's ratio overstates contrast for dark colours, so a pair can pass 4.5:1
  * and still be hard to read on a dark ground. APCA (SAPC 0.0.98G-4g) models that.

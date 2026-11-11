@@ -1,5 +1,5 @@
 /**
- * The conversation controller (task C2): a pure reducer over the whole chat
+ * The conversation controller: a pure reducer over the whole chat
  * panel state, unit-tested without React or a DOM. The `useChat` hook feeds it
  * transport events and performs the side effects the reducer only describes
  * (calling `transport.stream` / `transport.cancel`).
@@ -18,8 +18,8 @@ import type { ChatEvent, ChatErrorCode } from "./types.ts";
 /**
  * A per-answer gate mirroring the reducer's `tool_call` decisions (cap and
  * duplicate ids): `true` when the call will render a card, `false` when the
- * reducer drops it. `useChat` consults it before executing a proposed read
- * (S4), because the reducer may not have processed the answer's earlier
+ * reducer drops it. `useChat` consults it before executing a proposed read,
+ * because the reducer may not have processed the answer's earlier
  * events yet when the next one arrives — a state-based check could let the
  * 6th read execute.
  */
@@ -35,10 +35,10 @@ export function createAnswerCallGate(): (callId: string) => boolean {
   };
 }
 
-/** The lifecycle of one proposed tool call on its action card (spec S1).
+/** The lifecycle of one proposed tool call on its action card.
  * `pending` waits for the user; the others are terminal and become the `tool`
  * message the next request sends back to the model. `read` is a read tool
- * the hook executed without asking (S4): it resolves on its own, never
+ * the hook executed without asking: it resolves on its own, never
  * behind Confirm/Discard buttons. */
 export type ToolCallStatus = "pending" | "confirmed" | "discarded" | "failed" | "read";
 
@@ -52,7 +52,7 @@ export type ToolCallCard = {
   /** The outcome line shown on the card once resolved (result or error). */
   outcome?: string;
   /** The model-facing detail line that rides the `tool` message: the
-   * created/changed task's id and fields (S4), or a read's result. Absent
+   * created/changed task's id and fields, or a read's result. Absent
    * for a discarded card and for writes whose executor could not name them. */
   result?: string;
 };
@@ -112,7 +112,7 @@ export function lastUserText(state: ConversationState): string | null {
  * Whether the conversation holds at least one real exchange: a user message
  * *and* a non-empty answer. An empty assistant turn (an error, a stop before
  * any text) is not an exchange — there is nothing to extract memories from.
- * End-of-conversation extraction (spec S5) only runs on a real exchange.
+ * End-of-conversation extraction only runs on a real exchange.
  */
 export function hasExchange(turns: ChatTurn[]): boolean {
   return turns.some(turn => turn.role === "user") && turns.some(turn => turn.role === "assistant" && turn.text !== "");
@@ -155,7 +155,7 @@ export function reduceConversation(state: ConversationState, action: Conversatio
       const event = action.event;
       if (event.type === "reasoning") return { ...state, phase: "reasoning" };
       if (event.type === "tool_call") {
-        // A tool call renders as an action card inside the answer (spec S1):
+        // A tool call renders as an action card inside the answer:
         // it opens the assistant turn like a delta does, and the card stays
         // pending until the user acts — resolving one never re-opens a stream.
         const fresh = state.phase !== "streaming";
@@ -164,7 +164,7 @@ export function reduceConversation(state: ConversationState, action: Conversatio
           const call = event.call;
           const toolCalls = turn.toolCalls ?? [];
           // Over the cap, or a call id this answer already proposed: dropped
-          // with a note (spec S1). A repeated id must not get a second card —
+          // with a note. A repeated id must not get a second card —
           // it would resolve together with the first and its `tool` message
           // would claim a write that never happened.
           if (toolCalls.length >= MAX_TOOL_CALLS_PER_ANSWER || toolCalls.some(card => card.callId === call.id)) {

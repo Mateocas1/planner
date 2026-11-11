@@ -1,4 +1,4 @@
-//! External entry points into the running shell (Ronda 6, spec S6).
+//! External entry points into the running shell.
 //!
 //! Wayland compositors do not let an app grab global keys, so on Hyprland the
 //! quick-add chord is a compositor bind that runs `planner --quickadd` (or

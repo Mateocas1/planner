@@ -1,4 +1,4 @@
-//! Window chrome for the desktop shell (task T3, spec S6).
+//! Window chrome for the desktop shell.
 //!
 //! The window itself keeps native Windows decorations: the OS draws the
 //! caption buttons (min / max-restore / close with the system hover states,
@@ -59,7 +59,7 @@ pub fn desktop_backdrop<R: Runtime>(window: WebviewWindow<R>, dark: bool) -> Res
     apply_backdrop(&window, dark)
 }
 
-/// The Ronda 9 Linux diagnostics, read from the environment once at startup.
+/// The Linux diagnostics, read from the environment once at startup.
 /// Unknown values fall back to the defaults, so a typo never changes behavior.
 #[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, Eq)]
@@ -106,7 +106,7 @@ impl Diag {
 
 /// Linux: marks every webview as WebKitGTK before any app script runs
 /// (`window.__WEBKITGTK__`), so `main.tsx` installs the end-of-animation guard
-/// in `src/ui/compositorHandoff.ts` (Ronda 6 S5). WebKitGTK presents one stale
+/// in `src/ui/compositorHandoff.ts`. WebKitGTK presents one stale
 /// frame when a compositor animation ends; WebView2 does not, so Windows never
 /// registers this plugin. The same script hands the page the diagnostics
 /// switches (`PLANNER_GUARD`, `PLANNER_GLASS`, `PLANNER_FPS`, see the README).

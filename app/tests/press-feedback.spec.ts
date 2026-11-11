@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
- * The press language spec (odd/tasks/ronda4.md S2): every pressable sinks
+ * The press language spec: every pressable sinks
  * instantly on press, springs back with one small overshoot on release,
  * disabled controls never scale, and reduced motion keeps identity. It runs on
  * the auth gate, which renders before any account exists, so no emulator

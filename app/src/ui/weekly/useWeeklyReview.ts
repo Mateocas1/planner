@@ -11,7 +11,7 @@ import {
 } from "../../planning/weekly.ts";
 
 /**
- * The one subscription the weekly review's surfaces share (S3): the current
+ * The one subscription the weekly review's surfaces share: the current
  * ISO week's document — its step marks, skip flag, snooze and reflection note
  * — read through the same tolerant parsers every reader uses.
  *

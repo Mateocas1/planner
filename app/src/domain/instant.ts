@@ -64,7 +64,7 @@ function wallValue(stamp: number, timeZone: string): string {
 }
 
 /** Date key (YYYY-MM-DD) of an instant in the given zone. Lives here with the
- *  other zoned-arithmetic helpers (ronda 2, review fix 5): the model derives
+ * other zoned-arithmetic helpers (review fix 5): the model derives
  *  day keys from stored instants, so the domain layer must not reach into the
  *  ui/ — surfaces re-export it from `ui/time.ts` as before. */
 export function dateKey(date: Date, timeZone: string): string {

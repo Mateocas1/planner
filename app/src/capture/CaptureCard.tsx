@@ -31,7 +31,7 @@ const clock = (minutes: number) => `${pad(Math.floor(minutes / 60))}:${pad(minut
  * and Discard / Edit / Add. Edit expands in place with the New task sheet's own
  * controls. The card never writes: Add calls back into the sheet.
  *
- * Motion (U6, three moments, nothing else): the card rises 6 px and fades in
+ * Motion (three moments, nothing else): the card rises 6 px and fades in
  * once when the answer lands, staggered 40 ms; a discarded card fades out while
  * the cards below close the gap (the sheet's AnimatePresence + `layout`); and
  * the confirmation line of an added card fades in. Typing, the numbers and the

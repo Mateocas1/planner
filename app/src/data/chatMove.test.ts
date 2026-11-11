@@ -3,7 +3,7 @@ import test from "node:test";
 import { deleteField } from "firebase/firestore";
 import { chatMoveWrites, type ChatMove } from "./chatMove.ts";
 
-/** The payload test (Ronda 3 fix): the batch's writes are pure data, so the
+/** The payload test (fix): the batch's writes are pure data, so the
  * executor's atomic commit stores exactly what is asserted here without a
  * Firestore — the real commit is exercised by the browser suite under the
  * emulators. */
@@ -47,7 +47,7 @@ test("an invalid move throws before any write exists", () => {
   }
 });
 
-/* ---------- createChatTask (ronda4 T4, S4): one batch, task plus block ---------- */
+/* ---------- createChatTask: one batch, task plus block ---------- */
 
 import { createChatTaskWrites, type ChatCreate } from "./chatMove.ts";
 
@@ -93,7 +93,7 @@ test("an invalid create throws before any write exists", () => {
   }
 });
 
-/* ---------- applyChatTaskUpdate (ronda4 T4): any task edit + block changes in one batch ---------- */
+/* ---------- applyChatTaskUpdate: any task edit + block changes in one batch ---------- */
 
 import { chatTaskUpdateWrites, type ChatTaskUpdate } from "./chatMove.ts";
 

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readRemoteBlocks, readRemoteTasks, seedTaskAndBlock, seedTasks, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * F6c — the row cursor on Today (distinctive roadmap F6, "Keyboard-first"). The
+ * The row cursor on Today (distinctive roadmap F6, "Keyboard-first"). The
  * Due today list, the Coming up list and the Schedule's blocks are cursor
  * stops, walked by `j`/`k` in the order they are painted, and act through the
  * same writes the Tasks list and the Calendar use: `x` completes, `t` moves the

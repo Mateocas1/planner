@@ -13,7 +13,7 @@ import { Section, SettingRow } from "../SettingRow.tsx";
 import { SettingsSwitch } from "../SettingsSwitch.tsx";
 
 /**
- * Settings > General > Language (Ronda 5, S8). Two rows, both ordinary Settings
+ * Settings > General > Language. Two rows, both ordinary Settings
  * idioms: the language is a two-option segmented choice (the same control as the
  * Range and theme switches, option names in their own language and never
  * translated), and the scope is a switch, because on/off in Settings is always a

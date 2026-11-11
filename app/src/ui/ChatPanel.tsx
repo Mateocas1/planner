@@ -19,7 +19,7 @@ import { CloseIcon, ICON_STROKE } from "./icons.tsx";
 import "./ChatPanel.css";
 
 /**
- * The floating chat panel (task C2, S1+S2): a ≈400×600 glass card in the
+ * The floating chat panel: a ≈400×600 glass card in the
  * bottom-right corner, opened with its rebindable chord (default `Ctrl+J`,
  * read live from the shortcut registry; preventDefault — WebView2 opens
  * Downloads on it), the launcher button, and closed with Esc, the launcher or
@@ -35,7 +35,7 @@ import "./ChatPanel.css";
  * timeout fallback — hides it). The exit never cancels an in-flight stream:
  * the request keeps running hidden, so reopening shows the finished answer.
  *
- * Swipe to dismiss (Ronda 4 S1, task T5): the panel shares the sheets'
+ * Swipe to dismiss: the panel shares the sheets'
  * gesture language through useSwipeDismiss — a drag on its header
  * (`data-drag-handle`) or on non-text, non-scrolled surface follows the
  * pointer, and a release past the distance/velocity thresholds flies the
@@ -51,10 +51,10 @@ import "./ChatPanel.css";
  */
 
 /** The result of one confirmed (or failed) proposal, rendered on the card and
- * sent back to the model as the call's `tool` message (spec S1). */
+ * sent back to the model as the call's `tool` message. */
 export type ToolOutcome = { status: "confirmed" | "failed"; message: string };
 
-/** Placeholder for C1's tauriTransport, which is wired at integration (C4). */
+/** Placeholder for C1's tauriTransport, which is wired at integration. */
 const unwiredTransport: ChatTransport = {
   stream: (_request, onEvent) =>
     new Promise(resolve => {
@@ -84,7 +84,7 @@ const StopIcon = () => (
   </svg>
 );
 
-/** The circular spinner the user asked to keep (S2). A rotating captured
+/** The circular spinner the user asked to keep. A rotating captured
  * stroke: transform only, one element, no layout. */
 const Spinner = () => (
   <svg className="chat-spinner" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
@@ -94,7 +94,7 @@ const Spinner = () => (
 );
 
 /** The send button's rect at the moment of a send: the origin the user
- * bubble flies from (Ronda 4 S3). */
+ * bubble flies from. */
 type SendOrigin = { left: number; top: number; width: number; height: number };
 
 /** Reduced motion, cached (review #4): `matchMedia` is read once per mount
@@ -111,7 +111,7 @@ function useReducedMotion(): boolean {
 }
 
 /**
- * FLIP glide (S2): when a turn is appended, everything already on screen
+ * FLIP glide: when a turn is appended, everything already on screen
  * glides up instead of jumping. Layout is never animated — the effect measures
  * the children before and after the commit and animates only the compensating
  * `transform`, then clears it so no composited layer lingers under the text.
@@ -145,7 +145,7 @@ function useGlideOnAppend(columnRef: React.RefObject<HTMLDivElement | null>, app
 }
 
 /**
- * The user bubble's send flight (Ronda 4 S3): the bubble appears to leave the
+ * The user bubble's send flight: the bubble appears to leave the
  * send button. The submit handler measures the button's rect before the send
  * swaps it for the stop button; this effect measures the landed bubble and
  * animates only the compensating `transform` (FLIP, top-left anchored) plus a
@@ -244,15 +244,15 @@ export function ChatPanel({
   /** Review #2: the panel is an in-app surface, so the real (non-mock) panel
    * exists only for a signed-in session; App passes `user !== null`. */
   signedIn?: boolean;
-  /** C3a: fired once per conversation end with the transcript turns (spec S5
-   * memory extraction); the panel only forwards it to `useChat`. */
+  /** Fired once per conversation end with the transcript turns
+   * (memory extraction); the panel only forwards it to `useChat`. */
   onConversationEnd?: (turns: ChatTurn[]) => void;
-  /** C3a: the no-key empty state's button — opens the Settings "AI" tab. */
+  /** The no-key empty state's button — opens the Settings "AI" tab. */
   onSetupKey?: () => void;
-  /** R1: planner data the action cards read (descriptions) and the confirm
+  /** Planner data the action cards read (descriptions) and the confirm
    * flow validates against. */
   toolContext?: ChatToolContext;
-  /** R1: runs one confirmed proposal through the app's data writes for the
+  /** Runs one confirmed proposal through the app's data writes for the
    * signed-in user, returning the card outcome. Discard never writes and is
    * handled here. */
   onConfirmToolCall?: (call: ChatToolCall) => Promise<ToolOutcome>;
@@ -280,7 +280,7 @@ export function ChatPanel({
   // out flips the launcher and panel on the next App render.
   const dev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
   const visible = chatPanelVisible({ desktop: isTauri(), dev, mockQuery, signedIn });
-  // The panel's chord, read live from the shortcut registry (S2): a rebind in
+  // The panel's chord, read live from the shortcut registry: a rebind in
   // Settings → Shortcuts takes effect at once, on every listening surface and
   // tab, without a reload.
   const chatChord = useShortcutBinding("chat");
@@ -308,7 +308,7 @@ export function ChatPanel({
   /** The latest open state, read by the gesture's declined-commit probe. */
   const openRef = useRef(open);
   openRef.current = open;
-  // Swipe to dismiss (S1): the sheet's exact gesture language on the chat
+  // Swipe to dismiss: the sheet's exact gesture language on the chat
   // panel. The header is the drag handle; listeners run only while the panel
   // is open. A commit flies the panel out, then closes it through the
   // ordinary path — the same `setOpen(false)` Esc and the close button use.
@@ -321,10 +321,10 @@ export function ChatPanel({
     closeStarted: () => !openRef.current,
   });
   /** The send button's rect at the last submit: the user bubble's flight
-   * origin (S3). Consumed by the flight effect so it never re-flies. */
+   * origin. Consumed by the flight effect so it never re-flies. */
   const [sendOrigin, setSendOrigin] = useState<SendOrigin | null>(null);
 
-  // No API key (S3, C3a): the desktop panel opens onto a setup empty state
+  // No API key: the desktop panel opens onto a setup empty state
   // instead of a chat that can only fail. Checked on every open: the panel
   // stays mounted for the whole session, so a key saved in Settings must be
   // seen the next time it opens, not after a restart.
@@ -468,7 +468,7 @@ export function ChatPanel({
     const text = draft.trim();
     if (text === "" || inFlight) return;
     // Measure the send button before the send swaps it for the stop button:
-    // the bubble flies from where the user just clicked (S3). The composer
+    // the bubble flies from where the user just clicked. The composer
     // clears in the same commit, in sync with the flight.
     const button = sendButtonRef.current?.getBoundingClientRect();
     send(text);
@@ -488,7 +488,7 @@ export function ChatPanel({
   const canSend = draft.trim() !== "" && !inFlight;
   const isEmptyThread = state.turns.length === 0 && !inFlight && state.error === null;
 
-  // R1: action cards. The description is computed from the raw arguments by
+  // Action cards. The description is computed from the raw arguments by
   // the pure describeToolCall — never from unvalidated data — and Confirm is
   // the only path that writes, through ChatSurface's executor. Discard writes
   // nothing, ever.

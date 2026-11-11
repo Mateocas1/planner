@@ -6,7 +6,7 @@ import { pillEvents } from "./focusPillState.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
 
 /**
- * The main window's half of the focus pill (task T8, spec S8.4).
+ * The main window's half of the focus pill.
  *
  * The pill is a separate Tauri window, so the session it shows has to travel:
  * this bridge publishes every session and label change (`pill://state`) and

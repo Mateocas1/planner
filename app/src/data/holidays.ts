@@ -5,7 +5,7 @@ import { db } from "./client.ts";
 import { trackRemoval } from "./pending.ts";
 
 /**
- * Holiday label writes against `users/{uid}/holidays/{importDocId}` (S11).
+ * Holiday label writes against `users/{uid}/holidays/{importDocId}`.
  * A holiday is only ever written by an import, which owns `date`, `title`,
  * `kind` and `source`, or by the user, who owns `kindOverride` and `hidden`.
  * The two sets never overlap, so an import rewrites its fields with a merge

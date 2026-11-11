@@ -1,9 +1,9 @@
 /**
- * The read-only planner context (spec S4): a compact text snapshot of the
+ * The read-only planner context: a compact text snapshot of the
  * user's planner that every chat request carries in its system prompt. This
  * module is pure — it formats data, never fetches it — so `usePlannerSnapshot`
  * feeds it from the existing data hooks and nothing here can touch a write
- * path (task C3a).
+ * path.
  *
  * Bounding: ~1.5k tokens (≈6k characters). Sections cap their items, titles
  * truncate, and each capped section ends with a "+N more" line so the model
@@ -36,7 +36,7 @@ export type ContextTask = {
 export type PlannerSnapshot = {
   blocks: ContextBlock[];
   tasks: ContextTask[];
-  /** Holiday labels (ronda4 S4): the context text and the read/hide tools
+  /** Holiday labels: the context text and the read/hide tools
    * see the user's own classification. Optional so older fixtures compile. */
   holidays?: Array<{ id: string; date: string; title: string; kind: string; hidden?: boolean }>;
 };
@@ -60,7 +60,7 @@ const weekdayLongOf = (wallUtc: number): string =>
   new Date(wallUtc).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
 
 /** A block's line label: the title, prefixed with the linked task's id when
- * it has one, so the model can propose moves with `move_task` (spec S1). */
+ * it has one, so the model can propose moves with `move_task`. */
 function blockLabel(
   block: ContextBlock,
   title: (block: ContextBlock, taskTitle: (taskId: string | undefined) => string | undefined) => string,
@@ -100,7 +100,7 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
   );
 
   // Today's blocks, in start order, capped. A block linked to a task names
-  // the task's id: the agentic chat's move_task references tasks by id (S1).
+  // the task's id: the agentic chat's move_task references tasks by id.
   const todayBlocks = snap.blocks
     .filter(block => dateKey(new Date(block.start), timeZone) === todayKey)
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
@@ -118,7 +118,7 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
   }
   lines.push("");
 
-  // Tasks due today, with ids so the model can reference them (S1).
+  // Tasks due today, with ids so the model can reference them.
   const dueToday = snap.tasks.filter(task => !task.completed && task.deadline === todayKey);
   if (dueToday.length > 0) {
     lines.push("Tasks due today:");
@@ -173,7 +173,7 @@ export function buildPlannerContext(snap: PlannerSnapshot, now: Date, timeZone: 
     lines.push("");
   }
 
-  // Holidays ahead (ronda4 S4): day labels only, with ids so the model can
+  // Holidays ahead: day labels only, with ids so the model can
   // hide one the way the Holidays sheet does. Hidden labels are not shown.
   const holidays = (snap.holidays ?? [])
     .filter(holiday => holiday.hidden !== true)

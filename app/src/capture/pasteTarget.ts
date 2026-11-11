@@ -1,5 +1,5 @@
 /**
- * Paste-anywhere (Ronda 8, S3, plan §1): a page-level paste with no field
+ * Paste-anywhere (plan §1): a page-level paste with no field
  * focused and no dialog open opens the capture sheet pre-filled. Pure and
  * DOM-free so the rule is testable; App.tsx reads the event and the document
  * and asks this module what to do.

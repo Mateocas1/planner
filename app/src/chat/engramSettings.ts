@@ -1,6 +1,6 @@
 /**
- * Typed wrappers for the Engram mirror settings and status (task R2 of
- * `odd/tasks/ronda3.md`, spec S2). The settings and the last-attempt record
+ * Typed wrappers for the Engram mirror settings and status.
+ * The settings and the last-attempt record
  * are Rust-owned files in the app data dir
  * (`src-tauri/src/chat/engram.rs`); the webview reaches them only through
  * these commands. The mirror itself also lives in Rust: every applied
@@ -10,7 +10,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-/** The persisted Engram mirror settings (spec S2 defaults live in Rust). */
+/** The persisted Engram mirror settings (defaults live in Rust). */
 export type EngramSettings = {
   enabled: boolean;
   address: string;

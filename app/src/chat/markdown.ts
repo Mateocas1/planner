@@ -1,5 +1,5 @@
 /**
- * The Markdown subset (task C2, S2): paragraphs, bold, italic, inline code,
+ * The Markdown subset: paragraphs, bold, italic, inline code,
  * fenced code blocks, ordered/unordered lists and links. Parsed to data, never
  * to HTML — the model's text reaches the DOM only as React children
  * (`ui/markdown.tsx` renders it), so nothing can inject markup.

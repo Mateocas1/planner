@@ -1,7 +1,7 @@
 /* ChatPanel (ChatPanel.tsx). Co-located so the panel's material and motion
    stay out of app.css.
 
-   Motion (task C2, S2 — built through the animate/review-animations flow):
+   Motion (S2 — built through the animate/review-animations flow):
 
    - Panel open/close. A keyboard surface, so this is deliberately the app's
      shortest flight rather than a sheet's: opacity + translateY(10px)/scale
@@ -15,7 +15,7 @@
    - Content focus-pull: .chat-inner sharpens from blur(6px) as the card lands
      (the Sheet.tsx pattern, on the inner body — never a filter on the glass
      element itself, which would repaint the backdrop flat).
-   - User bubble: the send flight (Ronda 4 S3) — a JS FLIP in useSendFlight:
+   - User bubble: the send flight — a JS FLIP in useSendFlight:
      the pill leaves the send button's position/size (transform only,
      top-left anchored) with a short spring (easeOutBack, `dur.sendFlight`),
      while a subtle blur (4 px ≤ 6 px) and opacity resolve; the text
@@ -142,8 +142,8 @@
   }
 }
 
-/* Swipe to dismiss (useSwipeDismiss, odd/tasks/ronda4.md S1). Co-located per
-   AGENTS.md: only the rules the gesture adds live here.
+/* Swipe to dismiss. Co-located per
+   only the rules the gesture adds live here.
 
    The panel keeps native vertical panning (pan-y) so the thread scrolls with
    a finger exactly as before, and horizontal moves reach the gesture instead
@@ -179,7 +179,7 @@
 .chat-panel[data-swiping="active"] { will-change: transform; }
 
 /* Phone (the same breakpoint as `phoneQuery` in src/ui/motion.ts): the panel
-   is the full viewport (S1) -- a whole screen of drag surface, resting radius
+   is the full viewport -- a whole screen of drag surface, resting radius
    0 -- so the drag rounds its corners 0 → 28 px on clip-path while the card
    shrinks (sheetRadius, useSwipeDismiss). Desktop keeps the inset card and
    its --r-sheet corners untouched. The border-radius here is the resting

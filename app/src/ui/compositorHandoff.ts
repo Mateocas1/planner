@@ -1,5 +1,5 @@
 /**
- * WebKitGTK end-of-animation guard (odd/tasks/ronda6-linux.md S5).
+ * WebKitGTK end-of-animation guard.
  *
  * On the Linux desktop shell (WebKitGTK 2.54, DMABUF renderer) an animation
  * that WebKit runs on its compositor -- opacity, transform, filter, from WAAPI,
@@ -7,8 +7,8 @@
  * frame when it ends: the layer shows an earlier state of the animation
  * before the final one lands. The New task sheet's scrim blinks off as its
  * fade lands, the sheet vanishes for a frame as its flight lands, and a
- * closed sheet flashes back once before it unmounts (frame captures in
- * odd/runs/r6-motion.md). WebView2 and the browsers do not do this.
+ * closed sheet flashes back once before it unmounts (frame captures).
+ * WebView2 and the browsers do not do this.
  *
  * WebKit only hands an element's animations to the compositor when every
  * effect on it can run there. So while a composited animation runs, this guard
@@ -28,10 +28,10 @@
  * unmounted. So a cancel resolves that commit with transitions turned off.
  *
  * A View Transition's pseudo-elements get no guard: the morph showed no stale
- * frame without one (0/12, odd/runs/r6-motion2.md), and the guard only moved
+ * frame without one, and the guard only moved
  * its snapshots onto the main thread. While installed, the root carries
  * `data-compositor-handoff` so app.css can drop the snapshot blur, the
- * costliest part of the morph on this engine (odd/research/audit-r7.md R7-08).
+ * costliest part of the morph on this engine.
  *
  * Installed only when the shell marks the page as WebKitGTK
  * (`window.__WEBKITGTK__`, src-tauri/src/window.rs); no other engine runs it.

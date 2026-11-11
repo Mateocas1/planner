@@ -1,10 +1,10 @@
-//! Pure half of the Engram write-through memory mirror (task R2 of
-//! `odd/tasks/ronda3.md`, spec S2). The Tauri glue (settings file, ureq
+//! Pure half of the Engram write-through memory mirror.
+//! The Tauri glue (settings file, ureq
 //! transport, commands, background mirror threads) lives in
 //! `../../src/chat/engram.rs`.
 //!
 //! The local Rust-owned memory store stays the source of truth (offline
-//! first, parent decision L2); Engram is an optional mirror only. Everything
+//! first); Engram is an optional mirror only. Everything
 //! here is platform-independent and unit-tested on Linux: settings and their
 //! validation, the memory → Engram-observation payload mapping, the
 //! observation lookup by topic key, and the mirror/sync client logic over an
@@ -33,7 +33,7 @@ use crate::chat::MemoryOp;
 // ---------------------------------------------------------------------------
 // Settings
 
-/// Default Engram address (spec S2): the local `engram serve` port.
+/// Default Engram address: the local `engram serve` port.
 pub const DEFAULT_ENGRAM_ADDRESS: &str = "http://127.0.0.1:7437";
 
 /// Default Engram project the mirror writes into.
@@ -68,7 +68,7 @@ pub fn strip_mirror_prefix(topic_key: &str) -> Option<&str> {
 /// Longest accepted Engram project name, in characters.
 pub const MAX_ENGRAM_PROJECT_CHARS: usize = 120;
 
-/// The persisted Engram mirror settings (spec S2): on/off, address, project.
+/// The persisted Engram mirror settings: on/off, address, project.
 /// Stored by Rust next to the memory file; the webview reaches it only
 /// through the settings commands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -637,7 +637,7 @@ pub fn mirror_ops(
     report
 }
 
-/// The persisted mirror status (spec S2: `engram_status` — last result or
+/// The persisted mirror status (`engram_status` — last result or
 /// error). Stored next to the settings; `engram_status` returns the latest
 /// attempt of any mirror write or "Sync now".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

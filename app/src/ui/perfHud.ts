@@ -1,4 +1,4 @@
-/** Linux diagnostics for Ronda 9: the switches the desktop shell hands to the
+/** Linux diagnostics for : the switches the desktop shell hands to the
  * page (`window.__PLANNER_DIAG__`, set by `src-tauri/src/window.rs` from the
  * `PLANNER_GUARD` / `PLANNER_GLASS` / `PLANNER_FPS` environment variables) and
  * the corner frame-time HUD behind `PLANNER_FPS=1`.

@@ -1,8 +1,8 @@
-//! Frame pacing on Linux (Ronda 9, spec S2): make WebKitGTK follow the monitor.
+//! Frame pacing on Linux: make WebKitGTK follow the monitor.
 //!
 //! On a 144 Hz Wayland monitor WebKitGTK 2.54.2 presented the page at 60 Hz
 //! (a 2/3-refresh judder). Two stacked limits, neither a vblank-monitor
-//! problem (`odd/research/webkitgtk-vblank.md`):
+//! problem:
 //!
 //! - GTK 3's frame clock ticks at 60 Hz whenever the window paints through GL
 //!   (the default DMABUF path). `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` paints

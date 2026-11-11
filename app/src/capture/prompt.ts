@@ -1,5 +1,5 @@
 /**
- * The capture inbox's request (Ronda 8, S3): a static system prompt, one user
+ * The capture inbox's request: a static system prompt, one user
  * message holding today's date and the pasted text, and nothing else. No
  * planner data, memory notes, history or identity leave the device; dedupe,
  * bias and slot choice run locally. No tools are passed, so text injected into

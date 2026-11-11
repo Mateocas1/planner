@@ -1,4 +1,4 @@
-//! Memory pass (task T12, spec S2): lower the WebView2 memory usage target
+//! Memory pass: lower the WebView2 memory usage target
 //! while a window is hidden or minimized.
 //!
 //! `ICoreWebView2_19::SetMemoryUsageTargetLevel` tells the WebView2 runtime
@@ -10,9 +10,9 @@
 //!
 //! The rule per window:
 //!
-//! - **main** (T6): hidden to the tray (close button or tray toggle) or
+//! - **main**: hidden to the tray (close button or tray toggle) or
 //!   minimized → `LOW`; shown or restored → `NORMAL`.
-//! - **quickadd** (T5): created hidden at startup and hidden on blur, so it
+//! - **quickadd**: created hidden at startup and hidden on blur, so it
 //!   lives at `LOW` almost all the time and flips to `NORMAL` only while the
 //!   hotkey popup is on screen.
 //!
@@ -43,7 +43,7 @@ pub fn sync_quickadd<R: Runtime>(window: &WebviewWindow<R>) {
     sync(window, &QUICKADD_HIDDEN);
 }
 
-/// Applies the hidden rule to the focus pill (T8): created hidden, shown only
+/// Applies the hidden rule to the focus pill: created hidden, shown only
 /// while a session is live and the planner is not in front.
 pub fn sync_pill<R: Runtime>(window: &WebviewWindow<R>) {
     sync(window, &PILL_HIDDEN);

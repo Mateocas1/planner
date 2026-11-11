@@ -1,5 +1,5 @@
 /**
- * Desktop backdrop class sync (task T3, spec S6) — the pure half of
+ * Desktop backdrop class sync — the pure half of
  * `DesktopShell.tsx`, kept in a `.ts` module so the node test runner
  * (`--experimental-strip-types`) can load it without a JSX transform.
  *

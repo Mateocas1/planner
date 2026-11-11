@@ -1,4 +1,4 @@
-/* SB1 — the sidebar's own content (odd/research/value-roadmap.md §3).
+/* The sidebar's own content.
  *
  * Two blocks that answer "what comes next" from the chrome Tasks and Calendar
  * actually show, and one dense footer row. Utility over decoration: these rows
@@ -19,7 +19,7 @@
   container-name: sidebar;
 }
 
-/* ---------- the scroll region (R5-10) ----------
+/* ---------- the scroll region ----------
  *
  * Every direct child of the sidebar keeps its declared height (app.css:
  * `.sidebar > * { flex-shrink: 0 }`); this region is the one that gives, so
@@ -160,7 +160,7 @@
   .side-due-open:hover .side-due-title { color: var(--accent); }
 }
 
-/* ---------- footer rows (R5-22) ----------
+/* ---------- footer rows ----------
  *
  * The address takes a line of its own, whole as far as the column allows and
  * with its full form in the title. The gear and the theme control share the

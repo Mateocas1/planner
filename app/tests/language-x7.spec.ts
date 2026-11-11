@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Ronda 5, S8 (unit x7): the chat panel in Spanish. Like chat-panel.spec.ts it
+ * S8 (unit x7): the chat panel in Spanish. Like chat-panel.spec.ts it
  * runs against its own Vite dev server (the mock panel only mounts in dev with
  * `?chatMock`) and needs no account: the device override is seeded into
  * localStorage before the app starts.

@@ -2,7 +2,7 @@ import { bannerVisible } from "./ui/shutdownRitual.ts";
 import { isDayKey } from "./planning/shutdown.ts";
 
 /**
- * Actionable native notifications' pure half (task T7, spec S8.3 + S3).
+ * Actionable native notifications' pure half.
  *
  * Three reminders exist, and each reuses a rule the app already owns:
  *
@@ -15,7 +15,7 @@ import { isDayKey } from "./planning/shutdown.ts";
  * - **Shutdown nudge.** The same trigger as Home's banner: `bannerVisible`
  *   (`ui/shutdownRitual.ts`), the app's own rule, not a new time. At most one
  *   nudge per profile-zone day.
- * - **Weekly review nudge** (S3). The same due moment Home's weekly banner
+ * - **Weekly review nudge**. The same due moment Home's weekly banner
  *   reads (`planning/weekly.ts` `dueMoment`, handed in by the caller), at most
  *   one toast per week and moment, and never on a day the shutdown ritual
  *   already closed — that ritual ends with "Close the week too?" instead of
@@ -26,7 +26,7 @@ import { isDayKey } from "./planning/shutdown.ts";
  * (`ui/useDesktopNotifications.ts`) reads and writes the per-device state this
  * module shapes, so unit tests pin every decision without a DOM.
  *
- * Two deliberate rules, from the T7 checklist:
+ * Two deliberate rules, from the checklist:
  *
  * - A snoozed reminder fires even though the block may have started meanwhile
  *   ("+5 min re-notifies 5 min later" is tested against a block starting 3 min
@@ -75,7 +75,7 @@ export function emptyNotifyState(): NotifyState {
   return { notified: [], snoozed: {}, weeklyKeys: [] };
 }
 
-/** The dedupe key of one block start: the id *and* the instant (S8.3). */
+/** The dedupe key of one block start: the id *and* the instant. */
 export function reminderKey(block: Pick<NotifyBlock, "id" | "start">): string {
   return `${block.id}@${block.start}`;
 }
@@ -226,7 +226,7 @@ const weeklyKeysKept = 8;
  *
  * The moment is the caller's `dueMoment` answer, narrowed to what the dedupe
  * needs. A day the shutdown ritual already closed gets no toast: the ritual
- * itself ended with "Close the week too?" (S3), so a toast would be the
+ * itself ended with "Close the week too?", so a toast would be the
  * second nudge the week no longer needs. The banner stays the quiet path.
  */
 export function weeklyNudgeDue(input: {

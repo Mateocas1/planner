@@ -1,4 +1,4 @@
-/* Idle-away prompt (T9, spec S8.5). It mounts with the undo toast's classes
+/* Idle-away prompt. It mounts with the undo toast's classes
    (`undo-toast`) and only restyles what the decision changes: the primary
    action is the quiet one (Subtract writes actualMinutes, so it must not wear
    the accent the undo toast's Undo earns by repairing something the user just

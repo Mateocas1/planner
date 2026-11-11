@@ -1,5 +1,5 @@
 /**
- * Typed helpers for the chat API key (spec S3, Settings tab of task C3).
+ * Typed helpers for the chat API key (Settings tab).
  * The key lives only in the Windows Credential Manager on the Rust side and
  * is never returned to the webview; the non-secret provider address is
  * stored next to it in Rust and bound to the key: changing provider means
@@ -9,7 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../i18n/index.ts";
 
-/** The default OpenAI-compatible endpoint (spec S3, parent decision L1/L4). */
+/** The default OpenAI-compatible endpoint. */
 export const DEFAULT_CHAT_BASE_URL = "https://api.nan.builders/v1";
 
 /** What Settings may show: whether a key is saved and where it points. */

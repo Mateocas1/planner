@@ -1,5 +1,5 @@
 /**
- * The capture inbox's reply schema and its total validator (Ronda 8, S3).
+ * The capture inbox's reply schema and its total validator.
  *
  * The model's reply is untrusted text, so everything it says passes through
  * `parseCaptureReply` before a card exists. The validator never throws and

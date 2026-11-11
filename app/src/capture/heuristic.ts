@@ -1,5 +1,5 @@
 /**
- * The capture inbox's on-device reader (Ronda 8, S3): what the sheet shows with
+ * The capture inbox's on-device reader: what the sheet shows with
  * no API key, on the web build, offline, or when the assistant fails. No
  * network, no model, no writes. It splits lists, takes a mail's subject or the
  * first line as the title, reads dates with the quick add grammar

@@ -236,7 +236,7 @@ body::before {
   /* Cards, groups, neutral buttons and chips all draw their edge with
      `--card-shadow`; a visible 1px ring replaces the hairline and the lift. It
      lives here, after the material tokens above, so it cannot lose the cascade
-     to them (R5-05). */
+     to them. */
   :root,
   :root[data-theme="dark"] {
     --card-shadow: 0 0 0 1px var(--label-3);

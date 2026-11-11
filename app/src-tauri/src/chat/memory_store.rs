@@ -1,4 +1,4 @@
-//! Local memory file store (task C1 of `odd/tasks/llm-chat.md`, spec S5, the
+//! Local memory file store
 //! storage half): an Engram-shaped memory list persisted as
 //! `chat-memories.json` in the app data dir (`app_local_data_dir`, not the
 //! roaming config dir). Rust owns the file; the webview reaches it only
@@ -33,7 +33,7 @@ const FILE_NAME: &str = "chat-memories.json";
 
 /// The app data directory shared by the chat's Rust-owned files (the memory
 /// store and, from `chat/mod.rs`, the non-secret provider settings). Spec
-/// S5 places them in the local app data dir, not the roaming config dir.
+/// Places them in the local app data dir, not the roaming config dir.
 pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()
@@ -104,7 +104,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Loads the whole store for the Engram mirror's "Sync now" (task R2). The
+/// Loads the whole store for the Engram mirror's "Sync now". The
 /// same data-safety rules as the commands: a missing file is empty, an
 /// unreadable file is an error and refuses to write.
 pub(crate) fn load_all(app: &AppHandle) -> Result<Vec<Memory>, String> {
@@ -137,7 +137,7 @@ pub fn chat_memories_apply(app: AppHandle, ops: Vec<MemoryOp>) -> Result<Vec<Mem
 pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
     let mut memories = load(&path)?;
-    // The deleted memory's topic key drives the Engram mirror delete (R2).
+    // The deleted memory's topic key drives the Engram mirror delete.
     let topic = memories
         .iter()
         .find(|memory| memory.id == id)
@@ -157,7 +157,7 @@ pub fn chat_memories_delete(app: AppHandle, id: String) -> Result<Vec<Memory>, S
 pub fn chat_memories_clear(app: AppHandle) -> Result<Vec<Memory>, String> {
     let path = file_path(&app)?;
     let memories = load(&path)?;
-    // "Clear all" removes the mirrored observations too (spec S2).
+    // "Clear all" removes the mirrored observations too.
     let mirror_ops: Vec<MemoryOp> = memories
         .iter()
         .map(|memory| MemoryOp::Delete {

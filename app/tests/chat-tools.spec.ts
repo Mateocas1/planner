@@ -4,10 +4,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { createRemoteAccount, password, readRemoteBlocks, readRemoteTasks, seedTasks, submitAuthForm, updateRemoteProfile } from "./browser-helpers.ts";
 
 /**
- * The agentic chat's browser spec (ronda4 T4, S4+S5): the new tools end to
+ * The agentic chat's browser spec: the new tools end to
  * end through the panel, the app's own data functions and the emulator —
  * create at a wall-clock time, delete, holiday hide, memory, reads, and the
- * S4 diagnosis itself: a follow-up that must see the task the assistant just
+ * Diagnosis itself: a follow-up that must see the task the assistant just
  * created, at its real time, by id.
  *
  * Same harness as chat-panel.spec.ts: a Vite dev server spawned here (the
@@ -120,8 +120,8 @@ async function seedHoliday(email: string, id: string, date: string, title: strin
 }
 
 /** Seeds the task the delete scenario proposes, plus one work block linked
- * to it — so the delete card must name the block and confirming removes both
- * (ronda4 T8, S8). Deterministic ids; the block sits three days out. */
+ * to it — so the delete card must name the block and confirming removes both.
+ * Deterministic ids; the block sits three days out. */
 async function seedDeletableTask(email: string): Promise<void> {
   const uid = await remoteUid(email);
   const day = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
@@ -248,7 +248,7 @@ test("create at a time lands on the schedule, and the follow-up moves it by id (
   expect(created[0]?.start).toContain("T14:00");
 
   // The follow-up: the mock reads the created id from the tool result and
-  // proposes moving THAT task to 16:00 — the flow the S4 report described as
+  // proposes moving THAT task to 16:00 — the flow the report described as
   // broken ("no podía ver la información actualizada"). The fresh system
   // prompt must have carried the created task with its id and its time.
   // The floating panel stayed open through the Calendar visit; just type.
@@ -304,7 +304,7 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   const cards = panel(page).locator(".chat-card");
   const deleteCard = cards.last();
   await expect(deleteCard).toBeVisible({ timeout: 30_000 });
-  // The card names exactly what will be removed (S4, S8): the task AND its
+  // The card names exactly what will be removed: the task AND its
   // work block, from the live context.
   await expect(deleteCard.locator(".chat-card-action")).toContainText('Delete task "Delete me"');
   await expect(deleteCard.locator(".chat-card-action")).toContainText(/and its 1 work block/);
@@ -323,7 +323,7 @@ test("delete: discard leaves the task alone, confirm removes it (S4)", async ({ 
   await expect(secondCard.locator(".chat-card-outcome")).toContainText("Deleted task id=", { timeout: 15_000 });
   await expect(secondCard.locator(".chat-card-outcome")).toContainText("and its 1 work block");
   await expect.poll(async () => (await readRemoteTasks(email)).some(task => task.title === "Delete me"), { timeout: 15_000 }).toBe(false);
-  // The block the card named is gone from the store too (S8).
+  // The block the card named is gone from the store too.
   await expect.poll(async () => readRemoteBlocks(email), { timeout: 15_000 }).toEqual([]);
   await page.keyboard.press("Escape");
   // The hidden panel keeps its own card text; the view itself is clean.
@@ -353,7 +353,7 @@ test("delete: a block created after the card joins the card's named set and goes
 
   // A second block linked to the task appears after the card was proposed —
   // the way another device's write would. The card's description is computed
-  // from the live context (R1), so it now names both blocks, and confirming
+  // from the live context, so it now names both blocks, and confirming
   // deletes both: the card never promises less than what it shows.
   await seedExtraBlock(email, "b-after-card", 4);
   await expect(deleteCard.locator(".chat-card-action")).toContainText(/and its 2 work blocks/);
@@ -404,7 +404,7 @@ test("reads run without confirmation and their data rides the next request (S4)"
   await updateRemoteProfile(email, zone);
   await signInMock(page, email, "agent-read");
   // Seed after sign-in, then reload: the read must see them live (fresh
-  // context, S4) — and the store must carry them before the request goes.
+  // context) — and the store must carry them before the request goes.
   await seedTasks(email, [{ title: "Buy milk" }, { title: "Pay rent" }]);
   await page.reload();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible({ timeout: 30_000 });
@@ -422,7 +422,7 @@ test("reads run without confirmation and their data rides the next request (S4)"
   await field(page).press("Enter");
   const readCard = actionCard(page, "Look up tasks");
   await expect(readCard).toBeVisible({ timeout: 30_000 });
-  // No Confirm/Discard ever: a read is not a proposal (S4).
+  // No Confirm/Discard ever: a read is not a proposal.
   await expect(readCard.getByRole("button", { name: "Confirm" })).toHaveCount(0);
   await expect(readCard.getByRole("button", { name: "Discard" })).toHaveCount(0);
   await expect(readCard.locator(".chat-card-outcome")).toHaveText("2 tasks found.", { timeout: 15_000 });

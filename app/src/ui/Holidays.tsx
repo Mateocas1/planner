@@ -9,7 +9,7 @@ import type { UndoableDelete } from "./UndoToast.tsx";
 import "./Holidays.css";
 
 /**
- * Holiday labels (S11). A holiday is information about a day, never work: the
+ * Holiday labels. A holiday is information about a day, never work: the
  * calendar shows it on the Due row and nothing in planning reads it. Pressing a
  * label opens a small sheet where the user decides what the day is (Argentina
  * sometimes works a "día no laborable"), or hides it.

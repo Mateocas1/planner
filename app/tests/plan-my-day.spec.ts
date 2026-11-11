@@ -3,7 +3,7 @@ import { readRemoteBlocks, seedRadarFixture, submitAuthForm, fillDateTime } from
 
 /**
  * Plan my day as the two surfaces run it (distinctive roadmap F4, criteria 2
- * through 8 as the UI half; F4b): the "Plan my day" button in the Unscheduled
+ * through 8 as the UI half): the "Plan my day" button in the Unscheduled
  * tray and on Today, the preview of the blocks it proposes, the one batch that
  * applies them, and the undo that removes exactly those blocks.
  *

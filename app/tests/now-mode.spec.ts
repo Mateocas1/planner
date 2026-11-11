@@ -88,7 +88,7 @@ async function openNow(page: Page) {
 }
 
 /** Opens the overlay with its shortcut: with no block running Today offers no
- *  Full screen link (W8), but the glance's Free now state is still reachable. */
+ * Full screen link, but the glance's Free now state is still reachable. */
 async function openNowByKey(page: Page) {
   await expect(fullScreen(page)).toHaveCount(0);
   await page.keyboard.press("n");

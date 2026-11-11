@@ -1,8 +1,8 @@
 /**
- * Feeds the planner context (spec S4) from the existing read-only data hooks:
+ * Feeds the planner context from the existing read-only data hooks:
  * `useStore`'s tasks and blocks map onto the context's pure shape; the time
  * zone comes from the user profile. This hook writes nothing — it only reads
- * the same views the rest of the app renders (task C3a).
+ * the same views the rest of the app renders.
  */
 
 import { useMemo } from "react";
@@ -37,7 +37,7 @@ export function usePlannerSnapshot(uid: string | null): PlannerSnapshotResult {
         ...(task.estimate === undefined ? {} : { estimateMinutes: task.estimate }),
         ...(task.deadline === undefined ? {} : { deadline: task.deadline }),
       })),
-      // Holiday labels (ronda4 S4): the read/hide tools and the context text
+      // Holiday labels: the read/hide tools and the context text
       // see the user's own classification, exactly like the Holidays sheet.
       holidays: store.holidays.map(holiday => ({
         id: holiday.id,

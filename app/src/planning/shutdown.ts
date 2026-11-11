@@ -1,10 +1,10 @@
 /**
- * The shutdown ritual's pure half (F3a): what the day left behind, the batch
+ * The shutdown ritual's pure half: what the day left behind, the batch
  * plan that rolls due and overdue deadlines to tomorrow, and the exact undo of
  * that plan.
  *
  * No Firebase, no React, no clock: the caller supplies the profile zone and
- * the zone's today, and gets back data. The UI that shows the ritual (F3c) and
+ * the zone's today, and gets back data. The UI that shows the ritual and
  * the batch that applies it (`data/tasks.ts`) consume the same computation, so
  * what the sheet lists is exactly what the batch writes.
  *

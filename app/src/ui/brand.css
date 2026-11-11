@@ -12,7 +12,7 @@
 
    This file is scheme-independent on purpose: light and dark read the same 13
    steps and simply pick different rungs. It is imported before app.css, which
-   is where each token is mapped onto a step (odd/research/brand-color.md §4).
+   is where each token is mapped onto a step.
    Neither file restates a hex.
 
    The values are hex, not oklch(): app/scripts/glass-contrast.mjs parses hex

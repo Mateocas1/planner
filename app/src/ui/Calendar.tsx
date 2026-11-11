@@ -158,7 +158,7 @@ function CalendarView({
   const draftRef = useRef<HTMLDivElement>(null);
   const newBlockRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // The keyboard's cursor (F6) over the blocks in view: real DOM focus on the
+  // The keyboard's cursor over the blocks in view: real DOM focus on the
   // block itself, and one tab stop for the whole grid (see ui/shortcuts.ts).
   const { activeId, onRowFocus } = useRowCursor(scrollRef);
 
@@ -169,7 +169,7 @@ function CalendarView({
   const weekUtc = useMemo(() => Array.from({ length: 7 }, (_, index) => mondayOf(selectedUtc) + index * dayMs), [selectedUtc]);
   const days = isDay ? [selectedUtc] : weekUtc;
   const dayKeys = days.map(wallDayKey);
-  /* The booked share of each day in view, for the header underline (F1): the
+  /* The booked share of each day in view, for the header underline: the
      same capacity math the Today radar uses, so the two never disagree. */
   const dayLoads = useDayLoads({ uid, now, timeZone, blocks, days: dayKeys });
   const visibleKeys = new Set(dayKeys);
@@ -180,7 +180,7 @@ function CalendarView({
   // The tab stop's order is the order the grid paints the blocks in.
   const blockOrder = visible.map(item => item.block.id);
 
-  /* `t` and `b` on the calendar (F6). A block moves one wall-clock day in the
+  /* `t` and `b` on the calendar. A block moves one wall-clock day in the
      profile zone -- the same hours tomorrow, 23 or 25 hours away across a DST
      change -- and the move is offered back through the shell's undo toast, like
      every other write this surface makes. */
@@ -681,7 +681,7 @@ function CalendarView({
               {t("cal.trayNote", { when: planDayKey === todayKey ? t("cal.whenToday") : t("cal.whenOn", { day: formatDateKey(planDayKey, todayKey) }) })}
             </p>
           </div>
-          {/* Plan my day (F4): the day's open tasks proposed as blocks and
+          {/* Plan my day: the day's open tasks proposed as blocks and
               applied as one batch. The tray's own undo is the shell's, so the
               app never shows two offers at once. */}
           <PlanMyDay
@@ -822,8 +822,8 @@ function layoutBlocks(blocks: BlockView[], timeZone: string): Laid[] {
   return out;
 }
 
-/** freeSlots was extracted to ../planning/window.ts (W1) so the capacity radar
- * (F1a) and plan-my-day (F4a) can reuse the same logic. The import above
+/** freeSlots was extracted to../planning/window.ts so the capacity radar
+ * and plan-my-day can reuse the same logic. The import above
  * carries the implementation; the parity tests in window.test.ts pin the old
  * output fixture by fixture to guarantee the Plan feature is unchanged. */
 

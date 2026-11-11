@@ -1,5 +1,5 @@
 /**
- * The chat hook (task C2): wires the pure conversation reducer to a
+ * The chat hook: wires the pure conversation reducer to a
  * `ChatTransport` and the stream pacer. This is the only place with side
  * effects — the reducer stays testable, the pacer stays injectable.
  *
@@ -26,7 +26,7 @@ export type ChatController = {
   retry: () => void;
   newChat: () => void;
   /** Resolves one action card (the user confirmed, discarded, or the write
-   * failed). Resolving never triggers a new model call (spec S1). `result`
+   * failed). Resolving never triggers a new model call. `result`
    * is the model-facing detail (ids, fields) that rides the `tool` message. */
   resolveToolCall: (callId: string, status: Exclude<ToolCallStatus, "pending">, outcome?: string, result?: string) => void;
 };
@@ -35,7 +35,7 @@ let requestCounter = 0;
 const nextRequestId = () => `r${++requestCounter}`;
 
 /** How long a closed panel waits for activity before the conversation "ends"
- * and extraction may run (spec S5, parent decision L3). */
+ * and extraction may run. */
 export const IDLE_EXTRACT_MS = 10 * 60 * 1000;
 
 /**
@@ -43,7 +43,7 @@ export const IDLE_EXTRACT_MS = 10 * 60 * 1000;
  * proposed tool calls carries its `tool_calls`, and each proposed call is
  * answered by one `tool` message — pending, confirmed, failed or discarded —
  * so the next request stays valid even when the user sends a new message with
- * cards still open (spec S1).
+ * cards still open.
  */
 export function buildMessages(systemPrompt: string, turns: ChatTurn[]): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
@@ -78,7 +78,7 @@ export function useChat(options: {
    * with the transcript turns, before anything is cleared. */
   onConversationEnd?: (turns: ChatTurn[]) => void;
   idleExtractMs?: number;
-  /** Runs a read tool call the model proposed (S4: reads need no
+  /** Runs a read tool call the model proposed (reads need no
    * confirmation). Takes precedence over the executor installed in the
    * `readTools` registry. */
   executeReadTool?: ChatReadExecutor;
@@ -91,7 +91,7 @@ export function useChat(options: {
   /** The request whose events and pacer are live; older ids are dropped. */
   const activeIdRef = useRef<string | null>(null);
   const pacerRef = useRef<StreamPacer | null>(null);
-  /** Whether extraction already ran for the current conversation (spec S5):
+  /** Whether extraction already ran for the current conversation:
    * one extraction per end, never a duplicate batch for the same turns. */
   const extractedRef = useRef(false);
 
@@ -105,8 +105,8 @@ export function useChat(options: {
   const readExecutorRef = useRef<ChatReadExecutor | undefined>(options.executeReadTool);
   readExecutorRef.current = options.executeReadTool;
 
-  /** Runs a proposed read at once and resolves its card with what came back
-   * (S4): no buttons, no user click. Resolution is a `toolCallResolved`
+  /** Runs a proposed read at once and resolves its card with what came back:
+   * no buttons, no user click. Resolution is a `toolCallResolved`
    * dispatch, so it applies even after the stream ended, and the reducer's
    * known-id guard drops it if the turn is already gone. */
   const runReadTool = useCallback((call: ChatToolCall) => {
@@ -142,7 +142,7 @@ export function useChat(options: {
     onEndRef.current?.(turns);
   }, []);
 
-  // End on panel close + idle (spec S5): closing with ≥1 exchange starts the
+  // End on panel close + idle: closing with ≥1 exchange starts the
   // timer; the expiry ends the conversation. Reopening cancels the timer and
   // re-arms extraction, so a conversation continued after an idle extraction
   // can still end again with its new turns.
@@ -178,7 +178,7 @@ export function useChat(options: {
         if (event.type === "tool_call") {
           const proposed = answerCallGate(event.call.id);
           dispatchEvent(event);
-          // Reads run at once (S4) — but only when the call actually renders
+          // Reads run at once — but only when the call actually renders
           // a card; writes wait for the user on their card.
           if (proposed && isReadTool(event.call.name)) runReadTool(event.call);
           return;
@@ -266,7 +266,7 @@ export function useChat(options: {
 
   // Best-effort: an app quit with a live conversation extracts what it can.
   // The call is async and will usually not finish — it is a cheap effort, not
-  // a guarantee (spec S5).
+  // a guarantee.
   useEffect(() => {
     const onUnload = () => fireConversationEnd();
     window.addEventListener("beforeunload", onUnload);

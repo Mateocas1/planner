@@ -5,7 +5,7 @@ import { desktopMicaClass, desktopShellClass, syncBackdropClasses } from "./desk
 import "./DesktopShell.css";
 
 /**
- * Desktop-shell chrome glue (task T3, spec S6) — renders nothing.
+ * Desktop-shell chrome glue — renders nothing.
  *
  * Two jobs, both no-ops in the web build (`isTauri` gates everything):
  *

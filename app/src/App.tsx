@@ -92,10 +92,10 @@ export default function App() {
     // `data-page-title` when it stops.
     if (!/^\d+:\d\d · /.test(document.title)) document.title = documentTitle;
   }, [documentTitle]);
-  // Settings (Ronda 2, S1) is a view in the shell; the tab it opens on lives
+  // Settings is a view in the shell; the tab it opens on lives
   // here — not in the shell — so `openSettings(tab?)` stays the single entry
   // point for the shell's doors (palette, `Ctrl+,`, account menus) AND for the
-  // chat panel's no-key empty state (C3b), which mounts outside the shell.
+  // chat panel's no-key empty state, which mounts outside the shell.
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   // The view Settings was opened from is remembered for Back; Escape and every
   // sidebar nav item return the ordinary way.
@@ -137,7 +137,7 @@ export default function App() {
       {/* The floating chat panel (desktop, signed-in; dev-mock with ?chatMock
           is account-free). Signed-out users never see it — not even on the
           sign-in screen (review #2). ChatSurface wires transport, planner
-          context and memories (C3a); the key setup opens Settings' AI tab in
+          context and memories; the key setup opens Settings' AI tab in
           W1. */}
       <ChatSurface
         signedIn={user !== null}
@@ -160,7 +160,7 @@ function Shell({
   user: User;
   view: View;
   onNavigate: (view: View) => void;
-  /** Settings' tab state lives in App so the chat panel can deep-link (C3b). */
+  /** Settings' tab state lives in App so the chat panel can deep-link. */
   settingsTab: SettingsTab;
   onSettingsTab: (tab: SettingsTab) => void;
   /** The single entry point: opens Settings on a tab (default General). */
@@ -178,12 +178,12 @@ function Shell({
   const zone = profile.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   // Day replay: the device-local morning plan, taken once the day's blocks are settled.
   useDayPlanSnapshot({ uid: user.uid, ready: !loading && pending === 0, blocks, tasks, timeZone: profile.timeZone, now: shellNow });
-  // A sign-in launch (T10) shows the window only when today's brief applies.
+  // A sign-in launch shows the window only when today's brief applies.
   useSignInReveal({ ready: !loading && !profile.loading, blocks, timeZone: profile.timeZone, workWindow: profile.workWindow });
   const phone = useMediaQuery(phoneQuery);
   // One timer for the whole shell: the sidebar card shows it and the palette
   // commands change it. A phone has no focus surface yet, so it runs none.
-  // The idle-away hook (T9, desktop only) needs the timer's session and hands
+  // The idle-away hook (desktop only) needs the timer's session and hands
   // back the stop report it must see, so the report travels through a ref: the
   // hook is created after the timer, and useFocusTimer keeps its onStop fresh
   // every render.
@@ -198,7 +198,7 @@ function Shell({
   });
   const idle = useIdleAway({ uid: user.uid, session: focus.session, status: focus.status, onError: setLateError });
   idleStopBridge.current = idle.onFocusStopped;
-  // The tray (T6) mirrors exactly this: the Up next pick, the live session and
+  // The tray mirrors exactly this: the Up next pick, the live session and
   // the taskbar bar that goes with it, pushed to Rust whenever they change.
   useDesktopTray({ blocks, tasks, timeZone: profile.timeZone, session: focus.session });
   const [calendarDay, setCalendarDay] = useState<string | null>(null);
@@ -230,7 +230,7 @@ function Shell({
   // reads the shell's blocks, tasks and timer -- so the shell only tracks
   // whether it is on screen.
   const [nowOpen, setNowOpen] = useState(false);
-  // The shutdown ritual (F3c): the sheet that shows what the day left behind and
+  // The shutdown ritual: the sheet that shows what the day left behind and
   // turns Today to Tomorrow. Opened from Home's banner (or the page turn) and
   // from the palette, which is why the origin of its entrance is recorded here.
   const [shutdownOpen, setShutdownOpen] = useState(false);
@@ -264,7 +264,7 @@ function Shell({
     importOrigin.current = origin;
     setImportOpen(true);
   };
-  // The capture inbox (Ronda 8, S3): a sheet like the import's. `captureText`
+  // The capture inbox: a sheet like the import's. `captureText`
   // pre-fills it when it opened from a paste; the origin is the control it grows
   // from (the palette path has none, like the import sheet).
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -276,9 +276,9 @@ function Shell({
     setCaptureText(text);
     setCaptureOpen(true);
   };
-  // Settings (Ronda 2, S1) is a view in the shell, not a sheet; its tab state
+  // Settings is a view in the shell, not a sheet; its tab state
   // and `openSettings(tab?)` live in App — see the comment there.
-  // The weekly review (S3) is a view in the shell too. `via` remembers whether
+  // The weekly review is a view in the shell too. `via` remembers whether
   // it proposed itself (banner, toast, the shutdown chain) or was opened by
   // hand — that is what decides the steps the flow runs.
   const [weeklyVia, setWeeklyVia] = useState<"due" | "manual">("manual");
@@ -295,7 +295,7 @@ function Shell({
   const weeklyDue = profile.timeZone === null || !profile.weeklyReview.nudges
     ? null
     : dueMoment(shellNow, zone, profile.weeklyReview, weekly.state);
-  // Actionable native notifications (T7, S8.3): block-start toasts with
+  // Actionable native notifications: block-start toasts with
   // [Start focus] / [+5 min] and the shutdown nudge. Desktop only, the web
   // build runs nothing. The actions reuse the shell's own doors: the timer's
   // one start, the calendar's day, the shutdown sheet the banner opens.
@@ -311,7 +311,7 @@ function Shell({
       onNavigate("calendar");
     },
     onOpenShutdown: () => openShutdown(null),
-    // The weekly review's nudge (S3): the same due moment the Home banner
+    // The weekly review's nudge: the same due moment the Home banner
     // reads, at most one toast per week and moment, and the shutdown chain
     // takes its place on a day the ritual already closed.
     weeklyNudge: {
@@ -330,7 +330,7 @@ function Shell({
       },
     },
   });
-  // The keyboard's reference sheet (F6): `?` opens it, Esc closes it.
+  // The keyboard's reference sheet: `?` opens it, Esc closes it.
   const [helpOpen, setHelpOpen] = useState(false);
   // One router for the shell, so the pending `g` of a sequence survives a
   // re-render; the listener that feeds it is registered once below.
@@ -372,7 +372,7 @@ function Shell({
     return () => window.removeEventListener("keydown", onShortcut);
   }, [openSettings]);
 
-  /* Paste-anywhere (Ronda 8, S3): a paste with no field focused and no dialog
+  /* Paste-anywhere: a paste with no field focused and no dialog
      open opens the capture sheet with the text. Pasting into a field never
      reaches it (pasteCaptureText answers null), so a field behaves as before. */
   useEffect(() => {
@@ -391,7 +391,7 @@ function Shell({
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  /* The keyboard (F6): one more listener, and the only one that reads letters.
+  /* The keyboard: one more listener, and the only one that reads letters.
      ui/shortcuts.ts decides -- is this a field, a dialog, an IME, a browser
      chord, a sequence that has waited too long -- and this effect only performs
      the answer: navigation and the sheets the shell owns here, and the row
@@ -912,7 +912,7 @@ function NewTaskSheet({
 }: {
   uid: string;
   timeZone: string;
-  /** The stored tasks: the estimate lesson reads the completed ones (F2b). */
+  /** The stored tasks: the estimate lesson reads the completed ones. */
   tasks: readonly TrackedTask[];
   origin: HTMLElement;
   onClose: () => void;
@@ -1047,7 +1047,7 @@ function NewTaskSheet({
             </p>
             {/* What tasks like this one usually take, offered rather than
                 applied: the field keeps the number its owner typed until the
-                offer is tapped (F2b, roadmap §5 question 3). */}
+                offer is tapped (roadmap §5 question 3). */}
             <BiasHint
               samples={biasSamples}
               title={parsed.title}

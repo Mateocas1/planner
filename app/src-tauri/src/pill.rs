@@ -1,4 +1,4 @@
-//! The mini floating focus-timer pill (task T8, spec S8.4).
+//! The mini floating focus-timer pill.
 //!
 //! A third window (`pill`) is created hidden at startup: small, frameless,
 //! transparent, always on top, off the taskbar, and draggable from the page.
@@ -10,7 +10,7 @@
 //! What Rust owns is the one fact the page cannot see and the window's frame:
 //!
 //! - the main window's foreground state (focus, visibility and minimize state, forwarded as
-//!   `pill://main-focus`), which decides whether the pill may show (L15: it
+//!   `pill://main-focus`), which decides whether the pill may show (it
 //!   appears by itself only while the planner is not in the foreground);
 //! - the pill's position: the default is the top-right of the primary work
 //!   area, a position the user dragged to is remembered in the app config dir
@@ -216,7 +216,7 @@ pub fn pill_main_focused<R: Runtime>(app: AppHandle<R>) -> MainState {
 }
 
 /// The page calls this right after it shows or hides the pill window, so the
-/// WebView2 memory target follows visibility (T12: LOW hidden, NORMAL shown).
+/// WebView2 memory target follows visibility (LOW hidden, NORMAL shown).
 #[tauri::command]
 pub fn pill_visibility_changed<R: Runtime>(app: AppHandle<R>) {
     if let Some(pill) = app.get_webview_window(PILL_LABEL) {

@@ -209,7 +209,7 @@ function decodeDocument(document: RestDocument): { id: string; data: RemoteData 
     // back as the number the domain wrote, not as a string.
     else if ("integerValue" in value) data[key] = Number(value.integerValue);
     else if ("doubleValue" in value) data[key] = value.doubleValue;
-    // `actualByDay` (W2c) is a map of day key → whole minutes.
+    // `actualByDay` is a map of day key → whole minutes.
     else if ("mapValue" in value) data[key] = decodeMinuteMap(value.mapValue);
     else throw new Error(`unsupported Firestore REST value for ${key}: ${JSON.stringify(value)}`);
   }
@@ -386,7 +386,7 @@ export async function readRemoteImport(email: string): Promise<{
 }
 
 /**
- * Seeds the profile time zone and the tasks the estimate learner reads (F2b).
+ * Seeds the profile time zone and the tasks the estimate learner reads.
  *
  * Unlike `seedSidebarFixture`, these tasks carry numbers: the estimate and the
  * minutes the focus timer recorded. Both are written as Firestore integers,
@@ -880,7 +880,7 @@ export async function seedRadarFixture(
 /* ---------- Shutdown ritual fixture (tests/shutdown-ritual.spec.ts) ---------- */
 
 /**
- * Seeds one account for the shutdown ritual (F3c): the profile's zone, its
+ * Seeds one account for the shutdown ritual: the profile's zone, its
  * shutdown time and the day it was last closed, plus the tasks and work blocks
  * that make a day, all before the browser signs in.
  *

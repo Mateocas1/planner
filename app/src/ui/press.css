@@ -1,5 +1,5 @@
 /**
- * The press language (odd/tasks/ronda4.md S2): one way every pressable answers
+ * The press language: one way every pressable answers
  * a press. On press the control sinks instantly to a fixed depth; on release it
  * springs back through a damped `linear()` spring with one small visible
  * overshoot -- the "efecto rebote" -- and settles. The tokens are the single
@@ -86,7 +86,7 @@
 
 /* The press: instant scale-down. Specificity stays as it was on purpose: a
  * `:where` here would let class rules that own a transition win, so their
- * press would sink on the 420 ms release spring instead of instantly (S2).
+ * press would sink on the 420 ms release spring instead of instantly.
  * The colour transitions stay, so tints still ease while the control is held. */
 button:not(:disabled):not([aria-disabled="true"]):not(.row-main):not(.calendar-block):active,
 [role="button"]:not([aria-disabled="true"]):not(.row-main):not(.calendar-block):active {

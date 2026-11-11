@@ -132,7 +132,7 @@ export function serializeSession(session: FocusSession): string {
 
 /**
  * The profile-zone day (YYYY-MM-DD) a stopped session's tracked minutes are
- * attributed to (ronda 2 S3/L6): the day the session *started*, never the day
+ * attributed to: the day the session *started*, never the day
  * it stopped. A timer running 23:30 → 00:15 counts for the day the work
  * began, so one session never splits across two days and the write lands on
  * the same day key the hook passes to `addActualMinutes` — an attribution the

@@ -1,4 +1,4 @@
-/* Quick-add window (QuickAddWindow.tsx, task T5). Co-located so the mini
+/* Quick-add window (QuickAddWindow.tsx). Co-located so the mini
    surface's material and motion stay out of app.css; it imports DesktopShell.css
    for the desktop-mica html rules (the two surfaces are never mounted together).
 
@@ -7,7 +7,7 @@
    designed background on the body so text contrast stays close to the audited
    values while the wallpaper-tinted Mica reads through).
 
-   Motion: the palette's accepted short soft entrance (AGENTS.md log — user
+   Motion: the palette's accepted short soft entrance (user
    decisions beat the instant-keyboard-surface preference): opacity 0 -> 1 with
    a 2% scale over 150 ms on the app's --ease-out, composited (transform and
    opacity only). It replays on every reveal because Rust bumps the shown

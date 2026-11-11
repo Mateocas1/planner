@@ -52,7 +52,7 @@ export type CaptureSheetProps = {
 };
 
 /**
- * The capture sheet (Ronda 8, S3, plan §2/§5): paste anything, read it, review
+ * The capture sheet (plan §2/§5): paste anything, read it, review
  * what was found, and add what you want. It is the shared glass `Sheet`; the
  * owner mounts it with `open` and the sheet animates itself in and out.
  */

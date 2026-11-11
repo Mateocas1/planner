@@ -6,7 +6,7 @@ import { db } from "./client.ts";
 import { usePendingRemovals } from "./pending.ts";
 
 /** View type for a stored task: the domain Task plus its completion state.
- *  `someday` is the weekly review's Clean-up shelf flag (S3); absent means
+ *  `someday` is the weekly review's Clean-up shelf flag; absent means
  *  "not someday", exactly like every other optional task field. */
 export type TaskView = Task & { completed: boolean; completedAt?: string; someday?: boolean; pending: boolean };
 

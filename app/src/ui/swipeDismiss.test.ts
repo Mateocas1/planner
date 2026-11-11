@@ -134,7 +134,7 @@ test("sheetScale shrinks slightly with progress and clamps", () => {
 });
 
 test("sheetRadius grows from the resting radius toward the mobile ceiling", () => {
-  // A full-viewport sheet (S1: radius 0) rounds from 0 to the top of the band.
+  // A full-viewport sheet (radius 0) rounds from 0 to the top of the band.
   assert.equal(sheetRadius(0, 0), 0);
   assert.equal(sheetRadius(0, 1), MOBILE_RADIUS_MAX);
   assert.ok(sheetRadius(0, 1) >= 24 && sheetRadius(0, 1) <= 28);

@@ -128,7 +128,7 @@ test("two offline increments accumulate on the server instead of overwriting eac
 });
 
 /**
- * Idle away (T9, spec S8.5): a subtraction confirmed after the session's own
+ * Idle away: a subtraction confirmed after the session's own
  * minutes already landed goes through the app's helper
  * (`subtractActualMinutesIn`, which `tasks.ts` `subtractActualMinutes` calls
  * with the app's database): one `increment()` transform with a negative
@@ -242,7 +242,7 @@ function localReader(database: Firestore, uid: string, rawStamp: (data: Record<s
 }
 
 /**
- * The shutdown roll (F3a) against real Firestore: one atomic batch moves the
+ * The shutdown roll against real Firestore: one atomic batch moves the
  * due and overdue deadlines and stamps `profile.lastShutdown`, and its undo
  * puts every previous deadline and the previous stamp back — deleting the
  * stamp when the close being undone was the first one. Undo is checked against
@@ -599,7 +599,7 @@ test("undo of an earlier close refuses once a later close owns the day, and says
 });
 
 /**
- * Plan my day (F4b) against real Firestore: one `writeBatch` writes every block
+ * Plan my day against real Firestore: one `writeBatch` writes every block
  * of a plan and returns exactly their document ids, and its undo deletes those
  * documents and nothing else — an older block on the same day and the tasks the
  * plan points at are untouched.
@@ -667,7 +667,7 @@ test("a plan is one batch of blocks, and its undo removes exactly those document
 });
 
 /**
- * Holiday labels (S11) against real Firestore: the owner reads and writes
+ * Holiday labels against real Firestore: the owner reads and writes
  * `users/{uid}/holidays`, nobody else does, and an import's merge write
  * refreshes Google's fields without touching the user's override or hidden
  * flag. The helpers take the test's authenticated database, as `addBlocks` does.
@@ -710,7 +710,7 @@ test("holiday labels are owner-only and a re-import keeps the user's choices", a
 });
 
 /**
- * The holiday cleanup (S11) against real Firestore. It deletes stored data, so
+ * The holiday cleanup against real Firestore. It deletes stored data, so
  * this pins the whole guarantee: of a mixed task list only the tasks the
  * selection proves came from a holiday calendar are deleted, each after its
  * label is stored, and a failing label write deletes nothing.
@@ -763,7 +763,7 @@ test("cleanup deletes only holiday-calendar tasks, labels first, and nothing whe
 /* ------------------------------------------------------------ weekly review */
 
 /**
- * The weekly review's storage (ronda 2 W2a, spec S3) against real Firestore:
+ * The weekly review's storage against real Firestore:
  * one document per ISO week holding the week's state and its reflection note.
  * The module imports the app's client, so it is loaded the way the cleanup
  * test loads its data module: with a window shim, after the process has
@@ -918,7 +918,7 @@ test("a someday task survives delete and undo, and the read path maps the flag",
 });
 
 /**
- * Deleting a task deletes its work blocks (ronda4 T8, spec S8): one atomic
+ * Deleting a task deletes its work blocks: one atomic
  * `writeBatch` removes the task document and every block linked to it — past
  * and future, since a task's history dies with it — and nothing else. Undo
  * puts the task and exactly those blocks back under the same ids and fields.
@@ -1237,7 +1237,7 @@ test("weekly review settings are written normalized", async () => {
   }
 });
 
-/* ------------------------- actual minutes per day (ronda 2, S3/L6) -------- */
+/* ------------------------- actual minutes per day -------- */
 
 /**
  * The per-day map a task may hold next to its cumulative counter. The reader
@@ -1267,7 +1267,7 @@ test("a per-day actual map reads only real days with signed whole-minute counts"
 
 /**
  * Every focus-session write records the cumulative counter AND the day map in
- * the SAME updateDoc (L6): two field transforms, one atomic write, so a
+ * the SAME updateDoc: two field transforms, one atomic write, so a
  * device that sees one sees the other and an offline queue drains both
  * together. The day key is the profile-zone day the session started.
  */
@@ -1319,7 +1319,7 @@ test("a session's increment lands on the total and its day in one atomic write",
 });
 
 /**
- * The idle-away subtraction (T9 S8.5) is the same two-transform write as the
+ * The idle-away subtraction is the same two-transform write as the
  * session's increment, with a negative value on both fields: the total loses
  * the away minutes and the day the away span belongs to loses them too. The
  * day key is a parameter of the helper (the hook passes the away span's day),

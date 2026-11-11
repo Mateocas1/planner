@@ -11,7 +11,7 @@ import { nextWeekDays, planWeek, type WeekPlacement } from "./planWeek.ts";
 import { capitalize } from "../../i18n/capitalize.ts";
 
 /**
- * The Plan step (S3): pick next week's priorities, place their blocks on next
+ * The Plan step: pick next week's priorities, place their blocks on next
  * week's days. The placement arithmetic is `planWeek.ts`'s — one `planDay` per
  * day, priorities first — which is `planning/place.ts`'s own rule, so the
  * week's plan and the daily plan-my-day can never disagree about what "free"

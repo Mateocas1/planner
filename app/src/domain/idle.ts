@@ -1,5 +1,5 @@
 /**
- * Idle away accounting (task T9, spec S8.5) — the pure half of
+ * Idle away accounting — the pure half of
  * `ui/useIdleAway.ts`, kept in a `.ts` module so the node test runner
  * (`--experimental-strip-types`) can load it without a DOM.
  *
@@ -31,7 +31,7 @@ import { sessionDayKey, type FocusSession } from "./focus.ts";
 /** How often the desktop shell polls the OS idle time while a session runs. */
 export const IDLE_POLL_MS = 30_000;
 
-/** The away threshold the user chose for T9 (odd/tasks/desktop.md L14). */
+/** The away threshold the user chose for T9. */
 export const DEFAULT_IDLE_THRESHOLD_MINUTES = 10;
 
 /** The threshold setting's range, in whole minutes (spec: 5–60). */
@@ -83,7 +83,7 @@ export function awayStart(nowMs: number, idleSeconds: number): number {
 /**
  * The instant an away span ended: the user's last input, which the OS reports
  * as `idleSeconds` before the poll that noticed the return. Ending at the poll
- * itself would overstate every absence by up to one poll interval (L18).
+ * itself would overstate every absence by up to one poll interval.
  */
 export function awayEnd(nowMs: number, idleSeconds: number): number {
   return nowMs - idleSeconds * 1000;
@@ -168,7 +168,7 @@ export function sessionKeyOf(session: Pick<FocusSession, "blockId" | "startedAt"
 }
 
 /**
- * The day key a confirmed away subtraction is attributed to (ronda 2, review
+ * The day key a confirmed away subtraction is attributed to (review
  * fix 2): the session's START day — the same day the session's focus credit
  * landed — never the away span's own day. One attribution rule for a
  * session's credit and its corrections, so a cross-midnight away span can

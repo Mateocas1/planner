@@ -4,13 +4,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit i9): Spanish is ~24% longer than English, so the shell must
+ * S8 (unit i9): Spanish is ~24% longer than English, so the shell must
  * wrap instead of overflowing. The test switches a phone to Español and asserts
  * the page, the body and the content column have no horizontal overflow on
  * Today, Tasks, Calendar and Settings.
  *
- * `I9_SHOTS=<dir>` also runs the screenshot sweep behind the layout QA
- * (`odd/runs/r5-i9-shots`): every surface in Spanish, light and dark, at
+ * `I9_SHOTS=<dir>` also runs the screenshot sweep behind the layout QA:
+ * every surface in Spanish, light and dark, at
  * 1440x900 and 390x844, plus an audit of clipped and ellipsised text.
  */
 

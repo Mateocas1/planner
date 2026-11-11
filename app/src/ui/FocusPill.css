@@ -1,4 +1,4 @@
-/* T8 — the mini floating focus pill (spec S8.4, motion per AGENTS.md flow).
+/* The mini floating focus pill (motion Co-located flow).
  *
  * A transparent frameless window whose whole surface is this one element: a
  * 220×44 glass chip that floats above other apps while a focus session runs
@@ -13,7 +13,7 @@
  * digits are plain tabular text and the ring steps once per tick. A 1 s
  * stroke-dashoffset glide restarted every second never settles, so WebKit
  * painted at vsync for the whole session to move the ring under 0.1 px a
- * second (R7-01). Reduced motion drops the entrance.
+ * second. Reduced motion drops the entrance.
  */
 
 /* The window is transparent (src-tauri/pill.rs); the page around the chip must

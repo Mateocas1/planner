@@ -19,9 +19,9 @@ import { profileDocument } from "./profile.ts";
  * Optional fields are omitted rather than written as null. Every task write
  * path that rewrites a whole document (create, restore, import) goes through
  * here, so a restored task is the document that was deleted. `someday` is the
- * weekly review's Clean-up shelf flag (S3); it rides the same closed list so
+ * weekly review's Clean-up shelf flag; it rides the same closed list so
  * a delete → undo does not silently un-shelve the task. So does
- * `actualByDay` (ronda 2 S3/L6): the per-day map is tracked data, and undo
+ * `actualByDay`: the per-day map is tracked data, and undo
  * must no more drop it than the counter it belongs to.
  */
 export function taskFields(task: Task, completed: boolean, completedAt?: string, someday?: boolean): Record<string, unknown> {
@@ -62,12 +62,12 @@ export async function setTaskEstimate(uid: string, taskId: string, estimate?: nu
 }
 
 /**
- * Adds minutes of real work to a task (F2b), one focus session at a time.
+ * Adds minutes of real work to a task, one focus session at a time.
  *
  * The write is a pair of Firestore `increment()` transforms in ONE
  * `updateDoc` — the cumulative counter and the day map entry
  * `actualByDay.<dayKey>` — so they land atomically, commute with every other
- * device's increments and queue offline like any other write (ronda 2 S3/L6).
+ * device's increments and queue offline like any other write.
  * No read is needed to record a session and nothing is lost while offline.
  *
  * `dayKey` is the profile-zone `YYYY-MM-DD` the tracked minutes belong to:
@@ -89,7 +89,7 @@ export async function addActualMinutes(uid: string, taskId: string, minutes: num
 }
 
 /**
- * Removes minutes from a task's counter (T9 idle away, spec S8.5): a session
+ * Removes minutes from a task's counter (T9 idle away): a session
  * the user spent mostly away, confirmed after its own minutes already landed.
  *
  * It is the same write path as `addActualMinutes` -- one `updateDoc` with a
@@ -128,7 +128,7 @@ export async function setTaskDeadline(uid: string, taskId: string, title: string
 }
 
 /**
- * Deletes a task AND every work block linked to it (ronda4 T8, spec S8) in
+ * Deletes a task AND every work block linked to it in
  * ONE atomic `writeBatch`. Before this batch, a task delete orphaned its
  * blocks on the calendar; now nothing survives the delete half-applied. The
  * blocks come from the caller's live snapshot (the store subscribes to the
@@ -182,7 +182,7 @@ export async function deleteTask(
 }
 
 /**
- * Applies the shutdown roll (F3a) as exactly one `writeBatch`: a deadline
+ * Applies the shutdown roll as exactly one `writeBatch`: a deadline
  * update per move, plus `profile.lastShutdown = plan.today`. The batch is
  * atomic, so a rejected write changes nothing at all — the sheet can then say
  * "Nothing changed" and mean it — and it is queued offline like any other
@@ -274,10 +274,10 @@ export type DeletedTask = {
   estimate?: number;
   /** The tracked minutes the focus timer accumulated; undo must not lose them. */
   actualMinutes?: number;
-  /** The same minutes attributed per day (S3/L6); undo must not lose them. */
+  /** The same minutes attributed per day; undo must not lose them. */
   actualByDay?: Record<string, number>;
   completedAt?: string;
-  /** The weekly review's Clean-up shelf flag (S3); undo must not un-shelve
+  /** The weekly review's Clean-up shelf flag; undo must not un-shelve
    *  the task any more than it may drop its deadline. */
   someday?: boolean;
 };
@@ -327,7 +327,7 @@ export async function restoreTask(uid: string, task: DeletedTask, database: Fire
 }
 
 /**
- * The undo of a task delete that took its work blocks with it (S8): the task
+ * The undo of a task delete that took its work blocks with it: the task
  * goes back under its original id exactly as `restoreTask` does, and the
  * blocks go back with it — in ONE `writeBatch` (review finding 1), so the
  * undo either lands whole or not at all. The earlier sequential undo (task

@@ -1,7 +1,7 @@
 import { t } from "../i18n/index.ts";
 
 /**
- * A task's tracked minutes, attributed per profile-zone day (ronda 2 S3/L6):
+ * A task's tracked minutes, attributed per profile-zone day:
  * every increment or decrement of `actualMinutes` also moves the matching
  * `actualByDay.<YYYY-MM-DD>` entry in the same atomic write. The total stays
  * the single source of truth; the map is the "when did it happen" view the
@@ -32,7 +32,7 @@ export const ASSUMED_ESTIMATE_MINUTES = 60;
 
 /**
  * How many minutes a task can accumulate before the stored counter is treated
- * as corrupt (F2b). The bound only rejects absurd hand-edited values: real
+ * as corrupt. The bound only rejects absurd hand-edited values: real
  * tracked work is nowhere near it, and an accumulated counter is not an
  * estimate, so it may legitimately exceed MAX_ESTIMATE_MINUTES.
  */

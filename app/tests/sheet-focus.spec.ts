@@ -4,7 +4,7 @@ import { seedTasks, submitAuthForm } from "./browser-helpers.ts";
 test.setTimeout(90_000);
 
 /**
- * Keyboard containment (Ronda 5, S7, R5-03 / R5-04b): a sheet looks modal, so
+ * Keyboard containment (R5-03 / R5-04b): a sheet looks modal, so
  * Tab must not reach the page under its scrim, and a skip link is the first
  * stop on every surface.
  */

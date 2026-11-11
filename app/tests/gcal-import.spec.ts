@@ -497,7 +497,7 @@ test("remove imported events asks first and deletes only what Google wrote", asy
   expect(after.tasks).toEqual([]);
 });
 
-/* ---------- S11: holidays are labels, not tasks ---------- */
+/* --------: holidays are labels, not tasks ---------- */
 
 const HOLIDAY_CALENDAR = "es.ar#holiday@group.v.calendar.google.com";
 

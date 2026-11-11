@@ -2,13 +2,13 @@ import { expect, test } from "@playwright/test";
 import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit X2a): the app shell in Spanish -- navigation, sync line,
+ * The app shell in Spanish -- navigation, sync line,
  * New task sheet and the account menu -- plus two screenshots for the layout check.
  */
 
 test.setTimeout(120_000);
 
-/* Next to this checkout's odd/runs, not an absolute path into another checkout. */
+/* Next to this checkout's, not an absolute path into another checkout. */
 const shots = new URL("../../odd/runs/r5-x2a-shots/", import.meta.url).pathname;
 
 const newEmail = () => `lang-x2a-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;

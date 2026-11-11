@@ -1,5 +1,5 @@
 /**
- * The weekly review's pure view half (S3, ronda 2 W2b): the step metadata the
+ * The weekly review's pure view half: the step metadata the
  * flow renders, the words the Review step shows, and the labels the banner and
  * the Rituals rows share.
  *
@@ -73,7 +73,7 @@ export function momentStepsLabel(steps: readonly WeeklyReviewStep[]): string {
 }
 
 /**
- * The Review step's sentences (S3: a few numbers, no charts, no streaks).
+ * The Review step's sentences (a few numbers, no charts, no streaks).
  * Every line names one fact of the week; the caller renders them in order.
  * `actualIsPartial` (r2-w2c) marks the tracked total as approximate while the
  * per-day history catches up, and the planned line says so quietly.
@@ -108,7 +108,7 @@ export function reviewSentences(
 }
 
 /**
- * The estimation bias in words (S3: reuse the planning bias, a record rather
+ * The estimation bias in words (reuse the planning bias, a record rather
  * than a suggestion). The same neutral band `planning/bias.ts` stays quiet in
  * reads as "close to your estimates"; outside it the ratio is said plainly.
  */

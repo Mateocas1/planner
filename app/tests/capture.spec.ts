@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readRemoteTasks, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The capture inbox's entry points (Ronda 8, plan `odd/plans/capture-inbox.md`
+ * The capture inbox's entry points
  * §1, §5, §7): the palette's "Capture" action, the header button and
  * paste-anywhere open the sheet; reading a paste needs no key (the web build
  * reads on this device, the same path the desktop uses without a key); nothing

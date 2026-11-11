@@ -1,6 +1,6 @@
 /**
- * The contract between the chat panel (UI) and its transport (task C0 of
- * odd/tasks/llm-chat.md). The UI only ever talks to a `ChatTransport`; the
+ * The contract between the chat panel (UI) and its transport.
+ * The UI only ever talks to a `ChatTransport`; the
  * desktop build wires the Tauri transport (Rust holds the API key and makes
  * the HTTPS call), dev and tests wire a mock. Keep this file dependency-free.
  */

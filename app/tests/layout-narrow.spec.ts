@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedSidebarFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * S7 (Ronda 6): the desktop window from its minimum width (800 px) up, with
+ * The desktop window from its minimum width (800 px) up, with
  * the sidebar always open. A Hyprland half-screen tile is 960 px wide; there
  * the Settings > AI rows squeezed their label column to a few pixels and the
  * Base URL note wrapped one letter per line.

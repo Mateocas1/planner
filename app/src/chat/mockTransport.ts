@@ -1,5 +1,5 @@
 /**
- * The mock transport (task C2): lets the panel be built, screenshotted and
+ * The mock transport: lets the panel be built, screenshotted and
  * browser-tested without Rust or an API key. Streams a canned Markdown answer
  * with realistic timing — a short connect, ~1.2 s of `reasoning`, then bursty
  * `delta` chunks (1–30 characters, 20–250 ms apart) — so the stream pacer has
@@ -11,7 +11,7 @@ import { dateKey } from "../ui/time.ts";
 import type { ChatEvent, ChatRequest, ChatTransport } from "./types.ts";
 
 /**
- * What the mock's extraction (`complete`) replies with (spec S5): strict JSON
+ * What the mock's extraction (`complete`) replies with: strict JSON
  * ops the panel applies to the in-memory backend, so a second conversation's
  * system prompt carries the note. The browser test reads the recorded
  * requests through `globalThis.__chatMockTransport`.
@@ -159,7 +159,7 @@ export function createMockTransport(scenario: MockScenario = "answer"): MockChat
           return;
         }
         if (scenario === "tools") {
-          // R1 (spec S1): the mock proposes two planner changes — one dated
+          // The mock proposes two planner changes — one dated
           // today (the confirm test's visible task), one undated (the discard
           // test's invisible one). Tool calls bypass the pacer: they are
           // discrete events, not text.

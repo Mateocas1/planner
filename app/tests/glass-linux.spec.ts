@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Flat glass on Linux (Ronda 9, S1/S2): `html[data-webkitgtk="flat"]` (set by
+ * Flat glass on Linux: `html[data-webkitgtk="flat"]` (set by
  * main.tsx on the WebKitGTK webview) turns the sheet into a near-opaque panel
  * with no backdrop filter and a stronger scrim. Chromium is the engine under
  * test, so the attribute is set before load by hand; the assertions are about

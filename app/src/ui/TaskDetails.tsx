@@ -136,7 +136,7 @@ export function TaskDetails({
   today: string;
   busy: boolean;
   /**
-   * Completed tasks the estimate learner may read (F2b). The sheet does not
+   * Completed tasks the estimate learner may read. The sheet does not
    * fetch them: a surface that already holds the store passes them, and a
    * caller that does not gets only the tracked-minutes line. They are read
    * through `planning/bias.ts`, which decides alone whether there is enough

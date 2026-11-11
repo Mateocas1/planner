@@ -1,9 +1,9 @@
 /**
- * One proposed planner change (Ronda 3 R1, spec S1): what will change, in
+ * One proposed planner change: what will change, in
  * plain words, with Confirm and Discard, then the outcome. The card lives
  * inside the answer bubble.
  *
- * Motion (built through the animate flow, spec S1 "cards enter like the
+ * Motion (built through the animate flow, "cards enter like the
  * answer bubble"): the entrance is the user pill's — opacity, 6 px rise and a
  * light blur to sharp, 200 ms ease-out, CSS animation on mount (the cheapest
  * tool that works, off the main thread). State changes (outcome swap) do not

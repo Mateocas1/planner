@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Transition } from "motion/react";
 
 /**
- * The three springs from odd/design/DESIGN.md. Every animated state change in
+ * The three springs. Every animated state change in
  * the app uses one of these, so the product moves with one character:
  * critically damped by default, a little bounce only after a completion.
  */
@@ -38,10 +38,10 @@ export const dur = {
   flight: 0.4,
   /** The content's blur-to-sharp behind a landed panel: long enough to read as
    *  a focus pull, short enough that the field the panel focuses is crisp again
-   *  before the user types (odd/research/melon-expand.md §b). */
+   *  before the user types. */
   blur: 0.26,
-  /** The user bubble's flight from the send button into its thread slot
-   *  (Ronda 4 S3): a short spring that still settles inside the 300 ms UI
+  /** The user bubble's flight from the send button into its thread slot:
+   * a short spring that still settles inside the 300 ms UI
    *  budget. */
   sendFlight: 0.26,
 } as const;
@@ -64,7 +64,7 @@ export const easeOutBackCss = "cubic-bezier(0.22, 1.2, 0.36, 1)";
 export const expandBlur = { fine: 8, coarse: 4 } as const;
 
 /**
- * The press language (odd/tasks/ronda4.md S2), mirrored from the --press-*
+ * The press language, mirrored from the --press-*
  * tokens in ui/press.css -- the CSS side is authoritative; these constants
  * exist so JS/Motion code and tests can name the same values. A press sinks
  * instantly (`scale`, `downMs`) and releases through the damped
@@ -100,8 +100,8 @@ export function useMediaQuery(query: string): boolean {
  *
  * Width alone was wrong for a phone held sideways: 844x390 is wider than a
  * tablet's portrait width, so it got the desktop sidebar — 244 px of a 390 px
- * screen, with the sign-out row scrolled out of a 370 px column
- * (odd/research/responsive-audit.md F4). A viewport that is both narrow and
+ * screen, with the sign-out row scrolled out of a 370 px column.
+ * A viewport that is both narrow and
  * short is a phone in landscape, and it gets the phone shell. The same string
  * is repeated in the four phone CSS blocks; media queries cannot share a
  * constant.
@@ -112,7 +112,7 @@ export const phoneQuery = "(max-width: 760px), (max-width: 1024px) and (max-heig
  * The width a seven-column week needs to stay readable. A tablet is wide enough
  * for the desktop shell and far too narrow for seven day columns plus the 56 px
  * gutter: at 768 px each column is 55 px and its block titles truncate to
- * "Wo…" (odd/research/responsive-audit.md F1). Between the phone breakpoint and
+ * "Wo…". Between the phone breakpoint and
  * this one the calendar opens on the day range instead -- the week is a tap
  * away, and a column that cannot hold a word is not a week.
  */

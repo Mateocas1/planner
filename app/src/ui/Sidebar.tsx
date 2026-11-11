@@ -87,10 +87,10 @@ export function Sidebar({
   onSignOut: () => void;
   /** Opens the Google Calendar import; the pressed control is its origin. */
   onImport: (origin: HTMLElement) => void;
-  /** Opens the Settings view (Ronda 2, S1); it is a view now, so it takes no
+  /** Opens the Settings view; it is a view now, so it takes no
    * origin — the shell navigates, nothing flies out of this row. */
   onOpenSettings: () => void;
-  /** Opens the weekly review by hand (S3): the sidebar's own entry point. */
+  /** Opens the weekly review by hand: the sidebar's own entry point. */
   onOpenWeeklyReview: () => void;
 }) {
   return (
@@ -119,7 +119,7 @@ export function Sidebar({
           </button>
         ))}
       </nav>
-      {/* The weekly review's own entry (S3): the same nav-item anatomy, but not
+      {/* The weekly review's own entry: the same nav-item anatomy, but not
           one of the three views — it opens a ritual, not a destination, so it
           carries no pill and no count, and marks itself current while the
           flow is on screen. */}
@@ -132,7 +132,7 @@ export function Sidebar({
         <WeeklyIcon className="nav-icon" />
         <span className="nav-label">{t("sidebar.weeklyReview")}</span>
       </button>
-      {/* The one region that gives way when the window is short (R5-10): the
+      {/* The one region that gives way when the window is short: the
           month, the navigation and the footer keep their size, so a long Due
           soon list scrolls here instead of squeezing the nav items. */}
       {timeZone ? (
@@ -165,7 +165,7 @@ export function Sidebar({
           </button>
           <ThemeSwitch />
         </div>
-        {/* Two footer actions as small button rows (R5-22). The import label is
+        {/* Two footer actions as small button rows. The import label is
             the short one the column can hold; the full name stays the
             accessible name and the tooltip, so the command is still called
             "Import from Google Calendar". Sign out is last and neutral. */}

@@ -77,17 +77,17 @@ export function CommandPalette({
   onImport: () => void;
   /** Runs the "Open Now mode" command (the overlay is the shell's). */
   onOpenNow: () => void;
-  /** Runs the "Close the day" command (the ritual is the shell's, F3c). */
+  /** Runs the "Close the day" command (the ritual is the shell's). */
   onCloseDay: () => void;
   /** Runs the "Replay the day" command (the stage lives in the shutdown sheet). */
   onReplayDay?: () => void;
-  /** Runs the "Capture" command (the sheet is the shell's, Ronda 8). */
+  /** Runs the "Capture" command (the sheet is the shell's). */
   onCapture: () => void;
   /** Today has a replay to show and the setting allows it: only then is the command offered. */
   replayDay?: boolean;
-  /** Runs the "Weekly review" command (the flow is the shell's, S3). */
+  /** Runs the "Weekly review" command (the flow is the shell's). */
   onOpenWeeklyReview: () => void;
-  /** Opens the Settings view, optionally on a tab (Ronda 2, S1). */
+  /** Opens the Settings view, optionally on a tab. */
   onOpenSettings: (tab?: SettingsTab) => void;
 }) {
   const locale = useLocale();

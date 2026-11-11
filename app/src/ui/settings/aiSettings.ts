@@ -1,5 +1,5 @@
 /**
- * Pure rules for the Settings AI tab (spec S3, task C3b): the status line,
+ * Pure rules for the Settings AI tab: the status line,
  * the provider host a saved key is bound to, and the page-side validation
  * that mirrors the Rust side's refusals (`src-tauri/core/src/chat.rs`
  * `validate_key`/`validate_base_url`) so obvious mistakes never pay an IPC
@@ -69,7 +69,7 @@ export function validateBaseUrlClient(url: string): string | null {
   return t("ai.error.baseUrl");
 }
 
-/** The memories list is newest first (spec S5); a preview keeps one line. */
+/** The memories list is newest first; a preview keeps one line. */
 export function memoryPreview(content: string, max = 96): string {
   const oneLine = content.replace(/\s+/g, " ").trim();
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
@@ -81,7 +81,7 @@ export function memoryDate(updatedAt: number): string {
 }
 
 /**
- * The Engram mirror status line (task R2, spec S2). Mirroring off wins over
+ * The Engram mirror status line. Mirroring off wins over
  * the last attempt; a failed attempt shows "Engram unreachable: …" with the
  * error Rust recorded; success shows how many memories the attempt touched.
  */

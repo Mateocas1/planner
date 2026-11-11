@@ -17,7 +17,7 @@ import "./DesktopShell.css";
 import "./QuickAddWindow.css";
 
 /**
- * The global quick-add window (task T5, spec S8.1) — the mini surface the
+ * The global quick-add window — the mini surface the
  * `Ctrl+Alt+Space` hotkey summons. It is the same bundle as the main app
  * (route flag `#quickadd` in main.tsx) rendering only the natural-language
  * quick add: the same `parseQuickAdd`, the same `QuickAddChips`, and the same
@@ -30,7 +30,7 @@ import "./QuickAddWindow.css";
  * Rust owns the window: it shows, focuses, centers on the cursor monitor and
  * hides on blur. This page only asks to hide (Enter, Esc) and sizes the window
  * to the chips row. The one accepted entrance (`quickadd-in`, 150 ms) is the
- * palette's short soft appearance by decision (AGENTS.md log: user decisions
+ * palette's short soft appearance by decision (user decisions
  * beat reviewer rules for keyboard surfaces) — it replays on every reveal via
  * the `enterCount` key, and `prefers-reduced-motion` keeps the fade only. No
  * exit animation: hiding is instant, never delayed. Focus is never queued

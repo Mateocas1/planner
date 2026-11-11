@@ -6,7 +6,7 @@ import { SERIES_HORIZON_DAYS, capacity, dayCapacity, overcommitNote, type Capaci
 import { defaultWorkWindow, type WorkWindow } from "./window.ts";
 
 /**
- * The capacity radar's pure cases (F1): how full a day is, what a block that
+ * The capacity radar's pure cases: how full a day is, what a block that
  * crosses midnight or a DST edge does, and whether the committed work still
  * fits before each deadline.
  *

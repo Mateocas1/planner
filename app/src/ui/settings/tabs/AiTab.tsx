@@ -28,13 +28,13 @@ import { SettingsSwitch } from "../SettingsSwitch.tsx";
 import "./AiTab.css";
 
 /**
- * AI (design brief §4, spec S3 + S5): the assistant's setup. The API key is
+ * AI (design brief §4): the assistant's setup. The API key is
  * typed once, stored in the OS credential store by Rust, and never
  * returned to this page — the field is a password input that starts empty
  * every time and is cleared after a save. The base URL and the model are
  * non-secret settings; the model persists locally (`chat/config.ts`). The
- * memories are the durable notes the assistant extracts at conversation end
- * (S5), listed newest first and editable only here.
+ * memories are the durable notes the assistant extracts at conversation end,
+ * listed newest first and editable only here.
  *
  * The tab renders on desktop only (the rail filters it); no motion beyond the
  * existing row patterns — confirmation is the app's inline swap (GcalImport's
@@ -236,7 +236,7 @@ export function AiTab() {
 }
 
 /**
- * The model every request names (spec S3): a free-text field with the NaN
+ * The model every request names: a free-text field with the NaN
  * default as its one suggestion. Saved locally as the user leaves the field,
  * the way General's time fields commit; an empty commit is refused, never
  * guessed.
@@ -303,7 +303,7 @@ function ModelSection() {
 }
 
 /**
- * The durable memories (spec S5): listed newest first, one delete per row,
+ * The durable memories: listed newest first, one delete per row,
  * "Clear all" behind a confirm. Refreshed on mount — the tab remounts on
  * every visit — and whenever the chat changes the notes under it (a
  * confirmed remember/forget or an extraction) through the
@@ -407,7 +407,7 @@ function MemoriesSection() {
 }
 
 /**
- * The Engram mirror controls (task R2, spec S2): an optional write-through
+ * The Engram mirror controls: an optional write-through
  * copy of the memories on a local Engram server. The local store stays the
  * source of truth — mirroring happens in Rust after every applied memory op,
  * best effort, so a dead Engram never blocks the chat; "Sync now" pushes the

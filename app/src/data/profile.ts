@@ -13,9 +13,9 @@ import { defaultWorkWindow, minutesPerDay, parseWorkWindow, validateWorkWindow, 
 
 /**
  * The profile layer: a single document per user holding the planner's
- * timezone (D3), the working window (W1) and the day settings that S1 edits:
- * when the day shuts down (F3), whether keyboard shortcuts are on (F6), and
- * the day the shutdown ritual was last closed (F3, `lastShutdown`).
+ * timezone (D3), the working window and the day settings that S1 edits:
+ * when the day shuts down, whether keyboard shortcuts are on, and
+ * the day the shutdown ritual was last closed (`lastShutdown`).
  * Recurrence and the planner's calendar dates belong to this zone, not to the
  * ambient browser zone.
  *
@@ -36,11 +36,11 @@ export type ProfileState = {
   /** Minutes after midnight in the profile zone; 1080 is 18:00. */
   shutdownTime: number;
   shortcutsEnabled: boolean;
-  /** The weekly review's Rituals settings (S3); defaults on absent or bad data. */
+  /** The weekly review's Rituals settings; defaults on absent or bad data. */
   weeklyReview: WeeklyReviewSettings;
-  /** The account's synced language (Ronda 5, S8); null when the profile holds none. */
+  /** The account's synced language; null when the profile holds none. */
   language: Locale | null;
-  /** The profile zone's day the shutdown ritual was last closed (F3c), read
+  /** The profile zone's day the shutdown ritual was last closed, read
    *  through `parseLastShutdown`: absent means today is still open. */
   lastShutdown?: string;
   /** The same field exactly as stored, whatever it is (`storedLastShutdown`).
@@ -77,7 +77,7 @@ export function profileDocument(uid: string, database: Firestore = db) {
 }
 
 /**
- * Reads the day the ritual was last closed (F3). Anything that is not a real
+ * Reads the day the ritual was last closed. Anything that is not a real
  * calendar day reads as absent, so a hand-edited document, or one written
  * before the ritual existed, simply reads as "not closed today" rather than
  * suppressing the banner forever.
@@ -168,7 +168,7 @@ export function parseShutdownTime(data: Record<string, unknown> | undefined): nu
     : defaultShutdownTime;
 }
 
-/** The shortcuts toggle; absent means on (the product's default, F6). */
+/** The shortcuts toggle; absent means on (the product's default). */
 export function parseShortcutsEnabled(data: Record<string, unknown> | undefined): boolean {
   return typeof data?.shortcutsEnabled === "boolean" ? data.shortcutsEnabled : defaultShortcutsEnabled;
 }
@@ -179,7 +179,7 @@ export function parseLanguage(data: Record<string, unknown> | undefined): Locale
 }
 
 /**
- * Persists the account's language choice (S8) as one additive profile field in a
+ * Persists the account's language choice as one additive profile field in a
  * merged set, like the other fields: no migration, and readers default when it
  * is absent.
  */
@@ -189,7 +189,7 @@ export async function setProfileLanguage(uid: string, language: Locale, database
 }
 
 /**
- * Persists the weekly review's Rituals settings (S3) as one additive profile
+ * Persists the weekly review's Rituals settings as one additive profile
  * field, the same way the day settings are written: validated first (the pure
  * rules live in `../planning/weekly.ts`), then one merged set that touches only
  * `weeklyReview`, so another device's fields are never written over.

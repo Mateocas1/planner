@@ -11,7 +11,7 @@ import {
 } from "./shutdown.ts";
 
 /**
- * The shutdown ritual's pure half (F3a): what is left over today, the roll
+ * The shutdown ritual's pure half: what is left over today, the roll
  * plan that moves due/overdue deadlines to tomorrow, and the exact undo of
  * that plan.
  *

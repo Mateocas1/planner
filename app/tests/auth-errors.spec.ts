@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-/** Ronda 5, S7: sign-in failures read as plain sentences, never the SDK's raw message. */
+/** Sign-in failures read as plain sentences, never the SDK's raw message. */
 
 test.setTimeout(60_000);
 

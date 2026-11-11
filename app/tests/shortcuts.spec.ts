@@ -10,7 +10,7 @@ import {
 } from "./browser-helpers.ts";
 
 /**
- * F6a — keyboard-first (odd/research/distinctive-roadmap.md §2, "F6.
+ * Keyboard-first
  * Keyboard-first", criteria 1, 2, 3, 4, 6, 7 and 8).
  *
  * Everything here is driven the way a person with a keyboard does it: no

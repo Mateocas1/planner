@@ -1,5 +1,5 @@
 /**
- * Shared pieces of the settings surface (Ronda 2, S1).
+ * Shared pieces of the settings surface.
  *
  * The Day settings sheet became the Settings view (ui/settings/); what lives
  * here now is what several modules share: the clock parsers the General tab

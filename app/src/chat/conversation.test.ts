@@ -114,7 +114,7 @@ test("hasExchange: an exchange needs a user message and a non-empty answer (S5)"
   assert.equal(hasExchange([{ id: "u1", role: "user", text: "hi" }, { id: "a1", role: "assistant", text: "hello", segments: ["hello"] }]), true);
 });
 
-// --- tool calls → action cards (Ronda 3 R1, spec S1) ---
+// --- tool calls → action cards ---
 
 const toolCall = (id: string, name = "create_task") => ({ type: "tool_call" as const, call: { id, name, arguments: '{"title":"X"}' } });
 

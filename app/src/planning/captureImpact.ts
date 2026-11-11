@@ -5,7 +5,7 @@ import { capacity, dayCapacity, type CapacityInput, type DayCapacity, type Overc
 import { freeSlots, type Interval, type WorkWindow } from "./window.ts";
 
 /**
- * What a captured task would do to the radar (Ronda 8, capture inbox U3): the
+ * What a captured task would do to the radar (capture inbox U3): the
  * due day's booked share before and after, the earliest free slot on that day
  * and the bias chip. The card shows "Fri 14: 62% -> 79% booked [Block 10:00]".
  *

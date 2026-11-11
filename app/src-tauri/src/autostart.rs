@@ -1,9 +1,9 @@
-//! Start at sign-in (task T10, spec S8.6).
+//! Start at sign-in.
 //!
 //! The autostart entry (HKCU `Run`, no admin rights) launches Planner with
 //! `--autostart`. Such a launch leaves the main window hidden: the frontend
 //! (`src/desktop-autostart.ts`) shows it only when today's morning brief applies,
-//! and otherwise the process waits in the tray (L13). Every other launch shows
+//! and otherwise the process waits in the tray. Every other launch shows
 //! the window in `setup`, as before.
 //!
 //! The window is created hidden (`visible: false` in `tauri.conf.json`), so a

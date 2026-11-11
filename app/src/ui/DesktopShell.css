@@ -1,4 +1,4 @@
-/* Desktop-only shell adjustments (task T3). Imported by DesktopShell.tsx (the
+/* Desktop-only shell adjustments. Imported by DesktopShell.tsx (the
    import is unconditional so the rules ship in the bundle); every selector is
    gated on the `desktop-shell`/`desktop-mica` classes, which only the Tauri
    shell ever sets, so the web build is unaffected. */

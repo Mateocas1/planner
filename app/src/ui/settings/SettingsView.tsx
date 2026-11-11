@@ -15,7 +15,7 @@ import { ICON_STROKE } from "../icons.tsx";
 import "./SettingsView.css";
 
 /**
- * Settings as a view in the shell (Ronda 2, S1): a left tab rail plus a
+ * Settings as a view in the shell: a left tab rail plus a
  * content column, rendered in `<main>` like Home/Tasks/Calendar, so the app
  * sidebar stays and the user never leaves the shell. The tab state lives in
  * the shell (`openSettings(tab?)` is the single entry point, so nudges, chat
@@ -44,7 +44,7 @@ export function SettingsView({
   workWindow: WorkWindow;
   shutdownTime: number;
   shortcutsEnabled: boolean;
-  /** The profile's weekly review schedule (S3); the Rituals tab edits it. */
+  /** The profile's weekly review schedule; the Rituals tab edits it. */
   weeklyReview: WeeklyReviewSettings;
   tab: SettingsTab;
   onTab: (tab: SettingsTab) => void;

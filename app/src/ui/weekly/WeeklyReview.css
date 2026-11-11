@@ -1,4 +1,4 @@
-/* The weekly review flow (S3, ronda 2 W2b). Same grammar as the Settings view:
+/* The weekly review flow. Same grammar as the Settings view:
    the shell's transparent background, opaque --surface cards, tokens only.
    Motion lives in WeeklyReview.tsx; reduced motion is handled there. */
 

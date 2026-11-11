@@ -1,5 +1,5 @@
 /**
- * The overcommit radar's own styles (F1b): the Today "This week" row, the load
+ * The overcommit radar's own styles: the Today "This week" row, the load
  * bar it shares with the Calendar header, and that header underline.
  *
  * Co-located with `CapacityBar.tsx` and not in `app.css`, so two units working

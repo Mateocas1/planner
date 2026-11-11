@@ -36,7 +36,7 @@ import {
 const outsideThreshold = () =>
   t("desktop.error.threshold", { min: MIN_IDLE_THRESHOLD_MINUTES, max: MAX_IDLE_THRESHOLD_MINUTES });
 
-/** This device's notification toggles (T7, S8.3): desktop only, never synced. */
+/** This device's notification toggles: desktop only, never synced. */
 function readNotifySettings(): NotifySettings {
   try {
     return parseNotifySettings(window.localStorage.getItem(notifySettingsStorageKey));
@@ -54,7 +54,7 @@ function writeNotifySettings(next: NotifySettings): void {
 }
 
 /**
- * Desktop only (T10, spec S8.6): "Open Planner when I sign in to Windows" (or
+ * Desktop only: "Open Planner when I sign in to Windows" (or
  * its Linux wording, `desktopCopy.ts`). The switch shows the operating system's
  * own state (the HKCU Run entry, the XDG autostart file), read when the tab
  * opens and again after every change, never a cached flag.
@@ -104,13 +104,13 @@ function SignInStartupRow() {
 
 export function DesktopTab() {
   useLocale();
-  // The away threshold lives in localStorage, not the profile (S8.5): it is a
+  // The away threshold lives in localStorage, not the profile: it is a
   // preference of this machine's input habits, not a fact about the plan.
   const [idleDraft, setIdleDraft] = useState<string | null>(null);
   const [idleError, setIdleError] = useState<string | null>(null);
   const [notify, setNotify] = useState<NotifySettings>(() => readNotifySettings());
   // The desktop pill's toggle is per device (the pill reads the same entry),
-  // so it is a draft over localStorage, not the profile (S8.4, L15).
+  // so it is a draft over localStorage, not the profile.
   const [pillEnabled, setPillEnabled] = useState<boolean>(() => readPillEnabled());
   const idleText = idleDraft ?? String(readIdleThreshold(window.localStorage));
 

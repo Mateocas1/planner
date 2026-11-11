@@ -292,7 +292,7 @@ test("toolResultContent: a write outcome's result (ids and fields) rides to the 
   assert.match(toolResultContent({ status: "confirmed", outcome: "Task created." }), /Task created\./);
 });
 
-/* ---------- read tools (S4): pure validation and results ---------- */
+/* ---------- read tools: pure validation and results ---------- */
 
 test("list_tasks validates its filters purely", () => {
   const ok = checkListTasks('{"fromDay":"2026-10-29","toDay":"2026-11-04","query":"milk"}', readContext);
@@ -427,7 +427,7 @@ test("validateToolCall routes the reads", () => {
   assert.match(described, /matching "milk"/);
 });
 
-/* ---------- write tools beyond create/move (S4) ---------- */
+/* ---------- write tools beyond create/move ---------- */
 
 import { checkCompleteTask, checkDeleteTask, checkForget, checkHideHoliday, checkRemember, checkUpdateTask, deleteTaskKeptNote, deriveTopicKey } from "./tools.ts";
 
@@ -563,7 +563,7 @@ test("hide_holiday validates against the known holidays and rejects no-ops", () 
   assert.match(ghost.ok ? "" : ghost.error, /not in your planner/);
 });
 
-/* ---------- memory tools (S5) ---------- */
+/* ---------- memory tools ---------- */
 
 test("remember validates bounded title/content and an optional topic key", () => {
   const ok = checkRemember('{"title":"Planning style","content":"Plans before 09:00."}');

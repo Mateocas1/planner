@@ -1,4 +1,4 @@
-//! Desktop chat transport (task C1 of `odd/tasks/llm-chat.md`, specs S3 and
+//! Desktop chat transport
 //! S5): the API key in the Windows Credential Manager, the non-secret
 //! provider address in a Rust-owned settings file (the key is bound to its
 //! provider: changing provider = setting the key again), SSE streaming
@@ -6,7 +6,7 @@
 //! cancellation, non-streamed completions, and the local memory file store
 //! ([`memory_store`]).
 //!
-//! Security invariants (spec S3): the key is read from the OS credential
+//! Security invariants: the key is read from the OS credential
 //! store per request, is never returned to the webview, never logged, and
 //! never written to disk by the app. Rust makes the HTTPS call, so the key
 //! never reaches the page. The provider base URL is validated in Rust
@@ -49,7 +49,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
-/// Credential store service and account names (spec S3).
+/// Credential store service and account names.
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 const KEY_SERVICE: &str = "com.picala.planner";
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -130,7 +130,7 @@ fn lock_registry(
 }
 
 // ---------------------------------------------------------------------------
-// Key storage (spec S3). The key only ever lives in the credential store.
+// Key storage. The key only ever lives in the credential store.
 
 /// The IPC error of a failed credential store call. On Linux a missing
 /// Secret Service (no keyring daemon) surfaces as `PlatformFailure` and a
@@ -261,7 +261,7 @@ fn remove_base_url(app: &tauri::AppHandle) {
 }
 
 /// Whether an API key is saved, and which provider address it is bound to.
-/// The key itself is never returned to the webview (spec S3); the base URL
+/// The key itself is never returned to the webview; the base URL
 /// is not secret.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -320,7 +320,7 @@ pub fn chat_key_clear(app: tauri::AppHandle) -> Result<(), IpcError> {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming (spec S3)
+// Streaming
 
 /// Starts one streamed reply on a worker thread. Returns immediately; the
 /// reply arrives as [`ChatEvent`]s on the channel, ending with `done`,

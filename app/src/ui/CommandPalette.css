@@ -1,10 +1,10 @@
 /* Command palette (CommandPalette.tsx). Co-located so the palette's material
    and motion stay out of app.css.
 
-   Motion (C1): a short soft appearance, then at rest. The palette is opened by a
+   Motion: a short soft appearance, then at rest. The palette is opened by a
    keyboard shortcut hundreds of times a day, so it takes the shortest entrance
    the app has instead of a sheet's flight: opacity 0 -> 1 with a 2% scale over
-   150 ms, both composited (transform and opacity only, AGENTS.md), on the same
+   150 ms, both composited (transform and opacity only), on the same
    --ease-out curve every other appearance uses. The entrance is a CSS animation
    on [open] rather than a transition with @starting-style: the dialog enters the
    top layer through showModal(), and an animation simply starts on the first
@@ -215,7 +215,7 @@ dialog.palette::backdrop {
   font-weight: 500;
 }
 
-/* The key that runs the same action (F6b). It sits at the row's end in the
+/* The key that runs the same action. It sits at the row's end in the
    footer's tone, so the label stays the thing the eye reads first. */
 .palette-option-key {
   flex: none;
@@ -242,8 +242,8 @@ dialog.palette::backdrop {
 }
 
 /* A thumb on a 25.8 px field: the row the field sits in grows to 44 and the
-   field with it, while the mouse keeps the compact row
-   (odd/research/responsive-audit.md F3). */
+   field with it, while the mouse keeps the compact row.
+   */
 @media (pointer: coarse) {
   .palette-input { min-height: 44px; }
 }

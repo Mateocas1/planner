@@ -34,7 +34,7 @@ if (isPillWindow) document.documentElement.dataset.window = "pill";
 
 // WebKitGTK (the Linux shell marks the page, src-tauri/src/window.rs) drops a
 // stale frame at the end of compositor animations; the guard must be in place
-// before anything animates. PLANNER_GUARD=off (Ronda 9 diagnostics, read by the
+// before anything animates. PLANNER_GUARD=off (diagnostics, read by the
 // shell into __PLANNER_DIAG__) leaves it out to A/B the guard's cost.
 const isWebKitGtk = (globalThis as { __WEBKITGTK__?: boolean }).__WEBKITGTK__ === true;
 const diag = readPlannerDiag(globalThis);
@@ -61,7 +61,7 @@ if (!isPillWindow) installLens();
 // worker is never activated on its own and the page is never force-reloaded,
 // which would interrupt unsent writes held in the Firestore persistent local
 // cache. `installUpdatePrompt` surfaces that waiting worker as a corner card
-// whose Reload button is the only way a new build takes over (SB1).
+// whose Reload button is the only way a new build takes over.
 const root = createRoot(document.getElementById("root")!);
 
 const route = parseWindowRoute(window.location.search, window.location.hash);

@@ -1,4 +1,4 @@
-/** Capture sheet copy (Ronda 8, S3): paste, read, review, add. English is the source of truth: `es/capture.ts` must carry the same keys and placeholders. */
+/** Capture sheet copy: paste, read, review, add. English is the source of truth: `es/capture.ts` must carry the same keys and placeholders. */
 export const capture = {
   "capture.title": "Capture",
   "capture.close": "Close capture",

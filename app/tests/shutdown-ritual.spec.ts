@@ -365,7 +365,7 @@ test.describe("on a desktop", () => {
        The edit is a server write and the wait is the app's own row, not the
        details sheet: that panel is four interactions (a row that is still
        re-sorting under the pointer, a mount, a field, a close), and on a loaded
-       host they outlast the offer they were racing (odd/runs/su-undo-hang.md). */
+       host they outlast the offer they were racing. */
     await moveTaskElsewhere(email, { id: taskIds["Review the draft"], title: "Review the draft" }, edited);
     await expect(
       page.getByRole("region", { name: "Coming up" }).getByRole("listitem").filter({ hasText: "Review the draft" }),
@@ -463,7 +463,7 @@ test.describe("on a desktop", () => {
   });
 
   test("the morning brief states the day once, and is dismissed for that day", async ({ page }) => {
-    /* The brief is the morning's: it ends when the first block starts (W8), so
+    /* The brief is the morning's: it ends when the first block starts, so
        the fixture reads it at 07:30, before the 08:00 block. */
     const base = at(7, 30);
     await open(page, base, "ritual-brief", {

@@ -53,7 +53,7 @@ test("moving a block re-arms its reminder: the dedupe key is id plus start", () 
 });
 
 test("a snoozed reminder fires when asked, even past the block start", () => {
-  // The T7 checklist's exact case: block starts 3 min out, toast at 2 min to
+  // The checklist's exact case: block starts 3 min out, toast at 2 min to
   // go, +5 min pressed, the re-toast lands 4 min after the start.
   const blocks = [block("b1", 3, 63)];
   const state = applySnooze(emptyNotifyState(), reminderKey(blocks[0]), t0);
@@ -140,7 +140,7 @@ test("the lead and snooze constants are the spec's two and five minutes", () => 
   assert.equal(snoozeMs, 5 * 60_000);
 });
 
-/* ---------- the weekly review's nudge (S3) ---------- */
+/* ---------- the weekly review's nudge ---------- */
 
 const moment = { week: "2026-W43", day: 5, time: 17 * 60 };
 

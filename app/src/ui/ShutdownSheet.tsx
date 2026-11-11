@@ -43,12 +43,12 @@ import "./ShutdownSheet.css";
 import { capitalize } from "../i18n/capitalize.ts";
 
 /**
- * The shutdown ritual (distinctive roadmap F3, F3c): a sheet with two pages.
+ * The shutdown ritual (distinctive roadmap F3): a sheet with two pages.
  *
  * The Today page counts what the day left behind -- the tasks completed today
  * and the ones still open that had a block today or are due today or overdue --
  * and the Tomorrow page is pre-rendered beneath it. Turning today to tomorrow
- * (`ui/PageTurn.tsx`, F3b) *is* the close: the write starts at the commit
+ * (`ui/PageTurn.tsx`) *is* the close: the write starts at the commit
  * moment, the animation only carries the page. A refused write springs the page
  * back and says so, because one `writeBatch` either lands whole or not at all.
  *
@@ -58,7 +58,7 @@ import { capitalize } from "../i18n/capitalize.ts";
  * the plan, commits it, announces it and offers the exact undo. That is why the
  * summary the user reads is exactly what the batch writes.
  *
- * The day replay (Ronda 8) plays here once the close has landed: the stage takes
+ * The day replay  plays here once the close has landed: the stage takes
  * the Tomorrow page's place until Skip or Continue, and the roll above is
  * already written, so nothing about the replay can touch it. In `mode="replay"`
  * the sheet is only the stage (the palette's "Replay the day"). Escape skips a
@@ -102,13 +102,13 @@ export function ShutdownSheet({
   tasks: TaskView[];
   blocks: BlockView[];
   timeZone: string;
-  /** The profile's one working window, for tomorrow's first free slot (W1). */
+  /** The profile's one working window, for tomorrow's first free slot. */
   workWindow: WorkWindow;
   now: Date;
   /** `profile.storedLastShutdown` exactly as stored: the plan records it so the
    *  undo puts a hand-edited value back instead of deleting it (F3c item 6). */
   storedShutdown?: unknown;
-  /** True while a weekly review moment is due (S3): the turned page then ends
+  /** True while a weekly review moment is due: the turned page then ends
    *  with "Close the week too?" — the shutdown chain takes the place of a
    *  second nudge on the day the day was closed. */
   weeklyOffer?: boolean;
@@ -386,7 +386,7 @@ export function ShutdownSheet({
       <header className="shutdown-head">
         <div>
           {/* The turn lands here: the heading is what the eye and the screen
-              reader are given after the commit (F3, "Screen reader"). */}
+              reader are given after the commit ("Screen reader"). */}
           <h2 id="shutdown-tomorrow" ref={heading} tabIndex={-1} className="shutdown-kind">{t("shutdown.tomorrow")}</h2>
           <p className="shutdown-date">{tomorrowDate}</p>
         </div>
@@ -537,7 +537,7 @@ export function ShutdownSheet({
       </p>
       {turned && stage === null && (
         <div className="shutdown-actions">
-          {/* The week's chain (S3): on the day the review is due, the ritual
+          {/* The week's chain: on the day the review is due, the ritual
               offers it here — one door, not a second nudge waiting outside. */}
           {weeklyOffer && onOpenWeeklyReview !== undefined && (
             <button

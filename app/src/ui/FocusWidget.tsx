@@ -3,7 +3,7 @@ import { formatRemaining, type FocusStatus } from "../domain/focus.ts";
 import { t } from "../i18n/index.ts";
 import { dur, easeOut, spring } from "./motion.ts";
 import type { FocusControls } from "./useFocusTimer.ts";
-// The timer's own paint ships beside it (AGENTS.md: co-located styles).
+// The timer's own paint ships beside it.
 import "./FocusWidget.css";
 
 /**

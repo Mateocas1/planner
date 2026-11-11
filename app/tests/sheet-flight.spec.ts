@@ -4,7 +4,7 @@ import { submitAuthForm } from "./browser-helpers.ts";
 test.setTimeout(90_000);
 
 /**
- * Ronda 9 (S2, U3): the creation sheet's flight pulls focus on its body with a
+ * The creation sheet's flight pulls focus on its body with a
  * filter blur, except where the compositor handoff is installed (WebKitGTK),
  * where the body only fades. The shell marks that page with `__WEBKITGTK__`
  * before app scripts; here the flag is set the same way, before load.

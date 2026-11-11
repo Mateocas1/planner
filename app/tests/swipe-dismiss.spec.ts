@@ -2,7 +2,7 @@ import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Swipe to dismiss on the shared glass sheet (odd/tasks/ronda4.md, S1):
+ * Swipe to dismiss on the shared glass sheet:
  * a drag on the sheet's drag handle (the header) or its plain surface follows
  * the finger, and a release past a distance threshold -- or a fast flick --
  * closes the sheet in the drag direction; anything shorter springs back. Up
@@ -175,7 +175,7 @@ test.describe("mouse", () => {
     const from = await handlePoint(page);
 
     // A slow down-left drag: past the slop the surface follows the pointer
-    // freely on both axes (S7), so mid-drag the transform carries a non-zero
+    // freely on both axes, so mid-drag the transform carries a non-zero
     // x AND y at once -- the old axis lock could never produce that.
     let mid: Awaited<ReturnType<typeof swipeState>> = null;
     await page.mouse.move(from.x, from.y);
@@ -460,7 +460,7 @@ test.describe("touch, phone viewport", () => {
 
     const mid = await readAtMidway(page, from, { x: from.x, y: from.y + 280 });
     expect(mid!.transform).toContain("translate(");
-    // Phone only: the corners round as the sheet shrinks (S1). The inset phone
+    // Phone only: the corners round as the sheet shrinks. The inset phone
     // sheet rests at --r-sheet (26 px), so the drag grows the radius past it --
     // on clip-path, while the CSS border-radius stays at rest.
     expect(mid!.radius).toBeGreaterThan(26);

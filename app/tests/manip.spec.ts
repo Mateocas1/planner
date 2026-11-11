@@ -146,7 +146,7 @@ async function dragEdge(page: Page, block: Locator, edge: "start" | "end", dy: n
 }
 
 test("dragging a task from the Unscheduled tray onto the grid creates one linked block on the snapped slot", async ({ page }) => {
-  // The tray sits beside the week only from 1440 px (audit F1); 1280 stacks it below.
+  // The tray sits beside the week only from 1440 px; 1280 stacks it below.
   await page.setViewportSize({ width: 1440, height: 900 });
   const email = newEmail("manip-tray");
   await signUp(page, email);
@@ -221,7 +221,7 @@ test("dragging a task from the Tasks list onto the Calendar nav item switches vi
 });
 
 test("Escape cancels a carry: the ghost and preview go away and nothing is written", async ({ page }) => {
-  // The tray sits beside the week only from 1440 px (audit F1); 1280 stacks it below.
+  // The tray sits beside the week only from 1440 px; 1280 stacks it below.
   await page.setViewportSize({ width: 1440, height: 900 });
   const email = newEmail("manip-cancel");
   await signUp(page, email);

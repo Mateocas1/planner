@@ -8,7 +8,7 @@ import { CloseIcon } from "./icons.tsx";
 import { formatDuration, timeLabel } from "./time.ts";
 import { unlinkedBlockTitle, type FocusControls } from "./useFocusTimer.ts";
 import { settle } from "./write.ts";
-// The surface's own paint ships beside it (AGENTS.md: co-located styles).
+// The surface's own paint ships beside it.
 import "./NowMode.css";
 
 /**
@@ -78,7 +78,7 @@ export function NowMode({
      second in the last five, and the remaining time is the surface's content,
      so it is never inferred from a coarser clock (the shell's Now card ticks
      every 30 s because it is one card among several). The tick pauses while
-     the document is hidden (T12: the window went to the tray or is
+     the document is hidden (the window went to the tray or is
      minimized) — nothing on the surface can move unseen, and coming back
      re-reads the clock at once so no stale number is ever shown. */
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");

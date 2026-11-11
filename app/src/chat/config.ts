@@ -1,17 +1,17 @@
 /**
- * Chat configuration (tasks C2–C3b of odd/tasks/llm-chat.md).
+ * Chat configuration.
  *
  * The panel's feature gate and the model setting. `DEFAULT_CHAT_MODEL` is the
  * model requests carry until the user saves another in Settings' AI tab
  * (`getChatModel` reads it per request); `buildSystemPrompt` is a stub C3
- * grew into the planner-context prompt (S4) — the conversation controller
+ * grew into the planner-context prompt — the conversation controller
  * takes the function as an input, so nothing else changes.
  */
 
-/** The default model every chat request names (spec S3, parent decision L1). */
+/** The default model every chat request names. */
 export const DEFAULT_CHAT_MODEL = "deepseek-v4-flash";
 
-/** The model setting's storage key (Settings AI tab, task C3b). */
+/** The model setting's storage key (Settings AI tab). */
 const MODEL_STORAGE_KEY = "planner.chat.model";
 
 /**
@@ -46,7 +46,7 @@ export function setChatModel(model: string): void {
 }
 
 /**
- * When the floating chat panel renders at all (S1, review #2): the panel is an
+ * When the floating chat panel renders at all (review #2): the panel is an
  * in-app surface, so inside the Tauri desktop shell it needs a signed-in
  * session — on the sign-in screen neither the launcher nor the panel exists.
  * On the web it renders only while developing with `?chatMock` in the URL, and

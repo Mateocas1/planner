@@ -1,5 +1,5 @@
 /**
- * The stream pacer (task C2, S2): turns bursty transport deltas into a steady
+ * The stream pacer: turns bursty transport deltas into a steady
  * reveal. The network delivers 1–30 character chunks at irregular 20–250 ms
  * gaps; shown raw, the answer stalls and then dumps, which is exactly the
  * sensation the spec rejects.

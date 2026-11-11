@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedDaySettings, seedTaskAndBlock, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Today stays truthful about the time of day (Ronda 5, W8, audit R5-17/R5-18):
+ * Today stays truthful about the time of day:
  * at 17:30 the morning's brief, the Full screen link and an enabled Plan my day
  * are three prompts with no valid action, so none of them is offered; and the
  * empty cards carry the action their copy names.

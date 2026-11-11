@@ -1,5 +1,5 @@
-//! Tauri glue for the Engram write-through memory mirror (task R2 of
-//! `odd/tasks/ronda3.md`, spec S2). The pure logic (settings validation,
+//! Tauri glue for the Engram write-through memory mirror.
+//! The pure logic (settings validation,
 //! payload mapping, client flow) lives in [`planner_core::engram`], tested
 //! on Linux against a fake transport.
 //!
@@ -12,7 +12,7 @@
 //! - the best-effort mirror hook [`mirror_after_write`] that
 //!   `memory_store` fires after every successful local write: Engram is
 //!   never on the UI path, so a dead Engram never fails or delays a local
-//!   memory write (spec S2) — the hook enqueues onto one mirror worker
+//! memory write — the hook enqueues onto one mirror worker
 //!   thread, which ignores failures and only records them in the status
 //!   file.
 

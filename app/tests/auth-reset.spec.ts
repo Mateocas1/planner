@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/** Ronda 7, R7-16: "Forgot password?" on the sign-in form sends a Firebase reset email. */
+/** "Forgot password?" on the sign-in form sends a Firebase reset email. */
 
 test.setTimeout(60_000);
 

@@ -11,11 +11,11 @@ import type { UndoableDelete } from "../UndoToast.tsx";
 import { settle } from "../write.ts";
 
 /**
- * The Clean-up step (S3): every stale task the week left behind, with the
+ * The Clean-up step: every stale task the week left behind, with the
  * three decisions it can take — keep it this week, put it on the someday
  * shelf, or delete it (through the shell's own undo toast).
  *
- * The candidates are `planning/weekly.ts`'s (W2a): overdue, or scheduled this
+ * The candidates are `planning/weekly.ts`'s: overdue, or scheduled this
  * week and still open. "Postponed ≥ 2×" is not derivable from the stored
  * model, so the two real reasons stand in; the module documents that. Every
  * action writes at once and the row leaves the list — the step is a triage,
@@ -71,7 +71,7 @@ export function CleanupStep({
     }
     // Delete offers the exact undo the row was deleted with, like Tasks and
     // Home do — the whole task travels with the offer, and so do its work
-    // blocks (S8): the blocks are resolved from Firestore at delete time
+    // blocks: the blocks are resolved from Firestore at delete time
     // (offline the cache serves the query; review finding 2), so a block
     // another device created after this step rendered still dies with the
     // task, and the query's result is the undo payload.

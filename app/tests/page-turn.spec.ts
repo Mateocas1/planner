@@ -133,7 +133,7 @@ test("a left drag past 40% carries the day off, then back while nothing handles 
   expect(frames.some(frame => frame.state === "commit")).toBe(true);
   // It leaves on one transform, all the way off its own width.
   expect(travelled(frames)).toBeLessThanOrEqual(-0.9 * width);
-  // Nothing has claimed the turn yet, so it settles home again (F3c: the roll).
+  // Nothing has claimed the turn yet, so it settles home again (the roll).
   const last = frames[frames.length - 1];
   expect(last.state).toBe("rest");
   expect(Math.abs(last.x)).toBeLessThan(1);

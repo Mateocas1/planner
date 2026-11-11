@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (U6a): the Settings tabs read in Spanish. Representative strings
+ * S8 (U6a): the Settings tabs read in Spanish. Representative strings
  * of General, Rituals and Shortcuts; the section and tab names; and the unchanged
  * English once the device switches back. `X6A_SHOTS=<dir>` also saves the Spanish
  * screenshots the unit's report cites.

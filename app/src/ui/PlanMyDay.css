@@ -1,4 +1,4 @@
-/* Plan my day (F4b): the proposal the button shows before it writes anything.
+/* Plan my day: the proposal the button shows before it writes anything.
 
    The trigger is a plain .button, stretched to the width of the surface it
    heads — the tray's panel and the Today brief — because it is the action of
@@ -43,8 +43,8 @@
 }
 
 /* The card's main action wears the tinted pill: the neutral .button's only
-   boundary is the card shadow, which vanishes on a white card and in dark
-   (R5-19). Accent on --accent-soft is proven in scripts/glass-contrast.mjs. */
+   boundary is the card shadow, which vanishes on a white card and in dark.
+   Accent on --accent-soft is proven in scripts/glass-contrast.mjs. */
 .button.plan-trigger {
   background: var(--accent-soft);
   color: var(--accent);

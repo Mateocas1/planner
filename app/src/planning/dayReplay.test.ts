@@ -10,7 +10,7 @@ import {
 } from "./dayReplay.ts";
 
 /**
- * The day replay's pure half (Ronda 8 U1): the plan-versus-actual diff of one
+ * The day replay's pure half: the plan-versus-actual diff of one
  * profile-zone day and the timeline the stage plays.
  *
  * Fixtures are zoned instants in an explicit zone, because positions are

@@ -1,5 +1,5 @@
 /* Personal Planner — Liquid Glass design system.
-   The source of truth is odd/design/DESIGN.md: every colour, size and curve
+   The source of truth is the design spec: every colour, size and curve
    here is a token from it. Glass is used only on chrome (sidebar, top bar,
    tab bar, floating button) and on sheets; content stays solid. */
 
@@ -298,7 +298,7 @@ time,
 }
 
 /* Display numerals keep proportional figures: Onest's tabular 1 is wide enough
-   that `11:00 – 12:00` at 17-22 px reads as `1 1 : 0 0` (R5-20). Columns that
+   that `11:00 – 12:00` at 17-22 px reads as `1 1: 0 0`. Columns that
    must line up (gutter, row meta, calendar) stay tabular above. */
 .now-when,
 .now-card time,
@@ -312,7 +312,7 @@ time,
 
 /* Increased contrast strengthens the tokens, not the components: the rule that
    used to live here set `.card, .group` before their own `box-shadow` at the
-   same specificity, so it never won (R5-05). Tokens cannot lose that race, and
+   same specificity, so it never won. Tokens cannot lose that race, and
    every consumer of --separator, --check-ring and --label-3 gets the stronger
    value for free. glass.css repaints the card ring (`--card-shadow`) in its own
    block because it loads after this file. scripts/glass-contrast.mjs reads this
@@ -346,7 +346,7 @@ time,
   font-weight: 500;
   color: var(--label);
   white-space: nowrap;
-  /* Press timing lives in ui/press.css (ronda4 S2): down is instant, release
+  /* Press timing lives in ui/press.css: down is instant, release
      springs back with one small overshoot. */
   transition: transform var(--press-release-dur) var(--ease-press-spring),
     background-color var(--dur-hover) ease;
@@ -566,7 +566,7 @@ time,
 
 /* ---------- touch targets ----------
    A mouse can hit a 28 px control; a thumb cannot, and the app was built for the
-   mouse: only `.check` carried a 44 px hit area (odd/research/responsive-audit.md
+   mouse: only `.check` carried a 44 px hit area
    F3). The `44x44` floor (WCAG 2.2 §2.5.8, Apple's 44 pt) is applied as a
    `min-height` where the box can grow and as an invisible `::before` where the
    visible pill must keep its size, and it is scoped to a coarse pointer so the
@@ -607,7 +607,7 @@ time,
   /* An inline link has no pill to grow wide, but it can claim the height. */
   .link-button { min-height: 44px; }
 
-  /* Settings (R5-16): the rail items, the language segments, the shortcut chip
+  /* Settings: the rail items, the language segments, the shortcut chip
      and the Back button were 32-40 px; the row's own padding keeps the layout. */
   .settings-nav-item,
   .settings-back,
@@ -1045,7 +1045,7 @@ time,
   margin-left: auto;
   /* A date is at most ~16 characters and the title is the part a reader can
      recover from the `title` attribute, so the meta keeps its width and the
-     title yields (Ronda 5, R5-01). It is a block, not a flex container, so its
+     title yields. It is a block, not a flex container, so its
      own text is the thing `text-overflow` clips: an inline-flex meta held the
      date as an anonymous flex item, which painted a hard clip mid-glyph. The
      two metas that carry an icon opt back into flex with `.has-icon` and wrap
@@ -1075,8 +1075,8 @@ time,
 }
 
 /* On a phone the meta keeps its natural width but never more than its share, so
-   a long series meta cannot starve a 320 px title
-   (odd/research/responsive-audit.md F2). It is capped rather than left to
+   a long series meta cannot starve a 320 px title.
+   It is capped rather than left to
    flex-shrink: shrink is proportional to the flex basis, and next to a long
    title it took a date down to a third of its width. The ellipsis above is what
    shows when the cap does bite. */
@@ -1278,7 +1278,7 @@ time,
 
 /* The tray is 272 px plus a 24 px gap: beside the grid it costs every day
    column 40 px, which is what squeezed a 1280 px window to 86 px columns. It
-   only sits alongside a week that still has room for it (audit F1). */
+   only sits alongside a week that still has room for it. */
 @media (min-width: 1440px) {
   .calendar-layout { grid-template-columns: minmax(0, 1fr) 272px; }
 }
@@ -1288,8 +1288,8 @@ time,
 .cal-head,
 .cal-due,
 .cal-body {
-  /* The gutter holds "13:52" at 12 px and at 200 % text zoom; 56 px clipped it
-     (odd/research/responsive-audit.md F8). */
+  /* The gutter holds "13:52" at 12 px and at 200 % text zoom; 56 px clipped it.
+   */
   display: grid;
   grid-template-columns: 64px repeat(var(--n), minmax(0, 1fr));
 }
@@ -1367,8 +1367,8 @@ time,
   height: min(640px, calc(100vh - 260px));
   height: min(640px, calc(100dvh - 260px));
   /* A fixed 380 px floor beat the height on a short viewport: at 844x390 the
-     grid started at y=324 and only 66 px of it was above the fold
-     (odd/research/responsive-audit.md F5). The floor now yields to the screen. */
+     grid started at y=324 and only 66 px of it was above the fold.
+   The floor now yields to the screen. */
   min-height: min(380px, 45vh);
   min-height: min(380px, 45dvh);
   overflow-y: auto;
@@ -1439,7 +1439,7 @@ time,
   font-size: 0.78rem;
   /* The block is minutes x --hour tall while its label is rem, so at 200 % text
      zoom a 30 minute block is shorter than one line. Whole lines of 1.15 let
-     the clip land between them, never through a glyph (audit F7). */
+     the clip land between them, never through a glyph. */
   line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1454,8 +1454,8 @@ time,
   white-space: nowrap;
 }
 /* Under 40 px a block is one line: the title leads on a single line with an
-   ellipsis and the time follows only while the column has room for both
-   (Ronda 5, R5-11). The full text is the block's `title`. */
+   ellipsis and the time follows only while the column has room for both.
+   The full text is the block's `title`. */
 .calendar-block.is-short { flex-direction: row; align-items: flex-start; gap: 6px; padding-top: 2px; }
 .calendar-block.is-short b {
   flex: 0 1 auto;
@@ -1573,7 +1573,7 @@ time,
 
 /* Seven columns of a 320 px strip leave 41 px each, so the circle cannot reach
    44 px without wrapping the row; 40 px is the largest that still fits, and the
-   column around it is the rest of the target (audit F9). */
+   column around it is the rest of the target. */
 .strip-date {
   display: grid;
   place-items: center;
@@ -1600,7 +1600,7 @@ time,
   background: var(--scrim);
 }
 
-/* A panel is a card centred in what the user can see (S2/S3), on every screen:
+/* A panel is a card centred in what the user can see, on every screen:
    the same geometry the command palette uses. `inset` + `margin: auto` centres
    it in the band the on-screen keyboard leaves (ui/viewport.ts) instead of
    anchoring it to an edge, and `height: fit-content` is what makes the vertical
@@ -1660,7 +1660,7 @@ time,
   line-height: 1.25;
 }
 
-/* The borderless title shows focus as a 2 px accent underline, not an outline (R5-14);
+/* The borderless title shows focus as a 2 px accent underline, not an outline;
    a missing title turns it red. */
 .sheet-title:focus { outline: none; }
 .sheet-title:focus-visible { box-shadow: 0 2px 0 0 var(--accent); }
@@ -1806,7 +1806,7 @@ time,
 
 .popover-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* A phone is its width, or the landscape shape of one (F4). */
+/* A phone is its width, or the landscape shape of one. */
 @media (max-width: 760px), (max-width: 1024px) and (max-height: 480px) {
   .main {
     margin-left: 0;
@@ -1819,14 +1819,14 @@ time,
   .toolbar { width: 100%; }
   .toolbar .button-accent { margin-left: auto; }
   /* The phone grid takes what the header leaves, between a usable 220 px and a
-     560 px ceiling, and its floor no longer outgrows the screen (F5). */
+     560 px ceiling, and its floor no longer outgrows the screen. */
   .cal-scroll {
     height: clamp(220px, calc(100vh - 340px), 560px);
     height: clamp(220px, calc(100dvh - 340px), 560px);
     min-height: min(340px, 45vh);
     min-height: min(340px, 45dvh);
   }
-  /* On a phone the card is centred too (S3), near full width, and it is sized
+  /* On a phone the card is centred too, near full width, and it is sized
      against the visible band: the inset the keyboard covers is subtracted from
      its bottom edge and from the height it may take, so its first and last
      row -- title and primary action -- stay above the keyboard and the rest
@@ -1873,8 +1873,8 @@ time,
   gap: 18px;
   /* The grid's auto track grows to the card's min-content, so at 200 % text zoom
      a card that may shrink to nothing still pushed the page 60 px sideways. It
-     now takes the track, may shrink below its content, and breaks long words
-     (audit F6). */
+     now takes the track, may shrink below its content, and breaks long words.
+   */
   width: 100%;
   max-width: min(400px, 100%);
   min-width: 0;
@@ -1892,7 +1892,7 @@ time,
 .gate-actions { display: flex; flex-direction: column; gap: 8px; }
 .gate-actions .button { height: 40px; }
 /* The sign-in secondary is the tinted pill: a neutral .button has no boundary
-   beside the filled primary (R5-19, proven in scripts/glass-contrast.mjs). */
+   beside the filled primary (proven in scripts/glass-contrast.mjs). */
 .gate-actions .button {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1905,7 +1905,7 @@ time,
 
 /* ---------- view transition: the row becomes the panel ---------- */
 
-/* AGENTS.md exception, approved 2026-10-20: a view-transition group animates the
+/* exception, approved 2026-10-20: a view-transition group animates the
    box of captured snapshots, never the live layout. See morph.ts. Each snapshot
    is fitted inside that box at its own proportions and only fades, so the row's
    text is never stretched into the panel's shape nor the panel's into the row's. */
@@ -1966,7 +1966,7 @@ time,
    snapshot rather than on the live panel, so it costs a bitmap filter for the
    length of the morph and leaves nothing on the DOM: the panel that takes over
    at the end is crisp, with no composited layer over the field it focused.
-   (odd/research/melon-expand.md §b.) */
+ */
 ::view-transition-old(task-morph) {
   animation: var(--morph-old), morph-unfocus var(--morph-dur) var(--ease-out) both;
 }
@@ -1975,7 +1975,7 @@ time,
 }
 
 /* WebKitGTK (marked by compositorHandoff.ts) spent most of the morph's CPU
-   blurring two window-sized snapshots every frame (odd/research/audit-r7.md
+   blurring two window-sized snapshots every frame
    R7-08). There the snapshots only fade: the box's growth and the cross-fade
    carry the change, and canon §9.6 keeps blur off large surfaces anyway. */
 :root[data-compositor-handoff]::view-transition-old(task-morph) { animation: var(--morph-old); }

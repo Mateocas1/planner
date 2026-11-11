@@ -2,7 +2,7 @@
  * Desktop transport for the chat panel: the Rust side (`src-tauri/src/chat/`)
  * holds the API key, owns the non-secret provider address (bound to the key,
  * never sent from the page) and performs the HTTPS call, so the key never
- * reaches the page (spec S3). Implements the `ChatTransport` contract from
+ * reaches the page. Implements the `ChatTransport` contract from
  * `types.ts` over `invoke` + `Channel`. Key helpers for Settings live in
  * `keyStore.ts`.
  */

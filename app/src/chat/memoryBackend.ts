@@ -1,6 +1,6 @@
 /**
- * The memory backend the chat panel reads and applies note ops through
- * (spec S5, task C3a). On desktop the durable notes live in the Rust-owned
+ * The memory backend the chat panel reads and applies note ops through.
+ * On desktop the durable notes live in the Rust-owned
  * JSON file behind `memoryStore.ts`; the dev mock runs on an in-memory
  * backend so the browser tests can exercise extraction → injection without
  * Tauri. Both implement the same tiny interface, so nothing above it knows
@@ -14,7 +14,7 @@ export type ChatMemoryBackend = {
   apply(ops: MemoryOp[]): Promise<Memory[]>;
 };
 
-/** The desktop backend: Rust commands, app-data-dir file (spec S5). */
+/** The desktop backend: Rust commands, app-data-dir file. */
 export const tauriMemoryBackend: ChatMemoryBackend = {
   list: () => chatMemoriesList(),
   apply: ops => chatMemoriesApply(ops),

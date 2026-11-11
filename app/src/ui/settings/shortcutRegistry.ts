@@ -1,5 +1,5 @@
 /**
- * The shortcut registry (Ronda 2, spec S2 — odd/tasks/ronda2.md).
+ * The shortcut registry.
  *
  * One pure module owning the three rebindable shortcuts -- the command
  * palette, the chat panel and the global quick-add -- and the rules a new
@@ -12,7 +12,7 @@
  * its DOM `code` ("ctrl+KeyK", "ctrl+alt+Space"). The DOM `code` is what a
  * keyboard layout can never change, which is why it travels instead of `key`.
  *
- * Storage decision (W1): palette and chat bindings persist in
+ * Storage decision: palette and chat bindings persist in
  * **localStorage**, not the synced profile. A chord is a habit of the hands on
  * one machine's keyboard -- the same reason the away threshold and the
  * notification toggles already live per device -- and keeping it out of the

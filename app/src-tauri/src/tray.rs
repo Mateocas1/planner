@@ -1,9 +1,9 @@
-//! The tray icon and the window's close button (T6, spec S8.2, decision L13).
+//! The tray icon and the window's close button.
 //!
 //! Three behaviours live here, all driven by one payload the webview pushes
 //! through `tray_sync`:
 //!
-//! - **Close hides (L13).** The main window's close button saves the window
+//! - **Close hides.** The main window's close button saves the window
 //!   state, hides the window and leaves the app running for the hotkey, the
 //!   timer and the tray; the tray menu's Quit is the real exit.
 //! - **The tray.** Left click toggles the main window, the right-click menu
@@ -16,7 +16,7 @@
 //!   simply applies what it receives.
 //!
 //! Every string drawn here and in `notify.rs` arrives translated in the
-//! payload's `labels` (T10b): Rust keeps no translation table. Until the first
+//! payload's `labels`: Rust keeps no translation table. Until the first
 //! push the English defaults of `TrayLabels` stand in.
 
 use std::sync::Mutex;
@@ -317,7 +317,7 @@ fn on_tray_icon_event<R: Runtime>(tray: &TrayIcon<R>, event: TrayIconEvent) {
     }
 }
 
-/// Quit is the real exit (L13): the geometry goes to disk first so a window
+/// Quit is the real exit: the geometry goes to disk first so a window
 /// that was hidden to the tray cannot lose its state, then the app exits and
 /// the window-state plugin saves once more on `RunEvent::Exit`.
 fn quit_app<R: Runtime>(app: &AppHandle<R>) {
@@ -327,7 +327,7 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
     app.exit(0);
 }
 
-/// L13, close-to-tray: the close button hides instead of quitting. The window
+/// Close-to-tray: the close button hides instead of quitting. The window
 /// state is saved *before* the hide, while the window is still visible, and the
 /// one-time notice fires on this path only (the tray's own toggle is a deliberate
 /// action that needs no explanation).
@@ -344,7 +344,7 @@ fn attach_close_to_tray<R: Runtime>(app: &AppHandle<R>) {
                 api.prevent_close();
                 let _ = handle.save_window_state(StateFlags::all());
                 let _ = closing.hide();
-                // T12: hidden to the tray — WebView2 aims low until it returns.
+                // Hidden to the tray — WebView2 aims low until it returns.
                 crate::memory::sync_main(&closing);
                 crate::pill::sync_main(&handle);
                 show_tray_notice_once(&handle);

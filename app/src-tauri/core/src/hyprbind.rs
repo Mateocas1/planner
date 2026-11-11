@@ -1,4 +1,4 @@
-//! The quick-add chord as a Hyprland bind (Ronda 6, spec S6, T10a).
+//! The quick-add chord as a Hyprland bind.
 //!
 //! Under Wayland the shell cannot grab the chord chosen in Day settings, so the
 //! Hyprland snippet (`packaging/linux/hyprland/planner.lua`) binds it instead.
@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-/// The Hyprland form of the default chord (`ctrl+alt+Space`, L12). The snippet
+/// The Hyprland form of the default chord (`ctrl+alt+Space`). The snippet
 /// carries the same literal as its fallback.
 pub const DEFAULT_BIND: &str = "CTRL + ALT + space";
 

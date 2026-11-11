@@ -36,7 +36,7 @@ import { capitalize } from "../i18n/capitalize.ts";
  *    and a way to finish the task it belongs to. When nothing is running it
  *    says when the next block starts, or that the day is open.
  *  - This week: how full each day of the planner week already is, and which
- *    deadlines no longer fit (F1), so "Friday is impossible" is visible on
+ * deadlines no longer fit, so "Friday is impossible" is visible on
  *    Monday, while something can still be moved.
  *  - Due today: open tasks due today or already overdue, plus repeating
  *    tasks whose next occurrence is today; each can be completed in place.
@@ -44,7 +44,7 @@ import { capitalize } from "../i18n/capitalize.ts";
  *  - Schedule: today's blocks with the free time between them and the now
  *    marker, so the gaps are visible as time that can still be planned.
  *
- * Every row on the page is a row-cursor stop (F6c): `j`/`k` walk them in the
+ * Every row on the page is a row-cursor stop: `j`/`k` walk them in the
  * order they are painted, and `x`, `t` and Enter act on the focused row with
  * the writes Tasks and Calendar use.
  */
@@ -73,19 +73,19 @@ type HomeProps = {
   series: SeriesView[];
   completions: Record<string, string>;
   timeZone: string | null;
-  /** The profile's one working window, read by the morning brief (W1). */
+  /** The profile's one working window, read by the morning brief. */
   workWindow: WorkWindow;
-  /** Minutes after midnight in the profile zone: when the day is meant to close (F3). */
+  /** Minutes after midnight in the profile zone: when the day is meant to close. */
   shutdownTime: number;
-  /** The profile zone's day the ritual was last closed, if it was (F3c). */
+  /** The profile zone's day the ritual was last closed, if it was. */
   lastShutdown?: string;
   profileError: string | null;
   onOpenCalendar: () => void;
-  /** Opens the full-screen glance surface on the current block (F5). */
+  /** Opens the full-screen glance surface on the current block. */
   onOpenNow: () => void;
-  /** Opens the shutdown ritual, from the banner or from a turned page (F3c). */
+  /** Opens the shutdown ritual, from the banner or from a turned page. */
   onCloseDay: (origin: HTMLElement | null) => void;
-  /** The weekly review's due moment (S3), or null when nothing proposes
+  /** The weekly review's due moment, or null when nothing proposes
    *  itself; the banner is the one quiet surface every device gets. */
   weeklyDue: DueMoment | null;
   /** The banner's moves: open the flow, hold for two hours, skip the week,
@@ -94,12 +94,12 @@ type HomeProps = {
   onWeeklyLater: () => void;
   onWeeklySkip: () => void;
   onOpenSettings: () => void;
-  /** Carries the day to tomorrow when the page is turned (F3). Defaults to
+  /** Carries the day to tomorrow when the page is turned. Defaults to
    *  opening the ritual: the page turn is the ritual's own first page. */
   onTurnDay?: () => boolean | void | Promise<boolean | void>;
-  /** The shell's undo offer, for the moves the keyboard makes here (F6c). */
+  /** The shell's undo offer, for the moves the keyboard makes here. */
   onOfferUndo?: (item: UndoableDelete) => void;
-  /** Opens the create sheet, the path the header's New task takes (R5-17). */
+  /** Opens the create sheet, the path the header's New task takes. */
   onNewTask: (origin: HTMLElement | null) => void;
 };
 
@@ -156,7 +156,7 @@ function TodayPage({
   const closing = bannerVisible({ today, wallMinutes: wallMinutes(now, timeZone), shutdownTime, lastShutdown });
   const complete = (task: TaskView) => void settle(setTaskCompleted(uid, task.id, true)).catch(() => undefined);
 
-  /* The row cursor (F6c). `j`/`k` walk the rows below in the order they are
+  /* The row cursor. `j`/`k` walk the rows below in the order they are
      painted; the shell publishes x, t and Enter, and this page performs them
      with the writes Tasks and Calendar use, so a row means the same thing on
      every page. A move offers the shell's undo, as those pages do. */
@@ -230,7 +230,7 @@ function TodayPage({
         (() => {
           // The turn opens the ritual rather than rolling on its own: what the
           // day left behind is shown before anything is written, and the
-          // ritual's own page turn is the commit (F3, criteria 1-5).
+          // ritual's own page turn is the commit (criteria 1-5).
           onCloseDay(null);
           return false;
         })
@@ -260,7 +260,7 @@ function TodayPage({
         </section>
       )}
 
-      {/* The weekly review's quiet banner (S3): while a moment is due, one
+      {/* The weekly review's quiet banner: while a moment is due, one
           sentence and its three moves, on the web as on the desktop. */}
       <AnimatePresence>{weeklyDue !== null && (
         <WeeklyBanner
@@ -295,12 +295,12 @@ function TodayPage({
               onOpenNow={onOpenNow}
             />
 
-            {/* The first Home of a day says what the day holds (F3, criterion
+            {/* The first Home of a day says what the day holds (criterion
                 7); the Plan my day card directly under it is where the brief's
                 action lives. */}
             <MorningBrief blocks={blocks} timeZone={timeZone} workWindow={workWindow} now={now} />
 
-            {/* The brief's plan button (F4): the same proposal and the same
+            {/* The brief's plan button: the same proposal and the same
                 batch as the Calendar tray, with its own undo because Today
                 does not own the shell's offer. */}
             <PlanMyDay
@@ -436,7 +436,7 @@ function TodayPage({
               // blocks are resolved from Firestore at delete time (offline the
               // cache serves the query; review finding 2), so a block another
               // device created after this page rendered still dies with the
-              // task — and the query's result is the undo payload (S8).
+              // task — and the query's result is the undo payload.
               const deleted = selectedTask;
               setSelected(null);
               void linkedBlocks(uid, deleted.id)
@@ -461,7 +461,7 @@ function TodayPage({
   );
 }
 
-/** The row-cursor control the caret is on, by its marker (F6c). */
+/** The row-cursor control the caret is on, by its marker. */
 function focusedRowId(): string | null {
   const active = document.activeElement;
   return active === null ? null : active.closest<HTMLElement>("[data-row-cursor]")?.dataset.rowCursor ?? null;
@@ -536,8 +536,8 @@ function NowCard({
       </article>
     );
   }
-  // Full screen is the glance on the running block (F5): with nothing running
-  // it has nothing to show, so the two cards below carry no such link (R5-18).
+  // Full screen is the glance on the running block: with nothing running
+  // it has nothing to show, so the two cards below carry no such link.
   if (next) {
     const minutes = (Date.parse(next.start) - now.getTime()) / 60_000;
     return (
@@ -572,7 +572,7 @@ function Agenda({
   now: Date;
   timeZone: string;
   name: (block: BlockView) => string;
-  /** The row cursor's position and the page's row order (F6c). */
+  /** The row cursor's position and the page's row order. */
   activeId: string | null;
   order: readonly string[];
   onRowFocus: (id: string) => void;

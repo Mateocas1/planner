@@ -1,4 +1,4 @@
-//! Windows idle probe (task T9, spec S8.5).
+//! Windows idle probe.
 //!
 //! One command, `idle_seconds`, reports how long since the last keyboard or
 //! mouse input anywhere on the desktop: `GetLastInputInfo` gives the tick the
@@ -32,7 +32,7 @@ pub fn measure_idle_seconds() -> u64 {
     planner_core::idle::idle_ms(now, info.dwTime) / 1000
 }
 
-/// Stub for non-Windows builds: the probe is a Windows-first feature (S1) and
+/// Stub for non-Windows builds: the probe is a Windows-first feature and
 /// the frontend never polls it outside the desktop shell.
 #[cfg(not(windows))]
 pub fn measure_idle_seconds() -> u64 {

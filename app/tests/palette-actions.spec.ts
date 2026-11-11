@@ -7,7 +7,7 @@ import {
 } from "./browser-helpers.ts";
 
 /**
- * F6b — palette actions with key hints (odd/research/distinctive-roadmap.md §2,
+ * Palette actions with key hints
  * "F6. Keyboard-first", criterion 5).
  *
  * The palette lists the keyboard's actions with the key that performs them.

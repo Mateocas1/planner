@@ -1,5 +1,5 @@
 /**
- * The chat surface (task C3a; ronda4 T4): the composition layer between App's
+ * The chat surface (ronda4 T4): the composition layer between App's
  * single mount point and the ChatPanel. It owns everything C3 wires — the
  * real Tauri transport on desktop, the planner snapshot feed, the memory
  * backend (Rust file on desktop, in-memory behind `?chatMock`) and the
@@ -80,7 +80,7 @@ export function ChatSurface({
   const mock = mockQuery !== null;
   const desktop = isTauri();
 
-  // Read-only planner context (S4), refetched through the app's own data hooks.
+  // Read-only planner context, refetched through the app's own data hooks.
   const { snapshot, timeZone } = usePlannerSnapshot(uid);
 
   const transport = useMemo<ChatTransport | null>(() => {
@@ -108,7 +108,7 @@ export function ChatSurface({
     try {
       setLatestMemories(await backend.list());
     } catch (error) {
-      // Silent to the user (spec S5): the chat works without notes.
+      // Silent to the user: the chat works without notes.
       console.warn("chat: loading memories failed", error);
     }
   }, [backend, setLatestMemories]);
@@ -129,7 +129,7 @@ export function ChatSurface({
   liveRef.current = { snapshot, timeZone };
 
   // Rebuilt per request from the live refs: fresh clock, fresh snapshot,
-  // fresh notes (S4). The callback itself stays stable, so nothing above
+  // fresh notes. The callback itself stays stable, so nothing above
   // re-arms when data changes — only reads at call time.
   const buildPrompt = useCallback(
     () =>
@@ -156,7 +156,7 @@ export function ChatSurface({
     };
   }, []);
 
-  // R1 (spec S1) + ronda4 (S4): the confirm flow. Validation is pure
+  // The confirm flow. Validation is pure
   // (tools.ts) and runs against the LIVE context at confirm time; the write
   // goes through the app's own data functions for the signed-in user only.
   // Every task change lands in ONE writeBatch (`createChatTask` for creates
@@ -362,7 +362,7 @@ export function ChatSurface({
     [uid, buildToolContext, backend, notifyMemoriesChanged, confirmGuard],
   );
 
-  /** Reads (S4): run the moment the model proposes them — no confirmation.
+  /** Reads: run the moment the model proposes them — no confirmation.
    * Validation is the same pure rules the card used; the data comes from the
    * live context (tasks, blocks, holidays) or the live notes store, never
    * from the render that happened to be on screen when the request started. */
@@ -387,7 +387,7 @@ export function ChatSurface({
     [backend, buildToolContext],
   );
 
-  // The panel's own useChat call site is owned by another worker, so the
+  // The panel's own useChat call site kept separate, so the
   // executor is installed through the readTools registry (see that module's
   // header) instead of a new panel prop.
   useEffect(() => {

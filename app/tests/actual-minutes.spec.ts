@@ -8,7 +8,7 @@ import {
 } from "./browser-helpers.ts";
 
 /**
- * Estimate vs actual (F2b).
+ * Estimate vs actual.
  *
  * Three behaviours are asserted end to end here, against the real emulators:
  *
@@ -55,8 +55,8 @@ async function signIn(page: Page, email: string) {
  *
  * `storedFocusSession` states them from the *test's* clock instead, which is a
  * different read of the host's wall clock, taken one to two seconds before the
- * stop. This host's clock steps back up to ~1.3 s every 15-30 s
- * (odd/runs/hf-flaky.md, the Auth artifact), so a step inside that window can
+ * stop. This host's clock steps back up to ~1.3 s every 15-30 s,
+ * so a step inside that window can
  * leave 19:59.9 between the two reads and `Math.floor` the credit to 19. The
  * product is right to trust the clock it is handed -- it computes
  * `now - startedAt - pausedMs` and nothing else -- so the fixture is what has to
@@ -157,7 +157,7 @@ test("a 20-minute focus session adds 20 minutes to its task, and Task details sh
 
   /* Whole minutes, added to the task's own counter: no read, no overwrite —
      and, in the same write, to the session's start day in the planner's zone
-     (UTC here) for the weekly review's plan-vs-actual (W2c, ronda2 L6). */
+     (UTC here) for the weekly review's plan-vs-actual. */
   const startDay = new Date(now - 20 * 60_000).toISOString().slice(0, 10);
   await expect.poll(() => readRemoteTasks(email), poll).toEqual([
     { title: "Write the brief", completed: false, actualMinutes: 20, actualByDay: { [startDay]: 20 } },

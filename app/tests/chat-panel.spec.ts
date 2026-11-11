@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The chat panel's mock-mode browser spec (task C2). Runs against a Vite dev
+ * The chat panel's mock-mode browser spec. Runs against a Vite dev
  * server spawned here, because the mock panel only mounts with
  * `import.meta.env.DEV` + `?chatMock` — a production preview build (the
  * config's own webServer) must never render it. No emulators are touched: the
@@ -189,7 +189,7 @@ test("send: user pill, waiting spinner, streamed text grows to a markdown answer
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await openPanel(page);
-  // Empty state copy (S2).
+  // Empty state copy.
   await expect(panel(page).getByText("What do you need?")).toBeVisible();
   await settleAnimations(page);
   await page.screenshot({ path: `${shots}empty-light.png` });
@@ -314,7 +314,7 @@ test("reduced motion: the panel and the stream still work without movement", asy
   expect(panelTransform === "none" || panelTransform === "").toBe(true);
   await field(page).fill("What is left of my day?");
   await field(page).press("Enter");
-  // The send flight is skipped (S3): the user bubble never carries the
+  // The send flight is skipped: the user bubble never carries the
   // flight marker and stays at rest — transform none, no blur; only the
   // opacity fade plays.
   const userBubble = panel(page).locator(".chat-user").last();
@@ -335,7 +335,7 @@ test("the chat chord is rebindable: the stored binding opens the panel and the d
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   // Seed the registry's storage with a chat binding — exactly the shape
-  // Settings → Shortcuts writes (task W1's recorder) — before the app boots.
+  // Settings → Shortcuts writes ('s recorder) — before the app boots.
   await page.addInitScript(() => {
     window.localStorage.setItem("planner.shortcuts.bindings", JSON.stringify({ chat: "ctrl+Shift+KeyJ" }));
   });
@@ -431,7 +431,7 @@ test("tool cards: Confirm writes the task into the planner, Discard writes nothi
   // lands.
   await confirmCard.getByRole("button", { name: "Confirm" }).dblclick();
   // The outcome names what now exists — id included, so the model can
-  // reference the task it just created (ronda4 S4).
+  // reference the task it just created.
   await expect(confirmCard.locator(".chat-card-outcome")).toContainText("Created task id=", { timeout: 15_000 });
   await expect(page.getByRole("checkbox", { name: "Complete: Water the plants" })).toBeVisible({ timeout: 15_000 });
   // Exactly one: the rapid second confirm wrote nothing.
@@ -461,7 +461,7 @@ test("tool cards: the outcome rides to the next request as tool messages (R1, S1
   await expect(stopButton(page)).toBeHidden({ timeout: 20_000 });
 
   // The next request carries the assistant's tool_calls and one tool message
-  // per card — confirmed and discarded alike (OpenAI protocol, spec S1).
+  // per card — confirmed and discarded alike (OpenAI protocol).
   await field(page).fill("What did you just do?");
   await field(page).press("Enter");
   await expect
@@ -486,7 +486,7 @@ test("tool cards: the outcome rides to the next request as tool messages (R1, S1
 });
 
 /* ---------------------------------------------------------------------------
- * Swipe to dismiss (Ronda 4 T5, S1): the panel shares the sheets' gesture
+ * Swipe to dismiss: the panel shares the sheets' gesture
  * language through useSwipeDismiss. A drag on the header or plain surface
  * follows the pointer; past the distance/velocity thresholds the panel closes
  * through its ordinary close path, shorter drags spring back. The thread
@@ -704,7 +704,7 @@ test.describe("swipe to dismiss (T5, S1)", () => {
     await field(page).press("Enter");
     const bubble = panel(page).locator(".chat-user").last();
     await expect(bubble).toBeVisible();
-    // The send flight (S3) is still moving the bubble right after it appears:
+    // The send flight is still moving the bubble right after it appears:
     // wait for its animations to finish, or the box measured below lands off
     // the text and the drag reads as a surface gesture instead of a selection.
     await bubble
@@ -750,7 +750,7 @@ test.describe("swipe to dismiss (T5, S1)", () => {
       }
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await cdp.detach();
-      // Phone only: the corners round from 0 as the panel shrinks (S1).
+      // Phone only: the corners round from 0 as the panel shrinks.
       expect(mid!.transform).toContain("translate(");
       expect(mid!.radius).toBeGreaterThan(4);
       await expect(panel(page)).toBeHidden();

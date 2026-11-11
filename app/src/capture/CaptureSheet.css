@@ -1,4 +1,4 @@
-/* The capture sheet (Ronda 8, S3, plan §2).
+/* The capture sheet (plan §2).
  *
  * It lives on the shared glass `Sheet`, so the panel, its scrim and its
  * entrance are that primitive's. What is here is the inside: a paste area, a
@@ -6,7 +6,7 @@
  * opaque `--surface` (the pairs glass-contrast.mjs already proves: --label,
  * --label-2, --label-3, --red, --orange on --surface).
  *
- * Motion (U6): three moments, all in CaptureCard.tsx / CaptureSheet.tsx. The
+ * Motion: three moments, all in CaptureCard.tsx / CaptureSheet.tsx. The
  * cards rise and fade in once when the answer lands (Motion, 40 ms stagger);
  * a discarded card fades out while the rest close the gap (AnimatePresence +
  * layout); and the two small reveals below -- the edit form and the "Added"

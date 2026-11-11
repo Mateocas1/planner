@@ -2,10 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { readRemoteTasks, seedTaskAndBlock, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The command palette (F3 / spec S8). Every assertion goes through the UI: the
+ * The command palette. Every assertion goes through the UI: the
  * dialog's semantics, the keyboard contract (arrows, Enter, Escape, focus), the
  * two things it does (quick-add a title, open a task's details) and the short
- * soft entrance a keyboard surface gets (C1: fade plus a slight scale, never a
+ * soft entrance a keyboard surface gets (fade plus a slight scale, never a
  * gate on typing).
  */
 
@@ -246,7 +246,7 @@ test("it opens with a short soft entrance that never blocks typing", async ({ pa
   expect(opening.settled!.opacity).toBe("1");
   expect(opening.settled!.transform).toBe("none");
 
-  // S2: the field owned focus on the opening frame, which is why the keystrokes
+  // The field owned focus on the opening frame, which is why the keystrokes
   // typed with no wait all landed in it
   expect(start.focused).toBe(true);
   await expect(field(page)).toHaveValue("milk");

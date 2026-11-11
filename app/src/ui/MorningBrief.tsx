@@ -11,7 +11,7 @@ import "./MorningBrief.css";
  * day says what the day already holds and where the first free time is, then
  * gets out of the way. It never asks, never takes focus and never blocks: one
  * sentence, one dismissal, and the plan it points at is the Plan my day card
- * directly under it (F4b), which is why this surface owns no button of its own.
+ * directly under it, which is why this surface owns no button of its own.
  *
  * "Once a day" is the profile zone's day, and the dismissal is per device
  * (`localStorage`, see shutdownRitual.readBriefDismissal): a dismissal is a
@@ -27,7 +27,7 @@ export function MorningBrief({
 }: {
   blocks: BlockView[];
   timeZone: string;
-  /** The profile's one working window: the free-slot clause is inside it (W1). */
+  /** The profile's one working window: the free-slot clause is inside it. */
   workWindow: WorkWindow;
   now: Date;
 }) {

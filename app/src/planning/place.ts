@@ -1,12 +1,12 @@
 /**
- * Plan my day: placing the unscheduled tray into the free time of one day (F4a).
+ * Plan my day: placing the unscheduled tray into the free time of one day.
  *
  * The module is pure: it receives the day to plan, the tasks, the stored blocks,
  * the profile's work window and the current instant, and returns placements for
  * the caller to write. No Firebase, no React, no clock of its own.
  *
  * One day at a time, on the profile zone's wall clock. Free time comes from
- * `planning/window.ts`'s `freeSlots`, so plan-my-day and the capacity radar (F1)
+ * `planning/window.ts`'s `freeSlots`, so plan-my-day and the capacity radar
  * agree on what "free" means and a DST day keeps its 08:00-21:00 window. A block
  * is clipped at each of its days' midnights (a 23:30-00:30 block occupies the
  * last 30 minutes of one day and the first 30 of the next), exactly like the
@@ -56,7 +56,7 @@ export type PlanInput = {
   /** The current instant, and the profile zone every wall clock is read in. */
   now: Date;
   timeZone: string;
-  /** The profile's one working window (W1), minutes after midnight. */
+  /** The profile's one working window, minutes after midnight. */
   window: WorkWindow;
   tasks: readonly PlanTask[];
   blocks: readonly PlanBlock[];

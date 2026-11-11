@@ -1,5 +1,5 @@
 /**
- * The capture inbox's mock transport (Ronda 8, S3): lets the sheet be built,
+ * The capture inbox's mock transport: lets the sheet be built,
  * screenshotted and browser-tested without Rust or an API key, driven by the
  * dev query `?captureMock=<scenario>` (`useCapture.ts` reads it).
  *

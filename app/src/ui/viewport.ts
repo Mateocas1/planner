@@ -22,7 +22,7 @@ import { useEffect, useState } from "react";
  *
  * The value is in CSS pixels and is published on `:root`, so it lands before
  * the next paint (a custom property is not an animation: bottom and height are
- * layout properties, and AGENTS.md keeps layout off the compositor). It is
+ * layout properties, and keeps layout off the compositor). It is
  * rounded: sub-pixel keyboard heights would otherwise thrash the layout while
  * the keyboard animates in.
  *

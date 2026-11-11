@@ -1,5 +1,5 @@
 /**
- * The capture inbox's run state machine (Ronda 8, S3, plan §3 and §5).
+ * The capture inbox's run state machine (plan §3 and §5).
  *
  * Pure of the DOM, React and Firebase: `reduceCapture` is the state, and
  * `createCaptureController` is the only part with effects (a transport, a key

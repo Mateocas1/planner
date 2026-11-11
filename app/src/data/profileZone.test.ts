@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it, mock } from "node:test";
 
 /*
- * The cached-profile time-zone branch of `useProfileTimeZone` (R7-11). The hook
+ * The cached-profile time-zone branch of `useProfileTimeZone`. The hook
  * runs against stubs: React's state is a single cell and effects run at once,
  * and Firestore's subscription hands each snapshot to the test, which decides
  * whether it came from the cache or the server. Writes and reads are recorded,

@@ -1,5 +1,5 @@
 /**
- * The capture inbox's hook (Ronda 8, S3): a thin wrapper that wires the pure
+ * The capture inbox's hook: a thin wrapper that wires the pure
  * `createCaptureController` to the app. Desktop uses the Tauri chat transport,
  * the stored key's status and the saved model; the web build has no transport,
  * so the on-device reading answers; dev `?captureMock=<scenario>` swaps in the

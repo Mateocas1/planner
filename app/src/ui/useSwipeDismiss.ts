@@ -38,8 +38,8 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
 }
 
 /**
- * Swipe-to-dismiss pointer wiring, shared by the Sheet and the ChatPanel
- * (odd/tasks/ronda4.md, S1). Extracted from Sheet.tsx (task T5) -- the gesture
+ * Swipe-to-dismiss pointer wiring, shared by the Sheet and the ChatPanel.
+ * Extracted from Sheet.tsx -- the gesture
  * itself is the same code, but the commit-flight end deliberately differs from
  * the removed Sheet version: when the flight lands, the hook cancels it, clears
  * its `fill: forwards` hold, and leaves the surface holding an inline
@@ -50,7 +50,7 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
  *
  * pointer drag on the drag handle (stamped `data-drag-handle`, by default the
  * surface's header) or on plain, non-scrolled surface content follows the
- * finger freely on both axes (S7) after an 8 px slop -- upward travel
+ * finger freely on both axes after an 8 px slop -- upward travel
  * rubber-bands -- and on release either commits (the surface leaves along the
  * release vector carrying the release velocity, then the caller's close path
  * runs) or springs back on a motion spring that starts at the release velocity.
@@ -59,7 +59,7 @@ function clearGestureStyles(surface: HTMLElement, scrim: HTMLElement | null) {
  * scrolling and selection keep working, and pointer capture is taken only
  * after the slop so a tap's click keeps its target. An up-dominant release
  * never dismisses. A surface a call site stamps `data-swipe-dismiss="off"`
- * owns its own gestures: an embedded page turn (ShutdownSheet, ronda4 F3b) is
+ * owns its own gestures: an embedded page turn (ShutdownSheet) is
  * itself a swipe, and it wins over the dismissal -- after the 8 px slop both
  * gestures lock at once and whoever captures the pointer first steals it from
  * the other, which turned a page drag into a whole-sheet dismissal. Reduced
@@ -148,7 +148,7 @@ export function useSwipeDismiss({
     /**
      * A surface that opted out owns its own gestures (see the doc comment):
      * the call site stamps it `data-swipe-dismiss="off"`; everything outside
-     * it still dismisses (S1).
+     * it still dismisses.
      */
     const optedOut = (target: EventTarget | null): boolean =>
       target instanceof Element && !!target.closest('[data-swipe-dismiss="off"]');
@@ -308,7 +308,7 @@ export function useSwipeDismiss({
     };
 
     /**
-     * Free 2D follow (S7): the surface tracks the pointer 1:1 on both axes;
+     * Free 2D follow: the surface tracks the pointer 1:1 on both axes;
      * only upward travel rubber-bands (and up never dismisses). Scale and the
      * phone corner rounding derive from the 2D distance against the larger
      * sheet dimension, so a diagonal drag shrinks exactly as much as an
@@ -329,11 +329,11 @@ export function useSwipeDismiss({
       surface.style.transform = dragTransform(x, y, sheetScale(p));
       // The backdrop fades with the drag's progress.
       if (scrim) scrim.style.opacity = String(1 - p);
-      // Phone only: the corners round as the surface shrinks (S1). A
+      // Phone only: the corners round as the surface shrinks. A
       // full-viewport surface rests at radius 0, the inset phone sheets at
       // --r-sheet; desktop never touches its corners. The rounding rides
       // `clip-path: inset(0 round …)`, not `border-radius`: motion stays on
-      // transform/opacity/filter/clip-path (AGENTS.md), and a per-move radius
+      // transform/opacity/filter/clip-path, and a per-move radius
       // write repaints the backdrop-filter glass for a sub-pixel change
       // nobody can see. The write happens only when the rounded value changes,
       // and a rounded 0 means no clip at all.
@@ -354,7 +354,7 @@ export function useSwipeDismiss({
       if (!gesture.eligible) {
         // The slop only decides whether the gesture starts: the drag's
         // initial dominant direction picks the scroller test, and a scroller
-        // that can still move that way wins the gesture (S7).
+        // that can still move that way wins the gesture.
         const initial = dominantDirection(dx, dy);
         if (!initial) return;
         if (scrollerBlocks(gesture.target, initial, event.pointerType)) {
@@ -457,7 +457,7 @@ export function useSwipeDismiss({
         restoreIfDeclined();
         return;
       }
-      // Fly out along the release vector (both axes, S7), carrying the release
+      // Fly out along the release vector (both axes), carrying the release
       // velocity: linear over a velocity-scaled duration. Then the caller's
       // close path runs.
       surface.style.pointerEvents = "none";
@@ -535,7 +535,7 @@ export function useSwipeDismiss({
       // drawn offset disagree past the band's slope-1 start -- the commit
       // decision, exit vector and release speed must use the shown offset.
       const shownY = dy < 0 ? -rubberBand(-dy, surface.offsetHeight) : dy;
-      // The release vector decides (S7): its dominant sector must be
+      // The release vector decides: its dominant sector must be
       // dismissible -- an up-dominant release never is -- and the displacement
       // or flick along that sector's axis must pass the thresholds.
       if (shouldDismiss(dx, shownY, rawX, rawY, surface.offsetWidth, surface.offsetHeight)) {

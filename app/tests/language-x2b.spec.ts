@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit x2b): the command palette and the shortcut sheet in
+ * S8 (unit x2b): the command palette and the shortcut sheet in
  * Spanish. The language is pinned on this device after sign-in (the auth form is
  * another unit's), as the Language switch would have left it.
  */

@@ -4,14 +4,14 @@ import type { ToolCallCard } from "../chat/conversation.ts";
 import "./ChatActionCard.css";
 
 /**
- * One proposed planner change (Ronda 3 R1, spec S1). While pending it shows
+ * One proposed planner change. While pending it shows
  * what will change, in plain words (computed once by the panel from the raw
  * arguments — never from unvalidated data), with Confirm and Discard. After
  * the user acts, the buttons give way to the outcome line; the state change
  * itself does not animate. Confirm/Discard disable while that card's write is
  * in flight and while a new reply streams.
  *
- * Read tools (ronda4 S4) never had buttons to begin with: they run the
+ * Read tools never had buttons to begin with: they run the
  * moment the model proposes them, so the card shows the lookup while it runs
  * ("Reading…") and the outcome once it lands.
  */

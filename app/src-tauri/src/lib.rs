@@ -15,7 +15,7 @@ mod window;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Linux only, before any GTK or tauri init: WebKit reads this variable once
-    // (Ronda 9 S2; `PLANNER_HZ=60` opts out). The webview half is in `window.rs`.
+    // (`PLANNER_HZ=60` opts out). The webview half is in `window.rs`.
     #[cfg(target_os = "linux")]
     refresh::configure_env();
     let builder = tauri::Builder::default()
@@ -33,7 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        // One-time close-to-tray notice (T6); Rust shows it, no JS permission.
+        // One-time close-to-tray notice; Rust shows it, no JS permission.
         .plugin(tauri_plugin_notification::init())
         .plugin(autostart::plugin())
         .manage(deeplink::PendingRoute::default())
@@ -82,7 +82,7 @@ pub fn run() {
             pill::setup(app.handle())?;
             Ok(())
         });
-    // Linux only, so the Windows builder is unchanged (Ronda 6 S5).
+    // Linux only, so the Windows builder is unchanged.
     #[cfg(target_os = "linux")]
     let builder = builder.plugin(window::webkitgtk_marker());
     builder

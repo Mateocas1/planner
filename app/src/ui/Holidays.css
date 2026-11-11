@@ -1,4 +1,4 @@
-/* S11 — holiday labels on the calendar's Due row. A label, not a task: it sits
+/* Holiday labels on the calendar's Due row. A label, not a task: it sits
  * on the same --surface-2 chip the due tasks use with the same --label-2 text,
  * so every text pair here is one scripts/glass-contrast.mjs already proves. The
  * kind is carried by the dot and the border (shape and hue, never text colour):

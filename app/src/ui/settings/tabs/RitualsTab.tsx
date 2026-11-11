@@ -18,7 +18,7 @@ import { SettingsSwitch } from "../SettingsSwitch.tsx";
 import "./RitualsTab.css";
 
 /**
- * Rituals (S3, ronda 2 W2b): the daily shutdown reads its single source — the
+ * Rituals: the daily shutdown reads its single source — the
  * time General owns — and the weekly review's schedule is real: whether it
  * proposes itself, and when. Each moment owns a day, a time and the steps it
  * runs; every control writes its whole (validated) schedule through the W2a

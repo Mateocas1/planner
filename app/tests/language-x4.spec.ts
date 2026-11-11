@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectSignedIn, seedRadarFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit x4): the Calendar and plan-my-day in Spanish. The language
+ * S8 (unit x4): the Calendar and plan-my-day in Spanish. The language
  * is pinned on this device after sign-in, as the Language switch would leave it.
  */
 

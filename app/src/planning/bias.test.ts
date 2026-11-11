@@ -3,7 +3,7 @@ import test from "node:test";
 import { noBiasHint, suggestEstimate, titleTokens, type BiasSample } from "./bias.ts";
 
 /**
- * The learned estimate bias (F2a), proved without a clock, a database or a
+ * The learned estimate bias, proved without a clock, a database or a
  * component: every fixture is a plain list of completed tasks, so "three
  * invoices took 1.5x" is three objects here and never a wait. "Now" is not an
  * input, which is why no fixture mentions a date, a zone or DST: the learner

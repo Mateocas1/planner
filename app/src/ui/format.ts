@@ -1,5 +1,5 @@
 /**
- * Human date formatting for the planner surfaces (C1).
+ * Human date formatting for the planner surfaces.
  *
  * Stored values stay ISO `YYYY-MM-DD`; only what the user reads changes. A
  * date key is a calendar day, so it is read back as a UTC midnight -- never
@@ -7,7 +7,7 @@
  * take the browser's locale (Intl's own default) so nothing here hardcodes
  * one, and "today"/"tomorrow" are localized words rather than dates.
  *
- * (Ronda 5, S8) Both formatters now follow the app language instead of the
+ * Both formatters now follow the app language instead of the
  * browser's: English keeps the en-US output the app always showed, Spanish
  * reads "mar, 29 sept". The formatters are cached per language.
  */

@@ -20,7 +20,7 @@ import { trackedMinutes } from "./useFocusTimer.ts";
 import { t } from "../i18n/index.ts";
 
 /**
- * Idle detection while a focus session runs (task T9, spec S8.5) — the stateful
+ * Idle detection while a focus session runs — the stateful
  * half of `domain/idle.ts`, desktop only (`isTauri`).
  *
  * While the timer's session is open and not paused, this hook polls the Rust
@@ -61,7 +61,7 @@ export type IdlePrompt = {
   minutes: number;
   /**
    * The session's start, in epoch ms: the instant the subtraction's day key
-   * comes from (ronda 2, review fix 2 — the same day the session's focus
+   * comes from (review fix 2 — the same day the session's focus
    * credit landed, never the away span's own day and never "now" at write
    * time). A prompt without a usable start refuses the write (review fix 4).
    */
@@ -207,7 +207,7 @@ export function useIdleAway({
     (taskActualMinutes: number) => {
       const current = promptRef.current;
       if (current === null) return;
-      // The subtraction's day is the day the session STARTED (ronda 2, review
+      // The subtraction's day is the day the session STARTED (review
       // fix 2) — the same day its focus credit landed, so a cross-midnight
       // away span can never drive another day negative. A prompt without a
       // usable start refuses the write (review fix 4): nothing is written and

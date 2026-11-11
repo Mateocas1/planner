@@ -25,7 +25,7 @@ async function expectRemoteTasks(email: string, expected: unknown[]) {
 
 async function openTasks(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
-  // C2: creation is collapsed on arrival; openTasks only lands the surface.
+  // Creation is collapsed on arrival; openTasks only lands the surface.
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 }
 
@@ -52,7 +52,7 @@ async function settleSheet(page: Page, label: string) {
 }
 
 /**
- * Opens the New task sheet (C2: creation is never permanently on the surface).
+ * Opens the New task sheet (creation is never permanently on the surface).
  * Idempotent: if a test already opened it, the Add task control is visible
  * and nothing is clicked.
  */
@@ -78,7 +78,7 @@ test("walking skeleton: account creation, truthful Home counts, and navigation",
   await expect(nav.getByRole("button", { name: "Tasks 1 open" })).toBeVisible();
 
   await nav.getByRole("button", { name: "Tasks" }).click();
-  // C2: creation is collapsed, not permanently on the surface
+  // Creation is collapsed, not permanently on the surface
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await nav.getByRole("button", { name: "Calendar" }).click();
   await expect(page.getByRole("heading", { name: "Calendar" })).toBeVisible();
@@ -154,7 +154,7 @@ test("creating a task with a deadline shows the row and persists it to the serve
   await page.getByRole("button", { name: "Add task" }).click();
 
   await expect(page.locator(".task-title", { hasText: "Write review" })).toBeVisible();
-  // C1: the row shows the human date (locale pinned to en-US), not the ISO key
+  // The row shows the human date (locale pinned to en-US), not the ISO key
   await expect(page.locator(".task-deadline", { hasText: "Wed, Apr 1" })).toBeVisible();
 
   // the stored value stays ISO: that assertion is about the data, not the display
@@ -165,7 +165,7 @@ test("pressing Enter in the revealed title field creates the task", async ({ pag
   const email = newEmail("enter");
   await signUp(page, email);
 
-  // C2: creation is collapsed by default and does not occupy the surface
+  // Creation is collapsed by default and does not occupy the surface
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Tasks" }).click();
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add task" })).toHaveCount(0);
@@ -279,7 +279,7 @@ test("editing the deadline in the details panel persists the change and clearing
   const panel = page.getByRole("complementary", { name: "Task details" });
 
   await pickDate(panel, "Deadline", "2026-05-10");
-  // C1: the panel writes ISO; the row reads back human (locale pinned to en-US)
+  // The panel writes ISO; the row reads back human (locale pinned to en-US)
   await expect(page.locator(".task-deadline", { hasText: "Sun, May 10" })).toBeVisible();
   await expectRemoteTasks(email, [{ title: "Scheduled task", completed: false, deadline: "2026-05-10" }]);
 
@@ -297,7 +297,7 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   const today = localDateKey(new Date());
   const yesterday = dayKey(-1);
 
-  // C1: today's deadline is a word, not its ISO key
+  // Today's deadline is a word, not its ISO key
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Water plants");
   await pickDate(page, "Deadline", today);
@@ -308,7 +308,7 @@ test("a deadline of today reads as a word and an overdue task carries the overdu
   // the successful write collapses the row; reveal it again for the next entry
   await expect(page.getByRole("button", { name: "New task" })).toBeVisible();
 
-  // C1: a past deadline on an unfinished task carries the overdue state
+  // A past deadline on an unfinished task carries the overdue state
   await revealTaskForm(page);
   await page.getByLabel("Task title").fill("Pay bill");
   await pickDate(page, "Deadline", yesterday);
@@ -518,7 +518,7 @@ test("the completion wash plays on a user completion and never for already-compl
   await expect(page.locator("li.task.task-wash")).toHaveCount(0);
 });
 
-/* ---------- state motion (S4): one gesture per state change ---------- */
+/* ---------- state motion: one gesture per state change ---------- */
 
 /** Seconds out of a computed duration list, so an assertion reads a number. */
 const durationSeconds = (value: string) =>
@@ -691,12 +691,12 @@ test.describe("with reduced motion", () => {
 
 async function openCalendar(page: Page) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Calendar" }).click();
-  // C2: creation is collapsed on arrival; openCalendar only lands the surface.
+  // Creation is collapsed on arrival; openCalendar only lands the surface.
   await expect(page.getByRole("button", { name: "New block" })).toBeVisible();
 }
 
 /**
- * Reveals the collapsed Calendar creation form (C2). Idempotent: if a test
+ * Reveals the collapsed Calendar creation form. Idempotent: if a test
  * already revealed it, the Add block control is visible and nothing is clicked.
  */
 async function revealBlockForm(page: Page) {
@@ -776,7 +776,7 @@ test("a series created from the UI persists with its frequency and anchor and sh
   const row = page.locator(".series-row", { hasText: "Stretch" });
   await expect(row).toHaveAttribute("data-next-occurrence", start);
   await expect(row.getByText("Weekly")).toBeVisible();
-  // C1: futureDateKey(1) is tomorrow, so the row reads the word; the ISO key
+  // FutureDateKey(1) is tomorrow, so the row reads the word; the ISO key
   // stays the row's data attribute above
   await expect(row.getByText("next tomorrow")).toBeVisible();
 
@@ -850,7 +850,7 @@ test("opening a series shows its frequency, anchor and upcoming occurrences in t
   await expect(panel.getByLabel("Rename series")).toHaveValue("Stretch");
   await expectChoice(panel, "Frequency", "Weekly");
   await expectDate(panel, "Anchor", start);
-  // C1: the panel shows human dates; the ISO keys are gone from the display
+  // The panel shows human dates; the ISO keys are gone from the display
   // (the checkbox below still addresses the occurrence by its ISO key)
   await expect(panel.locator(".series-occurrences")).not.toContainText(start);
   await expect(panel.locator(".series-occurrences")).not.toContainText(second);

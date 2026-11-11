@@ -141,8 +141,8 @@ test("the first free slot is the first stretch of the day still ahead", () => {
 
 /**
  * The data-safety findings of the F3c review, pinned where the sheet gets its
- * decisions from: what a rejected close says and takes back (S2), what undo
- * says in every ending (S1/S2), and one close in flight per owner and day (S4).
+ * decisions from: what a rejected close says and takes back, what undo
+ * says in every ending, and one close in flight per owner and day.
  * The sentences are the sheet's own copy, so they are asserted verbatim.
  */
 
@@ -163,16 +163,16 @@ test("undo says what each ending means, and never blames a later close for a rej
   assert.equal(undoMessage({ kind: "refused", refusal: "nothing-applied" }), null);
   assert.equal(undoMessage({ kind: "refused", refusal: "later-close" }), "The day was closed again, so nothing was undone.");
   // A write accepted locally and rejected by the server must not return to
-  // Today silently (S1).
+  // Today silently.
   assert.equal(undoMessage({ kind: "unsaved" }), "The undo could not be saved.");
-  /* S2: the close whose batch the server rejected never closed the day, so its
+  /* The close whose batch the server rejected never closed the day, so its
      undo reports the failed close rather than a later close nobody made. */
   assert.equal(undoMessage({ kind: "rejected" }), closeFailedMessage());
   assert.notEqual(undoMessage({ kind: "rejected" }), undoMessage({ kind: "refused", refusal: "later-close" }));
 });
 
 /**
- * The transport under the ritual's retraction (S2). `ui/write.ts` is the only
+ * The transport under the ritual's retraction. `ui/write.ts` is the only
  * place that knows a write can be accepted locally and rejected later, and the
  * ritual's retraction hangs off exactly that: the closure that withdraws the
  * undo offer must receive the rejection, and must receive nothing while the

@@ -1,5 +1,5 @@
 /**
- * Holidays from Google's holiday calendars (S11). A holiday is a label on a
+ * Holidays from Google's holiday calendars. A holiday is a label on a
  * day, never a task or a block: it changes no planning behavior, so nothing in
  * `planning/` reads this module. Pure on purpose -- no network, Firestore or
  * DOM -- so the classifier and the stored shape are testable on their own.

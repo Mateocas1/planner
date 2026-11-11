@@ -3,7 +3,7 @@ import { dictionaries } from "./dictionaries.ts";
 import type { Args, MessageKey, Plural } from "./types.ts";
 
 /**
- * The app's language: a tiny typed dictionary, no library (Ronda 5, S8).
+ * The app's language: a tiny typed dictionary, no library.
  *
  * The effective language is `device override ?? synced account choice ?? en`:
  *

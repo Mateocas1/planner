@@ -1,5 +1,5 @@
 /**
- * The Settings view's tab model (Ronda 2, S1): the rail's contents, their
+ * The Settings view's tab model: the rail's contents, their
  * labels and their availability, shared by the view, the palette commands and
  * the deep links (`openSettings("rituals")`), so one table decides what
  * exists and every entry point agrees.

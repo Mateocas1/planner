@@ -1,4 +1,4 @@
-/* The Rituals tab's moment rows (S3): the settings card's own grammar, with
+/* The Rituals tab's moment rows: the settings card's own grammar, with
    one block per moment — when it opens, and the steps it runs. */
 
 .rituals-moments {
@@ -93,7 +93,7 @@
   margin: 0;
 }
 
-/* Touch: the chip keeps its look and takes a 44 px target (sizes only, R5-16). */
+/* Touch: the chip keeps its look and takes a 44 px target (sizes only). */
 @media (pointer: coarse) {
   .rituals-step-chip { height: 44px; padding: 0 16px; }
   .rituals-steps { gap: 8px; }

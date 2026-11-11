@@ -16,7 +16,7 @@ import { quickAddUnregisteredNote } from "./desktopCopy.ts";
 import "./ShortcutRecorder.css";
 
 /**
- * The shortcut recorder (design brief §5, spec S2): one row control for a
+ * The shortcut recorder (design brief §5): one row control for a
  * rebindable shortcut. Idle it shows keycaps; pressed it listens for one
  * keydown in the capture phase — the view's own Escape and the shell's
  * shortcuts never see the captured keys — with modifier-only presses waiting,

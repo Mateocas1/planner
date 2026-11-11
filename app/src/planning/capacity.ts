@@ -4,7 +4,7 @@ import { dateKey, dayMs, formatWall, keyToWallUtc, mondayOf, wallDayKey, wallMin
 import { freeSlots, minutesPerDay, type Interval, type WorkWindow } from "./window.ts";
 
 /**
- * How full the planner really is (F1a): the pure math behind the overcommit
+ * How full the planner really is: the pure math behind the overcommit
  * radar. It answers two questions and nothing else:
  *
  *  - per day, how much of the working window is already booked, and therefore
@@ -12,10 +12,10 @@ import { freeSlots, minutesPerDay, type Interval, type WorkWindow } from "./wind
  *  - per deadline, whether the open work still fits before it, counting from
  *    today and earliest deadline first (`Overcommit`).
  *
- * The rules, all of them taken from the roadmap so plan-my-day (F4a) and the
+ * The rules, all of them taken from the roadmap so plan-my-day and the
  * radar agree on what "free" means:
  *
- *  - The window comes from the profile (W1, 08:00-21:00 by default) and its
+ * - The window comes from the profile (08:00-21:00 by default) and its
  *    minutes are wall-clock minutes, so a 23-hour DST day still has a 13-hour
  *    window. Blocks are sliced at midnight in the profile zone and unioned, so
  *    overlapping or imported blocks are never counted twice.
@@ -311,7 +311,7 @@ export function capacity(input: CapacityInput): Capacity {
   for (const task of input.tasks ?? []) {
     if (task.completed === true) continue;
     // Overdue work is not counted here: it belongs to the day it is due, and
-    // rolling that deadline forward is the shutdown ritual's decision (F3).
+    // rolling that deadline forward is the shutdown ritual's decision.
     if (task.deadline === undefined || task.deadline < today) continue;
     const estimate = task.estimate ?? ASSUMED_ESTIMATE_MINUTES;
     const remainingMinutes = Math.max(0, estimate - linkedMinutes(blocks, task.id, context.nowMs, input.timeZone));

@@ -1,4 +1,4 @@
-//! Wrap-safe idle arithmetic for the Windows idle probe (task T9, spec S8.5).
+//! Wrap-safe idle arithmetic for the Windows idle probe.
 //!
 //! `GetLastInputInfo` reports the tick of the last input as a 32-bit
 //! millisecond stamp (`dwTime`), which wraps about every 49.7 days. The current

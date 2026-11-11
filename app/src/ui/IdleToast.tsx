@@ -5,7 +5,7 @@ import type { IdlePrompt } from "./useIdleAway.ts";
 import "./IdleToast.css";
 
 /**
- * The idle-away prompt (task T9, spec S8.5): one non-blocking offer pinned to
+ * The idle-away prompt: one non-blocking offer pinned to
  * the bottom of the shell after the user comes back from an away span during
  * a focus session. It reuses the undo toast's shape and material — one
  * sentence, actions inside a dark glass pill — with two differences that the

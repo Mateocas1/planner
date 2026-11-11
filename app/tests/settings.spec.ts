@@ -4,13 +4,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { readRemoteDaySettings, seedDaySettings, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * S1 + S2 (Ronda 2): the Settings view — how it opens (gear, palette,
+ * The Settings view — how it opens (gear, palette,
  * `Ctrl+,`), how the tabs behave (the desktop-only ones never render on the
  * web), that the moved controls still write, and the shortcut recorder's
  * conflict and restore rules on the palette's row.
  *
- * Screenshots are evidence for the parent review, not assertions, and land in
- * odd/runs/r2-w1-shots/.
+ * Screenshots are evidence for the parent review, not assertions, and land in a local folder.
  */
 
 test.setTimeout(120_000);
@@ -94,7 +93,7 @@ test("the rail switches tabs, and the desktop-only tabs never render on the web"
     await expect(view(page).getByRole("heading", { name: tab, exact: true })).toBeVisible();
   }
 
-  /* Rituals is real now (S3): the weekly review's switch and its moments. */
+  /* Rituals is real now: the weekly review's switch and its moments. */
   await rail(page).getByRole("button", { name: "Rituals" }).click();
   await expect(view(page).getByRole("switch", { name: "Propose the review" })).toBeEnabled();
   await expect(view(page).getByText("Moment 1")).toBeVisible();

@@ -1,4 +1,4 @@
-/* Flat glass for WebKitGTK (Ronda 9, S1 and S2).
+/* Flat glass for WebKitGTK.
 
    `main.tsx` marks `<html data-webkitgtk="flat">` on the Linux webview and
    nothing else (Windows, the web and Chromium never carry it), so every rule

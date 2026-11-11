@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the global quick-add window (task T5, spec S8.1) — the
+ * Pure helpers for the global quick-add window — the
  * decision logic of the surface, kept out of the JSX so the node test runner
  * can hold every rule without a DOM or a Tauri runtime:
  *

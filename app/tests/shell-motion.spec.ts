@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { password } from "./browser-helpers.ts";
 
 /**
- * The shell's own motion (S4, `odd/research/motion-review.md` W2): the page
+ * The shell's own motion: the page
  * switch, the phone's tab pill, the account popover and the creation sheet's
  * fallback flight. Every assertion samples the real frames the browser paints,
  * because the reviewed properties (what moves, how far, for how long) are not

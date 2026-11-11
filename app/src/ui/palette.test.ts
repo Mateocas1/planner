@@ -31,7 +31,7 @@ test("a typed query offers create with the trimmed title, ranked after every mat
   assert.deepEqual(buildCommands("zzz", tasks, destinations), [{ kind: "create", id: "create", title: "zzz" }]);
 });
 
-/* R5-02: a command's own label finds it, tokens in any order, and Enter on it
+/* A command's own label finds it, tokens in any order, and Enter on it
    never creates a junk task. */
 test("a command's own label finds it, first, with create still offered last", () => {
   for (const [query, id] of [

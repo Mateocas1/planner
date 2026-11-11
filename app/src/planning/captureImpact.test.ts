@@ -7,7 +7,7 @@ import { captureImpact, findSlot, type CaptureCandidate, type CaptureImpactInput
 import type { WorkWindow } from "./window.ts";
 
 /**
- * The capture card's pure impact cases (Ronda 8, capture inbox U3): the due
+ * The capture card's pure impact cases (capture inbox U3): the due
  * day's booked share before and after the candidate, the earliest free slot
  * around busy blocks, and the bias chip. Every fixture names its zone and
  * builds instants through `toZonedInstant`, so no offset comes from the host.

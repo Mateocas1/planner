@@ -1,4 +1,4 @@
-//! Per-window command ACL consistency (ronda3 S3).
+//! Per-window command ACL consistency.
 //!
 //! The app's `build.rs` declares every custom command in a Tauri `AppManifest`
 //! (`tauri_build::Attributes::app_manifest`), which makes Tauri's ACL gate each

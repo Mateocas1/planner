@@ -2,7 +2,7 @@ import { t } from "../../i18n/index.ts";
 import { MAX_NOTE_CHARS } from "../../planning/weekly.ts";
 
 /**
- * The Reflect step (S3): a short note — what worked, what did not, one
+ * The Reflect step: a short note — what worked, what did not, one
  * intention — saved through the W2a API on the step's own save (the flow's
  * Next/Finish owns the write, so leaving the step never loses the text).
  *

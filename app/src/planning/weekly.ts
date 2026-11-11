@@ -1,11 +1,11 @@
 /**
- * The weekly review's pure half (S3, ronda 2 task W2a): the Rituals settings
+ * The weekly review's pure half: the Rituals settings
  * model, the ISO week identity, the per-week review state, the moment that is
  * due now, the week's review numbers, and the clean-up candidates.
  *
  * No Firebase, no React, no clock: the caller supplies `now` and the profile
  * zone, and gets back data — the same shape `planning/shutdown.ts` uses. The
- * flow UI, the nudges and the Rituals settings rows (W2b) consume this module;
+ * flow UI, the nudges and the Rituals settings rows consume this module;
  * `data/weeklyReview.ts` persists what it computes.
  *
  * Day numbers follow JavaScript's `Date.getDay` convention: 0 is Sunday and 6
@@ -20,7 +20,7 @@
 import { MIN_ACTUAL_MINUTES } from "./bias.ts";
 import { dateKey, dayMs, keyToWallUtc, mondayOf, todayWallUtc, wallAsUtc, wallDayKey, wallMinutes } from "../ui/time.ts";
 
-/** The four steps one review walks through, in flow order (S3). */
+/** The four steps one review walks through, in flow order. */
 export type WeeklyReviewStep = "review" | "cleanup" | "plan" | "reflect";
 
 /** The step values a stored document may hold; the closed set readers accept. */
@@ -34,10 +34,10 @@ function isWeeklyReviewStep(value: unknown): value is WeeklyReviewStep {
  *  opens (`time`, minutes after midnight), and the steps it runs. */
 export type WeeklyMoment = { day: number; time: number; steps: WeeklyReviewStep[] };
 
-/** The Rituals settings (S3): whether the review proposes itself, and when. */
+/** The Rituals settings: whether the review proposes itself, and when. */
 export type WeeklyReviewSettings = { nudges: boolean; moments: WeeklyMoment[] };
 
-/** Friday 17:00 — Review, Clean up, Reflect — and Sunday 19:00 — Plan (L2).
+/** Friday 17:00 — Review, Clean up, Reflect — and Sunday 19:00 — Plan.
  *  Days are JavaScript weekday numbers: 0 is Sunday, 5 is Friday. */
 export const defaultWeeklyReviewSettings: WeeklyReviewSettings = {
   nudges: true,
@@ -47,10 +47,10 @@ export const defaultWeeklyReviewSettings: WeeklyReviewSettings = {
   ],
 };
 
-/** The longest reflection note a document may hold (S3: a short note). */
+/** The longest reflection note a document may hold (a short note). */
 export const MAX_NOTE_CHARS = 2000;
 
-/** How far "Later" pushes a nudge (L1b: +2 h). */
+/** How far "Later" pushes a nudge (+2 h). */
 export const snoozeMinutes = 120;
 
 /** 0=Sunday..6=Saturday, as stored, to Monday-first 0..6 inside the ISO week. */
@@ -237,7 +237,7 @@ function momentPosition(moment: WeeklyMoment): number {
 /**
  * The moment the review should propose now, or null.
  *
- * The rules (S3):
+ * The rules:
  * - a moment is due from its wall-clock time until the next moment of the
  *   week opens (or the week ends);
  * - a moment whose steps are all done is never re-offered, and a later moment
@@ -304,7 +304,7 @@ export type ReviewTask = {
   deadline?: string;
   estimate?: number;
   actualMinutes?: number;
-  /** The same minutes attributed per profile-zone day (S3/L6); present on
+  /** The same minutes attributed per profile-zone day; present on
    *  every task tracked since the map existed. */
   actualByDay?: Record<string, number>;
   completedAt?: string;
@@ -316,7 +316,7 @@ export type ReviewTask = {
 /** A block as the review reads it: which task it planned, and when. */
 export type ReviewBlock = { start: string; end: string; taskId?: string };
 
-/** The few numbers the Review step shows (S3): no charts, no streaks. */
+/** The few numbers the Review step shows: no charts, no streaks. */
 export type WeeklyNumbers = {
   week: string;
   /** Sum of this week's block durations, in minutes. */
@@ -325,7 +325,7 @@ export type WeeklyNumbers = {
   actualMinutes: number;
   /** True when part of `actualMinutes` came from the cumulative-counter
    *  approximation instead of per-day data, so the UI can say the number is
-   *  approximate (S3/L6: exact only from the day tracking began). */
+   *  approximate (exact only from the day tracking began). */
   actualIsPartial: boolean;
   /** Median `actual / estimate` over the week's tracked, estimated work; null
    *  when the week left nothing to learn from. */
@@ -368,7 +368,7 @@ function zonedMidnight(dayKey: string, timeZone: string): number {
 /**
  * The Review step's numbers for the week `now` falls on, in the zone.
  *
- * Actual minutes are attributed per day since L6 (ronda 2): every task with
+ * Actual minutes are attributed per day since L6: every task with
  * an `actualByDay` map contributes exactly the minutes its map places on this
  * week's days — open tasks included, which the old cumulative rule could not
  * see — plus, through the same fallback rule as an unmapped task, the
@@ -505,7 +505,7 @@ export function weeklyNumbers(input: {
 /** Why a candidate shows up in the Clean-up step. */
 export type CleanupReason = "overdue" | "scheduled-not-done";
 
-/** The three actions the Clean-up step offers for every candidate (S3). */
+/** The three actions the Clean-up step offers for every candidate. */
 export type CleanupAction = "this-week" | "someday" | "delete";
 
 export const cleanupActions: readonly CleanupAction[] = ["this-week", "someday", "delete"];
@@ -518,7 +518,7 @@ export type CleanupCandidate = {
 };
 
 /**
- * The Clean-up step's candidates (S3): unfinished tasks that are overdue, or
+ * The Clean-up step's candidates: unfinished tasks that are overdue, or
  * that had a block in the week containing `today` and are still open. Tasks
  * flagged `someday` are never candidates: the step's own action must not feed
  * the task straight back into next week's list.

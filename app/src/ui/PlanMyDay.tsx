@@ -19,7 +19,7 @@ import "./PlanMyDay.css";
  * (deadline first, then the longer plan, the 60-minute assumption, the 45-minute
  * chunk floor, and nothing in the past); `planning/window.ts` supplies the free
  * time of the profile's one working window, so this button and the overcommit
- * radar (F1) can never disagree about what "free" means. This module only shows
+ * radar can never disagree about what "free" means. This module only shows
  * the proposal, applies it, and offers the exact undo.
  *
  * Two surfaces, one component: the Unscheduled tray in the Calendar and the
@@ -76,7 +76,7 @@ export function PlanMyDay({
   const nowMs = now.getTime();
   const unscheduled = tasks.filter(task => !task.completed && !blocks.some(block => block.taskId === task.id && Date.parse(block.end) > nowMs));
   /* No free stretch left in the work window: the button would only answer
-     "Nothing to plan", so it is disabled and says why (R5-18). */
+     "Nothing to plan", so it is disabled and says why. */
   const todayIntervals = blocks
     .filter(block => dateKey(new Date(block.start), timeZone) === today)
     .map(block => {

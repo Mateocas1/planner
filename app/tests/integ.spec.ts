@@ -150,7 +150,7 @@ test("the palette still offers Close the day, and choosing it opens the sheet", 
   const email = newEmail("integ-keys-palette");
   await signUp(page, email);
 
-  // The ritual's second entry (F3c): the palette's action opens the sheet.
+  // The ritual's second entry: the palette's action opens the sheet.
   // One-shot commands match on their keywords (`close`, `shutdown`, `day`,
   // `ritual`), which is the rule every other action already follows.
   await page.keyboard.press("Control+k");

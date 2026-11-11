@@ -14,7 +14,7 @@ import {
 import { db } from "./client.ts";
 
 /**
- * Firestore writes for the weekly review (ronda 2 W2a, spec S3): one document
+ * Firestore writes for the weekly review: one document
  * per ISO week under `users/{uid}/weeklyReview/{week}` holding the week's
  * state (steps done, skipped flag, snooze) and its reflection note, plus the
  * `someday` flag the Clean-up step sets on tasks.
@@ -110,7 +110,7 @@ export async function clearWeeklyReviewSnooze(uid: string, week: string, databas
 }
 
 /**
- * Writes the reflection note (S3: what worked, what did not, one intention).
+ * Writes the reflection note (what worked, what did not, one intention).
  * The text is trimmed and capped at `MAX_NOTE_CHARS` — an oversized note is
  * rejected rather than truncated, because a silently cut note is not the note
  * anybody wrote. `createdAt` is when the note was first written: the write

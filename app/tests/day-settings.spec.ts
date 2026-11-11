@@ -8,7 +8,7 @@ import {
 } from "./browser-helpers.ts";
 
 /**
- * S1 (Ronda 2): Settings is a view in the shell, and its General tab holds
+ * Settings is a view in the shell, and its General tab holds
  * the three values the planner reads about a day: the working window, the
  * hour the day shuts down, and whether keyboard shortcuts are on — the same
  * behaviour the Day settings sheet had, in a new container.

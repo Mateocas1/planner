@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedResponsiveFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The responsive pass of odd/research/responsive-audit.md, asserted as the
+ * The responsive pass, asserted as the
  * measurements a reader can feel: usable calendar columns on a tablet, a title
  * that stays readable on a 320 px phone, 44 px targets under a thumb, the phone
  * shell in landscape, a grid above the fold, and no page scroll at 200 % text
@@ -128,8 +128,8 @@ async function expectHeight(page: Page, selector: string, name: string, min: num
 /* ============================ F1: the week grid ============================ */
 
 /**
- * A tablet is not a desktop: at 768 px the sidebar leaves 7 columns of 55 px
- * (audit F1), so the week view is unreadable there. Below ~1000 px the calendar
+ * A tablet is not a desktop: at 768 px the sidebar leaves 7 columns of 55 px,
+ * so the week view is unreadable there. Below ~1000 px the calendar
  * switches to the day range instead, and the tray stops taking a column until
  * 1440 px so the wide desktop keeps its full week.
  */
@@ -299,7 +299,7 @@ test.describe("a thumb on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
 
   /**
-   * Only `.check` had a 44 px hit area before this pass (audit F3): the close
+   * Only `.check` had a 44 px hit area before this pass: the close
    * buttons were 30 px, the rows 31 px, the fields 33 px. On a coarse pointer
    * every one of them is at least 44 px in both directions.
    */
@@ -348,7 +348,7 @@ test.describe("a thumb on a phone", () => {
 test.describe("a thumb on a small phone", () => {
   test.use({ viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 
-  /** F9: seven columns of 288 px leave 41 px each; the circle is 40 px and the column is the target. */
+  /** Seven columns of 288 px leave 41 px each; the circle is 40 px and the column is the target. */
   test("F9 the week strip's day button is a 40 px circle with a full-height target", async ({ page }) => {
     await enter(page, "f9-strip");
     await openCalendar(page);
@@ -366,7 +366,7 @@ test.describe("a thumb on a small phone", () => {
 test.describe("a thumb on a tablet", () => {
   test.use({ viewport: { width: 1500, height: 1000 }, isMobile: true, hasTouch: true });
 
-  /** The mouse-sized controls a coarse desktop-class screen still shows (audit F3). */
+  /** The mouse-sized controls a coarse desktop-class screen still shows. */
   test("F3 the segmented range, the buttons and the tray's Plan are thumb-sized", async ({ page }) => {
     await enter(page, "f3-tablet");
     await openCalendar(page);
@@ -396,7 +396,7 @@ test.describe("a thumb on a tablet", () => {
  * A phone in landscape is 844 x 390: wider than the 760 px breakpoint, so it
  * used to get the desktop sidebar -- 244 px of a 390 px tall screen, with the
  * sign-out row scrolling out of a 370 px column -- and 380 px of grid in the
- * 115 px left above the fold (audit F4/F5).
+ * 115 px left above the fold.
  */
 test("F4 a landscape phone gets the phone shell, not a 244 px sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
@@ -521,7 +521,7 @@ test("F7 a block label clips as whole lines, never mid-glyph, at 200 % zoom", as
   );
 
   expect(label.found, "the 30 minute block is on the grid").toBe(true);
-  // A short block is one line (R5-11): the title ellipsizes instead of wrapping into a clipped column.
+  // A short block is one line: the title ellipsizes instead of wrapping into a clipped column.
   expect(label.whiteSpace, "the title stays on one line").toBe("nowrap");
   expect(label.titleEllipsis, "and says so with an ellipsis").toBe("ellipsis");
   expect(label.lineHeight / label.fontSize, "its lines are whole, so a clip lands between them").toBeGreaterThanOrEqual(1.1);

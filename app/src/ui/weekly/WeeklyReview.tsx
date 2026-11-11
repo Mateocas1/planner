@@ -28,7 +28,7 @@ import { ReflectStep } from "./ReflectStep.tsx";
 import "./WeeklyReview.css";
 
 /**
- * The weekly review flow (S3, ronda 2 W2b): Review → Clean up → Plan →
+ * The weekly review flow: Review → Clean up → Plan →
  * Reflect, one step at a time, inside the shell like Settings — a view of its
  * own, never a stacked modal.
  *
@@ -39,7 +39,7 @@ import "./WeeklyReview.css";
  * document the moment its Next is pressed, so leaving mid-flow keeps exactly
  * the progress that was really made, on this device or any other.
  *
- * Motion (AGENTS.md): the pane cross-fades like the Settings tabs — 160 ms
+ * Motion: the pane cross-fades like the Settings tabs — 160 ms
  * opacity plus a 4 px rise, the old pane unmounting at once — and the step
  * pill travels the rail on the shell's snappy spring. Reduced motion drops
  * the travel via MotionConfig.

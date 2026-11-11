@@ -7,7 +7,7 @@ import { ShortcutRecorder } from "../ShortcutRecorder.tsx";
 import { Section, SettingRow } from "../SettingRow.tsx";
 
 /**
- * Shortcuts (design brief §4–5, spec S2): the three rebindable chords as
+ * Shortcuts (design brief §4–5): the three rebindable chords as
  * recorder rows, the fixed shortcuts as a read-only list read straight from
  * `shortcutHelp` — the same table the help sheet renders, so the two cannot
  * disagree — and, when the master toggle is off, one note pointing at

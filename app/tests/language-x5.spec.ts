@@ -7,10 +7,10 @@ import {
 } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit x5): the rituals read in Spanish on a device that chose it.
+ * S8 (unit x5): the rituals read in Spanish on a device that chose it.
  * The shutdown sheet, the weekly review flow and their sentences are asserted,
  * and each surface is photographed at desktop and phone width for the clipping
- * review (`odd/runs/r5-x5-shots`).
+ * review.
  */
 
 test.setTimeout(180_000);

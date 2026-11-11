@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectSignedIn, readRemoteProfile, seedDaySettings, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8: the app can be read in Spanish. The effective language is the
+ * The app can be read in Spanish. The effective language is the
  * device override ?? the account's synced choice ?? English, switched live from
  * Settings > General > Language. What the user reads is asserted: the section
  * title, the Today date line, `<html lang>`, and that the choice survives a

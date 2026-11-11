@@ -1,5 +1,5 @@
 /**
- * The decisions of the idle-away flow without React (task T9, spec S8.5):
+ * The decisions of the idle-away flow without React:
  * what a stop records after a confirmed away, the books of away spans, and the
  * confirm / keep handlers. `ui/useIdleAway.ts` and `ui/useFocusTimer.ts` call
  * these and add only state and effects, so every data-safety rule below is

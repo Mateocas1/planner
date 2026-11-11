@@ -6,7 +6,7 @@ import { momentLabel } from "./weeklyFlow.ts";
 import { dur, easeOut } from "../motion.ts";
 
 /**
- * The weekly review's quiet Home banner (S3): one line while a moment is due,
+ * The weekly review's quiet Home banner: one line while a moment is due,
  * next to the shutdown banner's own slot, on the web as on the desktop — the
  * toast is the desktop's channel, the banner is everyone's.
  *

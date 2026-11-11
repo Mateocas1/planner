@@ -1,10 +1,10 @@
 /**
- * The working window and the free time inside it (W1).
+ * The working window and the free time inside it.
  *
- * Extracted from `ui/Calendar.tsx` so the capacity radar (F1a) and
- * plan-my-day (F4a) can share one pure definition of "free" instead of each
+ * Extracted from `ui/Calendar.tsx` so the capacity radar and
+ * plan-my-day can share one pure definition of "free" instead of each
  * restating it. The profile's work window (08:00-21:00 by default, editable in
- * Day settings, S1) is the only input this module knows about; it holds the
+ * Day settings) is the only input this module knows about; it holds the
  * planner's wall-clock minutes after midnight, never instants, so a DST day
  * keeps its 13-hour window (the day may be 23 or 25 hours long, but its wall
  * clock still reads 08:00 and 21:00).

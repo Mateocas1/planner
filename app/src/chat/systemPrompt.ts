@@ -1,5 +1,5 @@
 /**
- * The chat system prompt (specs S4+S5, task C3a): a short role statement, the
+ * The chat system prompt: a short role statement, the
  * user's durable notes as fenced data, and the read-only planner context.
  * Rebuilt per request by the caller so every send sees fresh data — nothing
  * here caches. Pure, unit-tested.
@@ -10,7 +10,7 @@ import type { Memory } from "./memoryStore.ts";
 
 /** ≈2k tokens of headroom for the notes block. */
 const NOTES_CHAR_BUDGET = 8_000;
-/** How many notes ride along at most, newest first (spec S5). */
+/** How many notes ride along at most, newest first. */
 const NOTES_MAX = 20;
 const NOTE_TITLE_MAX = 80;
 const NOTE_CONTENT_MAX = 500;

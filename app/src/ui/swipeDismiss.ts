@@ -1,12 +1,12 @@
 /**
- * Pure gesture math for swipe-to-dismiss on the shared glass sheet (odd/tasks/
- * ronda4.md, S1 + S7): a pointer drag on the sheet's drag handle or its plain
+ * Pure gesture math for swipe-to-dismiss on the shared glass sheet
+ * ronda4.md): a pointer drag on the sheet's drag handle or its plain
  * surface follows the finger freely on both axes after a small slop (Instagram-
- * style; S7), upward travel rubber-bands, and either commits a dismissal or
+ * style), upward travel rubber-bands, and either commits a dismissal or
  * springs back. No DOM here -- useSwipeDismiss.ts owns the pointer wiring,
  * this module owns the numbers, so every threshold is unit-testable.
  *
- * The values follow the Emil flow (AGENTS.md) and the user's S1 description:
+ * The values follow the Emil flow and the user's S1 description:
  * the gesture is distance- OR velocity-gated ("debe tener un threshold que
  * tiene que ser a una determinada distancia o velocidad"), the same way iOS
  * sheets dismiss, and every direction except up may dismiss ("da igual si es
@@ -157,7 +157,7 @@ export function sheetScale(p: number): number {
 /**
  * The sheet's corner radius at a given progress: from its resting radius up to
  * `MOBILE_RADIUS_MAX`. A full-viewport sheet (resting radius 0) rounds from 0
- * to the top of the S1 band; a phone sheet already at 26 px only gains the
+ * to the top of the band; a phone sheet already at 26 px only gains the
  * last curvature. Desktop callers pass their resting radius and never apply it.
  */
 export function sheetRadius(baseRadius: number, p: number): number {
@@ -178,7 +178,7 @@ export function shouldCommit(distance: number, velocity: number, dimension: numb
 }
 
 /**
- * Whether a release commits the dismissal (S7): the release vector's dominant
+ * Whether a release commits the dismissal: the release vector's dominant
  * sector must be dismissible -- an up-dominant release never dismisses -- and
  * the displacement or release velocity along that sector's axis must pass the
  * thresholds, exactly as the axis-locked rule did. The velocity component
@@ -227,7 +227,7 @@ export function dragTransform(x: number, y: number, scale: number): string {
  * by the drag offset `dx, dy`): the release vector's direction, extended until
  * the sheet is fully outside the viewport on every axis it moves along. The
  * flight therefore inherits the drag's diagonal, not just its dominant axis
- * (S7: the exit flies along the release vector on both axes).
+ * (the exit flies along the release vector on both axes).
  *
  * Returns the end translation relative to the sheet's resting transform (the
  * same frame `dragTransform` expects) and `distance`, the path length the

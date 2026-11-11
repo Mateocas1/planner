@@ -1,5 +1,5 @@
 /**
- * Day replay model (Ronda 8, plan `odd/plans/day-replay.md` sections 2-4): the
+ * Day replay model: the
  * pure plan-versus-actual diff behind the closing ritual's replay, plus the
  * deterministic timeline the stage plays.
  *

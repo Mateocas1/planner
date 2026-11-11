@@ -2,7 +2,7 @@ import { collection, deleteDoc, deleteField, doc, setDoc, updateDoc, writeBatch,
 import { blockFields, createTask, createWorkBlock } from "../domain/model.ts";
 
 /**
- * The chat's move_task write (Ronda 3 fix, spec S1): one confirmed move is
+ * The chat's move_task write (fix): one confirmed move is
  * exactly one Firestore `writeBatch`, so the deadline and the work block that
  * places the task at a start time land together or not at all — a failed
  * write can never leave half a move behind (the deadline moved, the block
@@ -79,7 +79,7 @@ export async function moveTaskWithBlock(uid: string, move: ChatMove, database: F
   await batch.commit();
 }
 
-/* ---------- create (ronda4 T4, S4): a task and its schedule block in one batch ---------- */
+/* ---------- create: a task and its schedule block in one batch ---------- */
 
 /** One confirmed chat create: a new task, optionally due on a day, optionally
  * placed on that day's schedule by a task-linked work block. The block's
@@ -151,7 +151,7 @@ export async function createChatTask(
   return { taskId, ...(blockIdOut === undefined ? {} : { blockId: blockIdOut }) };
 }
 
-/* ---------- update (ronda4 T4): any task edit, its block changes included, one batch ---------- */
+/* ---------- update: any task edit, its block changes included, one batch ---------- */
 
 /** One confirmed chat update: the task fields that change (the caller sends
  * only what changes; everything else is left alone) plus, in the same batch,

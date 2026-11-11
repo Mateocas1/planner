@@ -4,9 +4,9 @@ import type { WorkWindow } from "./planning/window.ts";
 import { briefVisible, morningBriefState, readBriefDismissal } from "./ui/shutdownRitual.ts";
 
 /**
- * Start at sign-in (task T10, spec S8.6). The autostart entry launches Planner
+ * Start at sign-in. The autostart entry launches Planner
  * with `--autostart` (`src-tauri/src/autostart.rs`). Every other launch shows
- * the window as before. A sign-in launch stays hidden (tray only, L13) unless
+ * the window as before. A sign-in launch stays hidden (tray only) unless
  * today's morning brief applies; then it is revealed once the blocks are
  * loaded, so the window never flashes at sign-in for a day with nothing to say.
  */

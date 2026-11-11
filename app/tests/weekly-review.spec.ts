@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { password, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * S3 (Ronda 2 W2b): the weekly review — the banner that proposes it, the
+ * The weekly review — the banner that proposes it, the
  * four-step flow's writes, the toast-less channels (palette, sidebar,
  * shortcut), and the Rituals rows that configure the schedule.
  *
@@ -13,8 +13,7 @@ import { password, submitAuthForm } from "./browser-helpers.ts";
  * 18:00). Every write assertion reads the emulator's server documents, never
  * the app's state.
  *
- * Screenshots are evidence for the parent review, not assertions, and land in
- * odd/runs/r2-w2b-shots/.
+ * Screenshots are evidence for the parent review, not assertions, and land in a local folder.
  */
 
 test.setTimeout(180_000);

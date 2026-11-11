@@ -9,11 +9,11 @@ import {
 } from "../planning/bias.ts";
 import { t } from "../i18n/index.ts";
 import { useKeyboardUp } from "./viewport.ts";
-// The lesson's own paint ships beside it (AGENTS.md: co-located styles).
+// The lesson's own paint ships beside it.
 import "./BiasHint.css";
 
 /**
- * The estimate lesson (F2b): what the planner has learned about how long tasks
+ * The estimate lesson: what the planner has learned about how long tasks
  * like this one really take, offered as a sentence with one tap behind it.
  *
  * The whole point is that nothing happens silently. `planning/bias.ts` decides

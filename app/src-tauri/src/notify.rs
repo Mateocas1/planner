@@ -1,4 +1,4 @@
-//! Actionable native toasts (task T7, spec S8.3).
+//! Actionable native toasts.
 //!
 //! `tauri-plugin-notification` cannot add action buttons on desktop, so the
 //! toasts go through `tauri-winrt-notification` (the Tauri-org fork of
@@ -23,9 +23,9 @@
 //! activation never leaves this process.
 //!
 //! Respect for Focus Assist / Do Not Disturb is the OS's own behaviour for
-//! toast notifications; this module does nothing about it on purpose (S10).
+//! toast notifications; this module does nothing about it on purpose.
 //!
-//! ## Linux (R7-03)
+//! ## Linux
 //!
 //! On Linux the same requests become XDG desktop notifications through
 //! `notify-rust` (already in the tree through `tauri-plugin-notification`).
@@ -61,7 +61,7 @@ pub enum NotifyRequest {
     },
     /// The shutdown nudge: [Close the day].
     Shutdown,
-    /// The weekly review nudge (S3): [Start review] / [Later] / [Skip this
+    /// The weekly review nudge: [Start review] / [Later] / [Skip this
     /// week]. The dedupe key is echoed back on every action.
     WeeklyReview { key: String },
 }

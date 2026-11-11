@@ -1,5 +1,5 @@
-/* Swipe-to-dismiss (ui/Sheet.tsx + ui/swipeDismiss.ts, odd/tasks/ronda4.md S1).
-   Co-located per AGENTS.md: only the rules the gesture adds live here. */
+/* Swipe-to-dismiss.
+   Co-located: only the rules the gesture adds live here. */
 
 /* The sheet is its own vertical scroller, so touch keeps native vertical
    panning (pan-y); horizontal moves reach the gesture instead of the browser.

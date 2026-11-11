@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readRemoteBlocks, readRemoteCompletions, readRemoteSeries, readRemoteTasks, submitAuthForm, type RemoteData, chooseOption, pickDate, fillDateTime } from "./browser-helpers.ts";
 
 /**
- * Undo for delete (F1 / spec S6).
+ * Undo for delete.
  *
  * The delete is applied as soon as it is accepted, so the offer is a
  * compensating write: undo rewrites the item under its original document id
@@ -203,7 +203,7 @@ test("deleting a task deletes its work blocks, and undo restores both (S8)", asy
   await expect.poll(async () => (await readRemoteBlocks(email)).filter(block => block.taskId !== undefined), poll).toHaveLength(1);
 
   // Deleting the task takes the block off the calendar with it — the old
-  // orphan-block bug (S8).
+  // orphan-block bug.
   await openTasks(page);
   // The row button (not the calendar's "Focus: Paint fence" pill that the
   // block just created).

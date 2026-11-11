@@ -91,7 +91,7 @@ export function Tasks({
   uid: string;
   tasks: TaskView[];
   /** Every work block in the live store: deleting a task also deletes its
-   * task-linked blocks (S8), and undo restores the snapshots captured here. */
+   * task-linked blocks, and undo restores the snapshots captured here. */
   blocks: BlockView[];
   series: SeriesView[];
   completions: Record<string, string>;
@@ -102,7 +102,7 @@ export function Tasks({
    * palette found. Null when nothing is pending. */
   openTaskId?: string | null;
   onOpenTaskHandled?: () => void;
-  /** Opens the create sheet, the path the header's New task takes (R5-17). */
+  /** Opens the create sheet, the path the header's New task takes. */
   onNewTask: (origin: HTMLElement | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +125,7 @@ export function Tasks({
   // A row's own node is replaced when it changes group, so its focus is restored
   // once it lands. The id waits here until the row is in its final group.
   const restoreFocus = useRef<string | null>(null);
-  // The keyboard's cursor (F6): real DOM focus on a row's own control, with the
+  // The keyboard's cursor: real DOM focus on a row's own control, with the
   // list's single tab stop following it. The scope is the list itself, so only
   // this surface answers while it is mounted.
   const listRef = useRef<HTMLDivElement>(null);
@@ -133,7 +133,7 @@ export function Tasks({
   const reduced = useReducedMotion();
   const travel = reduced ? 0 : settleMs;
 
-  /* The estimate lesson's history (F2b): the details sheet offers a learned
+  /* The estimate lesson's history: the details sheet offers a learned
      pace for the task it shows, exactly as the creation sheet does, so both
      surfaces read one sample list (finished tasks with a recorded pace). */
   const biasSamples = useMemo(() => completedSamples(tasks), [tasks]);
@@ -252,7 +252,7 @@ export function Tasks({
   // ui/shortcuts.ts). The order is the order the rows are rendered in.
   const rowOrder = [...series.map(entry => entry.id), ...open.map(task => task.id), ...completed.map(task => task.id)];
 
-  /* The row actions the shell publishes (F6). Only this surface can perform
+  /* The row actions the shell publishes. Only this surface can perform
      them: it owns the row's write and the offer that takes it back. */
   useSurfaceShortcuts(action => {
     const row = focusedRow();
@@ -324,7 +324,7 @@ export function Tasks({
         }}
       >
         {/* A truncated title still gives the full text on a phone, where there
-            is no hover: the title attribute is the only affordance (audit F10). */}
+            is no hover: the title attribute is the only affordance. */}
         <span className="task-title" title={task.title}>{task.title}</span>
         {task.deadline && (
           <span
@@ -483,7 +483,7 @@ export function Tasks({
               // (offline the cache serves the query; review finding 2), so a
               // block another device created after this page rendered still
               // dies with the task — and the query's result is the undo
-              // payload (S8).
+              // payload.
               const deleted = selectedTask;
               setSelected(null);
               void linkedBlocks(uid, deleted.id)

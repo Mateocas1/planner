@@ -1,6 +1,6 @@
 /**
  * What "Up next" means, once, for every surface that shows it: the sidebar's
- * card, the Now mode headline and the desktop tray line (T6, S8.2).
+ * card, the Now mode headline and the desktop tray line.
  *
  * The rule is deliberately simple and lives here so no surface can drift:
  *

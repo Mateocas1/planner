@@ -1,5 +1,5 @@
-//! Pure half of the desktop LLM chat (task C1 of `odd/tasks/llm-chat.md`,
-//! specs S3 and S5). The Tauri glue lives in `../../src/chat/`.
+//! Pure half of the desktop LLM chat.
+//! The Tauri glue lives in `../../src/chat/`.
 //!
 //! Everything here is platform-independent and unit-tested on Linux: the SSE
 //! line decoder for OpenAI-compatible chat-completion streams, the base-URL
@@ -309,7 +309,7 @@ impl StreamDecoder {
 pub const MAX_KEY_CHARS: usize = 512;
 
 // ---------------------------------------------------------------------------
-// Provider wire shape (Ronda 3 R1)
+// Provider wire shape
 
 /// One conversation turn as the webview sends it over IPC (camelCase
 /// `toolCalls` / `toolCallId`), mirroring `app/src/chat/types.ts`.
@@ -488,7 +488,7 @@ pub const MAX_BACKUPS: usize = 3;
 /// error instead of buffering unboundedly.
 pub const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
 
-/// One durable memory (spec S5). Serialized camelCase over IPC and into the
+/// One durable memory. Serialized camelCase over IPC and into the
 /// JSON file; `updated_at` is Unix epoch milliseconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -764,7 +764,7 @@ mod tests {
         );
     }
 
-    // --- streamed tool calls (Ronda 3 R1, spec S1): recorded fixtures ---
+    // --- streamed tool calls: recorded fixtures ---
 
     fn tool_chunk(entries: &str) -> String {
         format!(r#"data: {{"choices":[{{"delta":{{"tool_calls":[{entries}]}}}}]}}"#)
@@ -1374,7 +1374,7 @@ mod tests {
         );
     }
 
-    // --- provider wire shape (Ronda 3 R1) ---
+    // --- provider wire shape ---
 
     fn wire(role: &str, content: &str) -> WireMessage {
         WireMessage {

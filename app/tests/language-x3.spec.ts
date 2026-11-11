@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectSignedIn, seedDaySettings, seedTasks, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit x3): Today, Tasks and the task sheet read in Spanish when
+ * S8 (unit x3): Today, Tasks and the task sheet read in Spanish when
  * this device is set to Español. The language is pinned through the device
  * override (`planner-language`) before the app starts, as Settings would.
  */

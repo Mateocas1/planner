@@ -1,5 +1,5 @@
 /**
- * Settings copy that names the operating system (T10b, S6/S7): the Desktop tab
+ * Settings copy that names the operating system: the Desktop tab
  * and the quick-add row said "Windows" on every platform. Each sentence picks
  * its variant from `copyFamily`, which reads the webview's platform; the
  * functions take the platform as an argument so the selection is testable.

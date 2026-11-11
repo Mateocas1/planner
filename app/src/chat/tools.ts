@@ -1,5 +1,5 @@
 /**
- * The chat's function tools (Ronda 3 R1, spec S1): what the model may
+ * The chat's function tools: what the model may
  * propose, the pure validation of its raw JSON arguments, and the plain-words
  * description each action card shows. Nothing here writes anything — the
  * confirmation flow in the panel calls the app's existing data functions only
@@ -20,10 +20,10 @@ import { dateKey, timeLabel } from "../ui/time.ts";
 import type { Memory } from "./memoryStore.ts";
 import type { ChatToolCall, ChatToolSpec } from "./types.ts";
 
-/** At most 5 tool calls per answer; extras are dropped with a note (S1). */
+/** At most 5 tool calls per answer; extras are dropped with a note. */
 export const MAX_TOOL_CALLS_PER_ANSWER = 5;
 
-/** At most this many characters in a proposed task title (S1): the model
+/** At most this many characters in a proposed task title: the model
  * sometimes echoes a whole page back as the title. */
 export const MAX_TOOL_TITLE_CHARS = 200;
 
@@ -255,7 +255,7 @@ const FORGET: ChatToolSpec = {
 };
 
 /** The tools every chat request carries (extraction requests carry none).
- * Reads run without confirmation (S4); writes render confirmation cards. */
+ * Reads run without confirmation; writes render confirmation cards. */
 export const CHAT_TOOLS: ChatToolSpec[] = [
   CREATE_TASK,
   MOVE_TASK,
@@ -286,7 +286,7 @@ export type ChatToolContext = {
    * writes can describe what they replace or remove. Absent in a context
    * built without blocks (the panel's display-only fallback). */
   blocks?: ReadonlyArray<{ id: string; start: string; end: string; taskId?: string }>;
-  /** Holiday labels (S4: the model may list and hide them like the Holidays
+  /** Holiday labels (the model may list and hide them like the Holidays
    * sheet does). */
   holidays?: ReadonlyArray<{ id: string; date: string; title: string; kind: string; hidden?: boolean }>;
   /** The notes the model may forget (topicKey → title), for descriptions. */
@@ -380,7 +380,7 @@ function checkStartTime(value: unknown): { startMinutes: number } | { error: str
   return { startMinutes: hour * 60 + minute };
 }
 
-/** Validates `create_task` arguments (spec S1: empty title, bad date; S4:
+/** Validates `create_task` arguments (empty title, bad date; S4:
  * start time with midnight room). `todayKey` only feeds the description's
  * "today"/"tomorrow" wording. */
 export function checkCreateTask(raw: string, todayKey = ""): ToolCheck<NormalizedCreateTask> {
@@ -453,7 +453,7 @@ function describeMoveTask(value: NormalizedMoveTask, task: ChatToolContext["task
   return parts.join(" · ");
 }
 
-/** Validates `move_task` arguments against the planner context (S1: unknown
+/** Validates `move_task` arguments against the planner context (unknown
  * id, bad date). An unknown id or a malformed proposal never writes. Every
  * check — including the midnight room check for a start time — runs here,
  * so a rejected proposal fails the card before any data call happens. */
@@ -500,7 +500,7 @@ export function checkMoveTask(raw: string, context: ChatToolContext): ToolCheck<
   return { ok: true, value, description: describeMoveTask(value, task, context) };
 }
 
-/* ---------- read tools (S4): run without confirmation, validate purely ---------- */
+/* ---------- read tools: run without confirmation, validate purely ---------- */
 
 export type NormalizedListTasks = {
   fromDay?: string;
@@ -691,7 +691,7 @@ export function buildListMemoriesResult(memories: ReadonlyArray<Memory>): ReadRe
 
 const NOTES_RESULTS_CAP = 20;
 
-/* ---------- write tools (S4): confirmed cards, pure validation ---------- */
+/* ---------- write tools: confirmed cards, pure validation ---------- */
 
 export type NormalizedUpdateTask = {
   taskId: string;
@@ -859,7 +859,7 @@ export type NormalizedDeleteTask = {
   taskId: string;
   title: string;
   /** Every task-linked work block the live context holds (past and future),
-   * with the card's label for each. Deleting a task deletes its blocks (S8):
+   * with the card's label for each. Deleting a task deletes its blocks:
    * the card names exactly these and the executor removes exactly these, so
    * the two can never drift apart. */
   blocks: ReadonlyArray<{ id: string; start: string; end: string; taskId?: string; title?: string }>;
@@ -882,8 +882,8 @@ export function deleteTaskKeptNote(
 }
 
 /** Validates `delete_task`: the task must exist, and the card names exactly
- * what will be removed — the task itself and every work block linked to it
- * (S8), computed from the live context like the card of every other write. */
+ * what will be removed — the task itself and every work block linked to it,
+ * computed from the live context like the card of every other write. */
 export function checkDeleteTask(raw: string, context: ChatToolContext): ToolCheck<NormalizedDeleteTask> {
   const parsed = parseArguments(raw);
   if (!parsed.ok) return parsed;
@@ -1097,9 +1097,9 @@ export function describeToolCall(
 }
 
 /** The `tool` message content each card state sends back to the model, so the
- * OpenAI protocol stays valid (S1: one tool message per call). A resolved
+ * OpenAI protocol stays valid (one tool message per call). A resolved
  * write's `result` line — ids and fields — rides to the model so it can
- * reference the task it just changed (S4); the `outcome` stays the card's
+ * reference the task it just changed; the `outcome` stays the card's
  * short user-facing line. A read's result is the data itself. */
 export function toolResultContent(card: { status: string; outcome?: string; result?: string }): string {
   const detail = card.result ?? card.outcome;

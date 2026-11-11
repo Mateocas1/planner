@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { submitAuthForm, fillDateTime } from "./browser-helpers.ts";
 
 /**
- * CP1 (odd/tasks/centered-panels.md, S2/S3): every detail and creation panel
+ * Every detail and creation panel
  * opens as a card centred in what the user can see, not docked to the right
  * edge, and on a phone it is centred in the band the on-screen keyboard leaves.
  *

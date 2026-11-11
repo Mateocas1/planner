@@ -1,5 +1,5 @@
 /**
- * The Plan step's pure half (S3): spreading the week's chosen priorities across
+ * The Plan step's pure half: spreading the week's chosen priorities across
  * next week's days, one day at a time, with the same placement arithmetic the
  * daily plan-my-day uses.
  *

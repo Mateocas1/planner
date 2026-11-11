@@ -1,11 +1,11 @@
 /**
- * Where the chat's read tools actually run (ronda4 T4, S4). Reads execute the
+ * Where the chat's read tools actually run. Reads execute the
  * moment the model proposes them — no confirmation card, no user click — so
  * their executor lives with the chat surface's live data, not with the
  * panel's confirm flow.
  *
  * The executor is installed through this tiny registry instead of a
- * `ChatPanel` prop because `ChatPanel.tsx` is owned by a parallel worker
+ * `ChatPanel` prop because `ChatPanel.tsx` kept separate
  * (r4-chatmotion) and its `useChat` call site must not gain options in this
  * task. The hook takes an `executeReadTool` option first and falls back to
  * the registry; integration can move the executor to a prop and drop this

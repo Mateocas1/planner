@@ -88,7 +88,7 @@ export type PaletteCommand =
 export type PaletteFocusCommand = { kind: "focus"; id: string; verb: "start" | "pause" | "resume" | "stop"; label: string };
 
 /**
- * Opens the Settings view on a tab (Ronda 2, S1): one generic command plus one
+ * Opens the Settings view on a tab: one generic command plus one
  * per tab, so "settings" finds the view and "shortcuts" finds its tab. The
  * per-tab list is the rail's own table, so Desktop and AI drop off on the web
  * with everything else that is hidden there.
@@ -148,7 +148,7 @@ export const themeCommands: PaletteThemeCommand[] = [
 
 /**
  * The actions the palette can run: the Google Calendar import (value roadmap
- * §1), Now mode (distinctive roadmap F5) and the shutdown ritual (F3c). They
+ * §1), Now mode (distinctive roadmap F5) and the shutdown ritual. They
  * appear for a typed query that names them, like the theme commands, so an
  * empty palette still offers only the places to go.
  */
@@ -189,7 +189,7 @@ export const actionCommands: PaletteActionCommand[] = [
       return keywords(t("palette.action.closeDay.keywords"));
     },
   },
-  /* The day replay, on request (Ronda 8): offered only while today has a replay
+  /* The day replay, on request: offered only while today has a replay
      to show and the setting is not Off -- see `PaletteContext.replayDay`. */
   {
     kind: "action",
@@ -202,7 +202,7 @@ export const actionCommands: PaletteActionCommand[] = [
       return keywords(t("palette.action.replay.keywords"));
     },
   },
-  /* The capture inbox (Ronda 8): paste anything, review the tasks found. The
+  /* The capture inbox: paste anything, review the tasks found. The
      sheet is the shell's; the palette only opens it. */
   {
     kind: "action",
@@ -215,7 +215,7 @@ export const actionCommands: PaletteActionCommand[] = [
       return keywords(t("palette.action.capture.keywords"));
     },
   },
-  /* The weekly review's manual entry (S3): the review proposes itself, but it
+  /* The weekly review's manual entry: the review proposes itself, but it
      is reachable any day, from here too. */
   {
     kind: "action",

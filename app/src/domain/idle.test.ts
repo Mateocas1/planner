@@ -25,7 +25,7 @@ import {
 /**
  * The away accounting's rules, proved without a DOM, a clock or a poller:
  * every assertion passes its instants in, so "eleven minutes away" is a
- * number here and never a wait. These are the data-safety boundaries of T9:
+ * number here and never a wait. These are the data-safety boundaries:
  * nothing outside the session's focus can be counted, no counter can be
  * driven negative, and one confirmation applies exactly once.
  */

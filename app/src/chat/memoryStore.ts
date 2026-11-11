@@ -1,12 +1,12 @@
 /**
- * Typed wrappers for the local memory store (spec S5). The durable memories
+ * Typed wrappers for the local memory store. The durable memories
  * live in a Rust-owned JSON file in the app data dir; the webview reaches
  * them only through these commands (`src-tauri/src/chat/memory_store.rs`).
  */
 
 import { invoke } from "@tauri-apps/api/core";
 
-/** One durable memory, Engram-shaped (spec S5, parent decision L3). */
+/** One durable memory, Engram-shaped. */
 export type Memory = {
   id: string;
   topicKey: string;

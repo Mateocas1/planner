@@ -7,7 +7,7 @@ import {
 } from "../domain/focus.ts";
 
 /**
- * Pure state for the mini floating focus pill (task T8, spec S8.4).
+ * Pure state for the mini floating focus pill.
  *
  * The pill is a second Tauri window loading the same bundle, so it shares the
  * main window's `localStorage` on the same origin: the entry
@@ -22,7 +22,7 @@ import {
  * its close button, and the Settings toggle turns it off entirely.
  */
 
-/** The Settings toggle's key; absence means on (the L15 default). */
+/** The Settings toggle's key; absence means on (the default). */
 export const pillEnabledKey = "planner-pill-enabled";
 
 /** Events between the two windows (see ui/FocusPillBridge.tsx). */

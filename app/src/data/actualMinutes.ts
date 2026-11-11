@@ -2,7 +2,7 @@ import { doc, increment, updateDoc, type Firestore } from "firebase/firestore";
 import { MAX_ACTUAL_MINUTES } from "../domain/model.ts";
 
 /**
- * The `actualMinutes` decrement of the idle-away flow (T9, spec S8.5), kept
+ * The `actualMinutes` decrement of the idle-away flow, kept
  * apart from `tasks.ts` and taking the database as a parameter: that module
  * imports the app's client, which resolves its project from
  * `window.location`, so the emulator test could not load it. `tasks.ts`

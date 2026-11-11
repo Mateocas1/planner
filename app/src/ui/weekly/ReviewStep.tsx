@@ -5,8 +5,8 @@ import { t } from "../../i18n/index.ts";
 import { reviewSentences, topTaskLines } from "./weeklyFlow.ts";
 
 /**
- * The Review step (S3): the week's few numbers, in sentences rather than a
- * dashboard. The arithmetic is `planning/weekly.ts`'s (W2a); this pane only
+ * The Review step: the week's few numbers, in sentences rather than a
+ * dashboard. The arithmetic is `planning/weekly.ts`'s; this pane only
  * prints it, through the shared wording in `weeklyFlow.ts`.
  *
  * The tracked total is a cumulative counter over the tasks completed this

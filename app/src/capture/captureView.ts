@@ -1,5 +1,5 @@
 /**
- * The capture sheet's pure side (Ronda 8, S3, plan §2 and §5): what each
+ * The capture sheet's pure side (plan §2 and §5): what each
  * proposal card holds while the user edits it, the card list's state machine,
  * the note that explains a fallback, and the translation of a confirmed card
  * into the `ChatCreate` the existing write path takes. No DOM, no React, no

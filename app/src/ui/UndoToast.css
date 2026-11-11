@@ -1,6 +1,6 @@
-/* Undo toast (F1, G6 dark glass).
+/* Undo toast (G6 dark glass).
    A single offer pinned to the bottom of the shell. It is the dark glass
-   material (odd/research/glass-direction.md §3): a graphite tint at 0.86, the
+   material: a graphite tint at 0.86, the
    thick blur, and light text. The fill stays dark over whatever scrolls behind
    it in both colour schemes, so the white sentence clears AA without the
    toast needing a second, scheme-aware recipe. The motion is a transition on
@@ -113,7 +113,7 @@
 
 .undo-toast-close svg { width: 14px; height: 14px; }
 
-/* Touch targets (odd/research/responsive-audit.md F3): the offer's two controls
+/* Touch targets: the offer's two controls
    were 30 px tall pills, and the action stays a pill -- it grows, while the
    close keeps its circle and puts the 44 px target around it. */
 @media (pointer: coarse) {

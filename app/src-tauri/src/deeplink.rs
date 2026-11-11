@@ -25,7 +25,7 @@ pub fn focus_main<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        // T12: shown or restored — the webview goes back to its normal target.
+        // Shown or restored — the webview goes back to its normal target.
         crate::memory::sync_main(&window);
     }
     crate::pill::sync_main(app);

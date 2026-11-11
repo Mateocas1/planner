@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The Close day sheet is one surface at rest (Ronda 9, S1 / live finding L7):
+ * The Close day sheet is one surface at rest:
  * the page is transparent, so the colour under its content is the colour of the
  * panel's padding, on every look. The page beneath (Tomorrow) is not painted at
  * rest, and while the page is in motion an opaque backing hides it.

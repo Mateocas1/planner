@@ -2,8 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createRemoteAccount, readRemoteShutdown, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * The day replay inside the shutdown ritual (Ronda 8, plan
- * `odd/plans/day-replay.md` §1, §6, §7): after the close lands, a stage plays
+ * The day replay inside the shutdown ritual:
+ * after the close lands, a stage plays
  * the plan bending into what happened and ends on one sentence about the
  * estimates. The stage is skippable from frame 0, replayable on request, and
  * its modes (Auto, On request, Off) live on the device.

@@ -1,5 +1,5 @@
 /**
- * Memory extraction (spec S5, task C3a): when a conversation ends, one
+ * Memory extraction: when a conversation ends, one
  * non-streamed `transport.complete` call asks the model which durable notes
  * to upsert or delete. This module is pure — it builds the extraction request
  * and parses the reply — so the caller (`ChatSurface`) only performs the

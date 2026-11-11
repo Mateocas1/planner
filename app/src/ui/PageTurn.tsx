@@ -32,7 +32,7 @@ import "./PageTurn.css";
  *
  * Releasing asks ui/pageTurn.ts. A commit runs the page off on `spring.smooth`
  * and then hands the turn to `onTurn`, which owns what turning the day means
- * (F3c: the shutdown roll). Returning `false`, or throwing, means the turn did
+ * (the shutdown roll). Returning `false`, or throwing, means the turn did
  * not happen and the page springs back on `spring.snappy`: the animation is
  * never the gate, the write is.
  *

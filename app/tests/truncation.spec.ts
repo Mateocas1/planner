@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { seedResponsiveFixture, submitAuthForm } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, R5-01 / R5-11 / R5-21 (odd/research/ui-audit-r5.md): a long title is
+ * A long title is
  * what yields, never the date beside it, and a short calendar block keeps a
  * one-line title. The fixture is the audit's own: a 70-character overdue title.
  */

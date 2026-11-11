@@ -1,5 +1,5 @@
 /**
- * The day replay's device-local switches (day-replay plan §1, L5): whether the
+ * The day replay's device-local switches (day-replay plan §1): whether the
  * replay plays by itself after closing the day, and which day it last did.
  * Both live in `localStorage` like the morning brief's dismissal
  * (`shutdownRitual.briefStorageKey`): a property of this screen, not of the

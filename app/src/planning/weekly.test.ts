@@ -328,7 +328,7 @@ test("clipping keeps real elapsed minutes across the spring-forward night", () =
 
 /**
  * A session's tracked minutes belong to the profile-zone day the session
- * *started* (L6): a timer running 23:30 → 00:15 counts for the day the work
+ * *started*: a timer running 23:30 → 00:15 counts for the day the work
  * began, so one session never splits its minutes across two days and the day
  * a weekly number lands on is stable. "Now" at stop time never decides it.
  */

@@ -24,7 +24,7 @@ import type { FocusControls } from "./useFocusTimer.ts";
 import type { BlockView, TaskView } from "../data/store.ts";
 
 /**
- * Actionable native notifications' React half (task T7, spec S8.3 + S3).
+ * Actionable native notifications' React half.
  *
  * Every decision belongs to `desktop-notify.ts`; this hook is only the pump:
  * on a fixed tick it asks the pure half what is due, draws the toasts through
@@ -122,16 +122,16 @@ export function useDesktopNotifications({
   blocks: BlockView[];
   tasks: TaskView[];
   timeZone: string | null;
-  /** Minutes after midnight in the profile zone: when the day shuts down (F3). */
+  /** Minutes after midnight in the profile zone: when the day shuts down. */
   shutdownTime: number;
-  /** The profile zone's day the ritual was last closed, if it was (F3c). */
+  /** The profile zone's day the ritual was last closed, if it was. */
   lastShutdown?: string;
   focus: FocusControls;
   /** Where a toast's body lands the window: the block's day, on the calendar. */
   onOpenBlock: (date: string) => void;
   /** Opens the shutdown ritual, the banner's own door. */
   onOpenShutdown: () => void;
-  /** The weekly review's nudge (S3), already gated on the profile's nudges
+  /** The weekly review's nudge, already gated on the profile's nudges
    *  switch: the pump asks `getDue()` at every tick, draws at most one toast
    *  per week and moment, and never on a day the shutdown ritual closed.
    *  Absent on callers that do not carry the weekly review. */
@@ -200,7 +200,7 @@ export function useDesktopNotifications({
         }
       }
 
-      // The weekly review's toast (S3), outside the shutdown toggle's gate:
+      // The weekly review's toast, outside the shutdown toggle's gate:
       // the profile's nudges switch (through `getDue`) is its own off button.
       const weekly = latest.current.weeklyNudge;
       if (weekly !== undefined && zone !== null) {

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createRemoteAccount, expectSignedIn, submitAuthForm, updateRemoteProfile } from "./browser-helpers.ts";
 
 /**
- * Ronda 5, S8 (unit x6b): the Google Calendar import reads in Spanish. Google is
+ * S8 (unit x6b): the Google Calendar import reads in Spanish. Google is
  * stubbed at the network edge exactly as in gcal-import.spec.ts; the language is
  * this device's override, set before the app loads.
  */

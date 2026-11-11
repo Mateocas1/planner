@@ -1,6 +1,6 @@
-//! The global quick-add window (task T5, spec S8.1).
+//! The global quick-add window.
 //!
-//! A global hotkey (`Ctrl+Alt+Space` by default, L12) toggles a small
+//! A global hotkey (`Ctrl+Alt+Space` by default) toggles a small
 //! frameless window that reuses the planner's natural-language quick add.
 //! Everything the OS needs lives here: shortcut registration, the persisted
 //! user choice, cursor-monitor centering and hide-on-blur. The webview owns
@@ -46,7 +46,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, Runtime, State, Webview, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-/// L12: the user picked `Ctrl+Alt+Space` over the alternatives.
+/// The user picked `Ctrl+Alt+Space` over the alternatives.
 const DEFAULT_SHORTCUT: &str = "ctrl+alt+Space";
 
 /// Emitted to the quick-add window every time the hotkey reveals it, so the
@@ -428,14 +428,14 @@ pub fn toggle_window<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window("quickadd") else { return };
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
-        // T12: hidden again — the popup's webview aims low between uses.
+        // Hidden again — the popup's webview aims low between uses.
         crate::memory::sync_quickadd(&window);
         return;
     }
     center_on_cursor(&window);
     let _ = window.show();
     let _ = window.set_focus();
-    // T12: on screen — back to the normal target before the user types.
+    // On screen — back to the normal target before the user types.
     crate::memory::sync_quickadd(&window);
     let _ = app.emit_to("quickadd", SHOWN_EVENT, ());
 }
@@ -510,7 +510,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::E
                 }
             }
         });
-        // T12: the window is created hidden and usually stays that way, so its
+        // The window is created hidden and usually stays that way, so its
         // first state is LOW. The hotkey path flips it back to NORMAL.
         crate::memory::sync_quickadd(&window);
     }
