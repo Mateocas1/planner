@@ -1,15 +1,10 @@
-# Personal Planner
+# Planner
 
-A **local-first personal planner**: tasks with date-only deadlines, work blocks, and
-recurring series with per-occurrence completion, for one person managing their own time.
-It reads and writes offline first and syncs across that person's own devices.
+A personal planner for tasks, date-only deadlines and time blocks. It works offline, syncs across
+your own devices through Firestore, runs as a desktop app on Windows and Linux (Tauri 2), and has
+an AI assistant that can read your plan and propose changes you confirm one by one.
 
-It is **not** a multi-user product: there is no sharing, no teams, no collaboration. It is
-also **not related to Mena Nails** — that is a separate studio-booking project in another
-repository. This repo exists as a portfolio piece: a small product built end to end,
-offline-first, with its tests and its decisions written down.
-
-## Screenshots
+[![CI](https://github.com/Mateocas1/planner/actions/workflows/ci.yml/badge.svg)](https://github.com/Mateocas1/planner/actions/workflows/ci.yml)
 
 | Today | Tasks | Calendar |
 | --- | --- | --- |
@@ -17,75 +12,112 @@ offline-first, with its tests and its decisions written down.
 
 <p align="center"><img src="docs/screenshots/today-phone.png" width="320" alt="Today on a phone"></p>
 
-Captured by `app/scripts/ui-capture.mjs` against the local emulators; no cloud project involved.
+The screenshots are captured by `app/scripts/ui-capture.mjs` against the local emulators.
+
+## Status
+
+- Personal project with one user, the author. No sharing, teams or roles.
+- A web build is hosted at <https://cumbia-4ca6e.web.app>. It was deployed on 2026-10-21
+  (HTTP 200, `last-modified` header checked on 2026-11-11), so it is older than this branch
+  and does not include the desktop-only features.
+- Desktop builds are made locally (a Windows NSIS installer and a Linux binary). There is no
+  release or download link.
+
+## How it was built
+
+I design, decide and verify: I define the tests, the review criteria and the measurements.
+AI agents write much of the code under those tests and that review.
 
 ## Stack
 
-React 19 + TypeScript + Vite, on Cloud Firestore's persistent local cache (offline reads and
-writes, multi-tab). Firebase Auth for sign-in, `vite-plugin-pwa` for the offline app shell and
-installability, self-hosted Onest for type. Verification is `node:test` for the domain, a
-Firestore-rules test and a Playwright suite against the Firebase Emulator Suite, plus one
-offline smoke test against the deployed site.
+- **App:** React 19, TypeScript 5.9, Vite 8, Motion.
+- **Data:** Firebase JS SDK 12: Firestore with the persistent local cache (offline reads and
+  writes, multi-tab), Firebase Auth, Firestore security rules (`app/firestore.rules`).
+- **Desktop:** Tauri 2 with Rust (`app/src-tauri`). Platform-independent logic lives in the
+  `planner-core` crate (`app/src-tauri/core`), which is tested without a webview.
+- **Tests:** `node:test` for the domain, the Firebase Emulator Suite for the rules, Playwright
+  for the browser suite, `cargo test` for the core crate.
 
-## Run locally
+## The assistant cannot write on its own
 
-Requires Node 22.x. Development and the whole local test suite run against the Firebase
-Emulator Suite in a `demo-*` project: no cloud project, account or billing.
+The chat agent has 12 tools (`app/src/chat/tools.ts`). Read tools run at once; every write tool
+renders a confirmation card, and nothing changes until you accept it. An accepted write goes
+through the same validated data functions as the rest of the app (`app/src/chat/tools.ts:5-6`).
+
+- **The API key never reaches the webview.** It is stored in the OS keyring (Windows Credential
+  Manager, Linux Secret Service, `keyring` crate in `app/src-tauri/src/chat/mod.rs`) and Rust
+  makes the HTTPS call. Provider URLs must be
+  `https://`; plain `http://` is accepted only on loopback hosts (`app/src-tauri/core/src/chat.rs:427`).
+- **Model output is validated against a schema.** The capture inbox turns a pasted email into
+  proposed tasks through `app/src/capture/schema.ts`: unknown keys are dropped, at most 8 tasks
+  are kept, and an injected `"op":"delete_all"` has nowhere to land
+  (`app/src/capture/schema.test.ts:50`).
+- The assistant is desktop-only and works with any OpenAI-compatible provider; you bring your
+  own key.
+
+There is no eval set for the assistant. Its safety rests on the confirmation step and the
+schema check, not on measured model behavior.
+
+## Run the web app locally
+
+Requires Node 22 or later and Java (for the Firestore emulator). Everything runs against the
+Firebase Emulator Suite in a `demo-*` project: no cloud project, account or billing.
 
 ```sh
 cd app
 npm ci
-npm run emulators   # Auth on 127.0.0.1:9199, Firestore on 127.0.0.1:8187
-npm run dev         # in a second terminal
+npm run emulators   # Auth and Firestore emulators
+npm run dev         # in a second terminal, then open http://localhost:5173
 ```
 
-The app is origin-driven: `localhost` / `127.0.0.1` uses the demo emulators, while any other
-origin connects to the deployed Firebase project. That keeps the local suite structurally
-unable to reach production.
+The app is origin-driven: `localhost` and `127.0.0.1` use the demo emulators, any other origin
+connects to the deployed Firebase project, so the local suites cannot reach production.
+
+## Run the desktop shell
+
+Linux (native): install `rustup` (stable), `webkit2gtk-4.1`, `gtk3`, `libsoup3`,
+`libayatana-appindicator` and `librsvg`, then:
+
+```sh
+cd app
+npm ci
+npm run desktop:build:linux   # runs `tauri build --no-bundle`; output: src-tauri/target/release/planner
+```
+
+Windows is cross-built from WSL (`cargo-xwin`, `nsis`): `npm run desktop:dev` builds a debug exe
+that loads the Vite dev server, and `npm run desktop:build` builds the release exe and the NSIS
+installer. Details, Linux packaging and the per-window command ACL are in
+`app/src-tauri/README.md`.
 
 ## Tests
 
 ```sh
 cd app
-npm test              # domain tests (node:test)
-npm run typecheck     # tsc --noEmit
-npm run build         # production build
-npm run test:emulator # Firestore rules against the Auth + Firestore emulators (needs Java)
-npm run test:browser  # Playwright UI suite; starts the emulators and a preview on port 4174
-npm run test:smoke    # one offline smoke test against the deployed site (needs credentials)
+npm run typecheck      # tsc --noEmit
+npm test               # domain unit tests (node:test)
+npm run test:emulator  # Firestore rules against the emulators (needs Java)
+npm run test:browser   # Playwright suite against the emulators
+cd src-tauri/core && cargo test   # Rust core crate
 ```
 
-The smoke test is the only one that talks to production. It reads its credentials from the
-environment — copy `app/.env.example` to `app/.env` and fill it in, or export them:
+CI (`.github/workflows/ci.yml`) runs the type check, the unit tests and the Rust core tests on
+every push and pull request. On 2026-11-11 they gave 1,013 unit tests passing and 139 core
+tests passing (134 unit, 5 integration). The emulator and Playwright suites run locally only.
 
-```sh
-SMOKE_EMAIL=... SMOKE_PASSWORD=... npm run test:smoke
-```
+`npm run test:smoke` is the only test that talks to production. It reads `SMOKE_EMAIL` and
+`SMOKE_PASSWORD` from the environment and fails fast without them.
 
-Without them it fails fast with a clear message; the unit, emulator and browser suites never
-need them. See `app/README.md` for the full verification detail and the offline claims.
+## Limits
+
+- Single user. No sharing, teams or roles.
+- Browser storage is not a backup, and there is no export or restore yet.
+- Recurrence is daily, weekly and monthly. A monthly series skips a month that lacks its anchor
+  day (RFC 5545 behavior).
+- Physical-device, storage-eviction and install-to-home-screen flows are not proven by tests.
 
 ## Layout
 
-- `app/` — the product (React + Vite + Firestore), its tests and its capture tooling.
-- `odd/` — the durable decision and design records (`odd/tasks/`, `odd/design/`).
-- `docs/screenshots/` — the captures above.
-- `PRODUCT.md` — the product brief.
-
-## Honest limits
-
-- **Single user.** No sharing, roles or multi-account support.
-- **Browser storage is not a backup.** Clearing site data loses the planner; there is no
-  export/restore yet.
-- **Recurrence** is daily, weekly and monthly. A monthly series skips a month that lacks its
-  anchor day (RFC 5545 behavior).
-- **Offline claims are bounded by the tests that show them**: shell reload and cached-data
-  render offline are covered by the smoke test; physical-device, storage-eviction and
-  install-to-home-screen flows are not proven.
-- The deployed smoke account's password is still the one that was once committed; it must be
-  rotated before this repository is made public (see `odd/tasks/portfolio-cleanup.md`).
-
-## Status
-
-Active personal project. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`;
-the visual direction lives in `odd/design/DESIGN.md`.
+- `app/`: the product (React + Vite + Firestore), its tests and capture tooling.
+- `app/src-tauri/`: the desktop shell (Rust) and the `planner-core` crate.
+- `packaging/`: the Arch PKGBUILD and the per-user Linux install.
+- `docs/screenshots/`: the captures above.

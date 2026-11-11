@@ -9,7 +9,7 @@ proven domain and data layer.
 
 A local-first personal planner (tasks, date-only deadlines, work blocks, recurring series
 with per-occurrence completion) built with React + TypeScript + Vite on Cloud Firestore's
-persistent local cache. Decisions and increments are tracked in `odd/tasks/personal-planner-mvp.md`.
+persistent local cache.
 
 Current state (Liquid Glass redesign on top of increment I6b — profile timezone): an authentication
 gate and a shell with three views.
@@ -32,8 +32,7 @@ waiting for the server, so they keep working offline; a later server rejection i
 
 ## Design
 
-The visual direction, tokens and motion are specified in `odd/design/DESIGN.md` and prototyped in
-`odd/design/prototype/liquid-glass.html`. In code: `src/app.css` holds every token (light and dark),
+In code: `src/app.css` holds every token (light and dark),
 the glass material and the components; `src/ui/motion.ts` holds the three springs; `src/ui/Sheet.tsx`
 is the sheet that grows out of the element that opened it. Motion uses the `motion` library for
 springs, layout moves and sheet morphs, and CSS transitions for hover and press; everything respects
@@ -49,14 +48,14 @@ Self-hosting is deliberate: the product must work offline, and a font CDN would 
 npm install
 ```
 
-Requires Node 22.x. Development and the whole test suite run locally against the emulators, with
+Requires Node 22 or later. Development and the whole test suite run locally against the emulators, with
 no cloud project, account or billing involved. The published build talks to the real Firebase
 project instead; see the section below.
 
 ## Verification
 
 ```
-npm test             # domain tests (node:test, 9 passing expected)
+npm test             # domain tests (node:test)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build
 npm run test:emulator  # Firestore rules test against the Auth + Firestore emulators

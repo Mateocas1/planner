@@ -1,5 +1,5 @@
 # ----------------------------
-# Local Pi runtime state
+# Local tool state
 .atl/
 
 # Local code graph index

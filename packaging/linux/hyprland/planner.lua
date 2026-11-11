@@ -99,7 +99,7 @@ hl.bind(chosen_chord() or default_chord, hl.dsp.exec_cmd(run(planner .. " --quic
 -- Every Planner window is fully opaque. Omarchy gives every window a default
 -- opacity (0.985 active, 0.96 inactive), which lets the wallpaper show through
 -- the page and makes the compositor redraw what is behind the window on every
--- animation frame. The page paints its own opaque background on Linux (D4).
+-- animation frame. The page paints its own opaque background on Linux.
 pcall(hl.window_rule, {
   match = { class = class },
   tag = "-default-opacity",
