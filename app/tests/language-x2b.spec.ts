@@ -9,7 +9,7 @@ import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpe
 
 test.setTimeout(120_000);
 
-const shots = "../odd/runs/r5-x2b-shots";
+const shots = "test-results/shots/r5-x2b-shots";
 
 for (const [name, viewport] of [
   ["1440x900", { width: 1440, height: 900 }],

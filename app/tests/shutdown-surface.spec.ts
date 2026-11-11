@@ -16,7 +16,7 @@ import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
 test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 test.setTimeout(120_000);
 
-const shotDir = fileURLToPath(new URL("../../odd/runs/r9-pagesurface-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/r9-pagesurface-shots", import.meta.url));
 const DAY_MS = 86_400_000;
 /** Per-channel tolerance between the panel's padding and the page's content area. */
 const TOLERANCE = 3;

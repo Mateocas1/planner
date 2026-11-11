@@ -9,7 +9,7 @@ test.use({ deviceScaleFactor: 2 });
 test.setTimeout(60_000);
 
 /* Screenshots are evidence for the parent review, not assertions. */
-const shotDir = fileURLToPath(new URL("../../odd/runs/glass-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/glass-shots", import.meta.url));
 
 async function shot(page: Page, name: string) {
   mkdirSync(shotDir, { recursive: true });

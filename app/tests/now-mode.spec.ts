@@ -323,7 +323,7 @@ test("reduced motion fades the surface in over 150 ms and drops the focus pull",
       element.getAnimations({ subtree: true }).map(animation => animation.finished.then(() => undefined, () => undefined)),
     ),
   );
-  await page.screenshot({ path: "../odd/runs/f5-now-mode-reduced.png" });
+  await page.screenshot({ path: "test-results/shots/f5-now-mode-reduced.png" });
 });
 
 test("it fills the viewport at 1280x800 and at 390x844 without overflowing", async ({ page }) => {

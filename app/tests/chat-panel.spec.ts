@@ -13,7 +13,7 @@ import { submitAuthForm } from "./browser-helpers.ts";
 
 const PORT = Number(process.env.CHAT_PANEL_PORT ?? 4199);
 const base = `http://127.0.0.1:${PORT}`;
-const shots = new URL("../../odd/runs/chat-c2-shots/", import.meta.url).pathname;
+const shots = new URL("../test-results/shots/chat-c2-shots/", import.meta.url).pathname;
 
 let server: ChildProcess | null = null;
 

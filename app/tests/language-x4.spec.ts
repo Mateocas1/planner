@@ -8,7 +8,7 @@ import { expectSignedIn, seedRadarFixture, submitAuthForm } from "./browser-help
 
 test.setTimeout(120_000);
 
-const shots = "../odd/runs/r5-x4-shots";
+const shots = "test-results/shots/r5-x4-shots";
 
 for (const [name, viewport] of [
   ["1440x900", { width: 1440, height: 900 }],

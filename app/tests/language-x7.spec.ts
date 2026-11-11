@@ -11,7 +11,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const PORT = Number(process.env.CHAT_X7_PORT ?? 4398);
 const base = `http://127.0.0.1:${PORT}`;
-const shots = new URL("../../odd/runs/r5-x7-shots/", import.meta.url).pathname;
+const shots = new URL("../test-results/shots/r5-x7-shots/", import.meta.url).pathname;
 
 let server: ChildProcess | null = null;
 

@@ -15,7 +15,7 @@ import {
 
 test.setTimeout(180_000);
 
-const shotDir = fileURLToPath(new URL("../../odd/runs/r5-x5-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/r5-x5-shots", import.meta.url));
 const newEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
 
 async function shot(page: Page, name: string) {

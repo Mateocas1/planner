@@ -22,7 +22,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 const ZONE = "UTC";
 const REST = "http://127.0.0.1:8187/v1/projects/demo-calendar-app/databases/(default)/documents";
-const shotDir = fileURLToPath(new URL("../../odd/runs/r2-w2b-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/r2-w2b-shots", import.meta.url));
 
 /* ---------- the week the tests live in (2026-10-19 → 2026-10-25, W43) ---------- */
 

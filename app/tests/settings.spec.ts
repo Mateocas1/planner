@@ -17,7 +17,7 @@ test.setTimeout(120_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const ZONE = "UTC";
-const shotDir = fileURLToPath(new URL("../../odd/runs/r2-w1-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/r2-w1-shots", import.meta.url));
 
 const view = (page: Page) => page.getByRole("region", { name: "Settings" });
 const gear = (page: Page) => page.getByRole("button", { name: "Settings", exact: true });

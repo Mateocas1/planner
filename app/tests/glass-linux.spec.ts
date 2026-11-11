@@ -14,7 +14,7 @@ import { seedShutdownFixture, submitAuthForm } from "./browser-helpers.ts";
 test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
 test.setTimeout(120_000);
 
-const shotDir = fileURLToPath(new URL("../../odd/runs/r9-flat-shots", import.meta.url));
+const shotDir = fileURLToPath(new URL("../test-results/shots/r9-flat-shots", import.meta.url));
 const DAY_MS = 86_400_000;
 
 type Theme = "light" | "dark";

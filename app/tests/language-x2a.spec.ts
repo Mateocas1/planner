@@ -9,7 +9,7 @@ import { expectSignedIn, seedDaySettings, submitAuthForm } from "./browser-helpe
 test.setTimeout(120_000);
 
 /* Next to this checkout's, not an absolute path into another checkout. */
-const shots = new URL("../../odd/runs/r5-x2a-shots/", import.meta.url).pathname;
+const shots = new URL("../test-results/shots/r5-x2a-shots/", import.meta.url).pathname;
 
 const newEmail = () => `lang-x2a-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
 
