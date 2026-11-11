@@ -20,7 +20,7 @@ process.env.TZ = "UTC";
 
 export default defineConfig({
   testDir: "./tests",
-  // The suite runs on a 6 GB host that other agents share, and every worker is a
+  // The suite runs on a 6 GB host that other processes share, and every worker is a
   // whole Chromium with a glass/blur-heavy page. At Playwright's default (half the
   // logical CPUs, 6 here) the renderers plus the emulator JVM exhaust RAM: measured
   // 71 MB free, load 65, sign-ups taking 2 s and a view mount missing a 5 s budget.
